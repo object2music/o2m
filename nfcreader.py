@@ -39,15 +39,6 @@ class NfcReader():
     def disconnect(self):
         self.clf.close()
 
-
-
-
-def test_lambda_function():
-    after_some_time = lambda: datetime.datetime.now() - started > datetime.timedelta(microseconds=50)
-    started = datetime.datetime.now()
-    while not after_some_time():
-        print('ok')
-
 def main():
     # find the bus information with this command : python3 -m nfc
     try:
