@@ -22,14 +22,22 @@ class NfcReader():
         return targets
 
     def on_connect(self, tag):
+        '''
+        Callback function when a tag is detected
+        '''
         uid = str(tag.identifier) 
         print(datetime.datetime.now().strftime("%H:%M:%S") + '    ' + self.name + ' : ' + str(tag) + ' on bus : ' + self.bus + ' UID : ' + uid)
         if tag.ndef:
             print(tag.ndef)
-            # print(tag.ndef.message.pretty())
 
     def connect(self):
-        # print('reader ' + self.bus + ' connecting...')
+        '''
+        This lambda function is used to terminate the while loop inside the connect function after some time
+        A lambda function is a function as variable that we can passed in as an argument
+
+        Inside this connect function, there is a while loop that sense the reader with some intervals and iterations
+        defined in the rdwr_options variable. We use the terminate argument to kill the while loop after some time
+        '''
         after_some_time = lambda: datetime.datetime.now() - started > datetime.timedelta(milliseconds=100)
         started = datetime.datetime.now()
         tag = self.clf.connect(rdwr=self.rdwr_options, terminate=after_some_time)
