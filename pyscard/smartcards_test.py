@@ -14,41 +14,43 @@ class PrintObserver(CardObserver):
     def update(self, observable, actions):
         (addedcards, removedcards) = actions
         for card in addedcards:
-            print("+Inserted: ", toHexString(card.atr))
+            int_id = self.get_id(card.reader)[:4] # we keep only the fourth first elements of the response
+            hexa_id2 = [format(i, 'X').zfill(2) for i in int_id] # we convert to hex with format and add a 0 digit if necessary
+            card.id = ''.join(hexa_id2)
+            
+            # print("+Inserted: ", toHexString(card.atr))
+            print("+Inserted: {} in reader : {}".format(card.id, card.reader))
+
         for card in removedcards:
-            print("-Removed: ", toHexString(card.atr))
+            # print("-Removed: ", toHexString(card.atr))
+            print("-Removed: {} from reader : {}".format(card.id, card.reader))
+
+    def get_id(self, reader):
+        hresult, hcontext = SCardEstablishContext(SCARD_SCOPE_USER)
+        assert hresult==SCARD_S_SUCCESS
+
+        hresult, hcard, dwActiveProtocol = SCardConnect(
+            hcontext,
+            reader,
+            SCARD_SHARE_SHARED,
+            SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)
+
+        hresult, response = SCardTransmit(hcard,dwActiveProtocol,[0xFF,0xCA,0x00,0x00,0x00])
+        return response
 
 if __name__ == '__main__':
     print("Insert or remove a smartcard in the system.")
-    print("This program will exit in 10 seconds")
     print("")
     cardmonitor = CardMonitor()
     cardobserver = PrintObserver()
     cardmonitor.addObserver(cardobserver)
 
-    sleep(100)
-
-    # don't forget to remove observer, or the
-    # monitor will poll forever...
-    cardmonitor.deleteObserver(cardobserver)
-
-
-    # hresult, hcontext = SCardEstablishContext(SCARD_SCOPE_USER)
-
-    # assert hresult==SCARD_S_SUCCESS
-
-    # hresult, readers = SCardListReaders(hcontext, [])
-
-    # assert len(readers)>0
-
-    # reader = readers[0]
-
-    # hresult, hcard, dwActiveProtocol = SCardConnect(
-    #     hcontext,
-    #     reader,
-    #     SCARD_SHARE_SHARED,
-    #     SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)
-
-    # hresult, response = SCardTransmit(hcard,dwActiveProtocol,[0xFF,0xCA,0x00,0x00,0x00])
-
-    # print(response)
+    try:
+        while True:
+            sleep(10)
+    except KeyboardInterrupt:
+        print('interrupted!')
+        # don't forget to remove observer, or the
+        # monitor will poll forever...
+        cardmonitor.deleteObserver(cardobserver)
+    

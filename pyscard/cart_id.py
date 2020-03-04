@@ -10,14 +10,15 @@ if __name__ == '__main__':
 
     assert len(readers)>0
 
-    reader = readers[0]
+    # reader = readers[0]
+    for reader in readers:
+        print(reader)
+        hresult, hcard, dwActiveProtocol = SCardConnect(
+            hcontext,
+            reader,
+            SCARD_SHARE_SHARED,
+            SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)
 
-    hresult, hcard, dwActiveProtocol = SCardConnect(
-        hcontext,
-        reader,
-        SCARD_SHARE_SHARED,
-        SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)
+        hresult, response = SCardTransmit(hcard,dwActiveProtocol,[0xFF,0xCA,0x00,0x00,0x00])
 
-    hresult, response = SCardTransmit(hcard,dwActiveProtocol,[0xFF,0xCA,0x00,0x00,0x00])
-
-    print(response)
+        print(response)
