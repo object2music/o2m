@@ -2,7 +2,7 @@ import nfc
 import time
 import datetime
 
-class NfcReader():
+class NfcPyReader():
     def __init__(self, usb_bus, name):
         self.bus = usb_bus
         self.name = name
@@ -50,9 +50,9 @@ class NfcReader():
 def main():
     # find the bus information with this command : python3 -m nfc
     try:
-        reader1 = NfcReader('usb:020:006', 'READER 1')
-        reader2 = NfcReader('usb:020:005', 'READER 2')
-        reader3 = NfcReader('usb:020:007', 'READER 3')
+        reader1 = NfcPyReader('usb:020:006', 'READER 1')
+        reader2 = NfcPyReader('usb:020:005', 'READER 2')
+        reader3 = NfcPyReader('usb:020:007', 'READER 3')
 
         while True:
             reader1.connect()
