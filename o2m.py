@@ -1,15 +1,29 @@
 
 from pyscard.nfcreader import NfcReader
-
+import pprint
 
 class NfcToMopidy():
+    activecards = {}
 
     def __init__(self):
         nfcreader = NfcReader(self)
         nfcreader.loop()
+        
+    def get_new_cards(self, addedCards, removedCards, activeCards):
+        self.activecards = activeCards
+        print('-------')
+        print('NFC TAGS CHANGED!')
+        print('COUNT : \n     ADDED : {}  \n     REMOVED : {} '.format(len(addedCards), len(removedCards)))
+        print('ACTIONS : ')
+        print('     ADDED : {} \n     REMOVED : {}'.format( 
+            [x.reader + ' : ' + x.id for x in addedCards], 
+            [x.reader + ' : ' + x.id for x in removedCards]))
+        
+        print('CURRENT CARDS ACTIVED : ')
+        for key, card in self.activecards.items():
+            print('     Reader : {} with card : {} '.format(key, card.id))
+        print('-------')
 
-    def get_new_cards(self, reason):
-        print('O2M CHANGE : {}'.format(reason))
 
 if __name__ == "__main__":
     nfcHandler = NfcToMopidy()
