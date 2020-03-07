@@ -8,7 +8,6 @@ from smartcard.scard import SCardEstablishContext, SCardTransmit, SCardConnect, 
 from smartcard.Exceptions import NoCardException
 
 from events import Events
-import pprint
 import logging
 
 
@@ -29,7 +28,6 @@ class PrintObserver(CardObserver):
     when cards are inserted/removed from the system and
     prints the list of cards
     """
-    
 
     def __init__(self):
         self.events = Events()
@@ -158,6 +156,7 @@ class NfcReader():
         print("Insert or remove a smartcard in the system.")
         print("")
 
+        self.log = logging.getLogger(__name__)
         self.o2m = o2m
 
         self.cardmonitor = CardMonitor()
@@ -180,8 +179,8 @@ class NfcReader():
             while True:
                 sleep(10)
         except KeyboardInterrupt:
-            self.log.info('Keyboard Interrupt : Removing observer')
             self.remove_observer()
+            self.log.info('Keyboard Interrupt : Removing observer')
 
     '''
         If killed properly we remove the observer to prevent forever polling on the readers
