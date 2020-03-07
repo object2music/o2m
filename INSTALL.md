@@ -1,5 +1,5 @@
 
-INSTALL
+# INSTALL
 
 ```
 Sudo apt-get update
@@ -11,7 +11,7 @@ Sudo apt-get install python3-pip
 pip3 install pyscard
 ```
 
-// DOESN'T WORK YET! WE NEED A PATCHED VERSION OF LIBNFC FOR THE TIMEOUT ERROR ON ACS ACR122U READERS
+**Doesn't work yet! we need a patched version of libnfc for the timeout error on acs acr122u readers**
 
 ```
 sudo nano /etc/modprobe.d/blacklist-libnfc.conf
@@ -38,10 +38,13 @@ Cd /usr/lib
 sudo cp -p libnfc.* arm-linux-gnueabihf/
 ```
 
-// IT WORKS!
+### **IT WORKS!**
 
 
-FOR TESTING YOUR READERS AND YOUR INSTALL : 
+For testing your readers and your install : 
+
 ``nfc-scan-device -v``
 
-REFERENCE (IN FRENCH): https://www.latelierdugeek.fr/2019/09/30/acr122u-resoudre-lerreur-unable-to-set-alternate-setting-on-usb-interface/
+Reference (in french): 
+
+https://www.latelierdugeek.fr/2019/09/30/acr122u-resoudre-lerreur-unable-to-set-alternate-setting-on-usb-interface/
