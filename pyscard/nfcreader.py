@@ -15,6 +15,18 @@ cmdMap = {
 	"getuid":[0xFF, 0xCA, 0x00, 0x00, 0x00],
 	"firmver":[0xFF, 0x00, 0x48, 0x00, 0x00],
 }
+'''
+    TODO :
+    - Couper le son des lecteurs au bon moment
+    - Carte retirées 
+    - Tester avec les trois lecteurs
+    - Tester sur raspberry
+    - 
+
+'''
+
+class NfcEvents(Events):
+    __events__ = ('on_change', 'on_cardchanged', )
 
 # a simple card observer that prints inserted/removed cards
 class PrintObserver(CardObserver):
@@ -102,12 +114,15 @@ class PrintObserver(CardObserver):
 
 class NfcReader():
 
-    def __init__(self):
+    def __init__(self, o2m=None):
         print("NFCReader initializing...")
         print("Insert or remove a smartcard in the system.")
         print("")
 
+        self.o2m = o2m
         self.events = Events()
+        self.events.on_change('init')
+
         self.cardmonitor = CardMonitor()
         self.cardobserver = PrintObserver()
         self.cardmonitor.addObserver(self.cardobserver)
@@ -115,11 +130,11 @@ class NfcReader():
         
         # self.mute_all_readers()
         
-        self.events.on_init()
 
     def update_change(self, reason):
         print('update change {}'.format(reason))
-        self.events.on_change(reason)
+        self.o2m.get_new_cards(reason)
+    #     self.events.on_this(reason)
 
     def loop(self):
         try:
@@ -139,8 +154,6 @@ class NfcReader():
             connection.connect()
             connection.transmit(cmdMap['mute'])
             print('Reader {} muted!'.format(r))
-
-
 
     def close(self):
         # don't forget to remove observer, or the
