@@ -2,12 +2,12 @@
 # INSTALL
 
 ```
-Sudo apt-get update
-Sudo apt-get upgrade
+sudo apt-get update
+sudo apt-get upgrade
 
-sudo apt-get install gcc swig pcsc-tools pcscd libnfc-bin autoconf libtool libpcsclite-dev libusb-dev
+sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev
 
-Sudo apt-get install python3-pip
+sudo apt-get install python3-pip
 pip3 install pyscard
 ```
 
@@ -24,9 +24,9 @@ sudo modprobe -r pn533
 ```
 
 ```
-Apt-get csh gawk libblkid-dev libffi-dev libfl2 libglib2.0-bin libglib2.0-dev libglib2.0-dev-bin liblzma-dev libmount-dev libnfc-dev libpcre16-3 libpcre3-dev libpcre32-3 libpcrecpp0v5 libselinux1-dev libsepol1-dev uuid-dev
+sudo apt-get install csh gawk libblkid-dev libffi-dev libfl2 libglib2.0-bin libglib2.0-dev libglib2.0-dev-bin liblzma-dev libmount-dev libpcre16-3 libpcre3-dev libpcre32-3 libpcrecpp0v5 libselinux1-dev libsepol1-dev uuid-dev
 
-apt-get install git binutils make csh g++ sed gawk autoconf automake autotools-dev libglib2.0-dev liblzma-dev libtool 
+sudo apt-get install git binutils make csh g++ sed gawk autoconf automake autotools-dev libglib2.0-dev liblzma-dev libtool 
 
 git clone https://github.com/jpwidera/libnfc.git
 cd libnfc
