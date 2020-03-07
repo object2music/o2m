@@ -1,5 +1,5 @@
 #!/usr/bin/python
-
+#Installed from pip3 install https://github.com/ismailof/mopidy-json-client/archive/master.zip
 import time
 from mopidy_json_client import MopidyClient
 
