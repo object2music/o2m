@@ -9,6 +9,8 @@ from smartcard.Exceptions import NoCardException
 
 from events import Events
 import pprint
+import logging
+
 
 cmdMap = {
 	"mute":[0xFF, 0x00, 0x52, 0x00, 0x00],
@@ -16,16 +18,24 @@ cmdMap = {
 	"getuid":[0xFF, 0xCA, 0x00, 0x00, 0x00],
 	"firmver":[0xFF, 0x00, 0x48, 0x00, 0x00],
 }
-
+'''
+    TODO :
+    *   Choose a connection method
+    *   Clean the code
+    *   Improve comments
+'''
 class PrintObserver(CardObserver):
     """A simple card observer that is notified
     when cards are inserted/removed from the system and
     prints the list of cards
     """
+    
+
     def __init__(self):
         self.events = Events()
         self.muted_readers_names = []
         self.active_cards = {}
+        self.log = logging.getLogger(__name__)
 
     def update(self, observable, actions):
         # self.mute_all_readers()
@@ -40,19 +50,17 @@ class PrintObserver(CardObserver):
             # Methode 2
             readerObject = self.get_reader_by_name(card.reader)
             uid_str = self.get_id_with_reader(readerObject)
-            if uid_str != None:
-                print('METHODE 2 : Card id : {} in reader : {}'.format(uid_str, readerObject))
-            else:
-                print('METHODE 2 : ERROR')
-
-            # active cards dict update
-            self.active_cards[card.reader] = card
+            # if uid_str != None:
+            #     print('METHODE 2 : Card id : {} in reader : {}'.format(uid_str, readerObject))
+            # else:
+            #     print('METHODE 2 : ERROR')
+            self.log.info('+Inserted: {} in reader : {}'.format(card.id, card.reader))
+            self.active_cards[card.reader] = card # active cards dict update
 
         for card in removedcards:
-            # print("-Removed: {} from reader : {}".format(card, card.reader))
             card.id = self.active_cards[card.reader].id
-            print('id removed : {}'.format(card.id))
-            self.active_cards[card.reader] = None
+            self.log.info('+Removed: {} in reader : {}'.format(card.id, card.reader))
+            self.active_cards[card.reader] = None # active cards dict update
 
         self.events.on_change(addedcards, removedcards, self.active_cards) # Launch the event 
 
@@ -82,14 +90,15 @@ class PrintObserver(CardObserver):
                     connection = reader.createConnection()
                     connection.connect()
                     connection.transmit(cmdMap['mute'])
-                    print('Reader {} muted!'.format(reader.name))
                     self.muted_readers_names.append(reader.name)
+                    self.log.info('Reader {} muted!'.format(reader.name))
                 except NoCardException as err:
                     print('Error : {} on reader : {}'.format(err, reader.name))
 
     '''
-        Première méthode de connexion à la carte
-        Le nom du reader suffit mais renvoie plus de donnée que nécessaire (obligé de tronquer le résultat)
+        First connection method
+        The reader name is enough but this method get too much data, we need to truncate the response to get the right uid
+        Return : the response minus the two last elements of the byte list
     '''    
     def get_id(self, reader_name):
         return self.launch_command(reader_name, cmdMap['getuid'])
@@ -114,10 +123,10 @@ class PrintObserver(CardObserver):
             return None
 
     ''' 
-    Deuxième méthode de connexion 
+        Second connection method
 
-    Avantages : Plus simple à lire, pas besoin de retirer les données en surplus
-    Necessite l'object PCSCReader et pas juste le nom du reader (chaine de caractère)
+        Pros : easier to read, no need to truncate the response
+        Cons : need a PCSCReader as parameter instead of a name
     '''
     def get_reader_by_name(self, reader_name):
         return next((x for x in readers() if x.name == reader_name), None)
@@ -156,23 +165,32 @@ class NfcReader():
         self.cardmonitor.addObserver(self.cardobserver)
         self.cardobserver.events.on_change += self.update_change
         
+    '''
+        Callback function called when the card observer triggers the event on_change.
+        this function just pass the parameters to the parent NfcToMopidy object
+    '''    
     def update_change(self, addedCards, removedCards, activeCards):
-        # print('update change ! Added cards : {}, Removed cards : {}'.format(addedCards, removedCards))
         self.o2m.get_new_cards(addedCards, removedCards, activeCards)
 
+    '''
+        Start an infinite loop to keep the readers polling
+    '''
     def loop(self):
         try:
             while True:
                 sleep(10)
         except KeyboardInterrupt:
-            print('interrupted!')
-            self.close()
+            self.log.info('Keyboard Interrupt : Removing observer')
+            self.remove_observer()
 
-    def close(self):
+    '''
+        If killed properly we remove the observer to prevent forever polling on the readers
+    '''
+    def remove_observer(self):
         # don't forget to remove observer, or the
         # monitor will poll forever...
         self.cardmonitor.deleteObserver(self.cardobserver)
-        print('Observer removed!')
+        self.log.info('Observer removed : Connection closed')
 
 if __name__ == '__main__':
     nfc = NfcReader()
