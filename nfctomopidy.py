@@ -1,5 +1,5 @@
-
 from nfcreader import NfcReader
+from dbhandler import DatabaseHandler
 import logging
 
 logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s', 
@@ -7,7 +7,12 @@ logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName
                     level=logging.DEBUG,
                     filename='o2m.log', 
                     filemode='a')
-
+'''
+    TODO :
+        * Ajouter des vraies url dans la base
+        * Décider de la structure de la base
+        * 
+'''
 class NfcToMopidy():
     activecards = {}
 
@@ -15,16 +20,23 @@ class NfcToMopidy():
         self.log = logging.getLogger(__name__)
         self.log.info('NFC TO MOPIDY INITIALIZATION')
 
+        self.mydb = DatabaseHandler()
+
         nfcreader = NfcReader(self)
         nfcreader.loop()
         
     def get_new_cards(self, addedCards, removedCards, activeCards):
         self.activecards = activeCards
-        self.pretty_print_nfc_data(addedCards, removedCards)
+
+        # Décommenter la ligne en dessous pour avoir de l'info sur les données récupérées dans le terminal
+        # self.pretty_print_nfc_data(addedCards, removedCards)
         
+
         # Put some timestamps on cards ?
         
         # Do some stuff in sqlite database
+        for card in addedCards:
+            self.mydb.update_tag_count(card.id)
 
         # Launch some commands to mopidy
 
@@ -45,4 +57,12 @@ class NfcToMopidy():
 
 
 if __name__ == "__main__":
+
+
+    # mydb = DatabaseHandler()
+    # mydb.create_tag('super_uid2', 'super_media')
+
+    # tags = mydb.get_all_tags()
+    # print(tags)
+    
     nfcHandler = NfcToMopidy()
