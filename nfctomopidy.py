@@ -1,6 +1,6 @@
 
-from pyscard.nfcreader import NfcReader
-import pprint, logging
+from nfcreader import NfcReader
+import logging
 
 logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s', 
                     datefmt='%m/%d/%Y %I:%M:%S %p',
