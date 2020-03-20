@@ -49,7 +49,9 @@ class NfcToMopidy():
             else:
                 print(card.id)
 
-
+        for card in removedCards:
+            print('Stopping music')
+            self.mopidy.playback.stop()
         # Launch some commands to mopidy
 
 
