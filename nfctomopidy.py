@@ -1,8 +1,9 @@
 from nfcreader import NfcReader
 from dbhandler import DatabaseHandler, Tag
 from mopidyapi import MopidyAPI
+from playsound import playsound
 
-import logging
+import logging, time
 
 logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s', 
                     datefmt='%m/%d/%Y %I:%M:%S %p',
@@ -11,9 +12,14 @@ logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName
                     filemode='a')
 '''
     TODO :
-        * Ajouter des vraies url dans la base
         * Décider de la structure de la base
         * 
+'''
+'''
+    INSTALL : 
+    pip3 install playsound
+    pip3 install mopidyapi
+
 '''
 class NfcToMopidy():
     activecards = {}
@@ -41,10 +47,13 @@ class NfcToMopidy():
         for card in addedCards:
             tag = self.mydb.get_tag_by_uid(card.id)
             if tag != None:
+                time.sleep(0.1)
+                playsound('sounds/success.mp3')
                 tag.add_count()
                 print(f'Tag : {tag}')
                 self.launch_track_mopidy(tag.media)
             else:
+                playsound('sounds/error.mp3')
                 print(card.id)
 
         for card in removedCards:
@@ -55,6 +64,7 @@ class NfcToMopidy():
 
 
     def launch_track_mopidy(self, uri):
+        time.sleep(1)
         self.mopidy.tracklist.clear()
         self.mopidy.tracklist.add(uris=[uri])
         self.mopidy.playback.play()
