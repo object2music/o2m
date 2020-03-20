@@ -16,16 +16,21 @@ def print_track_info(tl_track):
     }
     print('Now playing: {artists} - {name}'.format(**trackinfo))
 
+def print_tracklist_info():
+    print('Tracklist changed!')
+
 mopidy = MopidyClient()
-#mopidy.bind_event('track_playback_started', print_track_info)
+mopidy.bind_event('track_playback_started', print_track_info)
+mopidy.bind_event('tracklist_changed', print_tracklist_info)
 #mopidy.playback.next()
 #mopidy.playback.get_volume()
 
-mopidy.tracklist.add()
+mopidy.tracklist.clear()
 
-presets = ['spotify:track:28cnXtME493VX9NOw9cIUh','local:track:0-MK/MK%2090/01.%20I%20Won%27t%20Back%20Down.mp3']
-mopidy.tracklist.add(uris=presets)
+presets = ['spotify:track:4evj46yiEKdN8gr6K0e7PX', 'local:track:ah.mp3']
+response = mopidy.tracklist.add(uris=presets)
 
+mopidy.playback.play()
 
 if __name__ == '__main__':
 
