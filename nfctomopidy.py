@@ -1,5 +1,7 @@
 from nfcreader import NfcReader
-from dbhandler import DatabaseHandler
+from dbhandler import DatabaseHandler, Tag
+from mopidyapi import MopidyAPI
+
 import logging
 
 logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s', 
@@ -21,6 +23,8 @@ class NfcToMopidy():
         self.log.info('NFC TO MOPIDY INITIALIZATION')
 
         self.mydb = DatabaseHandler()
+        self.mopidy = MopidyAPI()
+        
 
         nfcreader = NfcReader(self)
         nfcreader.loop()
@@ -41,12 +45,18 @@ class NfcToMopidy():
                 tag.update()
                 tag.save()
                 print(f'Tag : {tag}')
+                self.launch_track_mopidy(tag.media)
             else:
                 print(card.id)
 
 
         # Launch some commands to mopidy
 
+
+    def launch_track_mopidy(self, uri):
+        self.mopidy.tracklist.clear()
+        self.mopidy.tracklist.add(uris=[uri])
+        self.mopidy.playback.play()
 
     def pretty_print_nfc_data(self, addedCards, removedCards):
         print('-------')
