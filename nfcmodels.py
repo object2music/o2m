@@ -32,3 +32,8 @@ class Tag(BaseModel):
 
     def __str__(self):
         return 'TAG UID : {} | TYPE : {} | MEDIA : {} | COUNT : {}' .format(self.uid, self.media_type, self.media, self.count)
+
+    def add_count(self):
+        self.count += 1
+        self.update()
+        self.save()

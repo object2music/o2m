@@ -24,18 +24,6 @@ class DatabaseHandler():
         self.log.info('DATABASE HANDLER INITIALIZATION')
         self.tags = self.get_all_tags()
 
-    def update_tag_count(self, uid):
-        if self.tag_exists(uid):
-            response = self.get_tag_by_uid(uid)
-            tag = response[0]
-            tag.count += 1
-            tag.update()
-            tag.save()
-            print('Adding count {} to tag {} '.format(tag.count, tag.uid))
-            self.log.info('Adding count {} to tag {} '.format(tag.count, tag.uid))
-        else:
-            self.create_tag(uid, None)
-
     def create_tag(self, uid, media_url):
         try:
             self.log.info('Creating Tag with uid : {} and media url {}'.format(uid, media_url))

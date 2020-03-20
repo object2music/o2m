@@ -41,9 +41,7 @@ class NfcToMopidy():
         for card in addedCards:
             tag = self.mydb.get_tag_by_uid(card.id)
             if tag != None:
-                tag.count += 1
-                tag.update()
-                tag.save()
+                tag.add_count()
                 print(f'Tag : {tag}')
                 self.launch_track_mopidy(tag.media)
             else:
@@ -52,6 +50,7 @@ class NfcToMopidy():
         for card in removedCards:
             print('Stopping music')
             self.mopidy.playback.stop()
+
         # Launch some commands to mopidy
 
 
