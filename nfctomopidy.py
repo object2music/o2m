@@ -31,12 +31,19 @@ class NfcToMopidy():
         # Décommenter la ligne en dessous pour avoir de l'info sur les données récupérées dans le terminal
         # self.pretty_print_nfc_data(addedCards, removedCards)
         
-
         # Put some timestamps on cards ?
         
         # Do some stuff in sqlite database
         for card in addedCards:
-            self.mydb.update_tag_count(card.id)
+            tag = self.mydb.get_tag_by_uid(card.id)
+            if tag != None:
+                tag.count += 1
+                tag.update()
+                tag.save()
+                print(f'Tag : {tag}')
+            else:
+                print(card.id)
+
 
         # Launch some commands to mopidy
 

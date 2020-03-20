@@ -16,7 +16,6 @@ tracks = m.tracklist.get_tracks()
 
 m.tracklist.clear()
 
-
 presets = ['spotify:track:4evj46yiEKdN8gr6K0e7PX', 'local:track:ah.mp3', 'tunein:station:s15200']
 response = m.tracklist.add(uris=presets)
 

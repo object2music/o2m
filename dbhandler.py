@@ -31,7 +31,7 @@ class DatabaseHandler():
             tag.count += 1
             tag.update()
             tag.save()
-            print(tag)
+            print('Adding count {} to tag {} '.format(tag.count, tag.uid))
             self.log.info('Adding count {} to tag {} '.format(tag.count, tag.uid))
         else:
             self.create_tag(uid, None)
@@ -43,6 +43,7 @@ class DatabaseHandler():
             response = tag.save()
             if response == 1:
                 self.log.info('Tag created : {}'.format(tag))
+                return tag
         except IntegrityError as err:
             self.log.error(err)
     
@@ -53,7 +54,15 @@ class DatabaseHandler():
     def get_tag_by_uid(self, uid):
         self.log.info('searching for tag : {} '.format(uid))
         query = Tag.select().where(Tag.uid == uid)
-        return self.transform_query_to_list(query)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results[0] 
+
+    def get_media_tag(self, uid):
+        results = self.get_tag_by_uid(uid)
+        if len(results > 0):
+            tag = results[0]
+            return tag.media
     
     def tag_exists(self, uid):
         if len(Tag.select().where(Tag.uid == uid)) > 0:
