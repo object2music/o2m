@@ -1,0 +1,269 @@
+{
+    "tracks": [
+        {
+            "album": {
+                "album_type": "ALBUM",
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/5he5w2lnU9x7JFhnwcekXX"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/5he5w2lnU9x7JFhnwcekXX",
+                        "id": "5he5w2lnU9x7JFhnwcekXX",
+                        "name": "Skrillex",
+                        "type": "artist",
+                        "uri": "spotify:artist:5he5w2lnU9x7JFhnwcekXX"
+                    }
+                ],
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/album/6HbNEBza64W10MQxUFq6QL"
+                },
+                "href": "https://api.spotify.com/v1/albums/6HbNEBza64W10MQxUFq6QL",
+                "id": "6HbNEBza64W10MQxUFq6QL",
+                "images": [
+                    {
+                        "height": 640,
+                        "url": "https://i.scdn.co/image/ab67616d0000b2730d9a6a2a68b4010c5b21a38c",
+                        "width": 640
+                    },
+                    {
+                        "height": 300,
+                        "url": "https://i.scdn.co/image/ab67616d00001e020d9a6a2a68b4010c5b21a38c",
+                        "width": 300
+                    },
+                    {
+                        "height": 64,
+                        "url": "https://i.scdn.co/image/ab67616d000048510d9a6a2a68b4010c5b21a38c",
+                        "width": 64
+                    }
+                ],
+                "name": "Scary Monsters and Nice Sprites (Deluxe Tour Edition)",
+                "release_date": "2010-12-21",
+                "release_date_precision": "day",
+                "total_tracks": 0,
+                "type": "album",
+                "uri": "spotify:album:6HbNEBza64W10MQxUFq6QL"
+            },
+            "artists": [
+                {
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/artist/5he5w2lnU9x7JFhnwcekXX"
+                    },
+                    "href": "https://api.spotify.com/v1/artists/5he5w2lnU9x7JFhnwcekXX",
+                    "id": "5he5w2lnU9x7JFhnwcekXX",
+                    "name": "Skrillex",
+                    "type": "artist",
+                    "uri": "spotify:artist:5he5w2lnU9x7JFhnwcekXX"
+                },
+                {
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/artist/6xDRBrApnv0HI3o6nNl1X3"
+                    },
+                    "href": "https://api.spotify.com/v1/artists/6xDRBrApnv0HI3o6nNl1X3",
+                    "id": "6xDRBrApnv0HI3o6nNl1X3",
+                    "name": "pennybirdrabbit",
+                    "type": "artist",
+                    "uri": "spotify:artist:6xDRBrApnv0HI3o6nNl1X3"
+                }
+            ],
+            "disc_number": 1,
+            "duration_ms": 340340,
+            "explicit": False,
+            "external_ids": {
+                "isrc": "GBTDG1000198"
+            },
+            "external_urls": {
+                "spotify": "https://open.spotify.com/track/0fMAyo16WDEhIGoQHMSFCK"
+            },
+            "href": "https://api.spotify.com/v1/tracks/0fMAyo16WDEhIGoQHMSFCK",
+            "id": "0fMAyo16WDEhIGoQHMSFCK",
+            "is_local": False,
+            "is_playable": True,
+            "linked_from": {
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/track/1A3XPibNuMPTbTWlPgRfTD"
+                },
+                "href": "https://api.spotify.com/v1/tracks/1A3XPibNuMPTbTWlPgRfTD",
+                "id": "1A3XPibNuMPTbTWlPgRfTD",
+                "type": "track",
+                "uri": "spotify:track:1A3XPibNuMPTbTWlPgRfTD"
+            },
+            "name": "All I Ask of You (feat. Pennybirdrabbit)",
+            "popularity": 40,
+            "preview_url": "https://p.scdn.co/mp3-preview/87a48290b3f103f350b865bf94466cce00f98ca4?cid=f88ee52f92724d51b7579a1d1cdb3128",
+            "track_number": 4,
+            "type": "track",
+            "uri": "spotify:track:0fMAyo16WDEhIGoQHMSFCK"
+        },
+        {
+            "album": {
+                "album_type": "ALBUM",
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/0jnsk9HBra6NMjO2oANoPY"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/0jnsk9HBra6NMjO2oANoPY",
+                        "id": "0jnsk9HBra6NMjO2oANoPY",
+                        "name": "Flo Rida",
+                        "type": "artist",
+                        "uri": "spotify:artist:0jnsk9HBra6NMjO2oANoPY"
+                    }
+                ],
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/album/19JqA8H10co29VVwazL2Gw"
+                },
+                "href": "https://api.spotify.com/v1/albums/19JqA8H10co29VVwazL2Gw",
+                "id": "19JqA8H10co29VVwazL2Gw",
+                "images": [
+                    {
+                        "height": 640,
+                        "url": "https://i.scdn.co/image/ab67616d0000b273f7382522c80f2f11bdf87c52",
+                        "width": 640
+                    },
+                    {
+                        "height": 300,
+                        "url": "https://i.scdn.co/image/ab67616d00001e02f7382522c80f2f11bdf87c52",
+                        "width": 300
+                    },
+                    {
+                        "height": 64,
+                        "url": "https://i.scdn.co/image/ab67616d00004851f7382522c80f2f11bdf87c52",
+                        "width": 64
+                    }
+                ],
+                "name": "Good Feeling",
+                "release_date": "2011-08-29",
+                "release_date_precision": "day",
+                "total_tracks": 0,
+                "type": "album",
+                "uri": "spotify:album:19JqA8H10co29VVwazL2Gw"
+            },
+            "artists": [
+                {
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/artist/0jnsk9HBra6NMjO2oANoPY"
+                    },
+                    "href": "https://api.spotify.com/v1/artists/0jnsk9HBra6NMjO2oANoPY",
+                    "id": "0jnsk9HBra6NMjO2oANoPY",
+                    "name": "Flo Rida",
+                    "type": "artist",
+                    "uri": "spotify:artist:0jnsk9HBra6NMjO2oANoPY"
+                }
+            ],
+            "disc_number": 1,
+            "duration_ms": 248133,
+            "explicit": False,
+            "external_ids": {
+                "isrc": "USAT21101961"
+            },
+            "external_urls": {
+                "spotify": "https://open.spotify.com/track/3NcO4jGK1Opb5ea0mYLpxb"
+            },
+            "href": "https://api.spotify.com/v1/tracks/3NcO4jGK1Opb5ea0mYLpxb",
+            "id": "3NcO4jGK1Opb5ea0mYLpxb",
+            "is_local": False,
+            "is_playable": True,
+            "name": "Good Feeling",
+            "popularity": 59,
+            "preview_url": "https://p.scdn.co/mp3-preview/9b7c873ffd4d9893608532492679e0dfca0229f9?cid=f88ee52f92724d51b7579a1d1cdb3128",
+            "track_number": 1,
+            "type": "track",
+            "uri": "spotify:track:3NcO4jGK1Opb5ea0mYLpxb"
+        },
+        {
+            "album": {
+                "album_type": "ALBUM",
+                "artists": [
+                    {
+                        "external_urls": {
+                            "spotify": "https://open.spotify.com/artist/28IqYhzq3UU46bbY0mRgn7"
+                        },
+                        "href": "https://api.spotify.com/v1/artists/28IqYhzq3UU46bbY0mRgn7",
+                        "id": "28IqYhzq3UU46bbY0mRgn7",
+                        "name": "Daniel Balavoine",
+                        "type": "artist",
+                        "uri": "spotify:artist:28IqYhzq3UU46bbY0mRgn7"
+                    }
+                ],
+                "external_urls": {
+                    "spotify": "https://open.spotify.com/album/1TY9roXGW9yUby9khOVzqf"
+                },
+                "href": "https://api.spotify.com/v1/albums/1TY9roXGW9yUby9khOVzqf",
+                "id": "1TY9roXGW9yUby9khOVzqf",
+                "images": [
+                    {
+                        "height": 640,
+                        "url": "https://i.scdn.co/image/ab67616d0000b273c6d5b1e2e09b1bc938d0cc70",
+                        "width": 640
+                    },
+                    {
+                        "height": 300,
+                        "url": "https://i.scdn.co/image/ab67616d00001e02c6d5b1e2e09b1bc938d0cc70",
+                        "width": 300
+                    },
+                    {
+                        "height": 64,
+                        "url": "https://i.scdn.co/image/ab67616d00004851c6d5b1e2e09b1bc938d0cc70",
+                        "width": 64
+                    }
+                ],
+                "name": "Les 50 Plus Belles Chansons",
+                "release_date": "2008-01-01",
+                "release_date_precision": "day",
+                "total_tracks": 0,
+                "type": "album",
+                "uri": "spotify:album:1TY9roXGW9yUby9khOVzqf"
+            },
+            "artists": [
+                {
+                    "external_urls": {
+                        "spotify": "https://open.spotify.com/artist/28IqYhzq3UU46bbY0mRgn7"
+                    },
+                    "href": "https://api.spotify.com/v1/artists/28IqYhzq3UU46bbY0mRgn7",
+                    "id": "28IqYhzq3UU46bbY0mRgn7",
+                    "name": "Daniel Balavoine",
+                    "type": "artist",
+                    "uri": "spotify:artist:28IqYhzq3UU46bbY0mRgn7"
+                }
+            ],
+            "disc_number": 2,
+            "duration_ms": 314973,
+            "explicit": False,
+            "external_ids": {
+                "isrc": "FRZ018000940"
+            },
+            "external_urls": {
+                "spotify": "https://open.spotify.com/track/0Rjcr53FaHl8wIld7GFVRT"
+            },
+            "href": "https://api.spotify.com/v1/tracks/0Rjcr53FaHl8wIld7GFVRT",
+            "id": "0Rjcr53FaHl8wIld7GFVRT",
+            "is_local": False,
+            "is_playable": True,
+            "name": "Je ne suis pas un héros",
+            "popularity": 35,
+            "preview_url": None,
+            "track_number": 5,
+            "type": "track",
+            "uri": "spotify:track:0Rjcr53FaHl8wIld7GFVRT"
+        }
+    ],
+    "seeds": [
+        {
+            "initialPoolSize": 1000,
+            "afterFilteringSize": 75,
+            "afterRelinkingSize": 75,
+            "id": "french",
+            "type": "GENRE",
+            "href": None
+        },
+        {
+            "initialPoolSize": 1000,
+            "afterFilteringSize": 210,
+            "afterRelinkingSize": 210,
+            "id": "electro",
+            "type": "GENRE",
+            "href": None
+        }
+    ]
+}
