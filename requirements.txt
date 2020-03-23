@@ -1,0 +1,10 @@
+# mopidy websocket client
+mopidyapi==1.0.0
+# database sqlite orm
+peewee==3.13.1
+# nfc tags
+pyscard==1.9.9
+# spotipy
+requests==2.22.0
+mock==2.0.0
+six==1.12.0

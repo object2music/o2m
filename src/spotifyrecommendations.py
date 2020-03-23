@@ -22,6 +22,8 @@ class SpotifyRecommendations():
 
     def parse_recommendations(self, recos):
         uris = []
+        print('INFOS RÉSULTATS RECOMMANDATION')
+        print(recos['seeds'])
         for track in recos['tracks']:
             uris.append(track['uri'])
         return uris
