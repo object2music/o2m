@@ -22,7 +22,7 @@ class SpotifyRecommendations():
 
     def get_recommendations(self, seed_genres=None, seed_artists=None, seed_tracks= None, limit=50, **kwargs):
         ## Exemple de requete de recommandations
-        reco = self.sp.recommendations(seed_genres=seed_genres, seed_artists=seed_artists, seed_tracks=seed_tracks, country='from_token', limit=3, **kwargs)
+        reco = self.sp.recommendations(seed_genres=seed_genres, seed_artists=seed_artists, seed_tracks=seed_tracks, country='from_token', limit=limit, **kwargs)
         return self.parse_recommendations(reco)
 
 

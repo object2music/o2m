@@ -17,7 +17,7 @@ logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName
     TODO :
         * Décider de la structure de la base
         * Logs : séparer les logs par ensemble de fonctionnalités (database, websockets, spotify etc...)
-        
+
 '''
 '''
     INSTALL : 
@@ -92,7 +92,7 @@ class NfcToMopidy():
         self.mopidy.playback.play()
     
     def launch_tracks(self, uris):
-        print(f'Playing several {len(uris)} tracks')
+        print(f'Playing {len(uris)} tracks')
         self.mopidy.tracklist.clear()
         self.mopidy.tracklist.add(uris=uris)
         self.mopidy.playback.play()
