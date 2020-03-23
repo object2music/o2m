@@ -4,7 +4,7 @@ from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigr
 '''
 DATABASE INIT 
 '''
-db = SqliteDatabase('./o2m.db')
+db = SqliteDatabase('./src/o2m.db')
 migrator = SqliteMigrator(db)
 
 '''

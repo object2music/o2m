@@ -1,24 +1,30 @@
-from nfcreader import NfcReader
-from dbhandler import DatabaseHandler, Tag
+import logging, time, configparser
+from pathlib import Path
 from mopidyapi import MopidyAPI
-import logging, time
+
+
+from src.nfcreader import NfcReader
+from src.dbhandler import DatabaseHandler, Tag
+from src.spotifyrecommendations import SpotifyRecommendations
 
 logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s', 
                     datefmt='%m/%d/%Y %I:%M:%S %p',
                     level=logging.DEBUG,
-                    filename='o2m.log', 
+                    filename='./logs/o2m.log', 
                     filemode='a')
 
 '''
     TODO :
         * Décider de la structure de la base
-        * 
+        * Logs : séparer les logs par ensemble de fonctionnalités (database, websockets, spotify etc...)
+        
 '''
 '''
     INSTALL : 
     pip3 install mopidyapi
 
 '''
+
 class NfcToMopidy():
     activecards = {}
     last_tag_uid = None
@@ -29,8 +35,8 @@ class NfcToMopidy():
 
         self.mydb = DatabaseHandler()
         self.mopidy = MopidyAPI()
+        self.recoHandler = SpotifyRecommendations()
         
-
         nfcreader = NfcReader(self)
         nfcreader.loop()
         
@@ -47,16 +53,27 @@ class NfcToMopidy():
             tag = self.mydb.get_tag_by_uid(card.id)
             if tag != None:
             	if tag.uid != self.last_tag_uid:
-	                time.sleep(0.1)
-	                tag.add_count()
-	                print(f'Tag : {tag}' )
-	                self.last_tag_uid = tag.uid
-	                self.launch_track_mopidy(tag.media)
+                    tag.add_count()
+                    print(f'Tag : {tag}' )
+                    # self.last_tag_uid = tag.uid
+                    media_parts = tag.media.split(':')
+                    if media_parts[1] == 'recommendation':
+                        if media_parts[3] == 'genres':
+                            genres = media_parts[4].split(',')
+                            tracks_uris = self.recoHandler.get_recommendations(seed_genres=genres)
+                            self.launch_tracks(tracks_uris)
+                        elif media_parts[3] == 'artists':
+                            artists = media_parts[4].split(',')
+                            tracks_uris = self.recoHandler.get_recommendations(seed_artists=artists)
+                            self.launch_tracks(tracks_uris)
+                    else:
+                        self.launch_track(tag.media)
             	else:
             		print(f'Tag : {tag.uid} & last_tag_uid : {self.last_tag_uid}' )
             		self.launch_next()
             else:
                 print(card.id)
+                self.mydb.create_tag(card.id, '')
 
         for card in removedCards:
             print('Stopping music')
@@ -68,10 +85,16 @@ class NfcToMopidy():
         self.mopidy.playback.next()
         self.mopidy.playback.play()
 
-    def launch_track_mopidy(self, uri):
-        time.sleep(1)
+    def launch_track(self, uri):
+        print(f'Playing one track')
         self.mopidy.tracklist.clear()
         self.mopidy.tracklist.add(uris=[uri])
+        self.mopidy.playback.play()
+    
+    def launch_tracks(self, uris):
+        print(f'Playing several {len(uris)} tracks')
+        self.mopidy.tracklist.clear()
+        self.mopidy.tracklist.add(uris=uris)
         self.mopidy.playback.play()
 
     def pretty_print_nfc_data(self, addedCards, removedCards):

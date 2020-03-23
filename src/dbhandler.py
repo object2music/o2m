@@ -1,8 +1,10 @@
+import logging, pprint
+
 from peewee import IntegrityError
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
-import logging, pprint
-from nfcmodels import Tag, db
+
+from src.nfcmodels import Tag, db
 
 '''
 Database & Tables creation

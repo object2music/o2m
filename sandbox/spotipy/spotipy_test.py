@@ -1,9 +1,10 @@
-
-from spotipy.oauth2 import SpotifyClientCredentials
+import configparser, os, json, sys
 from pathlib import Path
 
-import configparser, os, spotipy, json
-import spotipy.util as util
+sys.path.append('.')
+from lib.spotipy.oauth2 import SpotifyClientCredentials
+import lib.spotipy as spotipy
+
 
 '''
     INSTALL : 
