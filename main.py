@@ -1,11 +1,12 @@
-import logging, time, configparser
+import logging, time, configparser, contextlib
 from pathlib import Path
 from mopidyapi import MopidyAPI
-
+from mopidy_podcast import feeds, Extension
 
 from src.nfcreader import NfcReader
 from src.dbhandler import DatabaseHandler, Tag
 from src.spotifyhandler import SpotifyHandler
+from src import util
 
 logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s', 
                     datefmt='%m/%d/%Y %I:%M:%S %p',
@@ -85,6 +86,10 @@ class NfcToMopidy():
                         # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
                         tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2]) # all tracks of artist with no specific order
                         self.launch_tracks(tracks_uris)
+                    elif tag.tag_type == 'podcasts:channel':
+                        print('channel! get unread podcasts')
+                        uris = self.get_unread_podcasts(tag.data, tag.option_items_length)
+                        self.launch_tracks(uris)
                     else:
                         self.launch_track(tag.data) # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
                 else:
@@ -101,6 +106,18 @@ class NfcToMopidy():
             print('card removed')
             # print('Stopping music')
             # self.mopidyHandler.playback.stop() # si une carte est retirée on coupe la musique
+
+    def get_unread_podcasts(self, data, last_track_played):
+        uris = []
+        feedurl = data.split('+')[1]
+        f = Extension.get_url_opener(util.get_config()).open(feedurl, timeout=10)
+        with contextlib.closing(f) as source:
+            feed = feeds.parse(source)
+        shows = list(feed.items())
+        unread_shows = shows[last_track_played:] # Supprime le n premiers éléments (déjà lus)
+        for item in unread_shows:
+            uris.append(item.uri)
+        return uris
 
     # Lance la chanson suivante sur mopidy
     def launch_next(self):
@@ -155,8 +172,18 @@ if __name__ == "__main__":
     # Fonction appellée à chaque changement de chanson
     @mopidy.on_event('track_playback_ended')
     def print_ended_events(event):
-        print(f"Ended song : {START_BOLD}{event.tl_track.track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
+        track = event.tl_track.track
+        print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
         
+        if 'podcast' in track.uri:
+            if event.time_position / track.length > 0.5: # Si la lecture de l'épisode est au delà de la moitié
+                tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri) # Récupère le tag correspondant à la chaine
+                if tag != None:
+                    if tag.tag_type == 'podcasts:channel':
+                        tag.option_items_length = track.track_no # actualise le numéro du dernier podcast écouté
+                        tag.update()
+                        tag.save()
+
         tracklist_length = mopidy.tracklist.get_length()
         index = mopidy.tracklist.index() + 1
         tracks_left_count = tracklist_length - index # Nombre de chansons restante dans la tracklist

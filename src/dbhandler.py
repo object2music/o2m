@@ -52,6 +52,13 @@ class DatabaseHandler():
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             return results[0] 
+    
+    def get_tag_by_data(self, data):
+        self.log.info(f'searching for tag with data: {data}')
+        query = Tag.select().where(Tag.data == data)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results[0] 
 
     def get_media_tag(self, uid):
         results = self.get_tag_by_uid(uid)
