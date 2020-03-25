@@ -1,6 +1,8 @@
 import configparser, os, json, sys
 from pathlib import Path
 
+
+sys.path.append('.')
 from lib.spotipy.oauth2 import SpotifyClientCredentials
 import lib.spotipy as spotipy
 import src.util as util
@@ -24,3 +26,10 @@ class SpotifyRecommendations():
             uris.append(track['uri'])
         return uris
 
+
+if __name__ == "__main__":
+    reco = SpotifyRecommendations()
+
+    reco.get_recommendations(seed_artists=['1gR0gsQYfi6joyO1dlp76N','63MQldklfxkjYDoUE4Tpp'])
+    print(reco)
+    
