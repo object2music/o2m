@@ -5,7 +5,6 @@ from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 
 from src.nfcmodels import Tag, db
-
 '''
 Database & Tables creation
 Used only one time from the terminal
@@ -29,11 +28,17 @@ class DatabaseHandler():
     def create_tag(self, uid, media_url):
         try:
             self.log.info('Creating Tag with uid : {} and media url {}'.format(uid, media_url))
-            tag = Tag(uid=uid, media=media_url)
-            response = tag.save()
-            if response == 1:
-                self.log.info('Tag created : {}'.format(tag))
-                return tag
+            print('Creating Tag with uid : {} and media url {}'.format(uid, media_url))
+            # tag = Tag(uid=uid)
+            # response = tag.save()
+            tag = Tag.create(uid=uid)
+            print(tag)
+            # if response == 1:
+            #     self.log.info('Tag created : {}'.format(tag))
+            #     return tag
+            # else:
+            #     print('error')
+            #     print(response)
         except IntegrityError as err:
             self.log.error(err)
     
@@ -52,7 +57,7 @@ class DatabaseHandler():
         results = self.get_tag_by_uid(uid)
         if len(results > 0):
             tag = results[0]
-            return tag.media
+            return tag.data
     
     def tag_exists(self, uid):
         if len(Tag.select().where(Tag.uid == uid)) > 0:

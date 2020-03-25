@@ -1,7 +1,6 @@
 import configparser, os, json, sys
 from pathlib import Path
 
-sys.path.append('.')
 from lib.spotipy.oauth2 import SpotifyClientCredentials
 import lib.spotipy as spotipy
 import src.util as util
