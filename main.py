@@ -23,8 +23,13 @@ END_BOLD = '\033[0m'
         * Timestamps sur les tags
 
     INSTALL : 
-    pip3 install -r requirements.txt 
+    pip3 install -r requirements.txt
 
+    CONFIG : 
+    Dans le fichier de conf de mopidy : 
+        [o2m]
+        database_path = src/o2mv1.db
+    Le script de recherche de fichier config est dans le fichier src/util.py
 '''
 
 class NfcToMopidy():
@@ -34,7 +39,7 @@ class NfcToMopidy():
     def __init__(self, mopidyHandler):
         self.log = logging.getLogger(__name__)
         self.log.info('NFC TO MOPIDY INITIALIZATION')
-
+        
         self.dbHandler = DatabaseHandler() # Gère la base de données
         self.mopidyHandler = mopidyHandler # Commandes mopidy via websockets
         self.recoHandler = SpotifyRecommendations() # Appel à l'api spotify pour recommandations

@@ -4,15 +4,12 @@ from pathlib import Path
 sys.path.append('.')
 from lib.spotipy.oauth2 import SpotifyClientCredentials
 import lib.spotipy as spotipy
+import src.util as util
 
 class SpotifyRecommendations():
     def __init__(self):
-        # On récupère le fichier de config de mopidy
-        config = configparser.ConfigParser()
-        config.read(str(Path.home()) + '/.config/mopidy/mopidy.conf')
-        # On cible la section spotify
-        spotify_config = config['spotify']
-        # On passe les valeurs à spotipy
+        spotify_config = util.get_config()['spotify']
+
         client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
         self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
@@ -27,3 +24,4 @@ class SpotifyRecommendations():
         for track in recos['tracks']:
             uris.append(track['uri'])
         return uris
+

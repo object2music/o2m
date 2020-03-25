@@ -1,10 +1,12 @@
-from peewee import CharField, IntegerField, Model, OperationalError
+from peewee import UUIDField, CharField, IntegerField, TextField, TimestampField, BooleanField, Model, OperationalError
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
 
+import src.util as util
 '''
 DATABASE INIT 
 '''
-db = SqliteDatabase('./src/o2m.db')
+database_path = util.get_config()['o2m']['database_path']
+db = SqliteDatabase(database_path)
 migrator = SqliteMigrator(db)
 
 '''
@@ -13,6 +15,26 @@ migrator = SqliteMigrator(db)
 class BaseModel(Model):
     class Meta:
         database = db
+
+# class Tag(BaseModel):
+#     uid = UUIDField(unique=True, index=True, primary_key=True) # Unique tag/card/nfc id
+#     tag_type = CharField(null=True) # album_local, album_spotify etc...
+#     data = CharField(null=True) # media uri or option
+#     description = TextField(null=True) # description text
+#     read_count = IntegerField(default=0) # Increment each time a tag is used
+#     last_read_date = TimestampField(null=True) # timestamp of last used date
+#     option_new = BooleanField(default=False) # only play new tracks
+#     option_sort = CharField(null=True) # shuffle, (asc, desc : date of tracks/podcasts)
+#     option_duration = IntegerField(null=True) # max duration of a media : mostly useful for radios
+#     option_items_length = IntegerField(null=True) # Podcasts max count to read in podcast channel 
+
+#     def __str__(self):
+#         return 'TAG UID : {} | TYPE : {} | MEDIA : {} | READ COUNT : {}' .format(self.uid, self.tag_type, self.data, self.read_count)
+
+#     def add_count(self):
+#         self.read_count += 1
+#         self.update()
+#         self.save()
 
 class Tag(BaseModel):
     # owner = ForeignKeyField(Person, backref='pets')
@@ -37,3 +59,6 @@ class Tag(BaseModel):
         self.count += 1
         self.update()
         self.save()
+
+if __name__ == "__main__":
+    print(database_path)
