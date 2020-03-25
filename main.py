@@ -5,7 +5,7 @@ from mopidyapi import MopidyAPI
 
 from src.nfcreader import NfcReader
 from src.dbhandler import DatabaseHandler, Tag
-from src.spotifyrecommendations import SpotifyRecommendations
+from src.spotifyhandler import SpotifyHandler
 
 logging.basicConfig(format='%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s', 
                     datefmt='%m/%d/%Y %I:%M:%S %p',
@@ -41,7 +41,7 @@ class NfcToMopidy():
         
         self.dbHandler = DatabaseHandler() # Gère la base de données
         self.mopidyHandler = mopidyHandler # Commandes mopidy via websockets
-        self.recoHandler = SpotifyRecommendations() # Appel à l'api spotify pour recommandations
+        self.spotifyHandler = SpotifyHandler() # Appel à l'api spotify pour recommandations
         self.nfcHandler = NfcReader(self) # Contrôle les lecteurs nfc et renvoie les identifiants des cartes
         
     def start_nfc(self):
@@ -68,11 +68,11 @@ class NfcToMopidy():
                     if media_parts[1] == 'recommendation':
                         if media_parts[3] == 'genres': # si les seeds sont des genres
                             genres = media_parts[4].split(',') # on sépare les genres et on les ajoute un par un dans une liste
-                            tracks_uris = self.recoHandler.get_recommendations(seed_genres=genres) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                            tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                             self.launch_tracks(tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
                         elif media_parts[3] == 'artists': # si les seeds sont des artistes
                             artists = media_parts[4].split(',') # on sépare les artistes et on les ajoute un par un dans une liste
-                            tracks_uris = self.recoHandler.get_recommendations(seed_artists=artists) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                            tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                             self.launch_tracks(tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
                     elif media_parts[0] == 'm3u': # C'est une playlist hybride / mopidy / iris
                         playlist_uris = []
@@ -80,14 +80,22 @@ class NfcToMopidy():
                         for track in playlist.tracks: # Parcourt la liste de tracks
                             playlist_uris.append(track.uri) # Recupère l'uri de chaque track pour l'ajouter dans une liste
                         self.launch_tracks(playlist_uris) # Envoie les uris en lecture
+                    elif media_parts[0] == 'spotify' and media_parts[1] == 'artist':
+                        print('find tracks of artist : ' + tag.description)
+                        # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
+                        tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2]) # all tracks of artist with no specific order
+                        self.launch_tracks(tracks_uris)
                     else:
                         self.launch_track(tag.data) # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
                 else:
                     print(f'Tag : {tag.uid} & last_tag_uid : {self.last_tag_uid}' )
                     self.launch_next() # Le tag détecté est aussi le dernier détecté donc on passe à la chanson suivante
             else:
-                print(card.id)
-                self.dbHandler.create_tag(card.id, '') # le tag n'est pas présent en bdd donc on le rajoute
+                if card.id != '':
+                    print(card.id)
+                    self.dbHandler.create_tag(card.id, '') # le tag n'est pas présent en bdd donc on le rajoute
+                else:
+                    print('Reading card error ! : ' + card)
 
         for card in removedCards:
             print('card removed')
