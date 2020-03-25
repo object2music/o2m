@@ -74,6 +74,12 @@ class NfcToMopidy():
                             artists = media_parts[4].split(',') # on sépare les artistes et on les ajoute un par un dans une liste
                             tracks_uris = self.recoHandler.get_recommendations(seed_artists=artists) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                             self.launch_tracks(tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
+                    elif media_parts[0] == 'm3u': # C'est une playlist hybride / mopidy / iris
+                        playlist_uris = []
+                        playlist = self.mopidyHandler.playlists.lookup(tag.data) # On retrouve le contenu avec son uri
+                        for track in playlist.tracks: # Parcourt la liste de tracks
+                            playlist_uris.append(track.uri) # Recupère l'uri de chaque track pour l'ajouter dans une liste
+                        self.launch_tracks(playlist_uris) # Envoie les uris en lecture
                     else:
                         self.launch_track(tag.data) # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
                 else:
