@@ -30,6 +30,8 @@ END_BOLD = '\033[0m'
     Dans le fichier de conf de mopidy : 
         [o2m]
         database_path = src/o2mv1.db
+        discover = true # utilise tous les tags pour de la recommandation / lance le contenu du dernier tag détecté
+
     Le script de recherche de fichier config est dans le fichier src/util.py
 
     chemin mac données mopidy : 
