@@ -2,7 +2,6 @@ import logging, time, configparser, contextlib
 from pathlib import Path
 from mopidyapi import MopidyAPI
 from mopidy_podcast import feeds, Extension
-from mopidy.core import Core, TracklistController
 
 from src.nfcreader import NfcReader
 from src.dbhandler import DatabaseHandler, Tag
