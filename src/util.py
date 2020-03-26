@@ -1,4 +1,4 @@
-import configparser, sys
+import configparser, sys, time
 from pathlib import Path
 from os import path
 
@@ -23,7 +23,20 @@ def get_config():
         config.read(config_path)
         return config
         
-
+def RateLimited(maxPerSecond):
+    minInterval = 1.0 / float(maxPerSecond)
+    def decorate(func):
+        lastTimeCalled = [0.0]
+        def rateLimitedFunction(*args,**kargs):
+            elapsed = time.clock() - lastTimeCalled[0]
+            leftToWait = minInterval - elapsed
+            if leftToWait>0:
+                time.sleep(leftToWait)
+            ret = func(*args,**kargs)
+            lastTimeCalled[0] = time.clock()
+            return ret
+        return rateLimitedFunction
+    return decorate
 
 if __name__ == "__main__":
     config = get_config()

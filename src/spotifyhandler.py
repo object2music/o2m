@@ -14,10 +14,10 @@ class SpotifyHandler():
         client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
         self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-    def get_recommendations(self, seed_genres=None, seed_artists=None, seed_tracks= None, limit=50, **kwargs):
+    def get_recommendations(self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=50, **kwargs):
         reco = self.sp.recommendations(seed_genres=seed_genres, seed_artists=seed_artists, seed_tracks=seed_tracks, country='from_token', limit=limit, **kwargs)
-        print('INFOS RÉSULTATS RECOMMANDATION')
-        print(reco['seeds'])
+        # print('INFOS RÉSULTATS RECOMMANDATION')
+        # print(reco['seeds'])
         return self.parse_tracks(reco)
 
     def parse_tracks(self, tracks_json):
