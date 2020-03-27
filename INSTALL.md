@@ -5,10 +5,10 @@
 sudo apt-get update
 sudo apt-get upgrade
 
-sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev
+sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev python3.7
 
 sudo apt-get install python3-pip
-pip3 install pyscard
+python-3.7 -m pip install -r requirements.txt
 ```
 
 **Doesn't work yet! we need a patched version of libnfc for the timeout error on acs acr122u readers**
