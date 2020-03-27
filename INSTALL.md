@@ -5,7 +5,7 @@
 sudo apt-get update
 sudo apt-get upgrade
 
-sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev python3.7
+sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev python3.7 python3.7-dev build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev
 
 sudo apt-get install python3-pip
 python-3.7 -m pip install -r requirements.txt
