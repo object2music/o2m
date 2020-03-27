@@ -5,9 +5,16 @@
 sudo apt-get update
 sudo apt-get upgrade
 
-sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev python3.7 python3.7-dev build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev
+#NFC
+sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev 
+#Python
+sudo apt-get install python3.7 python3.7-dev python3-pip build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev
+#Mopidy
+wget -q -O - https://apt.mopidy.com/mopidy.gpg | sudo apt-key add -
+sudo wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/buster.list
+sudo apt update
+sudo apt-get install mopidy python-spotify libspotify-dev
 
-sudo apt-get install python3-pip
 python-3.7 -m pip install -r requirements.txt
 ```
 
