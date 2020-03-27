@@ -5,21 +5,26 @@
 sudo apt-get update
 sudo apt-get upgrade
 
-#NFC
+# NFC
 sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev 
-#Python
+# Python
 sudo apt-get install python3.7 python3.7-dev python3-pip build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev
-#Mopidy
+# Mopidy
 wget -q -O - https://apt.mopidy.com/mopidy.gpg | sudo apt-key add -
 sudo wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/buster.list
 sudo apt update
 sudo apt-get install mopidy python-spotify libspotify-dev
 
-python-3.7 -m pip install -r requirements.txt
+sudo python-3.7 -m pip install -r requirements.txt
 
-#Mopidy running as a service 
+# Mopidy running as a service 
 sudo systemctl enable mopidy
+sudo adduser mopidy video
 echo "mopidy ALL=NOPASSWD: /usr/local/lib/python3.7/dist-packages/mopidy_iris/system.sh" | sudo tee -a /etc/sudoers
+
+# Edit conf as needed or folow example conf included
+sudo chmod 777 /etc/mopidy/mopidy.conf
+sudo mopidyctl local scan
 ```
 
 **Doesn't work yet! we need a patched version of libnfc for the timeout error on acs acr122u readers**
