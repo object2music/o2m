@@ -1,0 +1,11 @@
+[Unit]
+ Description=o2m
+ After=multi-user.target
+
+[Service]
+ Type=idle
+ WorkingDirectory=/home/pi/o2m/
+ ExecStart=/usr/bin/python3 main.py
+
+[Install]
+ WantedBy=multi-user.target

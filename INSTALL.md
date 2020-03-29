@@ -15,16 +15,28 @@ sudo wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/buste
 sudo apt update
 sudo apt-get install mopidy python-spotify libspotify-dev
 
-sudo python-3.7 -m pip install -r requirements.txt
+sudo python3 -m pip install -r requirements.txt
 
 # Mopidy running as a service 
 sudo systemctl enable mopidy
 sudo adduser mopidy video
 echo "mopidy ALL=NOPASSWD: /usr/local/lib/python3.7/dist-packages/mopidy_iris/system.sh" | sudo tee -a /etc/sudoers
 
-# Edit conf as needed or folow example conf included
+# Finalise modpidy configuration
+sudo cp samples/mopidy.conf /etc/mopidy/mopidy.conf
 sudo chmod 777 /etc/mopidy/mopidy.conf
+sudo vi /etc/mopidy/mopidy.conf #and configure as needed
 sudo mopidyctl local scan
+
+#Tags db initialisation
+sudo cp samples/o2m.db o2m.db #and modify as needed
+
+#autorun o2m
+sudo cp samples/o2m.service /lib/systemd/system/o2m.service
+sudo chmod 644 /lib/systemd/system/o2m.service
+sudo vi lib/systemd/system/o2m.service #and configure as needed
+sudo systemctl start o2m.service
+
 ```
 
 **Doesn't work yet! we need a patched version of libnfc for the timeout error on acs acr122u readers**
