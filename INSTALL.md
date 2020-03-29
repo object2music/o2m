@@ -34,7 +34,8 @@ sudo cp samples/o2m.db o2m.db #and modify as needed
 #autorun o2m
 sudo cp samples/o2m.service /lib/systemd/system/o2m.service
 sudo chmod 644 /lib/systemd/system/o2m.service
-sudo vi lib/systemd/system/o2m.service #and configure as needed
+sudo vi lib/systemd/system/o2m.service #and configure if needed
+sudo systemctl enable o2m.service
 sudo systemctl start o2m.service
 
 ```
