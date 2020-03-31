@@ -1,14 +1,14 @@
 [Unit]
  Description=o2m
- After=multi-user.target
- #After=network.target
+ After=mopidy.service
 
 [Service]
  Type=idle
  WorkingDirectory=/home/pi/o2m/
+ ExecStartPre=/bin/sleep 10
  ExecStart=/usr/bin/python3 -u main.py
- StandardOutput=inherit
- StandardError=inherit
+ StandardOutput=syslog+console
+ StandardError=syslog+console
  Restart=always
  User=pi
 
