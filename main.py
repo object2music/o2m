@@ -92,13 +92,33 @@ class NfcToMopidy():
 
             if len(self.activetags) == 0:
                 # print('Stopping music')
-                self.mopidyHandler.playback.stop() # si une carte est retirée on coupe la musique
+                self.mopidyHandler.playback.stop() 
                 self.mopidyHandler.tracklist.clear()
             elif removedTag.tlids != None:
                 current_tlid = self.mopidyHandler.playback.get_current_tlid()
+                # last_tlindex = 0
+                # if current_tlid != None:
+                    # if current_tlid in removedTag.tlids:
+                    #     removedTag.tlids.remove(current_tlid)
+                    # all_tracklist_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+                    # current_track = next((x for x in all_tracklist_tracks if x.tlid == current_tlid))
+                
+                last_tlindex = self.mopidyHandler.tracklist.index()
+                print(last_tlindex)
+
                 if current_tlid in removedTag.tlids:
-                    removedTag.tlids.remove(current_tlid)
+                    self.mopidyHandler.playback.stop()
                 self.mopidyHandler.tracklist.remove({'tlid': removedTag.tlids})
+                tl_length = self.mopidyHandler.tracklist.get_length()
+
+                print(tl_length)
+                all_new_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+                if tl_length > last_tlindex:
+                    if self.mopidyHandler.playback.get_state() != 'playing':
+                        self.mopidyHandler.playback.play(all_new_tracks[last_tlindex-1])
+                else:
+                    self.play_or_resume()
+                # self.mopidyHandler.playback.
             else:
                 print('no uris with removed tag')
             
@@ -190,7 +210,7 @@ class NfcToMopidy():
                 uris = self.get_unread_podcasts(tag.data, tag.option_items_length)
                 self.add_tracks(tag, uris)
             else:
-                self.add_track(tag, tag.data) # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
+                self.add_tracks(tag, [tag.data]) # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
         else:
             print(f'Tag : {tag.uid} & last_tag_uid : {self.last_tag_uid}' )
             self.launch_next() # Le tag détecté est aussi le dernier détecté donc on passe à la chanson suivante
@@ -217,21 +237,24 @@ class NfcToMopidy():
         self.mopidyHandler.playback.next()
         self.mopidyHandler.playback.play()
 
-    # Vide la tracklist, ajoute une uri puis lance la lecture
-    def add_track(self, tag, uri):
-        print(f'Adding one track : ' + uri)
-        tltracks_added = self.mopidyHandler.tracklist.add(uris=[uri])
-        tag.tlids = [x.tlid for x in tltracks_added]
-        tag.uris = [uri]
-        self.play_or_resume()
-
     # Vide la tracklist, ajoute plusieurs uris puis lance la lecture
     def add_tracks(self, tag, uris):
         print(f'Adding {len(uris)} tracks')
         tltracks_added =self.mopidyHandler.tracklist.add(uris=uris)
         tag.tlids = [x.tlid for x in tltracks_added]
         tag.uris = uris
+        if self.config['o2m']['shuffle'] == 'true':
+            current_index = self.mopidyHandler.tracklist.index()
+            tl_length = self.mopidyHandler.tracklist.get_length()
+            print(current_index)
+            print(tl_length)
+            if current_index != None:
+                self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
+        
         self.play_or_resume()
+            
+            
+
     
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
