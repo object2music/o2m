@@ -70,10 +70,11 @@ class NfcToMopidy():
             if tag != None:
                 tag.add_count() # Incrémente le compteur de contacts pour ce tag
                 self.activetags.append(tag) # Ajoute le tag détecté dans la liste des tags actifs
-                if self.config['o2m']['discover'] == False:
-                    self.one_tag_changed(tag)
-                else:
+                
+                if self.config['o2m']['discover'] == 'true':
                     self.active_tags_changed()
+                else:
+                    self.one_tag_changed(tag)
             else:
                 if card.id != '':
                     print(card.id)
