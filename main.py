@@ -106,9 +106,12 @@ class NfcToMopidy():
                 seeds_artists += self.parse_tag_data(tag.data)
             elif 'spotify' in tag.tag_type and 'album' in tag.tag_type:
                 print('spotify album not ready yet : need to get all tracks of album or playlist then feed the seed')
-
-        tracks_uris = self.spotifyHandler.get_recommendations(seeds_genres, seeds_artists)
-        self.launch_tracks_after(tracks_uris)
+        if (len(seeds_artists) > 0 or len(seeds_genres) > 0 or len(seeds_tracks) > 0):
+            tracks_uris = self.spotifyHandler.get_recommendations(seeds_genres, seeds_artists)
+            self.launch_tracks_after(tracks_uris)
+        else:
+            # TODO : Aucune carte compatible pour la reco : Decider du comportement
+            print('Carte non compatible avec la recommandation spotify!')
 
     def parse_tag_data(self, data):
         data_string = data.split(':')[-1]
