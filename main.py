@@ -85,10 +85,25 @@ class NfcToMopidy():
         for card in removedCards:
             print('card removed')
             tag = self.dbHandler.get_tag_by_uid(card.id) # On récupère le tag en base de données via l'identifiant rfid
+            removedTag = next((x for x in self.activetags if x.uid == card.id), None)
+            
             if tag != None and tag in self.activetags:
                 self.activetags.remove(tag)
-            # print('Stopping music')
-            # self.mopidyHandler.playback.stop() # si une carte est retirée on coupe la musique
+
+            if len(self.activetags) == 0:
+                # print('Stopping music')
+                self.mopidyHandler.playback.stop() # si une carte est retirée on coupe la musique
+                self.mopidyHandler.tracklist.clear()
+            elif removedTag.tlids != None:
+                current_tlid = self.mopidyHandler.playback.get_current_tlid()
+                if current_tlid in removedTag.tlids:
+                    removedTag.tlids.remove(current_tlid)
+                self.mopidyHandler.tracklist.remove({'tlid': removedTag.tlids})
+            else:
+                print('no uris with removed tag')
+            
+
+            
 
         print(f'Active tags count: {len(self.activetags)}')
     
@@ -109,7 +124,7 @@ class NfcToMopidy():
                 print('spotify album not ready yet : need to get all tracks of album or playlist then feed the seed')
         if (len(seeds_artists) > 0 or len(seeds_genres) > 0 or len(seeds_tracks) > 0):
             tracks_uris = self.spotifyHandler.get_recommendations(seeds_genres, seeds_artists)
-            self.launch_tracks_after(tracks_uris)
+            self.add_tracks_after(tracks_uris)
         else:
             # TODO : Aucune carte compatible pour la reco : Decider du comportement
             print('Carte non compatible avec la recommandation spotify!')
@@ -147,11 +162,11 @@ class NfcToMopidy():
                 if media_parts[3] == 'genres': # si les seeds sont des genres
                     genres = media_parts[4].split(',') # on sépare les genres et on les ajoute un par un dans une liste
                     tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
-                    self.launch_tracks(tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
+                    self.add_tracks(tag, tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
                 elif media_parts[3] == 'artists': # si les seeds sont des artistes
                     artists = media_parts[4].split(',') # on sépare les artistes et on les ajoute un par un dans une liste
                     tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
-                    self.launch_tracks(tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
+                    self.add_tracks(tag, tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
             elif media_parts[0] == 'm3u': # C'est une playlist hybride / mopidy / iris
                 playlist_uris = []
                 playlist = self.mopidyHandler.playlists.lookup(tag.data) # On retrouve le contenu avec son uri
@@ -164,18 +179,18 @@ class NfcToMopidy():
                         # playlist_uris += self.get_unread_podcasts(shows)
                     else:
                         playlist_uris.append(track.uri) # Recupère l'uri de chaque track pour l'ajouter dans une liste
-                self.launch_tracks(playlist_uris) # Envoie les uris en lecture
+                self.add_tracks(tag, playlist_uris) # Envoie les uris en lecture
             elif media_parts[0] == 'spotify' and media_parts[1] == 'artist':
                 print('find tracks of artist : ' + tag.description)
                 # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
                 tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2]) # all tracks of artist with no specific order
-                self.launch_tracks(tracks_uris)
+                self.add_tracks(tag, tracks_uris)
             elif tag.tag_type == 'podcasts:channel':
                 print('channel! get unread podcasts')
                 uris = self.get_unread_podcasts(tag.data, tag.option_items_length)
-                self.launch_tracks(uris)
+                self.add_tracks(tag, uris)
             else:
-                self.launch_track(tag.data) # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
+                self.add_track(tag, tag.data) # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
         else:
             print(f'Tag : {tag.uid} & last_tag_uid : {self.last_tag_uid}' )
             self.launch_next() # Le tag détecté est aussi le dernier détecté donc on passe à la chanson suivante
@@ -203,22 +218,34 @@ class NfcToMopidy():
         self.mopidyHandler.playback.play()
 
     # Vide la tracklist, ajoute une uri puis lance la lecture
-    def launch_track(self, uri):
-        print(f'Playing one track : ' + uri)
-        self.mopidyHandler.tracklist.clear()
-        self.mopidyHandler.tracklist.add(uris=[uri])
-        self.mopidyHandler.playback.play()
+    def add_track(self, tag, uri):
+        print(f'Adding one track : ' + uri)
+        tltracks_added = self.mopidyHandler.tracklist.add(uris=[uri])
+        tag.tlids = [x.tlid for x in tltracks_added]
+        tag.uris = [uri]
+        self.play_or_resume()
 
     # Vide la tracklist, ajoute plusieurs uris puis lance la lecture
-    def launch_tracks(self, uris):
-        print(f'Playing {len(uris)} tracks')
-        self.mopidyHandler.tracklist.clear()
-        self.mopidyHandler.tracklist.add(uris=uris)
-        self.mopidyHandler.playback.play()
+    def add_tracks(self, tag, uris):
+        print(f'Adding {len(uris)} tracks')
+        tltracks_added =self.mopidyHandler.tracklist.add(uris=uris)
+        tag.tlids = [x.tlid for x in tltracks_added]
+        tag.uris = uris
+        self.play_or_resume()
+    
+    def play_or_resume(self):
+        state = self.mopidyHandler.playback.get_state()
+        print(state)
+        if state == 'stopped':
+            self.mopidyHandler.playback.play()
+        elif state == 'paused':
+            self.mopidyHandler.playback.resume()
+        else:
+            self.mopidyHandler.playback.next()
     
     # Vide la tracklist sauf la chanson en cours de lecture puis ajoute des uris à la suite
     @util.RateLimited(1) # Limite l'execution de la fonction : une fois par seconde (à vérifier)
-    def launch_tracks_after(self, uris):
+    def add_tracks_after(self, uris):
         print('ADDING SONGS SILENTLY IN TRACKLIST')
         self.clear_tracklist_except_current_song()
         self.mopidyHandler.tracklist.add(uris=uris)
@@ -229,9 +256,10 @@ class NfcToMopidy():
         for (tlid, _) in all_tracklist_tracks:
             if tlid != current_tlid:
                 self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
+    
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
     def update_tracks(self):
-        print('should update tracks')
+        print('should update tracks')   
 
     # Pour le debug, print en console dans le détail les tags détectés et retirés
     # TODO : Déplacer dans la partie NFCreader, plus très utile ici ?
@@ -261,6 +289,9 @@ if __name__ == "__main__":
     config = util.get_config()
     nfcHandler = NfcToMopidy(mopidy, config)
 
+    # A chaque lancement on vide la tracklist (plus simple pour les tests)
+    mopidy.tracklist.clear()
+
     # Fonction appellée à chaque changement de chanson
     @mopidy.on_event('track_playback_ended')
     def print_ended_events(event):
@@ -277,11 +308,13 @@ if __name__ == "__main__":
                         tag.save()
 
         tracklist_length = mopidy.tracklist.get_length()
-        index = mopidy.tracklist.index() + 1
-        tracks_left_count = tracklist_length - index # Nombre de chansons restante dans la tracklist
-        print(tracks_left_count)
-        if tracks_left_count < 10: 
-            nfcHandler.update_tracks() # si besoin on ajoute des chansons à la tracklist avec de la reco 
+        tracklist_index = mopidy.tracklist.index()
+        if tracklist_index != None and tracklist_length != 0:
+            index = tracklist_index + 1
+            tracks_left_count = tracklist_length - index # Nombre de chansons restante dans la tracklist
+            print(tracks_left_count)
+            if tracks_left_count < 1: 
+                nfcHandler.update_tracks() # si besoin on ajoute des chansons à la tracklist avec de la reco 
 
     # Démarre la boucle infinie pour détecter les tags
     nfcHandler.start_nfc()
