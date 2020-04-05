@@ -41,6 +41,7 @@ class NfcToMopidy():
     activecards = {}
     activetags = []
     last_tag_uid = None
+    max_results = 50
 
     def __init__(self, mopidyHandler, config):
         self.log = logging.getLogger(__name__)
@@ -51,8 +52,10 @@ class NfcToMopidy():
         self.mopidyHandler = mopidyHandler # Commandes mopidy via websockets
         self.spotifyHandler = SpotifyHandler() # Appel à l'api spotify pour recommandations
         self.nfcHandler = NfcReader(self) # Contrôle les lecteurs nfc et renvoie les identifiants des cartes
-        
-        
+
+        if 'api_result_limit' in self.config['o2m']:
+            self.max_results = int(self.config['o2m']['api_result_limit'])            
+                
     def start_nfc(self):
         self.nfcHandler.loop() # démarre la boucle infinie de détection nfc/rfid
     
@@ -121,9 +124,6 @@ class NfcToMopidy():
             else:
                 print('no uris with removed tag')
             
-
-            
-
         print(f'Active tags count: {len(self.activetags)}')
     
     '''
@@ -142,7 +142,7 @@ class NfcToMopidy():
             elif 'spotify' in tag.tag_type and 'album' in tag.tag_type:
                 print('spotify album not ready yet : need to get all tracks of album or playlist then feed the seed')
         if (len(seeds_artists) > 0 or len(seeds_genres) > 0 or len(seeds_tracks) > 0):
-            tracks_uris = self.spotifyHandler.get_recommendations(seeds_genres, seeds_artists)
+            tracks_uris = self.spotifyHandler.get_recommendations(seeds_genres, seeds_artists, limit=self.max_results)
             self.add_tracks_after(tracks_uris)
         else:
             # TODO : Aucune carte compatible pour la reco : Decider du comportement
@@ -180,11 +180,11 @@ class NfcToMopidy():
             if 'recommendation' in media_parts:
                 if media_parts[3] == 'genres': # si les seeds sont des genres
                     genres = media_parts[4].split(',') # on sépare les genres et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                    tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=self.max_results) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                     self.add_tracks(tag, tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
                 elif media_parts[3] == 'artists': # si les seeds sont des artistes
                     artists = media_parts[4].split(',') # on sépare les artistes et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                    tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=self.max_results) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                     self.add_tracks(tag, tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
             elif media_parts[0] == 'm3u': # C'est une playlist hybride / mopidy / iris
                 playlist_uris = []
@@ -203,7 +203,7 @@ class NfcToMopidy():
                 if media_parts[1] == 'artist':
                     print('find tracks of artist : ' + tag.description)
                     # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
-                    tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2]) # all tracks of artist with no specific order
+                    tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=self.max_results) # all tracks of artist with no specific order
                     self.add_tracks(tag, tracks_uris)
             elif tag.tag_type == 'podcasts:channel':
                 print('channel! get unread podcasts')
