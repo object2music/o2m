@@ -257,7 +257,13 @@ class NfcToMopidy():
         state = self.mopidyHandler.playback.get_state()
         print(state)
         if state == 'stopped':
-            self.mopidyHandler.playback.play()
+            if self.mopidyHandler.playback.get_current_tl_track() == None:
+                print('no current track : Playing first track')
+                current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+                if len(current_tracks) > 0:
+                    self.mopidyHandler.playback.play(tlid=current_tracks[0].tlid)
+            else:
+                self.mopidyHandler.playback.play()
         elif state == 'paused':
             self.mopidyHandler.playback.resume()
         else:
