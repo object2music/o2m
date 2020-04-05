@@ -163,7 +163,7 @@ class NfcReader():
         self.cardobserver = PrintObserver()
         self.cardmonitor.addObserver(self.cardobserver)
         self.cardobserver.events.on_change += self.update_change
-        
+
     '''
         Callback function called when the card observer triggers the event on_change.
         this function just pass the parameters to the parent NfcToMopidy object

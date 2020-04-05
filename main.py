@@ -76,8 +76,7 @@ class NfcToMopidy():
                 else:
                     self.one_tag_changed(tag)
             else:
-                if card.id != '':
-                    print(card.id)
+                if card.id != '':                    
                     self.dbHandler.create_tag(card.id, '') # le tag n'est pas présent en bdd donc on le rajoute
                 else:
                     print('Reading card error ! : ' + card)
@@ -178,7 +177,7 @@ class NfcToMopidy():
             print(f'Tag : {tag}' )
             # self.last_tag_uid = tag.uid # On stocke en variable de classe le tag pour le comparer ultérieurement
             media_parts = tag.data.split(':') # on découpe le champs média du tag en utilisant le séparateur : 
-            if media_parts[1] == 'recommendation':
+            if 'recommendation' in media_parts:
                 if media_parts[3] == 'genres': # si les seeds sont des genres
                     genres = media_parts[4].split(',') # on sépare les genres et on les ajoute un par un dans une liste
                     tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
@@ -200,11 +199,12 @@ class NfcToMopidy():
                     else:
                         playlist_uris.append(track.uri) # Recupère l'uri de chaque track pour l'ajouter dans une liste
                 self.add_tracks(tag, playlist_uris) # Envoie les uris en lecture
-            elif media_parts[0] == 'spotify' and media_parts[1] == 'artist':
-                print('find tracks of artist : ' + tag.description)
-                # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
-                tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2]) # all tracks of artist with no specific order
-                self.add_tracks(tag, tracks_uris)
+            elif media_parts[0] == 'spotify':
+                if media_parts[1] == 'artist':
+                    print('find tracks of artist : ' + tag.description)
+                    # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
+                    tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2]) # all tracks of artist with no specific order
+                    self.add_tracks(tag, tracks_uris)
             elif tag.tag_type == 'podcasts:channel':
                 print('channel! get unread podcasts')
                 uris = self.get_unread_podcasts(tag.data, tag.option_items_length)
@@ -252,9 +252,6 @@ class NfcToMopidy():
                 self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
         
         self.play_or_resume()
-            
-            
-
     
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
@@ -341,3 +338,17 @@ if __name__ == "__main__":
 
     # Démarre la boucle infinie pour détecter les tags
     nfcHandler.start_nfc()
+
+
+# Code pour créer manuellement des tags en bdd
+# if __name__ == "__main__":
+#     mydb = DatabaseHandler()
+#     tag = mydb.get_tag_by_uid('AB34A324')
+#     tag.description = 'Spotify Artist : Creedence'
+#     tag.save()
+#     # tag = Tag.create('AB34A324')
+#     #     uid='AB34A324', 
+#     #     tag_type = 'spotify:artist', 
+#     #     data = 'spotify:artist:3IYUhFvPQItj6xySrBmZkd',
+#     #     descrition = 'Spotify Artist : Creedence')
+#     print(tag)

@@ -31,7 +31,7 @@ class Tag(BaseModel):
     option_items_length = IntegerField(null=True) # Podcasts max count to read in podcast channel 
 
     def __str__(self):
-        return 'TAG UID : {} | TYPE : {} | MEDIA : {} | READ COUNT : {}' .format(self.uid, self.tag_type, self.description, self.read_count)
+        return 'TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}' .format(self.uid, self.tag_type, self.data, self.description, self.read_count)
 
     def add_count(self):
         self.read_count += 1

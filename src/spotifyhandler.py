@@ -1,4 +1,4 @@
-import configparser, os, json, sys
+import configparser, os, json, sys, random
 from pathlib import Path
 
 
@@ -14,7 +14,7 @@ class SpotifyHandler():
         client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
         self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-    def get_recommendations(self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=50, **kwargs):
+    def get_recommendations(self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, **kwargs):
         reco = self.sp.recommendations(seed_genres=seed_genres, seed_artists=seed_artists, seed_tracks=seed_tracks, country='from_token', limit=limit, **kwargs)
         # print('INFOS RÉSULTATS RECOMMANDATION')
         # print(reco['seeds'])
@@ -35,14 +35,16 @@ class SpotifyHandler():
         tracks = self.sp.artist_top_tracks(artist_id, country='FR')
         return self.parse_tracks(tracks)
     
-    def get_artist_all_tracks(self, artist_id):
-        albums = self.sp.artist_albums(artist_id, country='FR')
+    def get_artist_all_tracks(self, artist_id, limit=10):
+        albums = self.sp.artist_albums(artist_id, country='FR')        
         tracks_uris = []
+
         for album in albums['items']:
             tracks_json = self.sp.album_tracks(album['uri'])
             tracks_uris += self.parse_tracks(tracks_json)
             
-        return tracks_uris
+        random.shuffle(tracks_uris)   
+        return tracks_uris[:limit]
 
 if __name__ == "__main__":
     reco = SpotifyHandler()
