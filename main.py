@@ -120,7 +120,6 @@ class NfcToMopidy():
                         self.mopidyHandler.playback.play(all_new_tracks[last_tlindex-1])
                 else:
                     self.play_or_resume()
-                # self.mopidyHandler.playback.
             else:
                 print('no uris with removed tag')
             
@@ -133,7 +132,8 @@ class NfcToMopidy():
     def active_tags_changed(self):
         seeds_genres = []
         seeds_artists = []
-        seeds_tracks = []  
+        seeds_tracks = []
+        # local_uris = []
         for tag in self.activetags:
             if tag.tag_type == 'genre':
                 seeds_genres += self.parse_tag_data(tag.data)
@@ -141,9 +141,12 @@ class NfcToMopidy():
                 seeds_artists += self.parse_tag_data(tag.data)
             elif 'spotify' in tag.tag_type and 'album' in tag.tag_type:
                 print('spotify album not ready yet : need to get all tracks of album or playlist then feed the seed')
+            # else:
+                # si le tag non compatible -> récupérer les utis et les ajouter à local_uris
+            
         if (len(seeds_artists) > 0 or len(seeds_genres) > 0 or len(seeds_tracks) > 0):
             tracks_uris = self.spotifyHandler.get_recommendations(seeds_genres, seeds_artists, limit=self.max_results)
-            self.add_tracks_after(tracks_uris)
+            self.add_tracks_after(tracks_uris) # ajouter les local_uris (merge des deux listes d'uris)
         else:
             # TODO : Aucune carte compatible pour la reco : Decider du comportement
             print('Carte non compatible avec la recommandation spotify!')
@@ -205,6 +208,8 @@ class NfcToMopidy():
                     # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
                     tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=self.max_results) # all tracks of artist with no specific order
                     self.add_tracks(tag, tracks_uris)
+                else:
+                    self.add_tracks(tag, [tag.data])
             elif tag.tag_type == 'podcasts:channel':
                 print('channel! get unread podcasts')
                 uris = self.get_unread_podcasts(tag.data, tag.option_items_length)
@@ -240,14 +245,12 @@ class NfcToMopidy():
     # Vide la tracklist, ajoute plusieurs uris puis lance la lecture
     def add_tracks(self, tag, uris):
         print(f'Adding {len(uris)} tracks')
-        tltracks_added =self.mopidyHandler.tracklist.add(uris=uris)
+        tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
         tag.tlids = [x.tlid for x in tltracks_added]
         tag.uris = uris
         if self.config['o2m']['shuffle'] == 'true':
             current_index = self.mopidyHandler.tracklist.index()
-            tl_length = self.mopidyHandler.tracklist.get_length()
-            print(current_index)
-            print(tl_length)
+            tl_length = self.mopidyHandler.tracklist.get_length()            
             if current_index != None:
                 self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
         
@@ -337,8 +340,7 @@ if __name__ == "__main__":
         tracklist_index = mopidy.tracklist.index()
         if tracklist_index != None and tracklist_length != 0:
             index = tracklist_index + 1
-            tracks_left_count = tracklist_length - index # Nombre de chansons restante dans la tracklist
-            print(tracks_left_count)
+            tracks_left_count = tracklist_length - index # Nombre de chansons restante dans la tracklist            
             if tracks_left_count < 1: 
                 nfcHandler.update_tracks() # si besoin on ajoute des chansons à la tracklist avec de la reco 
 
