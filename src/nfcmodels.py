@@ -1,10 +1,11 @@
 import sys, datetime
-from peewee import UUIDField, CharField, IntegerField, TextField, TimestampField, BooleanField, Model, OperationalError
+from peewee import UUIDField, CharField, IntegerField, TextField, TimestampField, BooleanField, Model, OperationalError, MySQLDatabase
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
 from playhouse.db_url import connect
 from playhouse.pool import PooledMySQLDatabase
 
 from playhouse.mysql_ext import MySQLConnectorDatabase
+from playhouse.shortcuts import ReconnectMixin
 
 sys.path.append('.')
 import src.util as util
@@ -36,9 +37,15 @@ if db_type == 'mysql':
 # MySQL database implementation that utilizes mysql-connector driver.
 # db = MySQLConnectorDatabase(db_name, host=db_host, user=db_username, password=db_password)
 
-db = PooledMySQLDatabase(db_name, host=db_host, user=db_username,
-                               passwd=db_password, max_connections=8, stale_timeout=110, 
-                               thread_safe=False)
+
+class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):
+    pass
+
+db = ReconnectMySQLDatabase(db_name, host=db_host, user=db_username, password=db_password)
+
+# db = PooledMySQLDatabase(db_name, host=db_host, user=db_username,
+#                                passwd=db_password, max_connections=8, stale_timeout=110, 
+#                                thread_safe=False)
 
 
 # Connection lost after some time.
