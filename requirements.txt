@@ -1,5 +1,6 @@
 # events
 events==0.3
+PyMysql==0.9
 
 # mopidy websocket client
 mopidyapi==1.0.0
