@@ -1,14 +1,13 @@
 import sys, datetime
 from peewee import UUIDField, CharField, IntegerField, TextField, TimestampField, BooleanField, Model, OperationalError, MySQLDatabase
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
-from playhouse.db_url import connect
-from playhouse.pool import PooledMySQLDatabase
-
-from playhouse.mysql_ext import MySQLConnectorDatabase
 from playhouse.shortcuts import ReconnectMixin
 
 sys.path.append('.')
 import src.util as util
+
+class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):
+    pass
 
 '''
 DATABASE INIT 
@@ -23,40 +22,11 @@ if 'db_type' in config_o2m:
     db_name = config_o2m['db_name']
 else:
     db_type = 'sqlite'
-# database_path = config_o2m['db_sqlite_path']
+    # database_path = config_o2m['db_sqlite_path']
 
-# Connect to the database URL defined in the environment, falling
-# back to a local Sqlite database if no database URL is specified.
-# mysql route : mysql://user:passwd@ip:port/my_db
-mysql_route = None
-if db_type == 'mysql':
-    mysql_route = db_type +'://' + db_username + ':' + db_password + '@' + db_host + ':' + db_port + '/' + db_name
-    print('Connecting to mysql database : ' + db_name + ' on host : ' + db_host)
-# db = connect(mysql_route or 'sqlite:///data.db')
-
-# MySQL database implementation that utilizes mysql-connector driver.
-# db = MySQLConnectorDatabase(db_name, host=db_host, user=db_username, password=db_password)
-
-
-class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):
-    pass
+# TODO : Si sqlite charger directement le fichier sqlite du fichier de config ou par défaut le fichier data.db à la racine du projet
 
 db = ReconnectMySQLDatabase(db_name, host=db_host, user=db_username, password=db_password)
-
-# db = PooledMySQLDatabase(db_name, host=db_host, user=db_username,
-#                                passwd=db_password, max_connections=8, stale_timeout=110, 
-#                                thread_safe=False)
-
-
-# Connection lost after some time.
-'''
-https://github.com/coleifer/peewee/issues/961
-http://docs.peewee-orm.com/en/latest/peewee/api.html#Database
-
-Changer de connector sql ?
-Fermer et rouvrir la connexion à chaque fois ? (autour des actions sur les lecteurs nfc)
-
-'''
 
 '''
     MODEL STRUCTURE
