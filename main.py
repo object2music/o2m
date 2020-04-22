@@ -205,8 +205,8 @@ class NfcToMopidy():
             elif media_parts[0] == 'spotify':
                 if media_parts[1] == 'artist':
                     print('find tracks of artist : ' + tag.description)
-                    # tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
-                    tracks_uris = self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=self.max_results) # all tracks of artist with no specific order
+                    tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
+                    tracks_uris = tracks_uris + self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=self.max_results-10) # all tracks of artist with no specific order
                     self.add_tracks(tag, tracks_uris)
                 else:
                     self.add_tracks(tag, [tag.data])
