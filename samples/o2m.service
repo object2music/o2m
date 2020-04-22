@@ -5,7 +5,7 @@
 [Service]
  Type=idle
  WorkingDirectory=/home/pi/o2m/
- ExecStartPre=/bin/sleep 60
+ ExecStartPre=/bin/sleep 10
  ExecStart=/usr/bin/python3 -u main.py
  StandardOutput=syslog+console
  StandardError=syslog+console
