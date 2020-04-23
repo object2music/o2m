@@ -248,12 +248,15 @@ class NfcToMopidy():
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
         tag.tlids = [x.tlid for x in tltracks_added]
         tag.uris = uris
-        if self.config['o2m']['shuffle'] == 'true':
+
+        #conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
+        if self.config['o2m']['shuffle'] == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
             current_index = self.mopidyHandler.tracklist.index()
-            tl_length = self.mopidyHandler.tracklist.get_length()            
+            tl_length = self.mopidyHandler.tracklist.get_length()
             if current_index != None:
                 self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
-        
+            else:
+                self.mopidyHandler.tracklist.shuffle(0, tl_length)                
         self.play_or_resume()
     
     def play_or_resume(self):
