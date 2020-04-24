@@ -34,7 +34,10 @@ class Tag(BaseModel):
         return 'TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}' .format(self.uid, self.tag_type, self.data, self.description, self.read_count)
 
     def add_count(self):
-        self.read_count += 1
+        if self.read_count != None:
+            self.read_count += 1
+        else:
+            self.read_count = 1
         self.last_read_date = datetime.datetime.utcnow()
         self.update()
         self.save()
