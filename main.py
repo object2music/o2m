@@ -234,7 +234,8 @@ class NfcToMopidy():
             self.launch_next() # Le tag détecté est aussi le dernier détecté donc on passe à la chanson suivante
 
     def get_podcast_from_url(self, url):
-        f = Extension.get_url_opener(self.config).open(url, timeout=10)
+        #f = Extension.get_url_opener(self.config).open(url, timeout=10)
+        f = Extension.get_url_opener({"proxy":{}}).open(url, timeout=10)
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
         shows = list(feed.items())
