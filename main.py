@@ -41,7 +41,10 @@ class NfcToMopidy():
     activecards = {}
     activetags = []
     last_tag_uid = None
+
     max_results = 50
+    default_volume = 70 #0-100
+    discover_level = 5 #0-10
 
     def __init__(self, mopidyHandler, config):
         self.log = logging.getLogger(__name__)
@@ -56,6 +59,16 @@ class NfcToMopidy():
         if 'api_result_limit' in self.config['o2m']:
             self.max_results = int(self.config['o2m']['api_result_limit'])            
                 
+        if 'default_volume' in self.config['o2m']:
+            self.default_volume = int(self.config['o2m']['default_volume'])  
+
+        if 'discover_level' in self.config['o2m']:
+            self.discover_level = int(self.config['o2m']['discover_level'])  
+
+        #Default volume setting at beginning
+        self.mopidyHandler.mixer.set_volume(self.default_volume)
+
+
     def start_nfc(self):
         self.nfcHandler.loop() # démarre la boucle infinie de détection nfc/rfid
     
