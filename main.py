@@ -1,4 +1,4 @@
-import logging, time, configparser, contextlib
+import logging, time, configparser, contextlib, sys
 from pathlib import Path
 from mopidyapi import MopidyAPI
 from mopidy_podcast import feeds, Extension
@@ -69,12 +69,26 @@ class NfcToMopidy():
         if 'default_order' in self.config['o2m']:
             self.default_order = int(self.config['o2m']['default_order']) 
 
-        #Default volume setting at beginning
+        #Default volume setting at beginning (or in main ?)
         self.mopidyHandler.mixer.set_volume(self.default_volume)
 
 
     def start_nfc(self):
-        self.nfcHandler.loop() # démarre la boucle infinie de détection nfc/rfid
+        #Test mode provided in command line (NFC uids separated by space)
+        if len(sys.argv) > 1:
+            addedcards = []
+            for i in range(1,len(sys.argv)):
+                print(sys.argv[i])
+                tag = self.dbHandler.get_tag_by_uid(sys.argv[i])
+                self.activetags.append(tag) # Ajoute le tag détecté dans la liste des tags actifs
+                if self.config['o2m']['discover'] == 'true':
+                    self.active_tags_changed()
+                else:
+                    self.one_tag_changed(tag)
+                #addedcards.append()
+                #get_new_cards(self.addedcards, self.removedcards, self.activecards)
+        else:
+            self.nfcHandler.loop() # démarre la boucle infinie de détection nfc/rfid
     
     '''
     Fonction appellée automatiquement dès qu'un changement est détecté au niveau des lecteurs rfid
@@ -391,7 +405,7 @@ if __name__ == "__main__":
             if tracks_left_count < 1: 
                 nfcHandler.update_tracks() # si besoin on ajoute des chansons à la tracklist avec de la reco 
 
-    # Démarre la boucle infinie pour détecter les tags
+    #Ifinite loop for NFC detection
     nfcHandler.start_nfc()
 
 
