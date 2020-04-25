@@ -45,6 +45,7 @@ class NfcToMopidy():
     max_results = 50
     default_volume = 70 #0-100
     discover_level = 5 #0-10
+    default_order = "desc"
 
     def __init__(self, mopidyHandler, config):
         self.log = logging.getLogger(__name__)
@@ -64,6 +65,9 @@ class NfcToMopidy():
 
         if 'discover_level' in self.config['o2m']:
             self.discover_level = int(self.config['o2m']['discover_level'])  
+
+        if 'default_order' in self.config['o2m']:
+            self.default_order = int(self.config['o2m']['default_order']) 
 
         #Default volume setting at beginning
         self.mopidyHandler.mixer.set_volume(self.default_volume)
@@ -210,17 +214,19 @@ class NfcToMopidy():
                 playlist_uris = []
                 playlist = self.mopidyHandler.playlists.lookup(tag.data) # On retrouve le contenu avec son uri
                 for track in playlist.tracks: # Parcourt la liste de tracks
-                    if 'podcast' in track.uri and '#' not in track.uri: # Cette track une chaine de podcasts
+                    #Podcast channel
+                    if 'podcast' in track.uri and '#' not in track.uri: 
                         print(track.uri)
                         feedurl = track.uri.split('+')[1]
                         shows = self.get_unread_podcasts(track.uri, tag.option_items_length) 
                         self.add_tracks(tag, shows)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
                         # playlist_uris += self.get_unread_podcasts(shows)
-                    elif 'podcast' in track.uri and '#' in track.uri: # Cette track un épisode de podcast
-                        print(track.uri)
+                    #Podcast episode
+                    elif 'podcast' in track.uri and '#' in track.uri: 
                         feedurl = track.uri.split('+')[1]
                         self.get_podcast_from_url(feedurl)                     
+                    #Other contents in the playlist
                     else:
                         playlist_uris.append(track.uri) # Recupère l'uri de chaque track pour l'ajouter dans une liste
                 self.add_tracks(tag, playlist_uris) # Envoie les uris en lecture
@@ -250,16 +256,19 @@ class NfcToMopidy():
             print(f'Tag : {tag.uid} & last_tag_uid : {self.last_tag_uid}' )
             self.launch_next() # Le tag détecté est aussi le dernier détecté donc on passe à la chanson suivante
             return
-            
+
         if mopidy.tracklist.get_length() > 0: 
             self.play_or_resume()
 
     def get_podcast_from_url(self, url):
+        #from https://github.com/tkem/mopidy-podcast
         #f = Extension.get_url_opener(self.config).open(url, timeout=10)
+        #quick hack for proxy bug to fix
         f = Extension.get_url_opener({"proxy":{}}).open(url, timeout=10)
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
-        shows = list(feed.items())
+        shows = list(feed.items(self.default_order))
+        del shows[self.max_results:]
         return shows
 
     def get_unread_podcasts(self, data, last_track_played):
