@@ -209,6 +209,12 @@ class NfcToMopidy():
     def one_tag_changed(self, tag):
         if tag.uid != self.last_tag_uid: # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             print(f'Tag : {tag}' )
+
+            #Update max_results with DB specific tag option (duration is not good and definitive nomenclature)
+            max_results = self.max_results
+            if tag.option_duration != None:
+            	max_results = tag.option_duration
+
             # self.last_tag_uid = tag.uid # On stocke en variable de classe le tag pour le comparer ultérieurement
             media_parts = tag.data.split(':') # on découpe le champs média du tag en utilisant le séparateur : 
             
@@ -216,11 +222,11 @@ class NfcToMopidy():
             if 'recommendation' in media_parts:
                 if media_parts[3] == 'genres': # si les seeds sont des genres
                     genres = media_parts[4].split(',') # on sépare les genres et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=self.max_results) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                    tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=max_results) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                     self.add_tracks(tag, tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
                 elif media_parts[3] == 'artists': # si les seeds sont des artistes
                     artists = media_parts[4].split(',') # on sépare les artistes et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=self.max_results) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                    tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=max_results) # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                     self.add_tracks(tag, tracks_uris) # Envoie les uris au mopidy Handler pour modifier la tracklist
             
             # Playlist hybride / mopidy / iris
@@ -232,7 +238,7 @@ class NfcToMopidy():
                     if 'podcast' in track.uri and '#' not in track.uri: 
                         print(track.uri)
                         feedurl = track.uri.split('+')[1]
-                        shows = self.get_unread_podcasts(track.uri, tag.option_items_length) 
+                        shows = self.get_unread_podcasts(track.uri, 0, max_results) 
                         self.add_tracks(tag, shows)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
                         # playlist_uris += self.get_unread_podcasts(shows)
@@ -250,7 +256,7 @@ class NfcToMopidy():
                 if media_parts[1] == 'artist':
                     print('find tracks of artist : ' + tag.description)
                     tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2]) # 10 tops tracks of artist
-                    tracks_uris = tracks_uris + self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=self.max_results-10) # all tracks of artist with no specific order
+                    tracks_uris = tracks_uris + self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results-10) # all tracks of artist with no specific order
                     self.add_tracks(tag, tracks_uris)
                 else:
                     self.add_tracks(tag, [tag.data])
@@ -274,7 +280,7 @@ class NfcToMopidy():
         if mopidy.tracklist.get_length() > 0: 
             self.play_or_resume()
 
-    def get_podcast_from_url(self, url):
+    def get_podcast_from_url(self, url, max_results):
         #from https://github.com/tkem/mopidy-podcast
         #f = Extension.get_url_opener(self.config).open(url, timeout=10)
         #quick hack for proxy bug to fix
@@ -282,14 +288,14 @@ class NfcToMopidy():
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
         shows = list(feed.items(self.default_order))
-        del shows[self.max_results:]
+        del shows[max_results:]
         return shows
 
-    def get_unread_podcasts(self, data, last_track_played):
+    def get_unread_podcasts(self, data, last_track_played, max_results):
         uris = []
         feedurl = data.split('+')[1]
         
-        shows = self.get_podcast_from_url(feedurl)
+        shows = self.get_podcast_from_url(feedurl, max_results)
         unread_shows = shows[last_track_played:] # Supprime le n premiers éléments (déjà lus)
         for item in unread_shows:
             uris.append(item.uri)
