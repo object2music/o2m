@@ -1,15 +1,40 @@
 import sys, datetime
-from peewee import UUIDField, CharField, IntegerField, TextField, TimestampField, BooleanField, Model, OperationalError
+from peewee import UUIDField, CharField, IntegerField, TextField, TimestampField, BooleanField, Model, OperationalError, MySQLDatabase
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
+from playhouse.shortcuts import ReconnectMixin
 
 sys.path.append('.')
 import src.util as util
+
+class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):
+    pass
+
 '''
 DATABASE INIT 
+
+TODO 
+    * Verifier la structure de la base et mettre à jour ou créer le schéma si nécessaire
+
 '''
-database_path = util.get_config()['o2m']['database_path']
-db = SqliteDatabase(database_path)
-migrator = SqliteMigrator(db)
+config_o2m = util.get_config()['o2m']
+
+if 'db_type' in config_o2m:
+    db_type = config_o2m['db_type']
+    if db_type == 'mysql':
+        db_username = config_o2m['db_username']
+        db_password = config_o2m['db_password']
+        db_host = config_o2m['db_host']
+        db_port = config_o2m['db_port']
+        db_name = config_o2m['db_name']
+        db = ReconnectMySQLDatabase(db_name, host=db_host, user=db_username, password=db_password)
+    elif db_type == 'sqlite':
+        database_path = config_o2m['db_sqlite_path']
+        db = SqliteDatabase(database_path)
+    
+# Si rien n'est spécifié -> base par défaut 
+if db == None:  
+    db = SqliteDatabase('data.db')
+
 
 '''
     MODEL STRUCTURE
@@ -41,30 +66,3 @@ class Tag(BaseModel):
         self.last_read_date = datetime.datetime.utcnow()
         self.update()
         self.save()
-
-# class Tag(BaseModel):
-#     # owner = ForeignKeyField(Person, backref='pets')
-#     uid = CharField(unique=True)
-#     media = CharField(null=True)
-#     media_type = CharField(null=True)
-#     count = IntegerField(default=0)
-
-#     # add the new migrations on top of the list because the previous migrations throw an error
-#     try:
-#         migrate(
-#             migrator.add_column('tag', 'count', count),
-#             migrator.add_column('tag', 'media_type', media_type)
-#         )
-#     except OperationalError as err:
-#         print(err)
-
-#     def __str__(self):
-#         return 'TAG UID : {} | TYPE : {} | MEDIA : {} | COUNT : {}' .format(self.uid, self.media_type, self.media, self.count)
-
-#     def add_count(self):
-#         self.count += 1
-#         self.update()
-#         self.save()
-
-if __name__ == "__main__":
-    print(database_path)
