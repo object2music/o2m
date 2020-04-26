@@ -46,7 +46,7 @@ class NfcToMopidy():
     max_results = 50
     default_volume = 70 #0-100
     discover_level = 5 #0-10
-    default_order = "desc"
+    podcast_newest_first = False
 
     def __init__(self, mopidyHandler, config):
         self.log = logging.getLogger(__name__)
@@ -67,8 +67,8 @@ class NfcToMopidy():
         if 'discover_level' in self.config['o2m']:
             self.discover_level = int(self.config['o2m']['discover_level'])  
 
-        if 'default_order' in self.config['o2m']:
-            self.default_order = int(self.config['o2m']['default_order']) 
+        if 'podcast_newest_first' in self.config['o2m']:
+            self.podcast_newest_first = self.config['o2m']['podcast_newest_first'] == 'true' 
         
         if 'shuffle' in self.config['o2m']:
             self.shuffle = bool(self.config['o2m']['shuffle'])
@@ -282,13 +282,10 @@ class NfcToMopidy():
             self.play_or_resume()
 
     def get_podcast_from_url(self, url, max_results = 50):
-        #from https://github.com/tkem/mopidy-podcast
-        #f = Extension.get_url_opener(self.config).open(url, timeout=10)
-        #quick hack for proxy bug to fix
         f = Extension.get_url_opener({"proxy":{}}).open(url, timeout=10)
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
-        shows = list(feed.items(self.default_order))
+        shows = list(feed.items(self.podcast_newest_first))
         del shows[max_results:]
         return shows
 
