@@ -42,6 +42,7 @@ class NfcToMopidy():
     activetags = []
     last_tag_uid = None
 
+    suffle = False
     max_results = 50
     default_volume = 70 #0-100
     discover_level = 5 #0-10
@@ -68,6 +69,9 @@ class NfcToMopidy():
 
         if 'default_order' in self.config['o2m']:
             self.default_order = int(self.config['o2m']['default_order']) 
+        
+        if 'shuffle' in self.config['o2m']:
+            self.shuffle = bool(self.config['o2m']['shuffle'])
 
         #Default volume setting at beginning (or in main ?)
         self.mopidyHandler.mixer.set_volume(self.default_volume)
@@ -76,7 +80,6 @@ class NfcToMopidy():
     def start_nfc(self):
         #Test mode provided in command line (NFC uids separated by space)
         if len(sys.argv) > 1:
-            addedcards = []
             for i in range(1,len(sys.argv)):
                 print(sys.argv[i])
                 tag = self.dbHandler.get_tag_by_uid(sys.argv[i])
@@ -85,8 +88,6 @@ class NfcToMopidy():
                     self.active_tags_changed()
                 else:
                     self.one_tag_changed(tag)
-                #addedcards.append()
-                #get_new_cards(self.addedcards, self.removedcards, self.activecards)
         else:
             self.nfcHandler.loop() # démarre la boucle infinie de détection nfc/rfid
     
@@ -280,7 +281,7 @@ class NfcToMopidy():
         if mopidy.tracklist.get_length() > 0: 
             self.play_or_resume()
 
-    def get_podcast_from_url(self, url, max_results):
+    def get_podcast_from_url(self, url, max_results = 50):
         #from https://github.com/tkem/mopidy-podcast
         #f = Extension.get_url_opener(self.config).open(url, timeout=10)
         #quick hack for proxy bug to fix
@@ -291,7 +292,7 @@ class NfcToMopidy():
         del shows[max_results:]
         return shows
 
-    def get_unread_podcasts(self, data, last_track_played, max_results):
+    def get_unread_podcasts(self, data, last_track_played, max_results = 50):
         uris = []
         feedurl = data.split('+')[1]
         
@@ -314,7 +315,7 @@ class NfcToMopidy():
         tag.uris = uris
 
         #conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
-        if self.config['o2m']['shuffle'] == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
+        if self.shuffle == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
             current_index = self.mopidyHandler.tracklist.index()
             tl_length = self.mopidyHandler.tracklist.get_length()
             if current_index != None:
@@ -325,7 +326,6 @@ class NfcToMopidy():
     
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
-        print(state)
         if state == 'stopped':
             if self.mopidyHandler.playback.get_current_tl_track() == None:
                 print('no current track : Playing first track')
@@ -411,7 +411,7 @@ if __name__ == "__main__":
             if tracks_left_count < 1: 
                 nfcHandler.update_tracks() # si besoin on ajoute des chansons à la tracklist avec de la reco 
 
-    #Ifinite loop for NFC detection
+    #Infinite loop for NFC detection
     nfcHandler.start_nfc()
 
 
