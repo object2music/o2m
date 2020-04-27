@@ -318,7 +318,7 @@ class NfcToMopidy():
             if current_index != None:
                 self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
             else:
-                self.mopidyHandler.tracklist.shuffle(1, tl_length)                
+                self.mopidyHandler.tracklist.shuffle(0, tl_length)                
         #self.play_or_resume()
     
     def play_or_resume(self):
