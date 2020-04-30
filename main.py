@@ -47,6 +47,7 @@ class NfcToMopidy():
     default_volume = 70 #0-100
     discover_level = 5 #0-10
     podcast_newest_first = False
+    option_sort = 'desc'
 
     def __init__(self, mopidyHandler, config):
         self.log = logging.getLogger(__name__)
@@ -69,6 +70,9 @@ class NfcToMopidy():
 
         if 'podcast_newest_first' in self.config['o2m']:
             self.podcast_newest_first = self.config['o2m']['podcast_newest_first'] == 'true' 
+
+        if 'option_sort' in self.config['o2m']:
+            self.option_sort = self.config['o2m']['option_sort'] == 'desc' 
         
         if 'shuffle' in self.config['o2m']:
             self.shuffle = bool(self.config['o2m']['shuffle'])
@@ -285,7 +289,11 @@ class NfcToMopidy():
         f = Extension.get_url_opener({"proxy":{}}).open(url, timeout=10)
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
-        shows = list(feed.items(self.podcast_newest_first))
+        shows = list(feed.items(self.option_sort))
+        for item in shows:
+            if "app_rf_promotion" in item.uri:
+                 max_results += 1
+        # Conserve les max_results premiers épisodes
         del shows[max_results:]
         return shows
 
@@ -296,7 +304,9 @@ class NfcToMopidy():
         shows = self.get_podcast_from_url(feedurl, max_results)
         unread_shows = shows[last_track_played:] # Supprime le n premiers éléments (déjà lus)
         for item in unread_shows:
-            uris.append(item.uri)
+            if "app_rf_promotion" not in item.uri: 
+                uris.append(item.uri)
+        print (shows)
         return uris
 
     # Lance la chanson suivante sur mopidy
@@ -306,10 +316,19 @@ class NfcToMopidy():
 
     # Vide la tracklist, ajoute plusieurs uris puis lance la lecture
     def add_tracks(self, tag, uris):
-        print(f'Adding {len(uris)} tracks')
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
-        tag.tlids = [x.tlid for x in tltracks_added]
-        tag.uris = uris
+        print(f'Adding {len(uris)} tracks')
+        
+        #TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
+        if hasattr(tag, 'tlids'):
+            tag.tlids += [x.tlid for x in tltracks_added]
+        else:
+            tag.tlids = [x.tlid for x in tltracks_added]
+        print("tag.tlids",tag.tlids)
+
+        #Uris : Mopidy Uri's associated to added Tag
+        tag.uris = uris 
+        print("tag.uris",tag.uris)
 
         #conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
         if self.shuffle == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
