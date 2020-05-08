@@ -115,7 +115,7 @@ class NfcToMopidy():
                 else:
                     self.one_tag_changed(tag)
             else:
-                if card.id != '':                    
+                if card.id != '':
                     self.dbHandler.create_tag(card.id, '') # le tag n'est pas présent en bdd donc on le rajoute
                 else:
                     print('Reading card error ! : ' + card)
@@ -317,8 +317,10 @@ class NfcToMopidy():
     # Vide la tracklist, ajoute plusieurs uris puis lance la lecture
     def add_tracks(self, tag, uris):
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
+        #TracklistController.slice(start, end)[source]
         print(f'Adding {len(uris)} tracks')
         
+        #Update Tag Values
         #TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
         if hasattr(tag, 'tlids'):
             tag.tlids += [x.tlid for x in tltracks_added]
@@ -329,6 +331,7 @@ class NfcToMopidy():
         #Uris : Mopidy Uri's associated to added Tag
         tag.uris = uris 
         print("tag.uris",tag.uris)
+
 
         #conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
         if self.shuffle == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
@@ -360,6 +363,10 @@ class NfcToMopidy():
     def add_tracks_after(self, uris):
         print('ADDING SONGS SILENTLY IN TRACKLIST')
         self.clear_tracklist_except_current_song()
+        self.mopidyHandler.tracklist.add(uris=uris)
+
+    def add_tracks_simple(self, uris):
+        print('ADDING SONGS SILENTLY IN TRACKLIST')
         self.mopidyHandler.tracklist.add(uris=uris)
 
     def clear_tracklist_except_current_song(self):
@@ -400,6 +407,7 @@ if __name__ == "__main__":
     mopidy = MopidyAPI()
     config = util.get_config()
     nfcHandler = NfcToMopidy(mopidy, config)
+    spotifyHandler = SpotifyHandler() # Appel à l'api spotify pour recommandations
 
     # A chaque lancement on vide la tracklist (plus simple pour les tests)
     mopidy.tracklist.clear()
@@ -418,6 +426,17 @@ if __name__ == "__main__":
                         tag.option_items_length = track.track_no # actualise le numéro du dernier podcast écouté
                         tag.update()
                         tag.save()
+
+        #on ajoute une nouvelle recommandation à chaque track terminée
+        if 'spotify:track' in track.uri:
+            track_data = track.uri.split(':') # on découpe l'uri' :
+            tracks = [track_data[2]]
+            #print (tracks)
+            uris = spotifyHandler.get_recommendations(seed_genres=None, seed_artists=None, seed_tracks=tracks, limit=1,
+                            min_energy='0.8', 
+                            max_instrumentalness='0.5',
+                            target_valence='0.7')
+            nfcHandler.add_tracks_simple(uris)
 
         tracklist_length = mopidy.tracklist.get_length()
         tracklist_index = mopidy.tracklist.index()
