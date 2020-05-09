@@ -12,9 +12,9 @@ import src.util as util
 
 class SpotifyHandler():
     def __init__(self):
-        spotify_config = util.get_config()['spotify']
+        spotify_config = util.get_config()['spotipy']
         #client_credentials_manager = SpotifyClientCredentials()
-        client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
+        client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id_spotipy'], client_secret=spotify_config['client_secret_spotipy'])
         self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
         #client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
