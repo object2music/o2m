@@ -374,8 +374,13 @@ class NfcToMopidy():
         self.mopidyHandler.tracklist.add(uris=uris)
 
     def add_tracks_simple(self, uris):
-        print('ADDING SONGS SILENTLY IN TRACKLIST')
-        self.mopidyHandler.tracklist.add(uris=uris)
+        #Calculate index of insertion depending of discover_level
+        current_index = self.mopidyHandler.tracklist.index()
+        tl_length = self.mopidyHandler.tracklist.get_length()
+        new_index = int(round(current_index + ((tl_length - current_index)*(10-self.discover_level)/10)))
+        print("Adding new track at "+str(new_index)+" index")
+        
+        self.mopidyHandler.tracklist.add(uris=uris,at_position=new_index)
 
     def clear_tracklist_except_current_song(self):
         all_tracklist_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
