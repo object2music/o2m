@@ -316,32 +316,40 @@ class NfcToMopidy():
 
     # Vide la tracklist, ajoute plusieurs uris puis lance la lecture
     def add_tracks(self, tag, uris):
+        print(uris)
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
-        #TracklistController.slice(start, end)[source]
-        print(f'Adding {len(uris)} tracks')
-        
-        #Update Tag Values
-        #TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
-        if hasattr(tag, 'tlids'):
-            tag.tlids += [x.tlid for x in tltracks_added]
-        else:
-            tag.tlids = [x.tlid for x in tltracks_added]
-        print("tag.tlids",tag.tlids)
 
-        #Uris : Mopidy Uri's associated to added Tag
-        tag.uris = uris 
-        print("tag.uris",tag.uris)
-
-
-        #conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
-        if self.shuffle == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
-            current_index = self.mopidyHandler.tracklist.index()
-            tl_length = self.mopidyHandler.tracklist.get_length()
-            if current_index != None:
-                self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
+        if tltracks_added:
+            #Slice added tracks to max_results
+            tltracks_rem = tltracks_added[self.max_results:]
+            for x in tltracks_rem:
+                self.mopidyHandler.tracklist.remove({'tlid': [x.tlid]}) #to optimize ?
+            tltracks_added = tltracks_added[0:self.max_results]
+            #slice1 = self.mopidyHandler.tracklist.slice(start, end)
+            print(f'Adding {len(tltracks_added)} tracks')
+            
+            #Update Tag Values
+            #TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
+            if hasattr(tag, 'tlids'):
+                tag.tlids += [x.tlid for x in tltracks_added]
             else:
-                self.mopidyHandler.tracklist.shuffle(0, tl_length)                
-        #self.play_or_resume()
+                tag.tlids = [x.tlid for x in tltracks_added]
+            print("tag.tlids",tag.tlids)
+
+            #Uris : Mopidy Uri's associated to added Tag
+            tag.uris = uris 
+            print("tag.uris",tag.uris)
+
+
+            #conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
+            if self.shuffle == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
+                current_index = self.mopidyHandler.tracklist.index()
+                tl_length = self.mopidyHandler.tracklist.get_length()
+                if current_index != None:
+                    self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
+                else:
+                    self.mopidyHandler.tracklist.shuffle(0, tl_length)                
+            #self.play_or_resume()
     
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
@@ -417,7 +425,6 @@ if __name__ == "__main__":
     def print_ended_events(event):
         track = event.tl_track.track
         print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
-        
         if 'podcast' in track.uri:
             if event.time_position / track.length > 0.5: # Si la lecture de l'épisode est au delà de la moitié
                 tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri) # Récupère le tag correspondant à la chaine
@@ -428,14 +435,11 @@ if __name__ == "__main__":
                         tag.save()
 
         #on ajoute une nouvelle recommandation à chaque track terminée
-        if 'spotify:track' in track.uri:
+        if 'spotify:track' in track.uri and event.time_position / track.length > 0.9:
             track_data = track.uri.split(':') # on découpe l'uri' :
             tracks = [track_data[2]]
             #print (tracks)
-            uris = spotifyHandler.get_recommendations(seed_genres=None, seed_artists=None, seed_tracks=tracks, limit=1,
-                            min_energy='0.8', 
-                            max_instrumentalness='0.5',
-                            target_valence='0.7')
+            uris = spotifyHandler.get_recommendations(seed_genres=None, seed_artists=None, seed_tracks=tracks, limit=1)
             nfcHandler.add_tracks_simple(uris)
 
         tracklist_length = mopidy.tracklist.get_length()
