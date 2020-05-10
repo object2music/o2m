@@ -53,7 +53,9 @@ class Tag(BaseModel):
     option_new = BooleanField(default=False) # only play new tracks
     option_sort = CharField(null=True) # shuffle, (asc, desc : date of tracks/podcasts)
     option_duration = IntegerField(null=True) # max duration of a media : mostly useful for radios
-    option_items_length = IntegerField(null=True) # Podcasts max count to read in podcast channel 
+    option_max_results = IntegerField(null=True) # Max results associated to tag 
+    option_discover_level = IntegerField(null=True) # Discover level (0-10) associated to tag 
+    option_last_unread = IntegerField(null=True) # Podcasts max count to read in podcast channel 
 
     def __str__(self):
         return 'TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}' .format(self.uid, self.tag_type, self.data, self.description, self.read_count)

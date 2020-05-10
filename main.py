@@ -217,8 +217,8 @@ class NfcToMopidy():
 
             #Update max_results with DB specific tag option (duration is not good and definitive nomenclature)
             max_results = self.max_results
-            if tag.option_duration != None:
-            	max_results = tag.option_duration
+            if tag.option_max_results:
+            	max_results = tag.option_max_results
 
             # self.last_tag_uid = tag.uid # On stocke en variable de classe le tag pour le comparer ultérieurement
             media_parts = tag.data.split(':') # on découpe le champs média du tag en utilisant le séparateur : 
@@ -241,9 +241,10 @@ class NfcToMopidy():
                 for track in playlist.tracks: # Parcourt la liste de tracks
                     #Podcast channel
                     if 'podcast' in track.uri and '#' not in track.uri: 
-                        print(track.uri)
+                        print(f'Podcast : {track.uri}')
                         feedurl = track.uri.split('+')[1]
                         shows = self.get_unread_podcasts(track.uri, 0, max_results) 
+                        print(f'Shows : {shows}')
                         self.add_tracks(tag, shows)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
                         # playlist_uris += self.get_unread_podcasts(shows)
@@ -269,7 +270,7 @@ class NfcToMopidy():
             #Podcast:channel
             elif tag.tag_type == 'podcasts:channel':
                 print('channel! get unread podcasts')
-                uris = self.get_unread_podcasts(tag.data, tag.option_items_length)
+                uris = self.get_unread_podcasts(tag.data, tag.option_last_unread)
                 self.add_tracks(tag, uris)
             
             #Every other contents
@@ -475,13 +476,14 @@ if __name__ == "__main__":
     @mopidy.on_event('track_playback_ended')
     def print_ended_events(event):
         track = event.tl_track.track
+        print (f"Track {track}")
         print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
         if 'podcast' in track.uri:
             if event.time_position / track.length > 0.5: # Si la lecture de l'épisode est au delà de la moitié
                 tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri) # Récupère le tag correspondant à la chaine
                 if tag != None:
                     if tag.tag_type == 'podcasts:channel':
-                        tag.option_items_length = track.track_no # actualise le numéro du dernier podcast écouté
+                        tag.option_last_unread = track.track_no # actualise le numéro du dernier podcast écouté
                         tag.update()
                         tag.save()
 
