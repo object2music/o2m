@@ -215,12 +215,11 @@ class NfcToMopidy():
         if tag.uid != self.last_tag_uid: # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             print(f'Tag : {tag}' )
 
-            #Update max_results with DB specific tag option (duration is not good and definitive nomenclature)
+            #Update DB specific tag option (duration is not good and definitive nomenclature)
             max_results = self.max_results
-            if tag.option_max_results:
-            	max_results = tag.option_max_results
-
-            # self.last_tag_uid = tag.uid # On stocke en variable de classe le tag pour le comparer ultérieurement
+            if tag.option_max_results: 	max_results = tag.option_max_results
+ 
+             # self.last_tag_uid = tag.uid # On stocke en variable de classe le tag pour le comparer ultérieurement
             media_parts = tag.data.split(':') # on découpe le champs média du tag en utilisant le séparateur : 
             
             #Recommandation
@@ -244,7 +243,7 @@ class NfcToMopidy():
                         print(f'Podcast : {track.uri}')
                         feedurl = track.uri.split('+')[1]
                         shows = self.get_unread_podcasts(track.uri, 0, max_results) 
-                        print(f'Shows : {shows}')
+                        #print(f'Shows : {shows}')
                         self.add_tracks(tag, shows)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
                         # playlist_uris += self.get_unread_podcasts(shows)
@@ -290,10 +289,10 @@ class NfcToMopidy():
         f = Extension.get_url_opener({"proxy":{}}).open(url, timeout=10)
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
+        print (f'option_sort{self.option_sort}')
         shows = list(feed.items(self.option_sort))
-        for item in shows:
-            if "app_rf_promotion" in item.uri:
-                 max_results += 1
+        '''for item in shows:  
+            if "app_rf_promotion" in item.uri:  max_results += 1'''
         # Conserve les max_results premiers épisodes
         del shows[max_results:]
         return shows
@@ -329,7 +328,7 @@ class NfcToMopidy():
 
         if (self.mopidyHandler.tracklist.add(uris=uris)):
             new_length = self.mopidyHandler.tracklist.get_length()
-            print(f'New length{new_length}')
+            print(f'Length {new_length}')
 
             #Shuffle new tracks if necessary : global shuffle or tag option 
             if self.shuffle == 'true' or tag.option_sort == 'shuffle':
@@ -346,14 +345,13 @@ class NfcToMopidy():
             print(f'Adding {new_length - prev_length} tracks')
             
             #TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
-            if hasattr(tag, 'tlids'):
-                tag.tlids += [x.tlid for x in slice2]
-            else:
-                tag.tlids = [x.tlid for x in slice2]
+            if hasattr(tag, 'tlids'): tag.tlids += [x.tlid for x in slice2]
+            else: tag.tlids = [x.tlid for x in slice2]
             #print("tag.tlids",tag.tlids)
 
             #Uris : Mopidy Uri's associated to added Tag
-            tag.uris = uris 
+            if hasattr(tag, 'uris'): tag.uris += [uris]
+            else: tag.uris = uris
             #print("tag.uris",tag.uris)
 
             #Shuffle complete computed tracklist if more than two tags
@@ -376,10 +374,8 @@ class NfcToMopidy():
             
             #Update Tag Values
             #TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
-            if hasattr(tag, 'tlids'):
-                tag.tlids += [x.tlid for x in tltracks_added]
-            else:
-                tag.tlids = [x.tlid for x in tltracks_added]
+            if hasattr(tag, 'tlids'): tag.tlids += [x.tlid for x in tltracks_added]
+            else: tag.tlids = [x.tlid for x in tltracks_added]
             print("tag.tlids",tag.tlids)
 
             #Uris : Mopidy Uri's associated to added Tag
@@ -422,9 +418,13 @@ class NfcToMopidy():
 
     def add_tracks_simple(self, uris):
         #Calculate insertion index depending of discover_level
-        current_index = self.mopidyHandler.tracklist.index()
         tl_length = self.mopidyHandler.tracklist.get_length()
-        new_index = int(round(current_index + ((tl_length - current_index)*(10-self.discover_level)/10)))        
+        if self.mopidyHandler.tracklist.index():
+            current_index = self.mopidyHandler.tracklist.index()
+        else:
+            current_index = tl_length
+
+        new_index = int(round(current_index + ((tl_length - current_index)*(10-self.discover_level)/10)))+1
         self.mopidyHandler.tracklist.add(uris=uris,at_position=new_index)
         print(f"Adding new track at {str(new_index)} index with uris {uris}")
 
@@ -435,6 +435,38 @@ class NfcToMopidy():
         for (tlid, _) in all_tracklist_tracks:
             if tlid != current_tlid:
                 self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
+
+    def add_reco_after_track_read(self, track_uri):
+        if 'spotify:track' in track_uri:
+            #update discover_level via tag associated
+            discover_level = self.discover_level
+            for tag in self.activetags:
+                if track_uri in tag.uris:   
+                    discover_level = tag.option_discover_level
+                    break
+
+            #Get tracks recommandations
+            track_data = track_uri.split(':') # on découpe l'uri' :
+            track_seed = [track_data[2]] # track id
+            limit = int(round(discover_level*0.25))
+            uris = spotifyHandler.get_recommendations(seed_genres=None, seed_artists=None, seed_tracks=track_seed, limit=limit)
+
+            #Calculate insertion index depending of discover_level
+            tl_length = self.mopidyHandler.tracklist.get_length()
+            if self.mopidyHandler.tracklist.index():
+                current_index = self.mopidyHandler.tracklist.index()
+            else:
+                current_index = tl_length
+            new_index = int(round(current_index + ((tl_length - current_index)*(10-discover_level)/10)))        
+            slice = self.mopidyHandler.tracklist.add(uris=uris,at_position=new_index)
+            print(f"Adding new tracks at index {str(new_index)} with uris {uris}")
+
+            #Updating tag infos
+            if hasattr(tag, 'tlids'): tag.tlids += [x.tlid for x in slice]
+            else: tag.tlids = [x.tlid for x in slice]
+
+            if hasattr(tag, 'uris'): tag.uris += [uris]
+            else: tag.uris = uris
     
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
     def update_tracks(self):
@@ -476,8 +508,10 @@ if __name__ == "__main__":
     @mopidy.on_event('track_playback_ended')
     def print_ended_events(event):
         track = event.tl_track.track
-        print (f"Track {track}")
+        #print (f"Track {track}")
         print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
+        
+        #podcast
         if 'podcast' in track.uri:
             if event.time_position / track.length > 0.5: # Si la lecture de l'épisode est au delà de la moitié
                 tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri) # Récupère le tag correspondant à la chaine
@@ -487,14 +521,11 @@ if __name__ == "__main__":
                         tag.update()
                         tag.save()
 
-        #on ajoute une nouvelle recommandation à chaque track terminée
-        if 'spotify:track' in track.uri and event.time_position / track.length > 0.9:
-            track_data = track.uri.split(':') # on découpe l'uri' :
-            tracks = [track_data[2]]
-            limit = int(round(nfcHandler.discover_level*0.25))
-            uris = spotifyHandler.get_recommendations(seed_genres=None, seed_artists=None, seed_tracks=tracks, limit=limit)
-            nfcHandler.add_tracks_simple(uris)
+        #Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
+        if 'track' in track.uri and event.time_position / track.length > 0.9 :
+            nfcHandler.add_reco_after_track_read(track.uri)
 
+        #Tracklist filling when empty
         tracklist_length = mopidy.tracklist.get_length()
         tracklist_index = mopidy.tracklist.index()
         if tracklist_index != None and tracklist_length != 0:
