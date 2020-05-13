@@ -68,3 +68,22 @@ class Tag(BaseModel):
         self.last_read_date = datetime.datetime.utcnow()
         self.update()
         self.save()
+
+class Stats(BaseModel):
+    uri = CharField(unique=True, index=True, primary_key=True, ) # Unique uri
+    last_read_date = TimestampField(null=True, utc=True) # date
+    read_count = IntegerField(null=True) # media uri or option
+    read_position = IntegerField(null=True) # description text
+    read_end = IntegerField(default=0) # Boolean if track ended
+
+    def __str__(self):
+        return 'URI : {} | LAST READ : {} | READ COUNT : {} | READ POSITION : {} | READ END : {}' .format(self.uri, self.last_read_date, self.read_count, self.read_position, self.read_end)
+
+    def add_count(self):
+        if self.read_count != None:
+            self.read_count += 1
+        else:
+            self.read_count = 1
+        self.last_read_date = datetime.datetime.utcnow()
+        self.update()
+        self.save()

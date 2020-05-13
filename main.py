@@ -1,10 +1,10 @@
-import logging, time, configparser, contextlib, sys
+import logging, time, datetime, configparser, contextlib, sys
 from pathlib import Path
 from mopidyapi import MopidyAPI
 from mopidy_podcast import feeds, Extension
 
 from src.nfcreader import NfcReader
-from src.dbhandler import DatabaseHandler, Tag
+from src.dbhandler import DatabaseHandler, Stats, Tag
 from src.spotifyhandler import SpotifyHandler
 from src import util
 
@@ -142,14 +142,14 @@ class NfcToMopidy():
                     # current_track = next((x for x in all_tracklist_tracks if x.tlid == current_tlid))
                 
                 last_tlindex = self.mopidyHandler.tracklist.index()
-                print(last_tlindex)
+                #print(last_tlindex)
 
                 if current_tlid in removedTag.tlids:
                     self.mopidyHandler.playback.stop()
                 self.mopidyHandler.tracklist.remove({'tlid': removedTag.tlids})
                 tl_length = self.mopidyHandler.tracklist.get_length()
 
-                print(tl_length)
+                #print(tl_length)
                 all_new_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
                 if tl_length > last_tlindex:
                     if self.mopidyHandler.playback.get_state() != 'playing':
@@ -304,8 +304,8 @@ class NfcToMopidy():
         shows = self.get_podcast_from_url(feedurl, max_results)
         unread_shows = shows[last_track_played:] # Supprime le n premiers éléments (déjà lus)
         for item in unread_shows:
-            if "app_rf_promotion" not in item.uri: 
-                uris.append(item.uri)
+            #print (self.dbHandler.get_end_stat(item.uri))
+            if "app_rf_promotion" not in item.uri: uris.append(item.uri)
         print (shows)
         return uris
 
@@ -438,10 +438,10 @@ class NfcToMopidy():
 
     def add_reco_after_track_read(self, track_uri):
         if 'spotify:track' in track_uri:
-            #update discover_level via tag associated
+            #tag associated & update discover_level 
             discover_level = self.discover_level
             for tag in self.activetags:
-                if track_uri in tag.uris:   
+                if track_uri in tag.uris and tag.option_discover_level:   
                     discover_level = tag.option_discover_level
                     break
 
@@ -511,6 +511,23 @@ if __name__ == "__main__":
         #print (f"Track {track}")
         print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
         
+        #update stats
+        if nfcHandler.dbHandler.stat_exists(track.uri): stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
+        else: stat = nfcHandler.dbHandler.create_stat(track.uri)
+        
+        stat.last_read_date = datetime.datetime.utcnow()
+        
+        if stat.read_count != None: stat.read_count += 1 
+        else: stat.read_count = 1
+        
+        stat.read_position = event.time_position
+        
+        if event.time_position / track.length > 0.9: stat.read_end = True 
+        else: stat.read_end = False
+        
+        stat.update()
+        stat.save()
+
         #podcast
         if 'podcast' in track.uri:
             if event.time_position / track.length > 0.5: # Si la lecture de l'épisode est au delà de la moitié

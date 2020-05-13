@@ -4,7 +4,7 @@ from peewee import IntegrityError
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 
-from src.nfcmodels import Tag, db
+from src.nfcmodels import Tag, Stats, db
 '''
 Database & Tables creation
 Used only one time from the terminal
@@ -77,6 +77,56 @@ class DatabaseHandler():
         for tag in query:
             tags.append(tag)
         return tags
+
+    #STATS
+    def create_stat(self, uri):
+        try:
+            stat = Stats.create(uri=uri)
+            return stat
+        except IntegrityError as err:
+            self.log.error(err)
+    
+    def get_all_stats(self):
+        query = Stats.select()
+        return self.transform_query_to_list(query)
+    
+    def get_stat_by_uri(self, uri):
+        query = Stats.select().where(Stats.uri == uri)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            print (results[0])
+            return results[0] 
+    
+    '''def get_stat_by_data(self, data):
+        self.log.info(f'searching for stat with data: {data}')
+        query = Stats.select().where(Stats.data == data)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results[0] '''
+
+    def get_end_stat(self, uri):
+        end = 0
+        results = self.get_stat_by_uri(uri)
+        if len(results > 0):
+            stat = results[0]
+            end = stat.read_end
+        return end
+
+    def get_pos_stat(self, uri):
+        pos = 0
+        results = self.get_stat_by_uri(uri)
+        if len(results > 0):
+            stat = results[0]
+            end = stat.read_position
+        return pos
+
+    
+    def stat_exists(self, uri):
+        if len(Stats.select().where(Stats.uri == uri)) > 0:
+            return True
+        else:
+            return False
+
 
 if __name__ == "__main__":
 
