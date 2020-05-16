@@ -304,8 +304,7 @@ class NfcToMopidy():
         shows = self.get_podcast_from_url(feedurl, max_results)
         unread_shows = shows[last_track_played:] # Supprime le n premiers éléments (déjà lus)
         for item in unread_shows:
-            #print (self.dbHandler.get_end_stat(item.uri))
-            if "app_rf_promotion" not in item.uri: uris.append(item.uri)
+            if self.dbHandler.get_end_stat(item.uri) == 0 and "app_rf_promotion" not in item.uri: uris.append(item.uri)
         print (shows)
         return uris
 
@@ -504,9 +503,21 @@ if __name__ == "__main__":
     # A chaque lancement on vide la tracklist (plus simple pour les tests)
     mopidy.tracklist.clear()
 
-    # Fonction appellée à chaque changement de chanson
+    # Fonction called when track started
+    @mopidy.on_event('track_playback_started')
+    def track_started_event(event):
+        track = event.tl_track.track
+
+        #Podcast : seek previous position
+        if 'podcast' in track.uri and '#' in track.uri:
+            if nfcHandler.dbHandler.get_pos_stat(track.uri): 
+                print(f'seeking prev position : {nfcHandler.dbHandler.get_pos_stat(track.uri)}')
+                nfcHandler.mopidyHandler.playback.seek(max(nfcHandler.dbHandler.get_pos_stat(track.uri)-10,0))
+
+    # Fonction called when tracked finished or skipped
     @mopidy.on_event('track_playback_ended')
-    def print_ended_events(event):
+    @mopidy.on_event('playback_state_changed(PLAYING,STOPPED)')
+    def track_ended_event(event):
         track = event.tl_track.track
         #print (f"Track {track}")
         print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
@@ -528,7 +539,7 @@ if __name__ == "__main__":
         stat.update()
         stat.save()
 
-        #podcast
+        #Podcast
         if 'podcast' in track.uri:
             if event.time_position / track.length > 0.5: # Si la lecture de l'épisode est au delà de la moitié
                 tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri) # Récupère le tag correspondant à la chaine

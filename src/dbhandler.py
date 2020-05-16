@@ -107,17 +107,15 @@ class DatabaseHandler():
     def get_end_stat(self, uri):
         end = 0
         results = self.get_stat_by_uri(uri)
-        if len(results > 0):
-            stat = results[0]
-            end = stat.read_end
+        if results:
+            end = results.read_end
         return end
 
     def get_pos_stat(self, uri):
         pos = 0
         results = self.get_stat_by_uri(uri)
-        if len(results > 0):
-            stat = results[0]
-            end = stat.read_position
+        if results:
+            pos = results.read_position
         return pos
 
     
