@@ -94,7 +94,7 @@ class DatabaseHandler():
         query = Stats.select().where(Stats.uri == uri)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
-            print (results[0])
+            #print (results[0])
             return results[0] 
     
     '''def get_stat_by_data(self, data):

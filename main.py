@@ -130,6 +130,7 @@ class NfcToMopidy():
 
             if len(self.activetags) == 0:
                 # print('Stopping music')
+                self.update_stat_track(self.mopidyHandler.playback.get_current_track(), self.mopidyHandler.playback.get_time_position())
                 self.mopidyHandler.playback.stop() 
                 self.mopidyHandler.tracklist.clear()
             elif removedTag.tlids != None:
@@ -145,6 +146,7 @@ class NfcToMopidy():
                 #print(last_tlindex)
 
                 if current_tlid in removedTag.tlids:
+                    self.update_stat_track(self.mopidyHandler.playback.get_current_track(), self.mopidyHandler.playback.get_time_position())
                     self.mopidyHandler.playback.stop()
                 self.mopidyHandler.tracklist.remove({'tlid': removedTag.tlids})
                 tl_length = self.mopidyHandler.tracklist.get_length()
@@ -415,19 +417,6 @@ class NfcToMopidy():
         self.clear_tracklist_except_current_song()
         self.mopidyHandler.tracklist.add(uris=uris)
 
-    def add_tracks_simple(self, uris):
-        #Calculate insertion index depending of discover_level
-        tl_length = self.mopidyHandler.tracklist.get_length()
-        if self.mopidyHandler.tracklist.index():
-            current_index = self.mopidyHandler.tracklist.index()
-        else:
-            current_index = tl_length
-
-        new_index = int(round(current_index + ((tl_length - current_index)*(10-self.discover_level)/10)))+1
-        self.mopidyHandler.tracklist.add(uris=uris,at_position=new_index)
-        print(f"Adding new track at {str(new_index)} index with uris {uris}")
-
-
     def clear_tracklist_except_current_song(self):
         all_tracklist_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
         current_tlid = self.mopidyHandler.playback.get_current_tlid()
@@ -467,6 +456,24 @@ class NfcToMopidy():
             if hasattr(tag, 'uris'): tag.uris += [uris]
             else: tag.uris = uris
     
+    #Update tracks stat when finished, skipped or system stopped (if possible)
+    def update_stat_track(self, track, pos = 0):
+        if self.dbHandler.stat_exists(track.uri): stat = self.dbHandler.get_stat_by_uri(track.uri)
+        else: stat = self.dbHandler.create_stat(track.uri)
+        
+        stat.last_read_date = datetime.datetime.utcnow()
+        stat.read_position = pos
+        
+        if stat.read_count != None: stat.read_count += 1 
+        else: stat.read_count = 1        
+        
+        if pos / track.length > 0.9: stat.read_end = True 
+        else: stat.read_end = False
+        
+        #print (stat)
+        stat.update()
+        stat.save()
+
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
     def update_tracks(self):
         print('should update tracks')   
@@ -516,28 +523,14 @@ if __name__ == "__main__":
 
     # Fonction called when tracked finished or skipped
     @mopidy.on_event('track_playback_ended')
-    @mopidy.on_event('playback_state_changed(PLAYING,STOPPED)')
     def track_ended_event(event):
         track = event.tl_track.track
         #print (f"Track {track}")
+        #print (f"Event {event}")                
         print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
         
         #update stats
-        if nfcHandler.dbHandler.stat_exists(track.uri): stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
-        else: stat = nfcHandler.dbHandler.create_stat(track.uri)
-        
-        stat.last_read_date = datetime.datetime.utcnow()
-        
-        if stat.read_count != None: stat.read_count += 1 
-        else: stat.read_count = 1
-        
-        stat.read_position = event.time_position
-        
-        if event.time_position / track.length > 0.9: stat.read_end = True 
-        else: stat.read_end = False
-        
-        stat.update()
-        stat.save()
+        nfcHandler.update_stat_track(track, event.time_position)
 
         #Podcast
         if 'podcast' in track.uri:
@@ -561,6 +554,13 @@ if __name__ == "__main__":
             tracks_left_count = tracklist_length - index # Nombre de chansons restante dans la tracklist            
             if tracks_left_count < 1: 
                 nfcHandler.update_tracks() # si besoin on ajoute des chansons à la tracklist avec de la reco 
+
+    # Fonction called when status change ie : stop but impossible to catch track before
+    '''@mopidy.on_event('playback_state_changed')
+    def event_print(event):
+        #possibility of track catching ?
+        if event.new_state == 'stopped': print (f"Stop : {nfcHandler.mopidyHandler.playback.get_current_track()}")'''
+
 
     #Infinite loop for NFC detection
     nfcHandler.start_nfc()
