@@ -334,8 +334,20 @@ class NfcToMopidy():
     def add_tracks(self, tag, uris):
         prev_length = self.mopidyHandler.tracklist.get_length()
         current_index = self.mopidyHandler.tracklist.index()
-
-        if (self.mopidyHandler.tracklist.add(uris=uris)):
+        
+        tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
+        if tltracks_added:
+            #print (tltracks_added)
+            
+            #Exclude tracks already read
+            '''if tag.option_new == True:
+                for t in tltracks_added:
+                    if self.dbHandler.stat_exists(t.uri): 
+                        stat = self.dbHandler.get_stat_by_uri(t.uri)
+                        if stat.read_count > 0:
+                            if stat.read_count_end / stat.read_count > 0.5:
+                                self.mopidyHandler.tracklist.remove(uris=t.uri)
+            '''
             new_length = self.mopidyHandler.tracklist.get_length()
             print(f'Length {new_length}')
 
