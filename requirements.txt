@@ -22,4 +22,5 @@ Mopidy-Spotify==4.0.1
 Mopidy-Podcast-iTunes==3.0.0
 Mopidy-TuneIn==1.0.0
 Mopidy-YouTube==3.0
-Mopidy-Beets==4.0
+#Mopidy-Beets==4.0
+Mopidy-IRControl

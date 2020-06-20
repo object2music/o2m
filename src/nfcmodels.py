@@ -72,7 +72,8 @@ class Tag(BaseModel):
 class Stats(BaseModel):
     uri = CharField(unique=True, index=True, primary_key=True, ) # Unique uri
     last_read_date = TimestampField(null=True, utc=True) # date
-    read_count = IntegerField(null=True) # media uri or option
+    read_count = IntegerField(null=True) # int
+    read_count_end = IntegerField(null=True) # int
     read_position = IntegerField(null=True) # description text
     read_end = IntegerField(default=0) # Boolean if track ended
 

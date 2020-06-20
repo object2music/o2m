@@ -253,10 +253,18 @@ class NfcToMopidy():
                     elif 'podcast' in track.uri and '#' in track.uri: 
                         feedurl = track.uri.split('+')[1]
                         self.get_podcast_from_url(feedurl)                     
+
                     #Other contents in the playlist
                     else:
                         playlist_uris.append(track.uri) # Recupère l'uri de chaque track pour l'ajouter dans une liste
                 self.add_tracks(tag, playlist_uris) # Envoie les uris en lecture
+                '''Implement shuffle
+                prev_length = self.mopidyHandler.tracklist.get_length()
+                current_index = self.mopidyHandler.tracklist.index()
+                if (self.mopidyHandler.tracklist.add(uris=uris)):
+                new_length = self.mopidyHandler.tracklist.get_length()
+                self.shuffle_tracklist(prev_length,new_length)'''
+
             
             # Spotify
             elif media_parts[0] == 'spotify':
@@ -383,7 +391,6 @@ class NfcToMopidy():
             tag.uris = uris 
             print("tag.uris",tag.uris)
 
-
             #conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
             if self.shuffle == 'true' or tag.option_sort == 'shuffle' or len(self.activetags) > 1:
                 current_index = self.mopidyHandler.tracklist.index()
@@ -407,8 +414,8 @@ class NfcToMopidy():
                 self.mopidyHandler.playback.play()
         elif state == 'paused':
             self.mopidyHandler.playback.resume()
-        else:
-            self.mopidyHandler.playback.next()
+        '''else:
+            self.mopidyHandler.playback.next()'''
     
     # Vide la tracklist sauf la chanson en cours de lecture puis ajoute des uris à la suite
     @util.RateLimited(1) # Limite l'execution de la fonction : une fois par seconde (à vérifier)
@@ -450,12 +457,16 @@ class NfcToMopidy():
             print(f"Adding new tracks at index {str(new_index)} with uris {uris}")
 
             #Updating tag infos
-            if hasattr(tag, 'tlids'): tag.tlids += [x.tlid for x in slice]
-            else: tag.tlids = [x.tlid for x in slice]
+            #if 'tag' in locals():
+            try:
+                if hasattr(tag, 'tlids'): tag.tlids += [x.tlid for x in slice]
+                else: tag.tlids = [x.tlid for x in slice]
 
-            if hasattr(tag, 'uris'): tag.uris += [uris]
-            else: tag.uris = uris
-    
+                if hasattr(tag, 'uris'): tag.uris += [uris]
+                else: tag.uris = uris
+            except:
+                print(f"error")
+            
     #Update tracks stat when finished, skipped or system stopped (if possible)
     def update_stat_track(self, track, pos = 0):
         if self.dbHandler.stat_exists(track.uri): stat = self.dbHandler.get_stat_by_uri(track.uri)
@@ -465,11 +476,15 @@ class NfcToMopidy():
         stat.read_position = pos
         
         if stat.read_count != None: stat.read_count += 1 
-        else: stat.read_count = 1        
+        else: stat.read_count = 1
         
-        if pos / track.length > 0.9: stat.read_end = True 
-        else: stat.read_end = False
-        
+        if pos / track.length > 0.9: 
+            stat.read_end = True
+            if stat.read_count_end != None: stat.read_count_end += 1 
+            else: stat.read_count_end = 1
+        else: 
+            if stat.read_end != True: stat.read_end = False
+
         #print (stat)
         stat.update()
         stat.save()
