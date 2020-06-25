@@ -240,6 +240,7 @@ class NfcToMopidy():
                 playlist_uris = []
                 playlist = self.mopidyHandler.playlists.lookup(tag.data) # On retrouve le contenu avec son uri
                 for track in playlist.tracks: # Parcourt la liste de tracks
+                    #Add 
                     #Podcast channel
                     if 'podcast' in track.uri and '#' not in track.uri: 
                         print(f'Podcast : {track.uri}')
@@ -339,15 +340,16 @@ class NfcToMopidy():
         if tltracks_added:
             #print (tltracks_added)
             
-            #Exclude tracks already read
-            '''if tag.option_new == True:
+            #Exclude tracks already read when tag.option_new activated
+            if tag.option_new == True:
+                uris = []
                 for t in tltracks_added:
-                    if self.dbHandler.stat_exists(t.uri): 
-                        stat = self.dbHandler.get_stat_by_uri(t.uri)
-                        if stat.read_count > 0:
-                            if stat.read_count_end / stat.read_count > 0.5:
-                                self.mopidyHandler.tracklist.remove(uris=t.uri)
-            '''
+                    if self.dbHandler.stat_exists(t.track.uri): 
+                        stat = self.dbHandler.get_stat_by_uri(t.track.uri)
+                        if stat.read_count - stat.read_count_end > 0:                            #if stat.read_count_end / stat.read_count > 0.5:
+                            uris.append(t.track.uri)
+                self.mopidyHandler.tracklist.remove({'uri':uris})
+            
             new_length = self.mopidyHandler.tracklist.get_length()
             print(f'Length {new_length}')
 
