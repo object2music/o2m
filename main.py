@@ -219,7 +219,7 @@ class NfcToMopidy():
 
             #Update DB specific tag option (duration is not good and definitive nomenclature)
             max_results = self.max_results
-            if tag.option_max_results: 	max_results = tag.option_max_results
+            if tag.option_max_results: 	self.max_results = tag.option_max_results
  
              # self.last_tag_uid = tag.uid # On stocke en variable de classe le tag pour le comparer ultérieurement
             media_parts = tag.data.split(':') # on découpe le champs média du tag en utilisant le séparateur : 
@@ -245,7 +245,7 @@ class NfcToMopidy():
                     if 'podcast' in track.uri and '#' not in track.uri: 
                         print(f'Podcast : {track.uri}')
                         feedurl = track.uri.split('+')[1]
-                        shows = self.get_unread_podcasts(track.uri, 0, max_results) 
+                        shows = self.get_unread_podcasts(track.uri, 0, self.max_results) 
                         #print(f'Shows : {shows}')
                         self.add_tracks(tag, shows)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
@@ -296,7 +296,7 @@ class NfcToMopidy():
         if mopidy.tracklist.get_length() > 0: 
             self.play_or_resume()
 
-    def get_podcast_from_url(self, url, max_results = 50):
+    def get_podcast_from_url(self, url):
         f = Extension.get_url_opener({"proxy":{}}).open(url, timeout=10)
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
@@ -305,14 +305,14 @@ class NfcToMopidy():
         '''for item in shows:  
             if "app_rf_promotion" in item.uri:  max_results += 1'''
         # Conserve les max_results premiers épisodes
-        del shows[max_results:]
+        del shows[self.max_results:]
         return shows
 
-    def get_unread_podcasts(self, data, last_track_played, max_results = 50):
+    def get_unread_podcasts(self, data, last_track_played):
         uris = []
         feedurl = data.split('+')[1]
         
-        shows = self.get_podcast_from_url(feedurl, max_results)
+        shows = self.get_podcast_from_url(feedurl)
         unread_shows = shows[last_track_played:] # Supprime le n premiers éléments (déjà lus)
         for item in unread_shows:
             if self.dbHandler.get_end_stat(item.uri) == 0 and "app_rf_promotion" not in item.uri: uris.append(item.uri)
@@ -346,7 +346,8 @@ class NfcToMopidy():
                 for t in tltracks_added:
                     if self.dbHandler.stat_exists(t.track.uri): 
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
-                        if stat.read_count - stat.read_count_end > 0:                            #if stat.read_count_end / stat.read_count > 0.5:
+                        #When track skipped or too many counts
+                        if stat.read_count > stat.read_count_end or stat.read_count_end == self.discover_level:
                             uris.append(t.track.uri)
                 self.mopidyHandler.tracklist.remove({'uri':uris})
             
