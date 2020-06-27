@@ -72,19 +72,22 @@ class Tag(BaseModel):
 class Stats(BaseModel):
     uri = CharField(unique=True, index=True, primary_key=True, ) # Unique uri
     last_read_date = TimestampField(null=True, utc=True) # date
-    read_count = IntegerField(null=True) # int
-    read_count_end = IntegerField(null=True) # int
-    read_position = IntegerField(null=True) # description text
+    read_position = IntegerField(default=0) # description text
     read_end = IntegerField(default=0) # Boolean if track ended
+    read_count = IntegerField(default=0) # int
+    read_count_end = IntegerField(default=0) # int
+    skipped_count = IntegerField(default=0) # int
+    in_library = IntegerField(default=0) # Boolean if track ended
+    day_time_average = IntegerField(default=0) # int
 
     def __str__(self):
         return 'URI : {} | LAST READ : {} | READ COUNT : {} | READ POSITION : {} | READ END : {}' .format(self.uri, self.last_read_date, self.read_count, self.read_position, self.read_end)
 
-    def add_count(self):
+    '''def add_count(self):
         if self.read_count != None:
             self.read_count += 1
         else:
             self.read_count = 1
         self.last_read_date = datetime.datetime.utcnow()
         self.update()
-        self.save()
+        self.save()'''

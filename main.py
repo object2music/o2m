@@ -338,16 +338,17 @@ class NfcToMopidy():
         
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
         if tltracks_added:
-            #print (tltracks_added)
-            
+
             #Exclude tracks already read when tag.option_new activated
             if tag.option_new == True:
                 uris = []
                 for t in tltracks_added:
                     if self.dbHandler.stat_exists(t.track.uri): 
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
+                        #tmp update
+                        reg_stat_track(track, stat)
                         #When track skipped or too many counts
-                        if stat.read_count > stat.read_count_end or stat.read_count_end == self.discover_level:
+                        if stat.skipped_count > 0 or stat.read_count_end == self.discover_level or stat.in_library == 1:
                             uris.append(t.track.uri)
                 self.mopidyHandler.tracklist.remove({'uri':uris})
             
@@ -481,24 +482,34 @@ class NfcToMopidy():
                 else: tag.uris = uris
             except:
                 print(f"error")
+
+    #Track Regulation (tmp)
+    def reg_stat_track(self, track, stat):
+        if (stat.read_count - stat.read_count_end) > stat.skipped_count:
+            stat.skipped_count = stat.read_count - stat.read_count_end
+        if stat.day_time_average == None or stat.day_time_average == 0:
+            stat.day_time_average = stat.last_read_date.hour
+        stat.update()
+        stat.save()       
             
     #Update tracks stat when finished, skipped or system stopped (if possible)
     def update_stat_track(self, track, pos = 0):
-        if self.dbHandler.stat_exists(track.uri): stat = self.dbHandler.get_stat_by_uri(track.uri)
-        else: stat = self.dbHandler.create_stat(track.uri)
-        
+        if self.dbHandler.stat_exists(track.uri): 
+            stat = self.dbHandler.get_stat_by_uri(track.uri)
+        else: 
+            stat = self.dbHandler.create_stat(track.uri)
+
         stat.last_read_date = datetime.datetime.utcnow()
         stat.read_position = pos
+        stat.read_count += 1 
         
-        if stat.read_count != None: stat.read_count += 1 
-        else: stat.read_count = 1
-        
-        if pos / track.length > 0.9: 
+        if pos / track.length > 0.9: #track finished
             stat.read_end = True
-            if stat.read_count_end != None: stat.read_count_end += 1 
-            else: stat.read_count_end = 1
+            stat.read_count_end += 1
+            stat.day_time_average = (datetime.datetime.now().hour + stat.day_time_average * stat.read_count_end-1)/(stat.read_count_end)
         else: 
             if stat.read_end != True: stat.read_end = False
+            stat.skipped_count +=1
 
         #print (stat)
         stat.update()
