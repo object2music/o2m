@@ -346,7 +346,7 @@ class NfcToMopidy():
                     if self.dbHandler.stat_exists(t.track.uri): 
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                         #tmp update
-                        reg_stat_track(track, stat)
+                        self.reg_stat_track(stat)
                         #When track skipped or too many counts
                         if stat.skipped_count > 0 or stat.read_count_end == self.discover_level or stat.in_library == 1:
                             uris.append(t.track.uri)
@@ -484,7 +484,7 @@ class NfcToMopidy():
                 print(f"error")
 
     #Track Regulation (tmp)
-    def reg_stat_track(self, track, stat):
+    def reg_stat_track(self, stat):
         if (stat.read_count - stat.read_count_end) > stat.skipped_count:
             stat.skipped_count = stat.read_count - stat.read_count_end
         if stat.day_time_average == None or stat.day_time_average == 0:
@@ -506,7 +506,10 @@ class NfcToMopidy():
         if pos / track.length > 0.9: #track finished
             stat.read_end = True
             stat.read_count_end += 1
-            stat.day_time_average = (datetime.datetime.now().hour + stat.day_time_average * stat.read_count_end-1)/(stat.read_count_end)
+            if stat.read_count_end >0:
+                stat.day_time_average = (datetime.datetime.now().hour + stat.day_time_average * stat.read_count_end-1)/(stat.read_count_end)
+            else:
+                stat.day_time_average = datetime.datetime.now().hour
         else: 
             if stat.read_end != True: stat.read_end = False
             stat.skipped_count +=1
