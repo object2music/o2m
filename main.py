@@ -245,7 +245,7 @@ class NfcToMopidy():
                     if 'podcast' in track.uri and '#' not in track.uri: 
                         print(f'Podcast : {track.uri}')
                         feedurl = track.uri.split('+')[1]
-                        shows = self.get_unread_podcasts(track.uri, 0, self.max_results) 
+                        shows = self.get_unread_podcasts(track.uri, 0) 
                         #print(f'Shows : {shows}')
                         self.add_tracks(tag, shows)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
@@ -348,7 +348,7 @@ class NfcToMopidy():
                         #tmp update
                         self.reg_stat_track(stat)
                         #When track skipped or too many counts
-                        if stat.skipped_count > 0 or stat.read_count_end == self.discover_level or stat.in_library == 1:
+                        if stat.skipped_count > 0 or stat.read_count_end >= self.discover_level or stat.in_library == 1:
                             uris.append(t.track.uri)
                 self.mopidyHandler.tracklist.remove({'uri':uris})
             
@@ -451,10 +451,11 @@ class NfcToMopidy():
         if 'spotify:track' in track_uri:
             #tag associated & update discover_level 
             discover_level = self.discover_level
-            for tag in self.activetags:
+            #Update discover_level with tag options
+            '''for tag in self.activetags:
                 if track_uri in tag.uris and tag.option_discover_level:   
                     discover_level = tag.option_discover_level
-                    break
+                    break'''
 
             #Get tracks recommandations
             track_data = track_uri.split(':') # on découpe l'uri' :
@@ -487,7 +488,7 @@ class NfcToMopidy():
     def reg_stat_track(self, stat):
         if (stat.read_count - stat.read_count_end) > stat.skipped_count:
             stat.skipped_count = stat.read_count - stat.read_count_end
-        if stat.day_time_average == None or stat.day_time_average == 0:
+        if stat.read_count_end > 0 and (stat.day_time_average == None or stat.day_time_average == 0):
             stat.day_time_average = stat.last_read_date.hour
         stat.update()
         stat.save()       
@@ -506,8 +507,8 @@ class NfcToMopidy():
         if pos / track.length > 0.9: #track finished
             stat.read_end = True
             stat.read_count_end += 1
-            if stat.read_count_end >0:
-                stat.day_time_average = (datetime.datetime.now().hour + stat.day_time_average * stat.read_count_end-1)/(stat.read_count_end)
+            if stat.read_count_end > 0 and stat.day_time_average != None:
+                stat.day_time_average = (datetime.datetime.now().hour + stat.day_time_average * (stat.read_count_end - 1))/(stat.read_count_end)
             else:
                 stat.day_time_average = datetime.datetime.now().hour
         else: 
