@@ -35,6 +35,19 @@ END_BOLD = '\033[0m'
 
     chemin mac données mopidy : 
     /Users/antoine/.local/share/mopidy/
+
+
+# On récupère le fichier de config de mopidy
+#config = configparser.ConfigParser()
+#config.read(str(Path.home()) + '/.config/mopidy/mopidy.conf')
+# On cible la section spotify
+#spotify_config = config['spotify']
+# On passe les valeurs à spotipy
+#client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
+#1sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+
+
 '''
 
 class NfcToMopidy():
@@ -549,7 +562,8 @@ class NfcToMopidy():
 if __name__ == "__main__":
 
     mopidy = MopidyAPI()
-    config = util.get_config()
+    #config2 = util.get_config2() #mopidy
+    config = util.get_config() #o2m
     nfcHandler = NfcToMopidy(mopidy, config)
     spotifyHandler = SpotifyHandler() # Appel à l'api spotify pour recommandations
 
