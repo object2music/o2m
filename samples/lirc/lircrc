@@ -1,7 +1,14 @@
 ## Play/Pause
 begin
      prog = irexec
-     button = KEY_PLAYPAUSE
+     button = KEY_PLAY
+     config = mpc toggle
+     repeat = 0
+end
+
+begin
+     prog = irexec
+     button = KEY_PAUSE
      config = mpc toggle
      repeat = 0
 end
@@ -10,7 +17,7 @@ end
 begin
      prog = irexec
      button = KEY_STOP
-     config = mpc stop
+     config = mpc stop; mpc random off;
      repeat = 0
 end
 
@@ -37,8 +44,8 @@ end
 begin
      prog = irexec
      button = KEY_VOLUMEUP
-     config = mpc volume +4
-     repeat = 1
+     config = mpc volume +2
+     repeat = 0
 end
 
 
@@ -46,8 +53,8 @@ end
 begin
      prog = irexec
      button = KEY_VOLUMEDOWN
-     config = mpc volume -4
-     repeat = 1
+     config = mpc volume -2
+     repeat = 0
 end
 
 
@@ -63,7 +70,7 @@ end
 ## Retour rapide
 begin
      prog = irexec
-     button = KEY_A
+     button = KEY_REWIND
      config = mpc seek -00:00:05
      repeat = 1
 end
@@ -72,78 +79,61 @@ end
 ## Avance rapide
 begin
      prog = irexec
-     button = KEY_B
+     button = KEY_FORWARD
      config = mpc seek +00:00:05
      repeat = 1
-end
-
-
-## Ajouter un repertoire de la collection de mpd dans la playlist
-begin
-     prog = irexec
-     button = KEY_G
-     config = mpc ls repertoire | mpc add
-     repeat = 0
-end
-
-## Mettre Ã  jour la base de donnÃ©e de mpd
-begin
-     prog = irexec
-     button = KEY_I
-     config = mpc update
-     repeat = 0
 end
 
 # insert your playlist name between the " "
 begin
         prog = irexec
         button = KEY_1
-        config = mpc stop; mpc clear; mpc load "Chef";mpc play;
+        config = mpc stop; mpc clear; mpc load "Cool"; mpc random on; mpc play; 
 end
 
 begin
         prog = irexec
         button = KEY_2
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc $
+        config = mpc stop; mpc clear; mpc load "Calm";mpc random on; mpc play; 
 end
 begin
 
         prog = irexec
         button = KEY_3
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "Podcast2listen";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_4
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "Infos";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_5
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "News";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_6
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "Danse";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_7
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "Liv";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_8
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "Maud";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_9
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "Paul";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_0
-        config = mpc stop; mpc clear; mpc load "Your playlist here";mpc play;
+        config = mpc stop; mpc clear; mpc load "Patrick";mpc random on; mpc play; 
 end
