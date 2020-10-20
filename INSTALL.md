@@ -78,3 +78,8 @@ Reference (in french):
 https://www.latelierdugeek.fr/2019/09/30/acr122u-resoudre-lerreur-unable-to-set-alternate-setting-on-usb-interface/
 
 =======================================LIRC==============================================================
+sudo apt-get install lirc
+sudo cp samples/lirc/lirc_options.conf.dist /etc/lirc/lirc_options.conf
+sudo cp samples/lirc/lircrc .
+sudo cp samples/lirc/irexec.service /lib/systemd/system/irexec.service
+sudo systemctl enable irexec.service
