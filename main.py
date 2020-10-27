@@ -339,10 +339,14 @@ class NfcToMopidy():
 
     #Shuffling the tracklist
     def shuffle_tracklist(self, start_index, stop_index):
-        if start_index != None:
-            self.mopidyHandler.tracklist.shuffle(start_index, stop_index)
-        else:
-            self.mopidyHandler.tracklist.shuffle(0, stop_index)
+        try:
+            if start_index != None:
+                self.mopidyHandler.tracklist.shuffle(start_index, stop_index)
+            else:
+                self.mopidyHandler.tracklist.shuffle(0, stop_index)
+        except:
+            print(f"error")
+        
 
     # New tag added : adding tracks to tracklist and associate them to tracks table 
     def add_tracks(self, tag, uris):
