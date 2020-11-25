@@ -139,4 +139,4 @@ dmypy.json
 # vscode config files
 .vscode/
 
-.logs/
+*.log

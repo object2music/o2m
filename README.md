@@ -2,7 +2,9 @@
 
 O2M requires Python3 to run and a few dependencies. Most of them are in the file requirements.txt and can be installed with this command :
 
-`pip3 install -r requirements.txt`
+```sh
+pip3 install -r requirements.txt
+```
 
 ### Other dependencies :
 
