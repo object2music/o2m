@@ -4,7 +4,7 @@ from peewee import IntegrityError
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 
-from src.nfcmodels import Tag, Stats, db
+from src.nfcmodels import Tag, Stats, Stats_Raw, db
 '''
 Database & Tables creation
 Used only one time from the terminal
@@ -125,6 +125,10 @@ class DatabaseHandler():
         else:
             return False
 
+    #STATS_RAW
+    def create_stat_raw(self, uri, read_time, read_hour, username):
+        stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
+        return stat_raw    
 
 if __name__ == "__main__":
 

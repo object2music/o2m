@@ -70,7 +70,7 @@ class Tag(BaseModel):
         self.save()
 
 class Stats(BaseModel):
-    uri = CharField(unique=True, index=True, primary_key=True, ) # Unique uri
+    uri = CharField(unique=True, index=True, primary_key=True ) # Unique uri
     last_read_date = TimestampField(null=True, utc=True) # date
     read_position = IntegerField(default=0) # description text
     read_end = IntegerField(default=0) # Boolean if track ended
@@ -79,6 +79,8 @@ class Stats(BaseModel):
     skipped_count = IntegerField(default=0) # int
     in_library = IntegerField(default=0) # Boolean if track ended
     day_time_average = IntegerField(default=0) # int
+    username = TextField(null=True) # user text
+
 
     def __str__(self):
         return 'URI : {} | LAST READ : {} | READ COUNT : {} | READ POSITION : {} | READ END : {}' .format(self.uri, self.last_read_date, self.read_count, self.read_position, self.read_end)
@@ -91,3 +93,12 @@ class Stats(BaseModel):
         self.last_read_date = datetime.datetime.utcnow()
         self.update()
         self.save()'''
+
+class Stats_Raw(BaseModel):
+    read_date = TimestampField(index=True, primary_key=True,null=True, utc=True) # date # Unique uri
+    uri = CharField(default=0) 
+    read_hour = IntegerField(default=0) # int
+    username = TextField(null=True) # user text
+
+    def __str__(self):
+        return 'URI : {} | LAST READ : {} | READ Hur : {}' .format(self.uri, self.read_date, self.read_hour)

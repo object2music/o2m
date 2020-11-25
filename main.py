@@ -4,7 +4,7 @@ from mopidyapi import MopidyAPI
 from mopidy_podcast import feeds, Extension
 
 from src.nfcreader import NfcReader
-from src.dbhandler import DatabaseHandler, Stats, Tag
+from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Tag
 from src.spotifyhandler import SpotifyHandler
 from src import util
 
@@ -45,9 +45,6 @@ END_BOLD = '\033[0m'
 # On passe les valeurs à spotipy
 #client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
 #1sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
-
-
-
 '''
 
 class NfcToMopidy():
@@ -62,11 +59,12 @@ class NfcToMopidy():
     podcast_newest_first = False
     option_sort = 'desc'
 
-    def __init__(self, mopidyHandler, config):
+    def __init__(self, mopidyHandler, config, config2):
         self.log = logging.getLogger(__name__)
         self.log.info('NFC TO MOPIDY INITIALIZATION')
         
         self.config = config
+        self.config2 = config2        
         self.dbHandler = DatabaseHandler() # Gère la base de données
         self.mopidyHandler = mopidyHandler # Commandes mopidy via websockets
         self.spotifyHandler = SpotifyHandler() # Appel à l'api spotify pour recommandations
@@ -89,6 +87,9 @@ class NfcToMopidy():
         
         if 'shuffle' in self.config['o2m']:
             self.shuffle = bool(self.config['o2m']['shuffle'])
+
+        if 'username' in self.config2['spotify']:
+            self.username = self.config2['spotify']['username']
 
         #Default volume setting at beginning (or in main ?)
         self.mopidyHandler.mixer.set_volume(self.default_volume)
@@ -508,7 +509,12 @@ class NfcToMopidy():
         if stat.read_count_end > 0 and (stat.day_time_average == None or stat.day_time_average == 0):
             stat.day_time_average = stat.last_read_date.hour
         stat.update()
-        stat.save()       
+        stat.save()
+
+    #Update raw stat when finished, skipped or system stopped (if possible)
+    def update_stat_raw(self, track):
+        self.dbHandler.create_stat_raw(track.uri,datetime.datetime.utcnow(),datetime.datetime.now().hour,self.username)
+
             
     #Update tracks stat when finished, skipped or system stopped (if possible)
     def update_stat_track(self, track, pos = 0):
@@ -519,7 +525,8 @@ class NfcToMopidy():
 
         stat.last_read_date = datetime.datetime.utcnow()
         stat.read_position = pos
-        stat.read_count += 1 
+        stat.read_count += 1
+        stat.username = self.username
         
         if hasattr(track, 'length'):
             if pos / track.length > 0.9: #track finished
@@ -566,9 +573,9 @@ class NfcToMopidy():
 if __name__ == "__main__":
 
     mopidy = MopidyAPI()
-    #config2 = util.get_config2() #mopidy
     config = util.get_config() #o2m
-    nfcHandler = NfcToMopidy(mopidy, config)
+    config2 = util.get_config2() #mopidy
+    nfcHandler = NfcToMopidy(mopidy, config, config2)
     spotifyHandler = SpotifyHandler() # Appel à l'api spotify pour recommandations
 
     # A chaque lancement on vide la tracklist (plus simple pour les tests)
@@ -609,6 +616,7 @@ if __name__ == "__main__":
         #Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
         if 'track' in track.uri and event.time_position / track.length > 0.9 :
             nfcHandler.add_reco_after_track_read(track.uri)
+            nfcHandler.update_stat_raw(track)
 
         #Tracklist filling when empty
         tracklist_length = mopidy.tracklist.get_length()
