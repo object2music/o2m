@@ -379,7 +379,6 @@ class NfcToMopidy:
 
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
         if tltracks_added:
-
             # Exclude tracks already read when tag.option_new activated
             if tag.option_new == True:
                 uris = []
@@ -427,9 +426,9 @@ class NfcToMopidy:
 
             # Uris : Mopidy Uri's associated to added Tag
             if hasattr(tag, "uris"):
-                tag.uris += [uris]
+                tag.uris += [x.track.uri for x in slice2]
             else:
-                tag.uris = uris
+                tag.uris = [x.track.uri for x in slice2]
             # print("tag.uris",tag.uris)
 
             # Shuffle complete computed tracklist if more than two tags
