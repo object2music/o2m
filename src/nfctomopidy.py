@@ -543,6 +543,7 @@ class NfcToMopidy:
             # Updating tag infos
             # if 'tag' in locals():
             try:
+                tag = self.get_active_tag_by_uri(track_uri)
                 if hasattr(tag, "tlids"):
                     tag.tlids += [x.tlid for x in slice]
                 else:
@@ -552,8 +553,14 @@ class NfcToMopidy:
                     tag.uris += [uris]
                 else:
                     tag.uris = uris
-            except:
-                print(f"error")
+            except Exception as e:
+                print(e)
+
+    def get_active_tag_by_uri(self, uri):
+        for tag in self.activetags:
+            if uri in tag.uris:
+                return tag
+        return None
 
     # Track Regulation (tmp)
     def reg_stat_track(self, stat):
