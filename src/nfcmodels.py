@@ -22,8 +22,7 @@ class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):
 
 
 """
-DATABASE INIT 
-
+DATABASE INIT
 TODO 
     * Verifier la structure de la base et mettre à jour ou créer le schéma si nécessaire
 

@@ -37,14 +37,14 @@ END_BOLD = "\033[0m"
     /Users/antoine/.local/share/mopidy/
 
 
-# On récupère le fichier de config de mopidy
-#config = configparser.ConfigParser()
-#config.read(str(Path.home()) + '/.config/mopidy/mopidy.conf')
-# On cible la section spotify
-#spotify_config = config['spotify']
-# On passe les valeurs à spotipy
-#client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
-#1sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+    On récupère le fichier de config de mopidy
+        config = configparser.ConfigParser()
+        config.read(str(Path.home()) + '/.config/mopidy/mopidy.conf')
+    On cible la section spotify
+        spotify_config = config['spotify']
+    On passe les valeurs à spotipy
+        client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
+        1sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 """
 
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     o2mConf = util.get_config_file("o2m.conf")  # o2m
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
-    spotifyHandler = SpotifyHandler()  # Appel à l'api spotify pour recommandations
+    # spotifyHandler = SpotifyHandler()  # Appel à l'api spotify pour recommandations
 
     # A chaque lancement on vide la tracklist (plus simple pour les tests)
     mopidy.tracklist.clear()
