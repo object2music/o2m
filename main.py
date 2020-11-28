@@ -60,7 +60,6 @@ if __name__ == "__main__":
     o2mConf = util.get_config_file("o2m.conf")  # o2m
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
-    # spotifyHandler = SpotifyHandler()  # Appel à l'api spotify pour recommandations
 
     # A chaque lancement on vide la tracklist (plus simple pour les tests)
     mopidy.tracklist.clear()

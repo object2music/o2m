@@ -18,7 +18,7 @@ class NfcToMopidy:
     suffle = False
     max_results = 50
     default_volume = 70  # 0-100
-    discover_level = 5  # 0-10
+    option_discover_level = 5  # 0-10
     podcast_newest_first = False
     option_sort = "desc"
 
@@ -41,7 +41,7 @@ class NfcToMopidy:
             self.default_volume = int(self.configO2M["default_volume"])
 
         if "discover_level" in self.configO2M:
-            self.discover_level = int(self.configO2M["discover_level"])
+            self.option_discover_level = int(self.configO2M["discover_level"])
 
         if "podcast_newest_first" in self.configO2M:
             self.podcast_newest_first = self.configO2M["podcast_newest_first"] == "true"
@@ -390,7 +390,7 @@ class NfcToMopidy:
                         # When track skipped or too many counts
                         if (
                             stat.skipped_count > 0
-                            or stat.read_count_end >= self.discover_level
+                            or stat.read_count_end >= self.option_discover_level
                             or stat.in_library == 1
                         ):
                             uris.append(t.track.uri)
@@ -506,15 +506,32 @@ class NfcToMopidy:
             if tlid != current_tlid:
                 self.mopidyHandler.tracklist.remove({"tlid": [tlid]})
 
+    def get_option_for_tag_uri(self, uri, optionName):
+        tag = self.get_active_tag_by_uri(uri)
+        if tag is not None:
+            attr = getattr(tag, optionName)
+            if attr is not None:
+                if attr > 0:
+                    return getattr(tag, optionName, None)
+        return getattr(self, optionName, None)
+
+    def get_option_discover_level_for_tag(self, uri):
+        tag = self.get_active_tag_by_uri(uri)
+        if tag is not None:
+            if tag.option_discover_level is not None:
+                if tag.option_discover_level > 0:
+                    return tag.option_discover_level
+        return self.option_discover_level
+
     def add_reco_after_track_read(self, track_uri):
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
-            discover_level = self.discover_level
-            # Update discover_level with tag options
-            """for tag in self.activetags:
-                if track_uri in tag.uris and tag.option_discover_level:   
-                    discover_level = tag.option_discover_level
-                    break"""
+            print("DISCOVER")
+            # discover_level = self.get_option_for_tag_uri(
+            #     track_uri, "option_discover_level"
+            # )
+            discover_level = self.get_option_discover_level_for_tag(track_uri)
+            print(discover_level)
 
             # Get tracks recommandations
             track_data = track_uri.split(":")  # on découpe l'uri' :
