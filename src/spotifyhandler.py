@@ -61,6 +61,15 @@ class SpotifyHandler:
         tracks = self.sp.artist_top_tracks(artist_id, country="FR")
         return self.parse_tracks(tracks)
 
+    def get_track_artist(self, track_id):
+        print (track_id)
+        #artists=self.sp.track(track_id)['artists']
+        #print (self.sp.track(track_id))
+        #print (artists)
+        #random.shuffle(artists)
+        #artist_id = artists[0]['id']
+        #return artist_id
+
     def get_artist_all_tracks(self, artist_id, limit=10):
         albums = self.sp.artist_albums(artist_id, country="FR")
         tracks_uris = []

@@ -435,46 +435,7 @@ class NfcToMopidy:
             if len(self.activetags) > 1:
                 self.shuffle_tracklist(current_index + 1, new_length)
 
-    # Vide la tracklist, ajoute plusieurs uris puis lance la lecture
-    def add_tracks0(self, tag, uris):
-        print(uris)
-        tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
-
-        if tltracks_added:
-            # Slice added tracks to max_results
-            tltracks_rem = tltracks_added[self.max_results :]
-            for x in tltracks_rem:
-                self.mopidyHandler.tracklist.remove({"tlid": [x.tlid]})  # to optimize ?
-            tltracks_added = tltracks_added[0 : self.max_results]
-            # slice1 = self.mopidyHandler.tracklist.slice(start, end)
-            print(f"Adding {len(tltracks_added)} tracks")
-
-            # Update Tag Values
-            # TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
-            if hasattr(tag, "tlids"):
-                tag.tlids += [x.tlid for x in tltracks_added]
-            else:
-                tag.tlids = [x.tlid for x in tltracks_added]
-            print("tag.tlids", tag.tlids)
-
-            # Uris : Mopidy Uri's associated to added Tag
-            tag.uris = uris
-            print("tag.uris", tag.uris)
-
-            # conditions pour mélanger les tracks : shuffle global, carte ou plus de 2 cartes
-            if (
-                self.shuffle == "true"
-                or tag.option_sort == "shuffle"
-                or len(self.activetags) > 1
-            ):
-                current_index = self.mopidyHandler.tracklist.index()
-                tl_length = self.mopidyHandler.tracklist.get_length()
-                if current_index != None:
-                    self.mopidyHandler.tracklist.shuffle(current_index + 1, tl_length)
-                else:
-                    self.mopidyHandler.tracklist.shuffle(0, tl_length)
-            # self.play_or_resume()
-
+ 
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
         if state == "stopped":
@@ -523,6 +484,8 @@ class NfcToMopidy:
                     return tag.option_discover_level
         return self.option_discover_level
 
+#   SoNGS RECommandation MANAGEMENT
+
     def add_reco_after_track_read(self, track_uri):
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
@@ -530,16 +493,21 @@ class NfcToMopidy:
             # discover_level = self.get_option_for_tag_uri(
             #     track_uri, "option_discover_level"
             # )
-            discover_level = self.get_option_discover_level_for_tag(track_uri)
+
+            discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
+            #discover_level = self.get_option_discover_level_for_tag(track_uri)
             print(discover_level)
 
             # Get tracks recommandations
             track_data = track_uri.split(":")  # on découpe l'uri' :
             track_seed = [track_data[2]]  # track id
             limit = int(round(discover_level * 0.25))
-            uris = self.spotifyHandler.get_recommendations(
-                seed_genres=None, seed_artists=None, seed_tracks=track_seed, limit=limit
-            )
+            
+            #1 : Spotify Reco
+            uris = self.get_spotify_reco(track_seed, limit)
+
+            #2 : Same Artist
+            self.get_same_artist_tracks(track_seed, limit)
 
             # Calculate insertion index depending of discover_level
             tl_length = self.mopidyHandler.tracklist.get_length()
@@ -571,6 +539,19 @@ class NfcToMopidy:
                     tag.uris = uris
             except Exception as e:
                 print(e)
+
+    def get_spotify_reco(self, track_seed, limit):
+        uris = self.spotifyHandler.get_recommendations(
+            seed_genres=None, seed_artists=None, seed_tracks=track_seed, limit=limit)
+        return uris
+
+    def get_same_artist_tracks(self, track_seed, limit):
+        artist_id = self.spotifyHandler.get_track_artist(track_seed)
+        #uris = self.spotifyHandler.get_artist_all_tracks(artist_id, limit)
+        #return uris
+
+
+#  TRACKS AND STATS MANAGEMENT
 
     def get_active_tag_by_uri(self, uri):
         for tag in self.activetags:
