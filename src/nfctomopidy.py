@@ -502,12 +502,12 @@ class NfcToMopidy:
             track_data = track_uri.split(":")  # on découpe l'uri' :
             track_seed = [track_data[2]]  # track id
             limit = int(round(discover_level * 0.25))
-            
-            #1 : Spotify Reco
-            uris = self.get_spotify_reco(track_seed, limit)
 
-            #2 : Same Artist
-            self.get_same_artist_tracks(track_seed, limit)
+            #1 : Same Artist
+            uris = self.get_same_artist_tracks(track_uri, limit)
+
+            #2 : Spotify Reco
+            #uris = self.get_spotify_reco(track_seed, limit)
 
             # Calculate insertion index depending of discover_level
             tl_length = self.mopidyHandler.tracklist.get_length()
@@ -521,34 +521,35 @@ class NfcToMopidy:
                     + ((tl_length - current_index) * (10 - discover_level) / 10)
                 )
             )
-            slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
-            print(f"Adding new tracks at index {str(new_index)} with uris {uris}")
+            if uris:
+                slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
+                print(f"Adding new tracks at index {str(new_index)} with uris {uris}")
 
-            # Updating tag infos
-            # if 'tag' in locals():
-            try:
-                tag = self.get_active_tag_by_uri(track_uri)
-                if hasattr(tag, "tlids"):
-                    tag.tlids += [x.tlid for x in slice]
-                else:
-                    tag.tlids = [x.tlid for x in slice]
+                # Updating tag infos
+                # if 'tag' in locals():
+                try:
+                    tag = self.get_active_tag_by_uri(track_uri)
+                    if hasattr(tag, "tlids"):
+                        tag.tlids += [x.tlid for x in slice]
+                    else:
+                        tag.tlids = [x.tlid for x in slice]
 
-                if hasattr(tag, "uris"):
-                    tag.uris += [uris]
-                else:
-                    tag.uris = uris
-            except Exception as e:
-                print(e)
+                    if hasattr(tag, "uris"):
+                        tag.uris += [uris]
+                    else:
+                        tag.uris = uris
+                except Exception as e:
+                    print(e)
 
     def get_spotify_reco(self, track_seed, limit):
         uris = self.spotifyHandler.get_recommendations(
             seed_genres=None, seed_artists=None, seed_tracks=track_seed, limit=limit)
         return uris
 
-    def get_same_artist_tracks(self, track_seed, limit):
-        artist_id = self.spotifyHandler.get_track_artist(track_seed)
-        #uris = self.spotifyHandler.get_artist_all_tracks(artist_id, limit)
-        #return uris
+    def get_same_artist_tracks(self, track_uri, limit):
+        artist_id = self.spotifyHandler.get_track_artist(track_uri)
+        uris = self.spotifyHandler.get_artist_all_tracks(artist_id, limit)
+        return uris
 
 
 #  TRACKS AND STATS MANAGEMENT
