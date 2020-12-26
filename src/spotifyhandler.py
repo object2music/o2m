@@ -62,9 +62,9 @@ class SpotifyHandler:
         return self.parse_tracks(tracks)
 
     def get_track_artist(self, track_id):
-        print (track_id)
+        #print (track_id)
         artists=self.sp.track(track_id)['artists']
-        print (artists)
+        #print (artists)
         random.shuffle(artists)
         artist_id = artists[0]['id']
         return artist_id

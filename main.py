@@ -82,39 +82,36 @@ if __name__ == "__main__":
     # Fonction called when tracked finished or skipped
     @mopidy.on_event("track_playback_ended")
     def track_ended_event(event):
+        #Datas
         track = event.tl_track.track
-        # print (f"Track {track}")
+        tag = nfcHandler.get_active_tag_by_uri(track.uri)
+        #print (f"Track :{track}")
+        #print (f"Tag :{tag}")
         # print (f"Event {event}")
-        print(
-            f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms"
-        )
+        print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
 
         # update stats
         nfcHandler.update_stat_track(track, event.time_position)
 
         # Podcast
         if "podcast" in track.uri:
-            if (
-                event.time_position / track.length > 0.5
-            ):  # Si la lecture de l'épisode est au delà de la moitié
-                tag = nfcHandler.dbHandler.get_tag_by_data(
-                    track.album.uri
-                )  # Récupère le tag correspondant à la chaine
+            if (event.time_position / track.length > 0.5):  # Si la lecture de l'épisode est au delà de la moitié
+                tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri)  # To check !!! Récupère le tag correspondant à la chaine
                 if tag != None:
                     if tag.tag_type == "podcasts:channel":
-                        tag.option_last_unread = (
-                            track.track_no
-                        )  # actualise le numéro du dernier podcast écouté
+                        tag.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
                         tag.update()
                         tag.save()
 
         # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
         if "track" in track.uri and event.time_position / track.length > 0.9:
             nfcHandler.add_reco_after_track_read(track.uri)
-            nfcHandler.update_stat_raw(track)
+            if tag.option_type != 'hidden': 
+                print ("adding raw")
+                nfcHandler.update_stat_raw(track)
             
         if "tunein" in track.uri:
-            nfcHandler.update_stat_raw(track)            
+            if tag.option_type != 'hidden': nfcHandler.update_stat_raw(track)
 
         # Tracklist filling when empty
         tracklist_length = mopidy.tracklist.get_length()

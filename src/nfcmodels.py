@@ -70,7 +70,8 @@ class Tag(BaseModel):
     description = TextField(null=True)  # description text
     read_count = IntegerField(default=0)  # Increment each time a tag is used
     last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date
-    option_new = BooleanField(default=False)  # only play new tracks
+    option_type = CharField(default=False)  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
+    option_new = BooleanField(default=False)  # only play new tracks (depreciated, to be suppressed)
     option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
     option_duration = IntegerField(
         null=True
@@ -84,8 +85,8 @@ class Tag(BaseModel):
     )  # Podcasts max count to read in podcast channel
 
     def __str__(self):
-        return "TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}".format(
-            self.uid, self.tag_type, self.data, self.description, self.read_count
+        return "TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(
+            self.uid, self.tag_type, self.data, self.description, self.read_count, self.option_type
         )
 
     def add_count(self):

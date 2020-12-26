@@ -379,8 +379,8 @@ class NfcToMopidy:
 
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
         if tltracks_added:
-            # Exclude tracks already read when tag.option_new activated
-            if tag.option_new == True:
+            # Exclude tracks already read when option is new
+            if tag.option_type == 'new':
                 uris = []
                 for t in tltracks_added:
                     if self.dbHandler.stat_exists(t.track.uri):
@@ -410,7 +410,7 @@ class NfcToMopidy:
                 )
                 self.mopidyHandler.tracklist.remove(
                     {"tlid": [x.tlid for x in slice1]}
-                )  # to optimize ?
+                )  # to be optimized ?
 
             # Update Tag Values : Tldis and Uris
             new_length = self.mopidyHandler.tracklist.get_length()
@@ -422,14 +422,19 @@ class NfcToMopidy:
                 tag.tlids += [x.tlid for x in slice2]
             else:
                 tag.tlids = [x.tlid for x in slice2]
-            # print("tag.tlids",tag.tlids)
+            #print("tag.tlids",tag.tlids)
 
             # Uris : Mopidy Uri's associated to added Tag
             if hasattr(tag, "uris"):
                 tag.uris += [x.track.uri for x in slice2]
             else:
                 tag.uris = [x.track.uri for x in slice2]
-            # print("tag.uris",tag.uris)
+            #print("tag.uris",tag.uris)
+
+            # Option type
+            #tag.option_type = []
+            #if tag.option_type == '' : print (f"Option_type:{tag.option_type}")
+
 
             # Shuffle complete computed tracklist if more than two tags
             if len(self.activetags) > 1:
@@ -472,7 +477,7 @@ class NfcToMopidy:
         if tag is not None:
             attr = getattr(tag, optionName)
             if attr is not None:
-                if attr > 0:
+                if attr != '':
                     return getattr(tag, optionName, None)
         return getattr(self, optionName, None)
 
@@ -480,23 +485,18 @@ class NfcToMopidy:
         tag = self.get_active_tag_by_uri(uri)
         if tag is not None:
             if tag.option_discover_level is not None:
-                if tag.option_discover_level > 0:
+                if tag.option_discover_level != '':
                     return tag.option_discover_level
         return self.option_discover_level
 
-#   SoNGS RECommandation MANAGEMENT
+#   SONGS RECOMMANDATION MANAGEMENT
 
     def add_reco_after_track_read(self, track_uri):
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
-            print("DISCOVER")
-            # discover_level = self.get_option_for_tag_uri(
-            #     track_uri, "option_discover_level"
-            # )
-
             discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
             #discover_level = self.get_option_discover_level_for_tag(track_uri)
-            print(discover_level)
+            print(f"Discover level :{discover_level}")
 
             # Get tracks recommandations
             track_data = track_uri.split(":")  # on découpe l'uri' :
@@ -577,7 +577,7 @@ class NfcToMopidy:
             track.uri,
             datetime.datetime.utcnow(),
             datetime.datetime.now().hour,
-            self.username,
+            self.username
         )
 
     # Update tracks stat when finished, skipped or system stopped (if possible)
