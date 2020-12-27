@@ -217,20 +217,16 @@ class NfcToMopidy:
     """
 
     def one_tag_changed(self, tag):
-        if (
-            tag.uid != self.last_tag_uid
-        ):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
+        if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             print(f"Tag : {tag}")
 
-            # Update DB specific tag option (duration is not good and definitive nomenclature)
+            #DATA
             max_results = self.max_results
-            if tag.option_max_results:
-                self.max_results = tag.option_max_results
+            if tag.option_max_results: self.max_results = tag.option_max_results
+            media_parts = tag.data.split(":")  # on découpe le champs média du tag en utilisant le séparateur :
 
-            # self.last_tag_uid = tag.uid # On stocke en variable de classe le tag pour le comparer ultérieurement
-            media_parts = tag.data.split(
-                ":"
-            )  # on découpe le champs média du tag en utilisant le séparateur :
+            #DB Regulation (tmp)
+            self.reg_tag_db(tag)
 
             # Recommandation
             if "recommendation" in media_parts:
@@ -378,6 +374,7 @@ class NfcToMopidy:
         current_index = self.mopidyHandler.tracklist.index()
 
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
+
         if tltracks_added:
             # Exclude tracks already read when option is new
             if tag.option_type == 'new':
@@ -431,10 +428,12 @@ class NfcToMopidy:
                 tag.uris = [x.track.uri for x in slice2]
             #print("tag.uris",tag.uris)
 
-            # Option type
-            #tag.option_type = []
-            #if tag.option_type == '' : print (f"Option_type:{tag.option_type}")
-
+            # Option types
+            if hasattr(tag, "option_types"):
+                tag.option_types += [tag.option_type for x in slice2]
+            else:
+                tag.option_types = [tag.option_type for x in slice2]
+            #print("Option_types",tag.option_types)
 
             # Shuffle complete computed tracklist if more than two tags
             if len(self.activetags) > 1:
@@ -496,7 +495,7 @@ class NfcToMopidy:
             # tag associated & update discover_level
             discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
             #discover_level = self.get_option_discover_level_for_tag(track_uri)
-            print(f"Discover level :{discover_level}")
+            #print(f"Discover level :{discover_level}")
 
             # Get tracks recommandations
             track_data = track_uri.split(":")  # on découpe l'uri' :
@@ -533,11 +532,20 @@ class NfcToMopidy:
                         tag.tlids += [x.tlid for x in slice]
                     else:
                         tag.tlids = [x.tlid for x in slice]
+                    #print("Tag.tlids : ",tag.tlids)
 
                     if hasattr(tag, "uris"):
-                        tag.uris += [uris]
+                        tag.uris += uris
                     else:
                         tag.uris = uris
+                    #print("Tag.uris : ",tag.uris)
+
+                    if hasattr(tag, "option_types"):
+                        tag.option_types += ['new' for x in slice]
+                    else:
+                        tag.option_types = ['new' for x in slice]
+                    #print("Option_types : ",tag.option_types)
+
                 except Exception as e:
                     print(e)
 
@@ -560,7 +568,7 @@ class NfcToMopidy:
                 return tag
         return None
 
-    # Track Regulation (tmp)
+    # Track DB Regulation (tmp)
     def reg_stat_track(self, stat):
         if (stat.read_count - stat.read_count_end) > stat.skipped_count:
             stat.skipped_count = stat.read_count - stat.read_count_end
@@ -570,6 +578,12 @@ class NfcToMopidy:
             stat.day_time_average = stat.last_read_date.hour
         stat.update()
         stat.save()
+
+    # Tag DB Regulation (tmp)
+    def reg_tag_db(self, tag):
+        if tag.option_type == '': tag.option_type='normal'
+        tag.update()
+        tag.save()
 
     # Update raw stat when finished, skipped or system stopped (if possible)
     def update_stat_raw(self, track):
@@ -581,7 +595,7 @@ class NfcToMopidy:
         )
 
     # Update tracks stat when finished, skipped or system stopped (if possible)
-    def update_stat_track(self, track, pos=0):
+    def update_stat_track(self, track, pos=0, option_type=''):
         if self.dbHandler.stat_exists(track.uri):
             stat = self.dbHandler.get_stat_by_uri(track.uri)
         else:
@@ -591,6 +605,7 @@ class NfcToMopidy:
         stat.read_position = pos
         stat.read_count += 1
         stat.username = self.username
+        stat.option_type = option_type
 
         if hasattr(track, "length"):
             if pos / track.length > 0.9:  # track finished

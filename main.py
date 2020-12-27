@@ -85,13 +85,15 @@ if __name__ == "__main__":
         #Datas
         track = event.tl_track.track
         tag = nfcHandler.get_active_tag_by_uri(track.uri)
+        option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+        #print (f"Option type : {option_type}")
         #print (f"Track :{track}")
         #print (f"Tag :{tag}")
         # print (f"Event {event}")
         print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
 
         # update stats
-        nfcHandler.update_stat_track(track, event.time_position)
+        nfcHandler.update_stat_track(track, event.time_position,option_type)
 
         # Podcast
         if "podcast" in track.uri:
@@ -107,7 +109,7 @@ if __name__ == "__main__":
         if "track" in track.uri and event.time_position / track.length > 0.9:
             nfcHandler.add_reco_after_track_read(track.uri)
             if tag.option_type != 'hidden': 
-                print ("adding raw")
+                print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track)
             
         if "tunein" in track.uri:
