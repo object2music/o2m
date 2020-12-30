@@ -30,6 +30,9 @@ sudo mopidyctl local scan
 
 #Tags db initialisation
 sudo cp samples/o2m.db o2m.db #and modify as needed
+sudo cp samples/o2m.conf /etc/mopidy/o2m.conf
+sudo chmod 777 /etc/mopidy/o2m.conf
+
 
 #autorun o2m
 sudo cp samples/o2m.service /lib/systemd/system/o2m.service
