@@ -73,16 +73,10 @@ class Tag(BaseModel):
     option_type = CharField(null=True)  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
     option_new = BooleanField(null=True)  # only play new tracks (depreciated, to be suppressed)
     option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
-    option_duration = IntegerField(
-        null=True
-    )  # max duration of a media : mostly useful for radios
+    option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
     option_max_results = IntegerField(null=True)  # Max results associated to tag
-    option_discover_level = IntegerField(
-        null=True
-    )  # Discover level (0-10) associated to tag
-    option_last_unread = IntegerField(
-        null=True
-    )  # Podcasts max count to read in podcast channel
+    option_discover_level = IntegerField(default=5)  # Discover level (0-10) associated to tag
+    option_last_unread = IntegerField(null=True)  # Podcasts max count to read in podcast channel
 
     def __str__(self):
         return "TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(
@@ -134,7 +128,7 @@ class Stats(BaseModel):
 
 class Stats_Raw(BaseModel):
     read_date = TimestampField(
-        index=True, primary_key=True, null=True, utc=True
+        index=True, null=True, utc=True
     )  # date # Unique uri
     uri = CharField(default=0)
     read_hour = IntegerField(default=0)  # int

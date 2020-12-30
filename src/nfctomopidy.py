@@ -49,6 +49,9 @@ class NfcToMopidy:
         if "option_sort" in self.configO2M:
             self.option_sort = self.configO2M["option_sort"] == "desc"
 
+        if "option_autofill_playlists" in self.configO2M:
+            self.option_autofill_playlists = self.configO2M["option_autofill_playlists"] == "false"
+
         if "shuffle" in self.configO2M:
             self.shuffle = bool(self.configO2M["shuffle"])
 
@@ -471,23 +474,6 @@ class NfcToMopidy:
             if tlid != current_tlid:
                 self.mopidyHandler.tracklist.remove({"tlid": [tlid]})
 
-    def get_option_for_tag_uri(self, uri, optionName):
-        tag = self.get_active_tag_by_uri(uri)
-        if tag is not None:
-            attr = getattr(tag, optionName)
-            if attr is not None:
-                if attr != '':
-                    return getattr(tag, optionName, None)
-        return getattr(self, optionName, None)
-
-    def get_option_discover_level_for_tag(self, uri):
-        tag = self.get_active_tag_by_uri(uri)
-        if tag is not None:
-            if tag.option_discover_level is not None:
-                if tag.option_discover_level != '':
-                    return tag.option_discover_level
-        return self.option_discover_level
-
 #   SONGS RECOMMANDATION MANAGEMENT
 
     def add_reco_after_track_read(self, track_uri):
@@ -495,7 +481,7 @@ class NfcToMopidy:
             # tag associated & update discover_level
             discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
             #discover_level = self.get_option_discover_level_for_tag(track_uri)
-            #print(f"Discover level :{discover_level}")
+            print(f"\nDiscover level :{discover_level}")
 
             # Get tracks recommandations
             track_data = track_uri.split(":")  # on découpe l'uri' :
@@ -568,6 +554,24 @@ class NfcToMopidy:
                 return tag
         return None
 
+    def get_option_for_tag_uri(self, uri, optionName):
+        tag = self.get_active_tag_by_uri(uri)
+        if tag is not None:
+            attr = getattr(tag, optionName)
+            if attr is not None:
+                if attr != '':
+                    return getattr(tag, optionName, None)
+        return getattr(self, optionName, None)
+
+    def get_option_discover_level_for_tag(self, uri):
+        tag = self.get_active_tag_by_uri(uri)
+        if tag is not None:
+            if tag.option_discover_level is not None:
+                if tag.option_discover_level != '':
+                    return tag.option_discover_level
+        return self.option_discover_level
+
+
     # Track DB Regulation (tmp)
     def reg_stat_track(self, stat):
         if (stat.read_count - stat.read_count_end) > stat.skipped_count:
@@ -605,7 +609,10 @@ class NfcToMopidy:
         stat.read_position = pos
         stat.read_count += 1
         stat.username = self.username
-        stat.option_type = option_type
+        #Avoid downgrade of option types in DB
+        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
+            if not(option_type == 'normal' and stat.option_type == 'favorites'):
+                stat.option_type = option_type
 
         if hasattr(track, "length"):
             if pos / track.length > 0.9:  # track finished
@@ -623,9 +630,39 @@ class NfcToMopidy:
                     stat.read_end = False
                 stat.skipped_count += 1
 
+        #Add the track to playlist(s) if played above discover level
+        #self.option_autofill_playlists == "true" and 
+        if stat.option_type == 'new' and stat.read_count_end > (self.option_discover_level/2 - 1):
+            uri = []
+            uri.append(track.uri)
+            for tag in self.activetags:
+                #Need to loop on the playlists IN the tag/card
+                if tag.option_type == 'normal':
+                    if 'spotify:playlist' in tag.data :
+                        result = self.autofill_spotify_playlist(tag.data,uri)
+                        if result: stat.option_type = 'normal'
+                    if 'm3u' in tag.data :
+                        playlist = self.mopidyHandler.playlists.lookup(tag.data)
+                        for track in playlist.tracks:
+                            if 'spotify:playlist' in track.uri :
+                                result = self.autofill_spotify_playlist(track.uri,uri)
+                                if result: stat.option_type = 'normal'
+
+            '''tag_favorite = self.dbHandler.get_tag_by_option_type('favorites')
+            if tag_favorite and 'spotify:playlist' in tag_favorite.data: 
+                self.spotifyHandler.add_tracks_playlist(self.username, tag_favorite.data, track.uri)'''
+
         print(stat)
         stat.update()
         stat.save()
+
+    # Auto Filling playlist 
+    def autofill_spotify_playlist(self, playlist_uri,uri):
+        #playlist_id = playlist_uri.split(":")[2]
+        print (f"Auto Filling playlist with self.username: {self.username}, playlist: {playlist_uri}, track.uri: {uri}")
+        #Todo : check : is the song already present ?
+        result = self.spotifyHandler.add_tracks_playlist(self.username, playlist_uri, uri)
+        return (result)
 
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
     def update_tracks(self):

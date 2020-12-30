@@ -13,16 +13,32 @@ import src.util as util
 
 class SpotifyHandler:
     def __init__(self):
-        spotify_config = util.get_config_file("mopidy.conf")["spotipy"]
-        # client_credentials_manager = SpotifyClientCredentials()
-        client_credentials_manager = SpotifyClientCredentials(
-            client_id=spotify_config["client_id_spotipy"],
-            client_secret=spotify_config["client_secret_spotipy"],
-        )
-        self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+        spotipy_config = util.get_config_file("mopidy.conf")["spotipy"]
+        spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
 
-        # client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
-        # self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+        #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
+        if spotipy_config["auth_method"] == 'authorization_code':
+            token = util.prompt_for_user_token(
+            username=spotify_config["username"],
+            scope='user-library-read user-follow-modify playlist-modify-private playlist-modify-public',
+            client_id=spotipy_config["client_id_spotipy"],
+            client_secret=spotipy_config["client_secret_spotipy"],
+            redirect_uri='http://localhost')
+
+            if token:
+                self.sp = spotipy.Spotify(auth=token)
+                print ("Spotipy initialisation 1")
+            else:
+                spotipy_config["auth_method"] = ''
+
+        #Method 2 : Client Credential (simple but not permit to modify users playlists)
+        if spotipy_config["auth_method"] != 'authorization_code':
+            client_credentials_manager = SpotifyClientCredentials(
+                client_id=spotipy_config["client_id_spotipy"],
+                client_secret=spotipy_config["client_secret_spotipy"]
+            )
+            self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+            print ("Spotipy initialisation 2")
 
     def get_recommendations(
         self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, **kwargs
@@ -80,6 +96,27 @@ class SpotifyHandler:
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
 
+    def add_tracks_playlist(self, username, playlist_id, track_ids):
+        #sp = spotipy.Spotify(auth=token)
+        #self.sp.trace = False
+        results = self.sp.user_playlist_add_tracks(username, playlist_id, track_ids)
+        return results
+
+    def get_playlist_id_by_name(self,username, playlist_name):
+        playlist_id = ''
+        playlists = sp.user_playlists(username)
+        for playlist in playlists['items']:  
+            if playlist['name'] == playlist_name:
+                playlist_id = playlist['id']
+        return playlist_id
+
+    def get_playlist_id_by_option_type(self,username, option_type):
+        playlist_id = ''
+        playlists = sp.user_playlists(username)
+        for playlist in playlists['items']:  
+            if playlist['name'] == playlist_name:
+                playlist_id = playlist['id']
+        return playlist_id
 
 if __name__ == "__main__":
     reco = SpotifyHandler()

@@ -60,6 +60,13 @@ class DatabaseHandler():
         if len(results) > 0:
             return results[0] 
 
+    def get_tag_by_option_type(self, option_type):
+        #self.log.info(f'searching for tag with option_type: {option_type}')
+        query = Tag.select().where(Tag.option_type == option_type)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results[0] 
+
     def get_media_tag(self, uid):
         results = self.get_tag_by_uid(uid)
         if len(results > 0):
