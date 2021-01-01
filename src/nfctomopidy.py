@@ -663,12 +663,15 @@ class NfcToMopidy:
                             if result: stat.option_type = 'normal'
                         if 'm3u' in tag.data :
                             playlist = self.mopidyHandler.playlists.lookup(tag.data)
-                            for track in playlist.tracks:
+                            '''for track in playlist.tracks:
                                 if 'spotify:playlist' in track.uri :
                                     result = self.autofill_spotify_playlist(track.uri,uri)
-                                    if result: stat.option_type = 'normal'
+                                    if result: stat.option_type = 'normal'''
+                            if 'spotify:playlist' in playlist.tracks[0].uri :
+                                result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
+                                if result: stat.option_type = 'normal'
 
-        if stat.read_count_end > (self.option_discover_level *2):
+        if (stat.read_count_end > (self.option_discover_level *2)) or (stat.read_count_end > (self.option_discover_level/2 - 1) and stat.option_type == 'new') :
             tag_favorite = self.dbHandler.get_tag_by_option_type('favorites')
             if tag_favorite:
                 if 'spotify:playlist' in tag_favorite.data: 
@@ -676,20 +679,25 @@ class NfcToMopidy:
                     if result: stat.option_type = 'favorites'
                 if 'm3u' in tag_favorite.data :
                     playlist = self.mopidyHandler.playlists.lookup(tag_favorite.data)
-                    for track in playlist.tracks:
+                    '''for track in playlist.tracks:
                         if 'spotify:playlist' in track.uri :
                             result = self.autofill_spotify_playlist(track.uri,uri)
-                            if result: stat.option_type = 'favorites'
+                            if result: stat.option_type = 'favorites' '''
+                    if 'spotify:playlist' in playlist.tracks[0].uri :
+                        result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
+                        if result: stat.option_type = 'favorites'
         print(stat)
         stat.update()
         stat.save()
 
     # Auto Filling playlist 
     def autofill_spotify_playlist(self, playlist_uri,uri):
-        #playlist_id = playlist_uri.split(":")[2]
-        print (f"Auto Filling playlist with self.username: {self.username}, playlist: {playlist_uri}, track.uri: {uri}")
-        #Todo : check : is the song already present ?
-        result = self.spotifyHandler.add_tracks_playlist(self.username, playlist_uri, uri)
+        playlist_id = playlist_uri.split(":")[2]
+        track_id = uri[0].split(":")[2]
+        if self.spotifyHandler.is_track_in_playlist(self.username,track_id,playlist_id) == False:
+            print (f"Auto Filling playlist with self.username: {self.username}, playlist: {playlist_uri}, track.uri: {uri}")
+            result = self.spotifyHandler.add_tracks_playlist(self.username, playlist_uri, uri)
+        else: result = 'already in'
         return (result)
 
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
