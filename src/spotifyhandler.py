@@ -104,7 +104,7 @@ class SpotifyHandler:
 
     def get_playlist_id_by_name(self,username, playlist_name):
         playlist_id = ''
-        playlists = sp.user_playlists(username)
+        playlists = self.sp.user_playlists(username)
         for playlist in playlists['items']:  
             if playlist['name'] == playlist_name:
                 playlist_id = playlist['id']
@@ -112,11 +112,23 @@ class SpotifyHandler:
 
     def get_playlist_id_by_option_type(self,username, option_type):
         playlist_id = ''
-        playlists = sp.user_playlists(username)
+        playlists =  self.sp.user_playlists(username)
         for playlist in playlists['items']:  
             if playlist['name'] == playlist_name:
                 playlist_id = playlist['id']
         return playlist_id
+
+
+    def is_track_in_playlist(self,username,track_id,playlist_id):
+        results =  self.sp.user_playlist_tracks(username,playlist_id)
+        tracks = results['items']
+        while results['next']:
+            results = self.sp.next(results)
+            tracks.extend(results['items'])
+        #print(tracks)
+        for track in tracks:
+            if track["track"]["id"]==track_id: return True
+        return False
 
 if __name__ == "__main__":
     reco = SpotifyHandler()

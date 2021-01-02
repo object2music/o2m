@@ -84,18 +84,28 @@ if __name__ == "__main__":
     def track_ended_event(event):
         #Datas
         track = event.tl_track.track
-        tag = nfcHandler.get_active_tag_by_uri(track.uri)
         try:
+            tag = nfcHandler.get_active_tag_by_uri(track.uri)
             option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+
+            library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
+            if library_link == '': 
+                library_link = tag.data
+                if "m3u" in tag.data:
+                    playlist = self.mopidyHandler.playlists.lookup(tag.data)
+                    for trackp in playlist.tracks:
+                        if 'playlist' in trackp.uri: library_link = trackp.uri
         except:
             option_type = 'new'
+            #favrites ?
+            library_link = ''
         #print (f"Track :{track}")
         print (f"Tag :{tag}")
         # print (f"Event {event}")
         #print(f"Ended song : {START_BOLD}{track.name}{END_BOLD} at : {START_BOLD}{event.time_position}{END_BOLD} ms")
 
         # update stats
-        nfcHandler.update_stat_track(track, event.time_position,option_type)
+        nfcHandler.update_stat_track(track, event.time_position,option_type,library_link)
 
         # Podcast
         if "podcast" in track.uri:
@@ -109,7 +119,8 @@ if __name__ == "__main__":
 
         # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
         if "track" in track.uri and event.time_position / track.length > 0.9:
-            nfcHandler.add_reco_after_track_read(track.uri)
+            if option_type != 'new': 
+                nfcHandler.add_reco_after_track_read(track.uri,library_link)
             if option_type != 'hidden': 
                 print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track)

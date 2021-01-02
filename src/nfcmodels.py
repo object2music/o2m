@@ -70,7 +70,7 @@ class Tag(BaseModel):
     description = TextField(null=True)  # description text
     read_count = IntegerField(default=0)  # Increment each time a tag is used
     last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date
-    option_type = CharField(null=True)  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
+    option_type = CharField(default='normal')  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
     option_new = BooleanField(null=True)  # only play new tracks (depreciated, to be suppressed)
     option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
     option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
@@ -101,7 +101,7 @@ class Stats(BaseModel):
     read_count = IntegerField(default=0)  # int
     read_count_end = IntegerField(default=0)  # int
     skipped_count = IntegerField(default=0)  # int
-    in_library = IntegerField(default=0)  # Boolean if track ended
+    in_library = TextField(default='')  # Uri track if exist
     day_time_average = IntegerField(default=0)  # int
     option_type = CharField(null=True)  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
     username = TextField(null=True)  # user text
