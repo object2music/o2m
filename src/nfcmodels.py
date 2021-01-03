@@ -65,6 +65,7 @@ class Tag(BaseModel):
         index=True,
         primary_key=True,
     )  # Unique tag/card/nfc id
+    user = TextField(null=True)  # user text
     tag_type = CharField(null=True)  # album_local, album_spotify etc...
     data = CharField(null=True)  # media uri or option
     description = TextField(null=True)  # description text
@@ -107,10 +108,11 @@ class Stats(BaseModel):
     username = TextField(null=True)  # user text
 
     def __str__(self):
-        return "URI : {} | LAST READ : {} | READ COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
+        return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
             self.uri,
             self.last_read_date,
-            self.read_count,
+            self.read_count_end,
+            self.skipped_count,
             self.read_position,
             self.read_end, 
             self.option_type

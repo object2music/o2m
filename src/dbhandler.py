@@ -50,6 +50,7 @@ class DatabaseHandler():
         self.log.info('searching for tag : {} '.format(uid))
         query = Tag.select().where(Tag.uid == uid)
         results = self.transform_query_to_list(query)
+        print (results)
         if len(results) > 0:
             return results[0] 
     

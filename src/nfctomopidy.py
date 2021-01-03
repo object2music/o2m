@@ -221,7 +221,7 @@ class NfcToMopidy:
 
     def one_tag_changed(self, tag):
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
-            print(f"Tag : {tag}")
+            print(f"\nNouveau tag détecté: {tag}")
 
             #DATA
             max_results = self.max_results
@@ -448,13 +448,14 @@ class NfcToMopidy:
             # Shuffle complete computed tracklist if more than two tags
             if len(self.activetags) > 1:
                 self.shuffle_tracklist(current_index + 1, new_length)
+        print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
 
  
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
         if state == "stopped":
             if self.mopidyHandler.playback.get_current_tl_track() == None:
-                print("no current track : Playing first track")
+                #print("no current track : Playing first track")
                 current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
                 if len(current_tracks) > 0:
                     self.mopidyHandler.playback.play(tlid=current_tracks[0].tlid)
@@ -488,7 +489,6 @@ class NfcToMopidy:
             # tag associated & update discover_level
             discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
             #discover_level = self.get_option_discover_level_for_tag(track_uri)
-            print(f"\nDiscover level :{discover_level}")
 
             # Get tracks recommandations
             track_data = track_uri.split(":")  # on découpe l'uri' :
@@ -515,8 +515,6 @@ class NfcToMopidy:
             )
             if uris:
                 slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
-                print(f"Adding new tracks at index {str(new_index)} with uris {uris}")
-
                 # Updating tag infos
                 # if 'tag' in locals():
                 try:
@@ -541,11 +539,12 @@ class NfcToMopidy:
 
                     #library_link
                     if hasattr(tag, "library_link"):
-                        tag.library_link += [library_link for x in slice2]
+                        tag.library_link += [library_link for x in slice]
                     else:
-                        tag.library_link = [library_link for x in slice2]
+                        tag.library_link = [library_link for x in slice]
                     #print("library_link",tag.library_link)
-
+                    
+                    print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} \n")
 
                 except Exception as e:
                     print(e)
@@ -630,63 +629,94 @@ class NfcToMopidy:
             if not(option_type == 'normal' and stat.option_type == 'favorites'):
                 stat.option_type = option_type
 
+        #Variable
+        track_finished = False
         if hasattr(track, "length"):
-            if pos / track.length > 0.9:  # track finished
-                stat.read_end = True
-                stat.read_count_end += 1
-                if stat.read_count_end > 0 and stat.day_time_average != None:
-                    stat.day_time_average = (
-                        datetime.datetime.now().hour
-                        + stat.day_time_average * (stat.read_count_end - 1)
-                    ) / (stat.read_count_end)
-                else:
-                    stat.day_time_average = datetime.datetime.now().hour
-            else:
-                if stat.read_end != True:
-                    stat.read_end = False
-                stat.skipped_count += 1
+            if pos / track.length > 0.9: track_finished = True
 
-        #Add the track to playlist(s) if played above discover level
-        #self.option_autofill_playlists == "true" and 
-        uri = []
-        uri.append(track.uri)
-        if stat.option_type == 'new' and stat.read_count_end > (self.option_discover_level/2 - 1) :
-            if library_link !='':
-                result = self.autofill_spotify_playlist(library_link,uri)
-                if result: stat.option_type = 'normal'
+        #Update stats
+        if track_finished:
+            stat.read_end = True
+            stat.read_count_end += 1
+            if stat.read_count_end > 0 and stat.day_time_average != None:
+                stat.day_time_average = (
+                    datetime.datetime.now().hour
+                    + stat.day_time_average * (stat.read_count_end - 1)
+                ) / (stat.read_count_end)
             else:
-                for tag in self.activetags:
-                    #Need to loop on the playlists IN the tag/card
-                    if tag.option_type == 'normal':
-                        if 'spotify:playlist' in tag.data :
-                            result = self.autofill_spotify_playlist(tag.data,uri)
-                            if result: stat.option_type = 'normal'
-                        if 'm3u' in tag.data :
-                            playlist = self.mopidyHandler.playlists.lookup(tag.data)
-                            '''for track in playlist.tracks:
-                                if 'spotify:playlist' in track.uri :
-                                    result = self.autofill_spotify_playlist(track.uri,uri)
-                                    if result: stat.option_type = 'normal'''
+                stat.day_time_average = datetime.datetime.now().hour
+        else:
+            if stat.read_end != True:
+                stat.read_end = False
+            stat.skipped_count += 1
+
+        #Add / remove the track to playlist(s) if played above/below discover level
+        if self.option_autofill_playlists == True:
+            uri = []
+            uri.append(track.uri)
+            print("Autofill activated")
+
+            if track_finished:
+                #Adding if recommandation played many times
+                if stat.option_type == 'new' and stat.read_count_end >= ((11-self.option_discover_level)/2) :
+                    if library_link !='':
+                        result = self.autofill_spotify_playlist(library_link,uri)
+                        if result: stat.option_type = 'normal'
+                    else:
+                        for tag in self.activetags:
+                            #Need to loop on the playlists IN the tag/card
+                            if tag.option_type == 'normal':
+                                if 'spotify:playlist' in tag.data :
+                                    result = self.autofill_spotify_playlist(tag.data,uri)
+                                    if result: stat.option_type = 'normal'
+                                if 'm3u' in tag.data :
+                                    playlist = self.mopidyHandler.playlists.lookup(tag.data)
+                                    #for track in playlist.tracks:
+                                    #    if 'spotify:playlist' in track.uri :
+                                    #        result = self.autofill_spotify_playlist(track.uri,uri)
+                                    #        if result: stat.option_type = 'normal'
+                                    if 'spotify:playlist' in playlist.tracks[0].uri :
+                                        result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
+                                        if result: stat.option_type = 'normal'
+
+                #Adding any track to favorites if played many times
+                if (stat.read_count_end > ((11-self.option_discover_level)*2)) or (stat.read_count_end >= ((11-self.option_discover_level)/2) and stat.option_type == 'new') :
+                    tag_favorite = self.dbHandler.get_tag_by_option_type('favorites')
+                    if tag_favorite:
+                        if 'spotify:playlist' in tag_favorite.data: 
+                            result = self.autofill_spotify_playlist(tag_favorite.data,uri)
+                            if result: stat.option_type = 'favorites'
+                        if 'm3u' in tag_favorite.data :
+                            playlist = self.mopidyHandler.playlists.lookup(tag_favorite.data)
+                            #for track in playlist.tracks:
+                            #    if 'spotify:playlist' in track.uri :
+                            #        result = self.autofill_spotify_playlist(track.uri,uri)
+                            #        if result: stat.option_type = 'favorites'
                             if 'spotify:playlist' in playlist.tracks[0].uri :
                                 result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
-                                if result: stat.option_type = 'normal'
+                                if result: stat.option_type = 'favorites'
 
-        if (stat.read_count_end > (self.option_discover_level *2)) or (stat.read_count_end > (self.option_discover_level/2 - 1) and stat.option_type == 'new') :
-            tag_favorite = self.dbHandler.get_tag_by_option_type('favorites')
-            if tag_favorite:
-                if 'spotify:playlist' in tag_favorite.data: 
-                    result = self.autofill_spotify_playlist(tag_favorite.data,uri)
-                    if result: stat.option_type = 'favorites'
-                if 'm3u' in tag_favorite.data :
-                    playlist = self.mopidyHandler.playlists.lookup(tag_favorite.data)
-                    '''for track in playlist.tracks:
-                        if 'spotify:playlist' in track.uri :
-                            result = self.autofill_spotify_playlist(track.uri,uri)
-                            if result: stat.option_type = 'favorites' '''
-                    if 'spotify:playlist' in playlist.tracks[0].uri :
-                        result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
-                        if result: stat.option_type = 'favorites'
-        print(stat)
+            else:
+                #Remove track from playlist if skipped many times
+                if stat.skipped_count > ((11-self.option_discover_level)*stat.read_count_end) and library_link !='':
+                    tag_trash = self.dbHandler.get_tag_by_option_type('trash')
+                    if tag_trash:
+                        if 'spotify:playlist' in tag_trash.data: 
+                            result = self.autofill_spotify_playlist(tag_trash.data,uri)
+                            if result: 
+                                #self.spotifyHandler.remove_tracks_playlist(library_link, uri)
+                                stat.option_type = 'hidden'
+                        if 'm3u' in tag_trash.data :
+                            playlist = self.mopidyHandler.playlists.lookup(tag_trash.data)
+                            for track in playlist.tracks:
+                                if 'spotify:playlist' in track.uri :
+                                    result = self.autofill_spotify_playlist(tag_trash,uri)
+                                    if result:  
+                                        #self.spotifyHandler.remove_tracks_playlist(track.uri, uri)
+                                        stat.option_type = 'hidden'
+
+
+        print(f"\nUpdate stat track {stat}\n")
         stat.update()
         stat.save()
 

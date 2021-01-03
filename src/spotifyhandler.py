@@ -96,10 +96,14 @@ class SpotifyHandler:
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
 
-    def add_tracks_playlist(self, username, playlist_id, track_ids):
-        #sp = spotipy.Spotify(auth=token)
-        #self.sp.trace = False
-        results = self.sp.user_playlist_add_tracks(username, playlist_id, track_ids)
+    def add_tracks_playlist(self, username, playlist_uri, track_uris):
+        results = self.sp.user_playlist_add_tracks(username, playlist_uri, track_uris)
+        print(f"Adding track succesful from playlist {results}")
+        return results
+
+    def remove_tracks_playlist(self, playlist_uri, track_uris):
+        results = self.sp.playlist_remove_all_occurrences_of_items(playlist_uri, track_uris, snapshot_id=None)
+        print(f"Removing track succesful from playlist  {results}")
         return results
 
     def get_playlist_id_by_name(self,username, playlist_name):
@@ -117,7 +121,6 @@ class SpotifyHandler:
             if playlist['name'] == playlist_name:
                 playlist_id = playlist['id']
         return playlist_id
-
 
     def is_track_in_playlist(self,username,track_id,playlist_id):
         results =  self.sp.user_playlist_tracks(username,playlist_id)
