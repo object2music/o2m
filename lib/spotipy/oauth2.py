@@ -79,8 +79,8 @@ class SpotifyAuthBase(object):
 
 
 class SpotifyClientCredentials(SpotifyAuthBase):
-    # OAUTH_TOKEN_URL = "https://accounts.spotify.com/api/token"
-    OAUTH_TOKEN_URL = "https://auth.mopidy.com/spotify/token"
+    OAUTH_TOKEN_URL = "https://accounts.spotify.com/api/token"
+    #OAUTH_TOKEN_URL = "https://auth.mopidy.com/spotify/token"
 
     def __init__(self, client_id=None, client_secret=None, proxies=None, requests_timeout=None):
         """
@@ -139,6 +139,7 @@ class SpotifyClientCredentials(SpotifyAuthBase):
             proxies=self.proxies,
             timeout=self.requests_timeout,
         )
+        print (response)
         if response.status_code != 200:
             raise SpotifyOauthError(response.reason)
         token_info = response.json()

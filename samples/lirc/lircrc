@@ -25,7 +25,7 @@ end
 ## Piste prÃ©cedente
 begin
      prog = irexec
-     button = KEY_BACK
+     button = KEY_AGAIN
      config = mpc prev
      repeat = 0
 end
@@ -88,49 +88,49 @@ end
 begin
         prog = irexec
         button = KEY_1
-        config = mpc stop; mpc load "Cool"; mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Liv"; mpc random on; mpc play; 
 end
 
 begin
         prog = irexec
         button = KEY_2
-        config = mpc stop; mpc load "Calm";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Maud";mpc random on; mpc play; 
 end
 begin
 
         prog = irexec
         button = KEY_3
-        config = mpc stop; mpc load "News";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Paul";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_4
-        config = mpc stop; mpc load "Infos";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Cool";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_5
-        config = mpc stop; mpc load "Podcast2listen";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Calm";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_6
-        config = mpc stop; mpc load "Danse";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "News";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_7
-        config = mpc stop; mpc load "Liv";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Jazz";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_8
-        config = mpc stop; mpc load "Maud";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Danse";mpc random on; mpc play; 
 end
 begin
         prog = irexec
         button = KEY_9
-        config = mpc stop; mpc load "Paul";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Podcast2listen";mpc random off; mpc play; 
 end
 begin
         prog = irexec
