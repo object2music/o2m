@@ -95,6 +95,7 @@ if __name__ == "__main__":
                 if "m3u" in tag.data:
                     playlist = nfcHandler.mopidyHandler.playlists.lookup(tag.data)
                     for trackp in playlist.tracks:
+                        #need to be updated : is wich playlist is track if manies ?
                         if 'playlist' in trackp.uri: 
                             library_link = trackp.uri
                             exit
@@ -105,7 +106,8 @@ if __name__ == "__main__":
         print(f"\nEnded song : {track} with option_type {option_type} and library_link {library_link}")
 
         # update stats
-        nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
+        try: nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
+        except nfcHandler.SpotifyHandler.spotipy.client.SpotifyException: nfcHandler.SpotifyHandler.init_token_sp() #pb of expired token to resolve...
 
         # Podcast
         if "podcast" in track.uri:
@@ -121,7 +123,8 @@ if __name__ == "__main__":
         if "track" in track.uri and event.time_position / track.length > 0.9:
             if option_type != 'new': 
                 #int(round(discover_level * 0.25))
-                nfcHandler.add_reco_after_track_read(track.uri,library_link)
+                try: nfcHandler.add_reco_after_track_read(track.uri,library_link)
+                except nfcHandler.SpotifyHandler.spotipy.client.SpotifyException: nfcHandler.SpotifyHandler.init_token_sp() #pb of expired token to resolve...
             if option_type != 'hidden': 
                 print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track)

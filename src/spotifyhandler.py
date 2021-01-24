@@ -13,32 +13,69 @@ import src.util as util
 
 class SpotifyHandler:
     def __init__(self):
-        spotipy_config = util.get_config_file("mopidy.conf")["spotipy"]
-        spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
+        self.spotipy_config = util.get_config_file("mopidy.conf")["spotipy"]
+        self.spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
+        self.init_token_sp()
 
-        #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
-        if spotipy_config["auth_method"] == 'authorization_code':
+    def init_token_sp(self):
+       #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
+        if self.spotipy_config["auth_method"] == 'authorization_code':
             token = util.prompt_for_user_token(
+            username=self.spotify_config["username"],
+            scope='user-library-read user-follow-modify playlist-modify-private playlist-modify-public',
+            client_id=self.spotipy_config["client_id_spotipy"],
+            client_secret=self.spotipy_config["client_secret_spotipy"],
+            redirect_uri='http://localhost')
+
+            '''self.spo = oauth.SpotifyOAuth(
             username=spotify_config["username"],
             scope='user-library-read user-follow-modify playlist-modify-private playlist-modify-public',
             client_id=spotipy_config["client_id_spotipy"],
             client_secret=spotipy_config["client_secret_spotipy"],
-            redirect_uri='http://localhost')
+            redirect_uri='http://localhost')'''
 
             if token:
                 self.sp = spotipy.Spotify(auth=token)
                 print ("Spotipy initialisation 1")
             else:
-                spotipy_config["auth_method"] = ''
+                self.spotipy_config["auth_method"] = ''
 
         #Method 2 : Client Credential (simple but not permit to modify users playlists)
-        if spotipy_config["auth_method"] != 'authorization_code':
+        if self.spotipy_config["auth_method"] != 'authorization_code':
             client_credentials_manager = SpotifyClientCredentials(
                 client_id=spotipy_config["client_id_spotipy"],
                 client_secret=spotipy_config["client_secret_spotipy"]
             )
             self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
             print ("Spotipy initialisation 2")
+
+    def refresh_token0(self):
+        cached_token = self.spo.get_cached_token()
+        refreshed_token = cached_token['refresh_token']
+        new_token = self.spo.refresh_access_token(refreshed_token)
+        print(new_token['access_token'])  # <--
+        # also we need to specifically pass `auth=new_token['access_token']`
+        self.sp = spotipy.Spotify(auth=new_token['access_token'])
+        return new_token
+
+    def get_token(self):
+        token_info = self.spo.get_cached_token()
+        if token_info:
+            access_token = token_info['access_token']
+            return access_token
+        else:
+            auth = self.spo.get_authorize_url()
+            print(auth)
+            auth_url = input('Click the link above and copy and paste the url here: ')
+            _re_auth = re.findall(_auth_finder, auth_url)
+            access_token = self.spo.get_access_token(_re_auth[0])
+            return access_token
+
+    '''
+    except spotipy.client.SpotifyException:
+    SpotifyHandler.init_token_sp()
+    print("Got an exception ")
+    '''
 
     def get_recommendations(
         self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, **kwargs
@@ -52,14 +89,6 @@ class SpotifyHandler:
             limit=limit,
             **kwargs
         )
-        # print('INFOS RÉSULTATS RECOMMANDATION')
-        # print(reco['seeds'])
-
-        """reco = self.sp.recommendations(  seed_genres=['french', 'electro'], seed_artists=None, seed_tracks=None, country='from_token', limit=3, 
-                            min_energy='0.8', 
-                            max_instrumentalness='0.5',
-                            target_valence='0.7')"""
-        # print(reco)
         return self.parse_tracks(reco)
 
     def parse_tracks(self, tracks_json):
@@ -132,11 +161,3 @@ class SpotifyHandler:
         for track in tracks:
             if track["track"]["id"]==track_id: return True
         return False
-
-if __name__ == "__main__":
-    reco = SpotifyHandler()
-
-    reco.get_recommendations(
-        seed_artists=["1gR0gsQYfi6joyO1dlp76N", "63MQldklfxkjYDoUE4Tpp"]
-    )
-    print(reco)

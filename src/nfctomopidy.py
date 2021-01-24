@@ -219,6 +219,9 @@ class NfcToMopidy:
             - channel / album
     """
 
+    def get_spotify_library(self,limit):
+        return
+
     def one_tag_changed(self, tag):
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             print(f"\nNouveau tag détecté: {tag}")
@@ -316,7 +319,7 @@ class NfcToMopidy:
             else:
                 self.add_tracks(
                     tag, [tag.data]
-                )  # Ce n'est pas une reco alors on envoie directement l'uri à mopidy
+                )  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
 
         # Next option
         else:
@@ -634,6 +637,8 @@ class NfcToMopidy:
         if hasattr(track, "length"):
             if pos / track.length > 0.9: track_finished = True
 
+        print(f"Track Finished : {track_finished}")
+
         #Update stats
         if track_finished:
             stat.read_end = True
@@ -656,7 +661,7 @@ class NfcToMopidy:
             uri.append(track.uri)
             print("Autofill activated")
 
-            if track_finished:
+            if track_finished == True :
                 #Adding if recommandation played many times
                 if stat.option_type == 'new' and stat.read_count_end >= ((11-self.option_discover_level)/2) :
                     if library_link !='':
@@ -698,7 +703,9 @@ class NfcToMopidy:
 
             else:
                 #Remove track from playlist if skipped many times
-                if stat.skipped_count > ((11-self.option_discover_level)*stat.read_count_end) and library_link !='':
+                if stat.skipped_count > ((11-self.option_discover_level)*(stat.read_count_end+1)) :
+                    '''and library_link !='''
+                    print (f"Trashing track {stat.skipped_count} {self.option_discover_level}")
                     tag_trash = self.dbHandler.get_tag_by_option_type('trash')
                     if tag_trash:
                         if 'spotify:playlist' in tag_trash.data: 

@@ -3,7 +3,8 @@ from pathlib import Path
 from os import path
 import configparser, sys, time
 import os
-import lib.spotipy as spotipy
+#import lib.spotipy as spotipy
+import spotipy
 
 
 __all__ = ["CLIENT_CREDS_ENV_VARS", "prompt_for_user_token"]
