@@ -219,8 +219,6 @@ class NfcToMopidy:
             - channel / album
     """
 
-    def get_spotify_library(self,limit):
-        return
 
     def one_tag_changed(self, tag):
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
@@ -317,15 +315,14 @@ class NfcToMopidy:
 
             # Every other contents
             else:
-                self.add_tracks(
-                    tag, [tag.data]
-                )  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
+                self.add_tracks(tag, [tag.data])  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
 
         # Next option
         else:
             print(f"Tag : {tag.uid} & last_tag_uid : {self.last_tag_uid}")
             self.launch_next()  # Le tag détecté est aussi le dernier détecté donc on passe à la chanson suivante
             return
+
 
         if self.mopidyHandler.tracklist.get_length() > 0:
             self.play_or_resume()
@@ -398,6 +395,17 @@ class NfcToMopidy:
                         ):
                             uris.append(t.track.uri)
                 self.mopidyHandler.tracklist.remove({"uri": uris})
+            else:
+                #Adding common and library tracks
+                discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                limit = int(round(len(tltracks_added) * discover_level / 100))
+                window = int(round(discover_level / 2))
+                print(f"discover_level {discover_level} limit {limit} window {window}")
+                if limit > 0: 
+                    uris2 = self.get_common_tracks(datetime.datetime.now().hour,window,limit)
+                    tltracks_added2 = self.mopidyHandler.tracklist.add(uris=uris2)
+                    tltracks_added.append(tltracks_added2)
+                    print (f"Adding common tracks : {uris2}")
 
             new_length = self.mopidyHandler.tracklist.get_length()
             print(f"Length {new_length}")
@@ -487,6 +495,13 @@ class NfcToMopidy:
 
 #   SONGS RECOMMANDATION MANAGEMENT
 
+    def get_spotify_library(self,limit):
+        uris = []
+        return uris
+
+    def get_common_tracks(self,read_hour,window,limit):
+        return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit)
+
     def add_reco_after_track_read(self, track_uri, library_link=''):
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
@@ -573,6 +588,14 @@ class NfcToMopidy:
 
     def get_option_for_tag_uri(self, uri, optionName):
         tag = self.get_active_tag_by_uri(uri)
+        if tag is not None:
+            attr = getattr(tag, optionName)
+            if attr is not None:
+                if attr != '':
+                    return getattr(tag, optionName, None)
+        return getattr(self, optionName, None)
+
+    def get_option_for_tag(self, tag, optionName):
         if tag is not None:
             attr = getattr(tag, optionName)
             if attr is not None:

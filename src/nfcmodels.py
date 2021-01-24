@@ -130,7 +130,7 @@ class Stats(BaseModel):
 
 class Stats_Raw(BaseModel):
     read_date = TimestampField(
-        index=True, null=True, utc=True
+        index=True, null=True, utc=True, primary_key=True
     )  # date # Unique uri
     uri = CharField(default=0)
     read_hour = IntegerField(default=0)  # int

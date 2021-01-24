@@ -1,6 +1,6 @@
 import logging, pprint
 
-from peewee import IntegrityError
+from peewee import IntegrityError, fn
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 
@@ -136,7 +136,17 @@ class DatabaseHandler():
     #STATS_RAW
     def create_stat_raw(self, uri, read_time, read_hour, username):
         stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
-        return stat_raw    
+        return stat_raw
+
+    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1):
+        if window > 0:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))).order_by(fn.Rand()).limit(limit)
+        else:
+            query = Stats_Raw.select().where(Stats_Raw.read_hour == read_hour).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
+            return uris
 
 if __name__ == "__main__":
 
