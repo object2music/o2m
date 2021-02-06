@@ -17,6 +17,7 @@ class SpotifyHandler:
         self.spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
         self.init_token_sp()
 
+
     def init_token_sp(self):
        #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
         if self.spotipy_config["auth_method"] == 'authorization_code':
@@ -161,3 +162,15 @@ class SpotifyHandler:
         for track in tracks:
             if track["track"]["id"]==track_id: return True
         return False
+
+    def get_library_tracks(self,limit=1):
+        t_list=[]
+        albums = self.sp.current_user_saved_albums()
+
+        for i in range(limit):
+            album = random.choice(albums['items'])
+            tracks = self.sp.album_tracks(album['album']['id'])     
+            track = random.choice(tracks['items'])
+            t_list.append(track['id'])
+
+        return t_list

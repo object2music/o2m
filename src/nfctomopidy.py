@@ -640,6 +640,10 @@ class NfcToMopidy:
 
     # Update tracks stat when finished, skipped or system stopped (if possible)
     def update_stat_track(self, track, pos=0, option_type='', library_link=''):
+        #Harmonize option_type if new 
+        if 'new' in option_type: option_type='new'
+
+        #Get stats
         if self.dbHandler.stat_exists(track.uri):
             stat = self.dbHandler.get_stat_by_uri(track.uri)
         else:
