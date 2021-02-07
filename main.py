@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
         # update stats
         try: nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
-        except nfcHandler.spotifyhandler.spotipy.client.SpotifyException: nfcHandler.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+        except nfcHandler.spotifyhandler.sp.client.SpotifyException: nfcHandler.spotifyhandler.init_token_sp() #pb of expired token to resolve...
 
         # Podcast
         if "podcast" in track.uri:

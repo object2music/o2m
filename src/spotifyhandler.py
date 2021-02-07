@@ -41,7 +41,7 @@ class SpotifyHandler:
             else:
                 self.spotipy_config["auth_method"] = ''
 
-        #Method 2 : Client Credential (simple but not permit to modify users playlists)
+        #Method 2 : Client Credential (simple but not allow to modify users playlists)
         if self.spotipy_config["auth_method"] != 'authorization_code':
             client_credentials_manager = SpotifyClientCredentials(
                 client_id=spotipy_config["client_id_spotipy"],
@@ -171,6 +171,6 @@ class SpotifyHandler:
             album = random.choice(albums['items'])
             tracks = self.sp.album_tracks(album['album']['id'])     
             track = random.choice(tracks['items'])
-            t_list.append(track['id'])
+            t_list.append(track['uri'])
 
         return t_list
