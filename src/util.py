@@ -17,11 +17,23 @@ CLIENT_CREDS_ENV_VARS = {
     "redirect_uri": "SPOTIPY_REDIRECT_URI",
 }
 
+'''
+    Util
+'''
+
+def flatten_list(_2d_list):
+    flat_list = []
+    for element in _2d_list:
+        if type(element) is list:
+            for item in element:
+                flat_list.append(item)
+        else:
+            flat_list.append(element)
+    return flat_list
 
 """
     Get mopidy config file for mac or linux paths
 """
-
 
 def get_config_file(filename):
     config = configparser.ConfigParser()

@@ -3,6 +3,7 @@ import datetime
 import sys
 
 from mopidy_podcast import Extension, feeds
+#from iteration_utilities import deepflatten
 
 import src.util as util
 from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Tag
@@ -219,7 +220,6 @@ class NfcToMopidy:
             - channel / album
     """
 
-
     def one_tag_changed(self, tag):
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             print(f"\nNouveau tag détecté: {tag}")
@@ -292,11 +292,20 @@ class NfcToMopidy:
                         playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
                         content = 1
 
+                    # here&now:library
+                    if "here&now:library" in track.uri :
+                        discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                        window = int(round(discover_level / 2))
+                        max_result1 = (11-discover_level)*max_results/10
+                        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1)
+                        playlist_uris.append(self.get_spotify_library((max_results-max_result1))
+                        content = 1
+
                     # Other contents in the playlist
                     if content==0: playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
-                playlist_uris = [item for sublist in playlist_uris for item in sublist]
-                self.add_tracks(tag, playlist_uris, max_results)  # Envoie les uris en lecture
+                playlist_uris1 = util.flatten_list(playlist_uris)
+                self.add_tracks(tag, playlist_uris1, max_results)  # Envoie les uris en lecture
                 """Implement shuffle
                 prev_length = self.mopidyHandler.tracklist.get_length()
                 current_index = self.mopidyHandler.tracklist.index()
