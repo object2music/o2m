@@ -61,9 +61,6 @@ if __name__ == "__main__":
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
 
-    # A chaque lancement on vide la tracklist (plus simple pour les tests)
-    mopidy.tracklist.clear()
-
     # Fonction called when track started
     @mopidy.on_event("track_playback_started")
     def track_started_event(event):
@@ -106,8 +103,12 @@ if __name__ == "__main__":
         print(f"\nEnded song : {track} with option_type {option_type} and library_link {library_link}")
 
         # update stats
-        try: nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
-        except nfcHandler.spotifyhandler.sp.client.SpotifyException: nfcHandler.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+        try: 
+            nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
+        except Exception as val_e: 
+            #except nfcHandler.spotifyhandler.sp.client.SpotifyException: 
+            print(f"Erreur : {val_e}")
+            nfcHandler.spotifyhandler.init_token_sp() #pb of expired token to resolve...
 
         # Podcast
         if "podcast" in track.uri:
@@ -124,7 +125,10 @@ if __name__ == "__main__":
             if option_type != 'new': 
                 #int(round(discover_level * 0.25))
                 try: nfcHandler.add_reco_after_track_read(track.uri,library_link)
-                except nfcHandler.spotifyHandler.spotipy.client.SpotifyException: nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
+                except Exception as val_e: 
+                    #except nfcHandler.spotifyHandler.sp.client.SpotifyException: nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
+                    print(f"Erreur : {val_e}")
+                    nfcHandler.spotifyHandler.init_token_sp()
             if option_type != 'hidden': 
                 print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track)
@@ -150,8 +154,11 @@ if __name__ == "__main__":
         if event.new_state == 'stopped': print (f"Stop : {nfcHandler.mopidyHandler.playback.get_current_track()}")"""
 
     # Infinite loop for NFC detection
-    nfcHandler.spotifyHandler.get_library_tracks()
-    nfcHandler.start_nfc()
+    try:
+        nfcHandler.start_nfc()
+    except Exception as ex:
+        print(f"Erreur : {ex}")
+        nfcHandler.spotifyHandler.init_token_sp()
 
 
 # Code pour créer manuellement des tags en bdd

@@ -59,8 +59,14 @@ class NfcToMopidy:
         if "username" in self.configMopidy["spotify"]:
             self.username = self.configMopidy["spotify"]["username"]
 
+        self.starting_mode()
+
+    def starting_mode(self):
         # Default volume setting at beginning (or in main ?)
-        self.mopidyHandler.mixer.set_volume(self.default_volume)
+        self.mopidyHandler.mixer.set_volume(self.default_volume)    
+        self.mopidyHandler.tracklist.clear()
+        self.mopidyHandler.tracklist.set_random(False)
+        self.mopidyHandler.mixer.set_mute(False)
 
     def start_nfc(self):
         # Test mode provided in command line (NFC uids separated by space)
@@ -280,26 +286,29 @@ class NfcToMopidy:
                         self.get_podcast_from_url(feedurl)
                         content = 1
 
+                    # here&now:library
+                    if "herenow:library" in track.uri :
+                        discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                        window = int(round(discover_level / 2))
+                        max_result1 = int(round((11-discover_level)*max_results/10))
+                        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+                        playlist_uris.append(self.get_spotify_library((max_results-max_result1)))
+                        content = 1
+
                     # spotify:library
                     if "spotify:library" in track.uri :
+                        print ("spotify:library")
                         playlist_uris.append(self.get_spotify_library(max_results))
                         content = 1
 
                     # now:library
                     if "now:library" in track.uri :
+                        print ("now:library")
                         discover_level = self.get_option_for_tag(tag, "option_discover_level")
                         window = int(round(discover_level / 2))
                         playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
                         content = 1
-
-                    # here&now:library
-                    if "here&now:library" in track.uri :
-                        discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                        window = int(round(discover_level / 2))
-                        max_result1 = (11-discover_level)*max_results/10
-                        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1)
-                        playlist_uris.append(self.get_spotify_library((max_results-max_result1))
-                        content = 1
+                   
 
                     # Other contents in the playlist
                     if content==0: playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
@@ -705,13 +714,14 @@ class NfcToMopidy:
             stat.skipped_count += 1
 
         #Add / remove the track to playlist(s) if played above/below discover level
+        print (f"Autofill_option : {self.option_autofill_playlists}")
         if self.option_autofill_playlists == True:
             uri = []
             uri.append(track.uri)
             print("Autofill activated")
 
             if track_finished == True :
-                #Adding if recommandation played many times
+                #Adding if "new track" played many times
                 if stat.option_type == 'new' and stat.read_count_end >= ((11-self.option_discover_level)/2) :
                     if library_link !='':
                         result = self.autofill_spotify_playlist(library_link,uri)
