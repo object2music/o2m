@@ -1,9 +1,7 @@
-import contextlib
-import datetime
-import sys
+import datetime, sys, contextlib
 
 from mopidy_podcast import Extension, feeds
-#from iteration_utilities import deepflatten
+from urllib import parse
 
 import src.util as util
 from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Tag
@@ -51,7 +49,8 @@ class NfcToMopidy:
             self.option_sort = self.configO2M["option_sort"] == "desc"
 
         if "option_autofill_playlists" in self.configO2M:
-            self.option_autofill_playlists = self.configO2M["option_autofill_playlists"] == "false"
+            self.option_autofill_playlists = self.configO2M["option_autofill_playlists"] == "True"
+        else: self.option_autofill_playlists = False
 
         if "shuffle" in self.configO2M:
             self.shuffle = bool(self.configO2M["shuffle"])
@@ -63,10 +62,11 @@ class NfcToMopidy:
 
     def starting_mode(self):
         # Default volume setting at beginning (or in main ?)
-        self.mopidyHandler.mixer.set_volume(self.default_volume)    
+        self.mopidyHandler.playback.stop()
         self.mopidyHandler.tracklist.clear()
         self.mopidyHandler.tracklist.set_random(False)
         self.mopidyHandler.mixer.set_mute(False)
+        self.mopidyHandler.mixer.set_volume(self.default_volume)
 
     def start_nfc(self):
         # Test mode provided in command line (NFC uids separated by space)
@@ -132,8 +132,7 @@ class NfcToMopidy:
                     self.mopidyHandler.playback.get_current_track(),
                     self.mopidyHandler.playback.get_time_position(),
                 )
-                self.mopidyHandler.playback.stop()
-                self.mopidyHandler.tracklist.clear()
+                self.starting_mode()
             elif removedTag.tlids != None:
                 current_tlid = self.mopidyHandler.playback.get_current_tlid()
                 # last_tlindex = 0
@@ -273,9 +272,15 @@ class NfcToMopidy:
                     if "podcast" in track.uri and "#" not in track.uri:
                         print(f"Podcast : {track.uri}")
                         feedurl = track.uri.split("+")[1]
+                        par = parse.parse_qs(parse.urlparse(feedurl).query)
+                        if 'max_results' in par : max_results_pod = int(par['max_results'][0])
+                        else : max_results_pod = max_results
+                        #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
+
                         shows = self.get_unread_podcasts(track.uri, 0)
                         # print(f'Shows : {shows}')
-                        self.add_tracks(tag, shows, max_results)
+                        print(f'max_results_pod : {max_results_pod}')
+                        self.add_tracks(tag, shows, max_results_pod)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
                         # playlist_uris += self.get_unread_podcasts(shows)
                         content = 1
@@ -313,8 +318,9 @@ class NfcToMopidy:
                     # Other contents in the playlist
                     if content==0: playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
-                playlist_uris1 = util.flatten_list(playlist_uris)
-                self.add_tracks(tag, playlist_uris1, max_results)  # Envoie les uris en lecture
+                if len(playlist_uris)>0:
+                    playlist_uris1 = util.flatten_list(playlist_uris)
+                    self.add_tracks(tag, playlist_uris1, max_results)  # Envoie les uris en lecture
                 """Implement shuffle
                 prev_length = self.mopidyHandler.tracklist.get_length()
                 current_index = self.mopidyHandler.tracklist.index()
@@ -363,7 +369,7 @@ class NfcToMopidy:
         f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
-        print(f"option_sort{self.option_sort}")
+        print(f"option_sort : {self.option_sort}")
         shows = list(feed.items(self.option_sort))
         """for item in shows:  
             if "app_rf_promotion" in item.uri:  max_results += 1"""
@@ -385,7 +391,7 @@ class NfcToMopidy:
                 and "app_rf_promotion" not in item.uri
             ):
                 uris.append(item.uri)
-        print(shows)
+        #print(shows)
         return uris
 
     # Lance la chanson suivante sur mopidy
@@ -422,7 +428,7 @@ class NfcToMopidy:
                         # When track skipped or too many counts
                         if (
                             stat.skipped_count > 0
-                            or stat.read_count_end >= self.option_discover_level
+                            or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
                             or stat.in_library == 1
                         ):
                             uris.append(t.track.uri)
@@ -448,9 +454,7 @@ class NfcToMopidy:
 
             # Slice added tracks to max_results
             if (new_length - prev_length) > max_results:
-                slice1 = self.mopidyHandler.tracklist.slice(
-                    prev_length + max_results, new_length
-                )
+                slice1 = self.mopidyHandler.tracklist.slice(prev_length + max_results, new_length)
                 self.mopidyHandler.tracklist.remove(
                     {"tlid": [x.tlid for x in slice1]}
                 )  # to be optimized ?
@@ -714,7 +718,6 @@ class NfcToMopidy:
             stat.skipped_count += 1
 
         #Add / remove the track to playlist(s) if played above/below discover level
-        print (f"Autofill_option : {self.option_autofill_playlists}")
         if self.option_autofill_playlists == True:
             uri = []
             uri.append(track.uri)
@@ -722,14 +725,15 @@ class NfcToMopidy:
 
             if track_finished == True :
                 #Adding if "new track" played many times
-                if stat.option_type == 'new' and stat.read_count_end >= ((11-self.option_discover_level)/2) :
+                if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.option_discover_level)==True :
                     if library_link !='':
                         result = self.autofill_spotify_playlist(library_link,uri)
                         if result: stat.option_type = 'normal'
                     else:
                         for tag in self.activetags:
                             #Need to loop on the playlists IN the tag/card
-                            if tag.option_type == 'normal':
+                            discover_level_tag = self.get_option_for_tag(tag, "option_discover_level")
+                            if tag.option_type == 'normal' and self.threshold_playing_count_new(stat.read_count_end,discover_level_tag)==True :
                                 if 'spotify:playlist' in tag.data :
                                     result = self.autofill_spotify_playlist(tag.data,uri)
                                     if result: stat.option_type = 'normal'
@@ -743,26 +747,26 @@ class NfcToMopidy:
                                         result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
                                         if result: stat.option_type = 'normal'
 
-                #Adding any track to favorites if played many times
-                if (stat.read_count_end > ((11-self.option_discover_level)*2)) or (stat.read_count_end >= ((11-self.option_discover_level)/2) and stat.option_type == 'new') :
-                    tag_favorite = self.dbHandler.get_tag_by_option_type('favorites')
-                    if tag_favorite:
-                        if 'spotify:playlist' in tag_favorite.data: 
-                            result = self.autofill_spotify_playlist(tag_favorite.data,uri)
-                            if result: stat.option_type = 'favorites'
-                        if 'm3u' in tag_favorite.data :
-                            playlist = self.mopidyHandler.playlists.lookup(tag_favorite.data)
+                #Adding any track to incoming if played many times
+                if (self.threshold_adding_incoming(stat.read_count_end,self.option_discover_level)==True) or (self.threshold_playing_count_new(stat.read_count_end,self.option_discover_level)==True and stat.option_type == 'new') :
+                    tag_incoming = self.dbHandler.get_tag_by_option_type('incoming')
+                    if tag_incoming:
+                        if 'spotify:playlist' in tag_incoming.data: 
+                            result = self.autofill_spotify_playlist(tag_incoming.data,uri)
+                            if result: stat.option_type = 'incoming'
+                        if 'm3u' in tag_incoming.data :
+                            playlist = self.mopidyHandler.playlists.lookup(tag_incoming.data)
                             #for track in playlist.tracks:
                             #    if 'spotify:playlist' in track.uri :
                             #        result = self.autofill_spotify_playlist(track.uri,uri)
                             #        if result: stat.option_type = 'favorites'
                             if 'spotify:playlist' in playlist.tracks[0].uri :
                                 result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
-                                if result: stat.option_type = 'favorites'
+                                if result: stat.option_type = 'incoming'
 
             else:
                 #Remove track from playlist if skipped many times
-                if stat.skipped_count > ((11-self.option_discover_level)*(stat.read_count_end+1)) :
+                if self.threshold_count_deletion(stat,self.option_discover_level)==True :
                     '''and library_link !='''
                     print (f"Trashing track {stat.skipped_count} {self.option_discover_level}")
                     tag_trash = self.dbHandler.get_tag_by_option_type('trash')
@@ -795,6 +799,32 @@ class NfcToMopidy:
             result = self.spotifyHandler.add_tracks_playlist(self.username, playlist_uri, uri)
         else: result = 'already in'
         return (result)
+
+
+#   THRESHOLDs MANAGEMENT
+
+    #Threshold for stopping playing and autofilling new tracks (add_tracks or autofill)
+    #discover_level = 5 : read_count_end>=3
+    def threshold_playing_count_new(self,read_count_end,option_discover_level):
+        if (float(read_count_end) >= ((11-option_discover_level)/2)): return True
+        else: return False
+
+    #Threshold for adding tracks to favorites (autofill)
+    #Need to integrate global ratio
+    #discover_level = 5 : read_count_end>=12
+    def threshold_adding_incoming(self,read_count_end,option_discover_level):
+        if float(read_count_end) >= ((11-option_discover_level)*2): return True
+        else: return False
+
+    #Threshold for deleting tracks from playlist if too many skipped
+    #discover_level = 5 et read_count_end=0 : skipped_count_end >=5
+    def threshold_count_deletion(self,stat,option_discover_level):
+        if float(stat.skipped_count) > ((11-option_discover_level)*(stat.read_count_end+1)*0.7): 
+            return True 
+        else: 
+            return False
+
+#   WIP
 
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
     def update_tracks(self):
