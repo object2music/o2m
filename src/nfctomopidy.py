@@ -38,6 +38,7 @@ class NfcToMopidy:
 
         if "default_volume" in self.configO2M:
             self.default_volume = int(self.configO2M["default_volume"])
+        self.current_volume = self.default_volume
 
         if "discover_level" in self.configO2M:
             self.option_discover_level = int(self.configO2M["discover_level"])
@@ -57,6 +58,7 @@ class NfcToMopidy:
 
         if "username" in self.configMopidy["spotify"]:
             self.username = self.configMopidy["spotify"]["username"]
+
 
         self.starting_mode()
 
@@ -449,7 +451,7 @@ class NfcToMopidy:
             print(f"Length {new_length}")
 
             # Shuffle new tracks if necessary : global shuffle or tag option
-            if self.shuffle == "true" or tag.option_sort == "shuffle":
+            if (self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle":
                 self.shuffle_tracklist(prev_length, new_length)
 
             # Slice added tracks to max_results
@@ -730,7 +732,22 @@ class NfcToMopidy:
                         result = self.autofill_spotify_playlist(library_link,uri)
                         if result: stat.option_type = 'normal'
                     else:
-                        for tag in self.activetags:
+                        tag_incoming = self.dbHandler.get_tag_by_option_type('incoming')
+                        if tag_incoming:
+                            if 'spotify:playlist' in tag_incoming.data: 
+                                result = self.autofill_spotify_playlist(tag_incoming.data,uri)
+                                if result: stat.option_type = 'incoming'
+                            if 'm3u' in tag_incoming.data :
+                                playlist = self.mopidyHandler.playlists.lookup(tag_incoming.data)
+                                #for track in playlist.tracks:
+                                #    if 'spotify:playlist' in track.uri :
+                                #        result = self.autofill_spotify_playlist(track.uri,uri)
+                                #        if result: stat.option_type = 'favorites'
+                                if 'spotify:playlist' in playlist.tracks[0].uri :
+                                    result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
+                                    if result: stat.option_type = 'incoming'
+
+                        '''for tag in self.activetags:
                             #Need to loop on the playlists IN the tag/card
                             discover_level_tag = self.get_option_for_tag(tag, "option_discover_level")
                             if tag.option_type == 'normal' and self.threshold_playing_count_new(stat.read_count_end,discover_level_tag)==True :
@@ -746,23 +763,24 @@ class NfcToMopidy:
                                     if 'spotify:playlist' in playlist.tracks[0].uri :
                                         result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
                                         if result: stat.option_type = 'normal'
+                        '''
 
                 #Adding any track to incoming if played many times
-                if (self.threshold_adding_incoming(stat.read_count_end,self.option_discover_level)==True) or (self.threshold_playing_count_new(stat.read_count_end,self.option_discover_level)==True and stat.option_type == 'new') :
-                    tag_incoming = self.dbHandler.get_tag_by_option_type('incoming')
-                    if tag_incoming:
-                        if 'spotify:playlist' in tag_incoming.data: 
-                            result = self.autofill_spotify_playlist(tag_incoming.data,uri)
-                            if result: stat.option_type = 'incoming'
-                        if 'm3u' in tag_incoming.data :
-                            playlist = self.mopidyHandler.playlists.lookup(tag_incoming.data)
+                if self.threshold_adding_favorites(stat.read_count_end,self.option_discover_level)==True :
+                    tag_favorites = self.dbHandler.get_tag_by_option_type('favorites')
+                    if tag_favorites:
+                        if 'spotify:playlist' in tag_favorites.data: 
+                            result = self.autofill_spotify_playlist(tag_favorites.data,uri)
+                            if result: stat.option_type = 'favorites'
+                        if 'm3u' in tag_favorites.data :
+                            playlist = self.mopidyHandler.playlists.lookup(tag_favorites.data)
                             #for track in playlist.tracks:
                             #    if 'spotify:playlist' in track.uri :
                             #        result = self.autofill_spotify_playlist(track.uri,uri)
                             #        if result: stat.option_type = 'favorites'
                             if 'spotify:playlist' in playlist.tracks[0].uri :
                                 result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
-                                if result: stat.option_type = 'incoming'
+                                if result: stat.option_type = 'favorites'
 
             else:
                 #Remove track from playlist if skipped many times
@@ -812,7 +830,7 @@ class NfcToMopidy:
     #Threshold for adding tracks to favorites (autofill)
     #Need to integrate global ratio
     #discover_level = 5 : read_count_end>=12
-    def threshold_adding_incoming(self,read_count_end,option_discover_level):
+    def threshold_adding_favorites(self,read_count_end,option_discover_level):
         if float(read_count_end) >= ((11-option_discover_level)*2): return True
         else: return False
 

@@ -66,6 +66,15 @@ if __name__ == "__main__":
     def track_started_event(event):
         track = event.tl_track.track
 
+        #Quick and dirty volume Management
+        if "radiofrance-podcast.net" in track.uri :
+            nfcHandler.current_volume = nfcHandler.mopidyHandler.mixer.get_volume()
+            nfcHandler.mopidyHandler.mixer.set_volume(70)
+            print (f"Get Volume : {nfcHandler.current_volume}")
+        else: 
+            print (f"Set Volume : {nfcHandler.current_volume}")
+            nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
+
         # Podcast : seek previous position
         if "podcast" in track.uri and "#" in track.uri:
             if nfcHandler.dbHandler.get_pos_stat(track.uri):
@@ -109,6 +118,7 @@ if __name__ == "__main__":
             #except nfcHandler.spotifyhandler.sp.client.SpotifyException: 
             print(f"Erreur : {val_e}")
             nfcHandler.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+            nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
 
         # Podcast
         if "podcast" in track.uri:
@@ -129,6 +139,7 @@ if __name__ == "__main__":
                     #except nfcHandler.spotifyHandler.sp.client.SpotifyException: nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
                     print(f"Erreur : {val_e}")
                     nfcHandler.spotifyHandler.init_token_sp()
+                    nfcHandler.add_reco_after_track_read(track.uri,library_link)
             if option_type != 'hidden': 
                 print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track)
@@ -159,7 +170,7 @@ if __name__ == "__main__":
     except Exception as ex:
         print(f"Erreur : {ex}")
         nfcHandler.spotifyHandler.init_token_sp()
-
+        nfcHandler.start_nfc()
 
 # Code pour créer manuellement des tags en bdd
 # if __name__ == "__main__":
