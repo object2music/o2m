@@ -105,7 +105,7 @@ end
 begin
         prog = irexec
         button = KEY_4
-        config = mpc stop; mpc clear; mpc load "Cool";mpc random on; mpc play; 
+        config = mpc stop; mpc clear; mpc load "Patrick";mpc random on; mpc play; 
 end
 begin
         prog = irexec
@@ -135,5 +135,27 @@ end
 begin
         prog = irexec
         button = KEY_0
-        config = mpc stop; mpc clear; mpc load "Radios";mpc random off; mpc play; 
+        config = mpc load "Radios";mpc random off; mpc play; 
+end
+
+#RESTART
+begin
+        prog = irexec
+        button = KEY_RED
+        config = /home/pi/o2m/start_mopidy.sh
+end
+begin
+        prog = irexec
+        button = KEY_GREEN
+        config = /home/pi/o2m/start_mopidy_bluetooth.sh
+end
+begin
+        prog = irexec
+        button = KEY_YELLOW
+        config = /home/pi/o2m/start_mopidy_snapcast.sh
+end
+begin
+        prog = irexec
+        button = KEY_BLUE
+        config = /home/pi/o2m/start_mopidy_headphone.sh
 end

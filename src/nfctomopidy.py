@@ -70,6 +70,22 @@ class NfcToMopidy:
         self.mopidyHandler.mixer.set_mute(False)
         self.mopidyHandler.mixer.set_volume(self.default_volume)
 
+    def tag_action(self,tag):
+        if self.configO2M["discover"] == "true":
+            try: 
+                self.active_tags_changed()
+            except Exception as val_e: 
+                print(f"Erreur : {val_e}")
+                self.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+                self.active_tags_changed()
+        else:
+            try: 
+                self.one_tag_changed(tag)
+            except Exception as val_e: 
+                print(f"Erreur : {val_e}")
+                self.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+                self.one_tag_changed(tag)
+
     def start_nfc(self):
         # Test mode provided in command line (NFC uids separated by space)
         if len(sys.argv) > 1:
@@ -79,10 +95,7 @@ class NfcToMopidy:
                 self.activetags.append(
                     tag
                 )  # Ajoute le tag détecté dans la liste des tags actifs
-                if self.configO2M["discover"] == "true":
-                    self.active_tags_changed()
-                else:
-                    self.one_tag_changed(tag)
+                self.tag_action(tag)
         else:
             self.nfcHandler.loop()  # démarre la boucle infinie de détection nfc/rfid
 
@@ -106,10 +119,8 @@ class NfcToMopidy:
                     tag
                 )  # Ajoute le tag détecté dans la liste des tags actifs
 
-                if self.configO2M["discover"] == "true":
-                    self.active_tags_changed()
-                else:
-                    self.one_tag_changed(tag)
+                self.tag_action(tag)
+
             else:
                 if card.id != "":
                     self.dbHandler.create_tag(
@@ -432,6 +443,7 @@ class NfcToMopidy:
                             stat.skipped_count > 0
                             or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
                             or stat.in_library == 1
+                            or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
                         ):
                             uris.append(t.track.uri)
                 self.mopidyHandler.tracklist.remove({"uri": uris})
@@ -692,8 +704,8 @@ class NfcToMopidy:
         stat.username = self.username
 
         #Avoid downgrade of option types in DB
-        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
-            if not(option_type == 'normal' and stat.option_type == 'favorites'):
+        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+            if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
                 stat.option_type = option_type
 
         #Variable
@@ -729,10 +741,13 @@ class NfcToMopidy:
                 #Adding if "new track" played many times
                 if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.option_discover_level)==True :
                     if library_link !='':
+                        #print(f"Autofilling LL : {library_link}")
                         result = self.autofill_spotify_playlist(library_link,uri)
                         if result: stat.option_type = 'normal'
-                    else:
+
+                    if stat.option_type != 'normal' :
                         tag_incoming = self.dbHandler.get_tag_by_option_type('incoming')
+                        #print(f"Autofilling TI : {tag_incoming}")
                         if tag_incoming:
                             if 'spotify:playlist' in tag_incoming.data: 
                                 result = self.autofill_spotify_playlist(tag_incoming.data,uri)
@@ -768,6 +783,7 @@ class NfcToMopidy:
                 #Adding any track to incoming if played many times
                 if self.threshold_adding_favorites(stat.read_count_end,self.option_discover_level)==True :
                     tag_favorites = self.dbHandler.get_tag_by_option_type('favorites')
+                    print(f"Autofilling TF : {tag_favorites}")
                     if tag_favorites:
                         if 'spotify:playlist' in tag_favorites.data: 
                             result = self.autofill_spotify_playlist(tag_favorites.data,uri)
@@ -808,8 +824,19 @@ class NfcToMopidy:
         stat.update()
         stat.save()
 
+    
+
     # Auto Filling playlist 
     def autofill_spotify_playlist(self, playlist_uri,uri):
+        try: 
+            self.autofill_spotify_playlist_action(playlist_uri,uri)
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            self.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+            self.autofill_spotify_playlist_action(playlist_uri,uri)
+
+    def autofill_spotify_playlist_action(self, playlist_uri,uri):
+        #Toadd : test if writable
         playlist_id = playlist_uri.split(":")[2]
         track_id = uri[0].split(":")[2]
         if self.spotifyHandler.is_track_in_playlist(self.username,track_id,playlist_id) == False:
@@ -817,14 +844,14 @@ class NfcToMopidy:
             result = self.spotifyHandler.add_tracks_playlist(self.username, playlist_uri, uri)
         else: result = 'already in'
         return (result)
-
-
+            
 #   THRESHOLDs MANAGEMENT
 
     #Threshold for stopping playing and autofilling new tracks (add_tracks or autofill)
     #discover_level = 5 : read_count_end>=3
     def threshold_playing_count_new(self,read_count_end,option_discover_level):
-        if (float(read_count_end) >= ((11-option_discover_level)/2)): return True
+        #print (f"{read_count_end} {option_discover_level}")
+        if float(read_count_end) >= ((11-option_discover_level)/2): return True
         else: return False
 
     #Threshold for adding tracks to favorites (autofill)

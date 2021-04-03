@@ -59,6 +59,7 @@ if __name__ == "__main__":
     mopidy = MopidyAPI()
     o2mConf = util.get_config_file("o2m.conf")  # o2m
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
+    #mopidyConf = util.get_config_file("snapcast.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
 
     # Fonction called when track started
@@ -69,11 +70,8 @@ if __name__ == "__main__":
         #Quick and dirty volume Management
         if "radiofrance-podcast.net" in track.uri :
             nfcHandler.current_volume = nfcHandler.mopidyHandler.mixer.get_volume()
-            nfcHandler.mopidyHandler.mixer.set_volume(70)
+            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.current_volume*1.25))
             print (f"Get Volume : {nfcHandler.current_volume}")
-        else: 
-            print (f"Set Volume : {nfcHandler.current_volume}")
-            nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
 
         # Podcast : seek previous position
         if "podcast" in track.uri and "#" in track.uri:
@@ -93,18 +91,28 @@ if __name__ == "__main__":
         tag = nfcHandler.get_active_tag_by_uri(track.uri)
         option_type = 'new_mopidy'
         library_link = ''
-        if tag is not None:
-            option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
-            library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
-            if library_link == '': 
-                library_link = tag.data
-                if "m3u" in tag.data:
-                    playlist = nfcHandler.mopidyHandler.playlists.lookup(tag.data)
-                    for trackp in playlist.tracks:
-                        #need to be updated : in which playlist is track if manies ?
-                        if 'playlist' in trackp.uri: 
-                            library_link = trackp.uri
-                            exit
+
+        #Quick and dirty volume Management
+        if "radiofrance-podcast.net" in track.uri :
+            print (f"Set Volume : {nfcHandler.current_volume}")
+            #nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
+            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.75))
+        
+        #Update Dynamic datas
+        if tag is not None :
+            if tag.option_type != 'new':
+                option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+                library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
+                #print (f"library_link {library_link}")
+                if library_link == '': 
+                    library_link = tag.data
+                    if "m3u" in tag.data:
+                        playlist = nfcHandler.mopidyHandler.playlists.lookup(tag.data)
+                        for trackp in playlist.tracks:
+                            #need to be updated : in which playlist is track if manies ?
+                            if 'spotify:playlist' in trackp.uri: 
+                                library_link = trackp.uri
+                                break
 
         #print (f"Track :{track}")
         #print (f"Tag :{tag}")
