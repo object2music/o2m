@@ -8,6 +8,16 @@ from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Tag
 from src.nfcreader import NfcReader
 from src.spotifyhandler import SpotifyHandler
 
+'''
+option_type 
+- normal
+- favorites
+- new
+- incoming
+- hidden
+- trash
+'''
+
 
 class NfcToMopidy:
     activecards = {}
@@ -308,9 +318,13 @@ class NfcToMopidy:
                     if "herenow:library" in track.uri :
                         discover_level = self.get_option_for_tag(tag, "option_discover_level")
                         window = int(round(discover_level / 2))
-                        max_result1 = int(round((11-discover_level)*max_results/10))
+                        #max_result1 = int(round((11-discover_level)*max_results/10))
+                        #playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+                        #playlist_uris.append(self.get_spotify_library((max_results-max_result1)))
+                        max_result1 = int(round(max_results/3))
                         playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-                        playlist_uris.append(self.get_spotify_library((max_results-max_result1)))
+                        playlist_uris.append(self.get_spotify_library(max_result1))
+                        #self.add_new_tracks(max_result1)
                         content = 1
 
                     # spotify:library
@@ -332,8 +346,9 @@ class NfcToMopidy:
                     if content==0: playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
                 if len(playlist_uris)>0:
+                    #some contents are unique in lists, need to be flatten
                     playlist_uris1 = util.flatten_list(playlist_uris)
-                    self.add_tracks(tag, playlist_uris1, max_results)  # Envoie les uris en lecture
+                    self.add_tracks(tag, playlist_uris1, max_results) # Envoie les uris en lecture
                 """Implement shuffle
                 prev_length = self.mopidyHandler.tracklist.get_length()
                 current_index = self.mopidyHandler.tracklist.index()
@@ -432,22 +447,29 @@ class NfcToMopidy:
         if tltracks_added:
             # Exclude tracks already read when option is new
             if tag.option_type == 'new':
-                uris = []
+                uris_rem = []
                 for t in tltracks_added:
                     if self.dbHandler.stat_exists(t.track.uri):
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
-                        # tmp update
-                        # self.reg_stat_track(stat)
                         # When track skipped or too many counts
                         if (
                             stat.skipped_count > 0
                             or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
                             or stat.in_library == 1
-                            or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
+                            #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
+                            or (stat.option_type == 'trash' or stat.option_type == 'hidden')
                         ):
-                            uris.append(t.track.uri)
-                self.mopidyHandler.tracklist.remove({"uri": uris})
+                            uris_rem.append(t.track.uri)
+                self.mopidyHandler.tracklist.remove({"uri": uris_rem})
             else:
+                #Removing trahs and hidden
+                uris_rem = []
+                for t in tltracks_added:
+                    if self.dbHandler.stat_exists(t.track.uri):
+                        stat = self.dbHandler.get_stat_by_uri(t.track.uri)
+                        if (stat.option_type == 'trash' or stat.option_type == 'hidden'): uris_rem.append(t.track.uri)
+                self.mopidyHandler.tracklist.remove({"uri": uris_rem})
+
                 #Adding common and library tracks
                 discover_level = self.get_option_for_tag(tag, "option_discover_level")
                 limit = int(round(len(tltracks_added) * discover_level / 100))
@@ -545,12 +567,6 @@ class NfcToMopidy:
 
 #   SONGS RECOMMANDATION MANAGEMENT
 
-    def get_spotify_library(self,limit):
-        return self.spotifyHandler.get_library_tracks(limit)
-
-    def get_common_tracks(self,read_hour,window,limit):
-        return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit)
-
     def add_reco_after_track_read(self, track_uri, library_link=''):
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
@@ -628,6 +644,17 @@ class NfcToMopidy:
 
 
 #  TRACKS AND STATS MANAGEMENT
+
+    def get_spotify_library(self,limit):
+        return self.spotifyHandler.get_library_tracks(limit)
+
+    def get_common_tracks(self,read_hour,window,limit):
+        return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit)
+
+    def add_new_tracks(self,limit):
+        tag_new = self.dbHandler.get_tag_by_option_type('new')
+        self.add_tracks(tag_new, limit)
+        return True
 
     def get_active_tag_by_uri(self, uri):
         for tag in self.activetags:
