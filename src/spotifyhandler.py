@@ -108,12 +108,17 @@ class SpotifyHandler:
         return self.parse_tracks(tracks)
 
     def get_track_artist(self, track_id):
-        #print (track_id)
         artists=self.sp.track(track_id)['artists']
         #print (artists)
         random.shuffle(artists)
         artist_id = artists[0]['id']
         return artist_id
+
+    def get_track_album(self, track_id):
+        album=self.sp.track(track_id)['album']
+        #print (album)
+        album_uri = album['uri']
+        return album_uri
 
     def get_artist_all_tracks(self, artist_id, limit=10):
         albums = self.sp.artist_albums(artist_id, country="FR")
@@ -123,6 +128,13 @@ class SpotifyHandler:
             tracks_json = self.sp.album_tracks(album["uri"])
             tracks_uris += self.parse_tracks(tracks_json)
 
+        random.shuffle(tracks_uris)
+        return tracks_uris[:limit]
+
+    def get_album_all_tracks(self, album_uri, limit=10):
+        tracks_uris = []
+        tracks_json = self.sp.album_tracks(album_uri)
+        tracks_uris = self.parse_tracks(tracks_json)
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
 
