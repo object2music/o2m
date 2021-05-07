@@ -469,34 +469,38 @@ class NfcToMopidy:
                     if self.dbHandler.stat_exists(t.track.uri):
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                         # When track skipped or too many counts
-                        if (
-                            stat.skipped_count > 0
+                        if (stat.skipped_count > 0
                             or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
                             or stat.in_library == 1
                             #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
                             or (stat.option_type == 'trash' or stat.option_type == 'hidden')
-                        ):
+                        ): 
                             uris_rem.append(t.track.uri)
-                self.mopidyHandler.tracklist.remove({"uri": uris_rem})
+                    #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
+
             else:
                 #Removing trash and hidden
                 uris_rem = []
                 for t in tltracks_added:
                     if self.dbHandler.stat_exists(t.track.uri):
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
-                        if (stat.option_type == 'trash' or stat.option_type == 'hidden'): uris_rem.append(t.track.uri)
-                self.mopidyHandler.tracklist.remove({"uri": uris_rem})
+                        if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
+                            uris_rem.append(t.track.uri)   
+                    #print (self.mopidyHandler.tracklist.get_tracks())
+                    #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
+            
+            self.mopidyHandler.tracklist.remove({"uri": uris_rem})
 
-                #Adding common and library tracks
-                '''discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                limit = int(round(len(tltracks_added) * discover_level / 100))
-                window = int(round(discover_level / 2))
-                print(f"discover_level {discover_level} limit {limit} window {window}")
-                if limit > 0: 
-                    uris2 = self.get_common_tracks(datetime.datetime.now().hour,window,limit)
-                    tltracks_added2 = self.mopidyHandler.tracklist.add(uris=uris2)
-                    tltracks_added.append(tltracks_added2)
-                    print (f"Adding common tracks : {uris2}")'''
+            #Adding common and library tracks
+            '''discover_level = self.get_option_for_tag(tag, "option_discover_level")
+            limit = int(round(len(tltracks_added) * discover_level / 100))
+            window = int(round(discover_level / 2))
+            print(f"discover_level {discover_level} limit {limit} window {window}")
+            if limit > 0: 
+                uris2 = self.get_common_tracks(datetime.datetime.now().hour,window,limit)
+                tltracks_added2 = self.mopidyHandler.tracklist.add(uris=uris2)
+                tltracks_added.append(tltracks_added2)
+                print (f"Adding common tracks : {uris2}")'''
 
             new_length = self.mopidyHandler.tracklist.get_length()
             print(f"Length {new_length}")
@@ -621,7 +625,7 @@ class NfcToMopidy:
                 current_index = self.mopidyHandler.tracklist.index()
             else:
                 current_index = tl_length
-            new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10))) #old
+            #new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10))) #old
             new_index = current_index #test
 
             if uris:
@@ -631,30 +635,31 @@ class NfcToMopidy:
                 if slice:
                     try:
                         tag = self.get_active_tag_by_uri(track_uri)
-                        if hasattr(tag, "tlids"):
-                            tag.tlids += [x.tlid for x in slice]
-                        else:
-                            tag.tlids = [x.tlid for x in slice]
-                        #print("Tag.tlids : ",tag.tlids)
+                        if tag:
+                            if hasattr(tag, "tlids"):
+                                tag.tlids += [x.tlid for x in slice]
+                            else:
+                                tag.tlids = [x.tlid for x in slice]
+                            #print("Tag.tlids : ",tag.tlids)
 
-                        if hasattr(tag, "uris"):
-                            tag.uris += uris
-                        else:
-                            tag.uris = uris
-                        #print("Tag.uris : ",tag.uris)
+                            if hasattr(tag, "uris"):
+                                tag.uris += uris
+                            else:
+                                tag.uris = uris
+                            #print("Tag.uris : ",tag.uris)
 
-                        if hasattr(tag, "option_types"):
-                            tag.option_types += ['new' for x in slice]
-                        else:
-                            tag.option_types = ['new' for x in slice]
-                        #print("Option_types : ",tag.option_types)
+                            if hasattr(tag, "option_types"):
+                                tag.option_types += ['new' for x in slice]
+                            else:
+                                tag.option_types = ['new' for x in slice]
+                            #print("Option_types : ",tag.option_types)
 
-                        #library_link
-                        if hasattr(tag, "library_link"):
-                            tag.library_link += [library_link for x in slice]
-                        else:
-                            tag.library_link = [library_link for x in slice]
-                        #print("library_link",tag.library_link)
+                            #library_link
+                            if hasattr(tag, "library_link"):
+                                tag.library_link += [library_link for x in slice]
+                            else:
+                                tag.library_link = [library_link for x in slice]
+                            #print("library_link",tag.library_link)
                         
                         print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} \n")
                         #print (slice[0].tlid)
