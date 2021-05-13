@@ -588,7 +588,7 @@ class NfcToMopidy:
 
 #   SONGS RECOMMANDATION MANAGEMENT
 
-    def add_reco_after_track_read(self, track_uri, library_link=''):
+    def add_reco_after_track_read(self, track_uri, library_link='', data=''):
         self.mopidyHandler.playback.pause()
 
         if "spotify:track" in track_uri:
@@ -601,8 +601,12 @@ class NfcToMopidy:
             limit = int(round(discover_level * 0.25))
 
             choices = ['album','artist','reco']
-            p = [0.5, 0.3, 0.2] #Ponderation Album / Artist / Reco
             uris = []
+            #Ponderation Album / Artist / Reco
+            if ':album' in data:
+                p = [0, 0.8, 0.2]
+            else:
+                p = [0.5, 0.3, 0.2]
 
             for i in range(0, limit): 
                 c=np.random.choice(choices,1,replace=False,p=p)
@@ -701,8 +705,10 @@ class NfcToMopidy:
 
     def get_active_tag_by_uri(self, uri):
         for tag in self.activetags:
-            if uri in tag.uris:
-                return tag
+            print (tag)
+            if tag.uris is not None:
+                if uri in tag.uris:
+                    return tag
         return None
 
     def get_option_for_tag_uri(self, uri, optionName):
@@ -920,7 +926,7 @@ class NfcToMopidy:
     #Threshold for stopping playing and autofilling new tracks (add_tracks or autofill)
     #discover_level = 5 : read_count_end>=3
     def threshold_playing_count_new(self,read_count_end,option_discover_level):
-        print (f"read_count_end{read_count_end} option_discover_level{option_discover_level}")
+        #print (f"read_count_end : {read_count_end} option_discover_level : {option_discover_level}")
         if float(read_count_end) >= ((11-option_discover_level)/2): return True
         else: return False
 

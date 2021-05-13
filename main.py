@@ -91,6 +91,7 @@ if __name__ == "__main__":
         tag = nfcHandler.get_active_tag_by_uri(track.uri)
         option_type = 'new_mopidy'
         library_link = ''
+        data = ''
 
         #Quick and dirty volume Management
         if "radiofrance-podcast.net" in track.uri :
@@ -100,6 +101,7 @@ if __name__ == "__main__":
         
         #Update Dynamic datas
         if tag is not None :
+            if tag.data != '': data = tag.data
             if tag.option_type != 'new':
                 option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
                 library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
@@ -123,12 +125,12 @@ if __name__ == "__main__":
         if "track" in track.uri and event.time_position / track.length > 0.9:
             if option_type != 'new': 
                 #int(round(discover_level * 0.25))
-                try: nfcHandler.add_reco_after_track_read(track.uri,library_link)
+                try: nfcHandler.add_reco_after_track_read(track.uri,library_link,data)
                 except Exception as val_e: 
                     #except nfcHandler.spotifyHandler.sp.client.SpotifyException: nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
                     print(f"Erreur : {val_e}")
                     nfcHandler.spotifyHandler.init_token_sp()
-                    nfcHandler.add_reco_after_track_read(track.uri,library_link)
+                    nfcHandler.add_reco_after_track_read(track.uri,library_link,data)
             if option_type != 'hidden': 
                 print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track)
