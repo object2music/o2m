@@ -363,15 +363,8 @@ class NfcToMopidy:
             elif media_parts[0] == "spotify":
                 if media_parts[1] == "artist":
                     print("find tracks of artist : " + tag.description)
-                    tracks_uris = self.spotifyHandler.get_artist_top_tracks(
-                        media_parts[2]
-                    )  # 10 tops tracks of artist
-                    tracks_uris = (
-                        tracks_uris
-                        + self.spotifyHandler.get_artist_all_tracks(
-                            media_parts[2], limit=max_results - 10
-                        )
-                    )  # all tracks of artist with no specific order
+                    tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
+                    tracks_uris = (tracks_uris+ self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
                     self.add_tracks(tag, tracks_uris, max_results)
                     content += 1
                 else:
@@ -636,7 +629,10 @@ class NfcToMopidy:
                 slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
                 # Updating tag infos
                 # if 'tag' in locals():
+                                        
                 if slice:
+                    print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} and index {slice[0].tlid}\n")
+
                     try:
                         tag = self.get_active_tag_by_uri(track_uri)
                         if tag:
@@ -664,14 +660,12 @@ class NfcToMopidy:
                             else:
                                 tag.library_link = [library_link for x in slice]
                             #print("library_link",tag.library_link)
-                        
-                        print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} \n")
-                        #print (slice[0].tlid)
-                        
-                        self.mopidyHandler.playback.play(None,slice[0].tlid)
 
                     except Exception as e:
                         print(e)
+                    
+                    self.mopidyHandler.playback.play(None,slice[0].tlid)
+
 
         self.play_or_resume()
 
@@ -913,13 +907,15 @@ class NfcToMopidy:
 
     def autofill_spotify_playlist_action(self, playlist_uri,uri):
         #Toadd : test if writable
-        playlist_id = playlist_uri.split(":")[2]
-        track_id = uri[0].split(":")[2]
-        if self.spotifyHandler.is_track_in_playlist(self.username,track_id,playlist_id) == False:
-            print (f"Auto Filling playlist with self.username: {self.username}, playlist: {playlist_uri}, track.uri: {uri}")
-            result = self.spotifyHandler.add_tracks_playlist(self.username, playlist_uri, uri)
-        else: result = 'already in'
-        return (result)
+        if 'spotify:playlist' in playlist_uri:
+            playlist_id = playlist_uri.split(":")[2]
+            track_id = uri[0].split(":")[2]
+            if self.spotifyHandler.is_track_in_playlist(self.username,track_id,playlist_id) == False:
+                print (f"Auto Filling playlist with self.username: {self.username}, playlist: {playlist_uri}, track.uri: {uri}")
+                result = self.spotifyHandler.add_tracks_playlist(self.username, playlist_uri, uri)
+            else: result = 'already in'
+            return (result)
+        else: print(f"Erreur : autofill, playlist_uri : {playlist_uri}")
             
 #   THRESHOLDs MANAGEMENT
 

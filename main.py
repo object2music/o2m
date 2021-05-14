@@ -100,7 +100,7 @@ if __name__ == "__main__":
             nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.75))
         
         #Update Dynamic datas
-        if tag is not None :
+        if tag is not None and tag !='' :
             if tag.data != '': data = tag.data
             if tag.option_type != 'new':
                 option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]

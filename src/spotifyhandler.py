@@ -104,7 +104,12 @@ class SpotifyHandler:
         return uris
 
     def get_artist_top_tracks(self, artist_id):
-        tracks = self.sp.artist_top_tracks(artist_id, country="FR")
+        try: 
+            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            self.sp.init_token_sp()
+            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
         return self.parse_tracks(tracks)
 
     def get_track_artist(self, track_id):
