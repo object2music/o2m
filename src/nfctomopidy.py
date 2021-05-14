@@ -631,7 +631,6 @@ class NfcToMopidy:
                 # if 'tag' in locals():
                                         
                 if slice:
-                    print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} and index {slice[0].tlid}\n")
 
                     try:
                         tag = self.get_active_tag_by_uri(track_uri)
@@ -660,9 +659,12 @@ class NfcToMopidy:
                             else:
                                 tag.library_link = [library_link for x in slice]
                             #print("library_link",tag.library_link)
+                            #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} and index {slice[0].tlid}\n")
 
                     except Exception as e:
                         print(e)
+                    
+                    print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} & index {slice[0].tlid}\n")
                     
                     self.mopidyHandler.playback.play(None,slice[0].tlid)
 
