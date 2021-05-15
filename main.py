@@ -100,11 +100,13 @@ if __name__ == "__main__":
             nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.75))
         
         #Update Dynamic datas
-        if tag is not None and tag !='' :
+        if tag:
             if tag.data != '': data = tag.data
             if tag.option_type != 'new':
-                option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
-                library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
+                if hasattr(tag, "option_types") and hasattr(tag, "tlids"):
+                    option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+                if hasattr(tag, "library_link") and hasattr(tag, "tlids"):
+                    library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
                 #print (f"library_link {library_link}")
                 if library_link == '': 
                     library_link = tag.data

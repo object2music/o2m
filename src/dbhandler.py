@@ -33,6 +33,7 @@ class DatabaseHandler():
             # response = tag.save()
             tag = Tag.create(uid=uid)
             print(tag)
+            return tag
             # if response == 1:
             #     self.log.info('Tag created : {}'.format(tag))
             #     return tag
@@ -52,7 +53,11 @@ class DatabaseHandler():
         results = self.transform_query_to_list(query)
         print (results)
         if len(results) > 0:
-            return results[0] 
+            return results[0]
+        else:
+            mopidy_tag = self.create_tag('mopidy','')
+            return mopidy_tag
+
     
     def get_tag_by_data(self, data):
         self.log.info(f'searching for tag with data: {data}')

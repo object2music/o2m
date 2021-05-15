@@ -102,9 +102,7 @@ class NfcToMopidy:
             for i in range(1, len(sys.argv)):
                 print(sys.argv[i])
                 tag = self.dbHandler.get_tag_by_uid(sys.argv[i])
-                self.activetags.append(
-                    tag
-                )  # Ajoute le tag détecté dans la liste des tags actifs
+                self.activetags.append(tag)  # Ajoute le tag détecté dans la liste des tags actifs
                 self.tag_action(tag)
                 self.nfcHandler.loop()
         else:
@@ -121,30 +119,22 @@ class NfcToMopidy:
 
         # Boucle sur les cartes ajoutées
         for card in addedCards:
-            tag = self.dbHandler.get_tag_by_uid(
-                card.id
-            )  # On récupère le tag en base de données via l'identifiant rfid
+            tag = self.dbHandler.get_tag_by_uid(card.id)  # On récupère le tag en base de données via l'identifiant rfid
             if tag != None:
                 tag.add_count()  # Incrémente le compteur de contacts pour ce tag
-                self.activetags.append(
-                    tag
-                )  # Ajoute le tag détecté dans la liste des tags actifs
+                self.activetags.append(tag)  # Ajoute le tag détecté dans la liste des tags actifs
 
                 self.tag_action(tag)
 
             else:
                 if card.id != "":
-                    self.dbHandler.create_tag(
-                        card.id, ""
-                    )  # le tag n'est pas présent en bdd donc on le rajoute
+                    self.dbHandler.create_tag(card.id, "")  # le tag n'est pas présent en bdd donc on le rajoute
                 else:
                     print("Reading card error ! : " + card)
 
         for card in removedCards:
             print("card removed")
-            tag = self.dbHandler.get_tag_by_uid(
-                card.id
-            )  # On récupère le tag en base de données via l'identifiant rfid
+            tag = self.dbHandler.get_tag_by_uid(card.id)  # On récupère le tag en base de données via l'identifiant rfid
             removedTag = next((x for x in self.activetags if x.uid == card.id), None)
 
             if tag != None and tag in self.activetags:
@@ -634,37 +624,37 @@ class NfcToMopidy:
 
                     try:
                         tag = self.get_active_tag_by_uri(track_uri)
-                        if tag:
-                            if hasattr(tag, "tlids"):
-                                tag.tlids += [x.tlid for x in slice]
-                            else:
-                                tag.tlids = [x.tlid for x in slice]
-                            #print("Tag.tlids : ",tag.tlids)
+                        print (f"Tag : {tag}")
+                        if hasattr(tag, "tlids"):
+                            tag.tlids += [x.tlid for x in slice]
+                        else:
+                            tag.tlids = [x.tlid for x in slice]
+                        #print("Tag.tlids : ",tag.tlids)
 
-                            if hasattr(tag, "uris"):
-                                tag.uris += uris
-                            else:
-                                tag.uris = uris
-                            #print("Tag.uris : ",tag.uris)
+                        if hasattr(tag, "uris"):
+                            tag.uris += uris
+                        else:
+                            tag.uris = uris
+                        #print("Tag.uris : ",tag.uris)
 
-                            if hasattr(tag, "option_types"):
-                                tag.option_types += ['new' for x in slice]
-                            else:
-                                tag.option_types = ['new' for x in slice]
-                            #print("Option_types : ",tag.option_types)
+                        if hasattr(tag, "option_types"):
+                            tag.option_types += ['new' for x in slice]
+                        else:
+                            tag.option_types = ['new' for x in slice]
+                        #print("Option_types : ",tag.option_types)
 
-                            #library_link
-                            if hasattr(tag, "library_link"):
-                                tag.library_link += [library_link for x in slice]
-                            else:
-                                tag.library_link = [library_link for x in slice]
-                            #print("library_link",tag.library_link)
-                            #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} and index {slice[0].tlid}\n")
+                        #library_link
+                        if hasattr(tag, "library_link"):
+                            tag.library_link += [library_link for x in slice]
+                        else:
+                            tag.library_link = [library_link for x in slice]
+                        #print("library_link",tag.library_link)
+                        print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} and tlid {slice[0].tlid}\n")
 
                     except Exception as e:
-                        print(e)
+                        print(f"Erreur : {e}")
                     
-                    print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} & index {slice[0].tlid}\n")
+                    print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} & tlid {slice[0].tlid}\n")
                     
                     self.mopidyHandler.playback.play(None,slice[0].tlid)
 
@@ -702,10 +692,14 @@ class NfcToMopidy:
     def get_active_tag_by_uri(self, uri):
         for tag in self.activetags:
             print (tag)
-            if tag.uris is not None:
+            if hasattr(tag, "uris"):
                 if uri in tag.uris:
                     return tag
-        return None
+        
+        mopidy_tag = self.dbHandler.get_tag_by_uid('mopidy')
+        mopidy_tag.uris = [uri]
+        self.activetags.append(mopidy_tag)
+        return mopidy_tag
 
     def get_option_for_tag_uri(self, uri, optionName):
         tag = self.get_active_tag_by_uri(uri)
