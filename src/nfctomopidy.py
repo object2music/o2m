@@ -696,7 +696,7 @@ class NfcToMopidy:
                 if uri in tag.uris:
                     return tag
         
-        mopidy_tag = self.dbHandler.get_tag_by_uid('mopidy')
+        mopidy_tag = self.dbHandler.get_tag_by_uid('mopidy_tag')
         mopidy_tag.uris = [uri]
         self.activetags.append(mopidy_tag)
         return mopidy_tag

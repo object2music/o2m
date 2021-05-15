@@ -55,7 +55,7 @@ class DatabaseHandler():
         if len(results) > 0:
             return results[0]
         else:
-            mopidy_tag = self.create_tag('mopidy','')
+            mopidy_tag = self.create_tag('mopidy_tag','')
             return mopidy_tag
 
     
