@@ -104,7 +104,6 @@ class NfcToMopidy:
                 tag = self.dbHandler.get_tag_by_uid(sys.argv[i])
                 self.activetags.append(tag)  # Ajoute le tag détecté dans la liste des tags actifs
                 self.tag_action(tag)
-                self.nfcHandler.loop()
         else:
             self.nfcHandler.loop()  # démarre la boucle infinie de détection nfc/rfid
 
@@ -468,7 +467,7 @@ class NfcToMopidy:
                     if self.dbHandler.stat_exists(t.track.uri):
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                         if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
-                            uris_rem.append(t.track.uri)   
+                            uris_rem.append(t.track.uri)
                     #print (self.mopidyHandler.tracklist.get_tracks())
                     #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
             
@@ -577,11 +576,14 @@ class NfcToMopidy:
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
             discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
+            if discover_level < 10: new_type ='new' 
+            else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
 
             # Get tracks recommandations
             track_data = track_uri.split(":")  # on découpe l'uri' :
             track_seed = [track_data[2]]  # track id
-            limit = int(round(discover_level * 0.25))
+            limit = int(round(discover_level * 0.25)) #Fixing number of new tracks
+
 
             choices = ['album','artist','reco']
             uris = []
@@ -593,18 +595,25 @@ class NfcToMopidy:
 
             for i in range(0, limit): 
                 c=np.random.choice(choices,1,replace=False,p=p)
+                new_uri = track_uri
 
                 #1 : Same Album
                 if c[0]=='album':
-                    uris += self.get_same_album_tracks(track_uri, 1)
+                    while new_uri == track_uri:
+                        new_uri = self.get_same_album_tracks(track_uri, 1)
+                    uris += new_uri
                 
                 #2 : Artist
                 if c[0]=='artist':
-                    uris += self.get_same_artist_tracks(track_uri, 1)
+                    while new_uri == track_uri:
+                        new_uri = self.get_same_artist_tracks(track_uri, 1)
+                    uris += new_uri
 
                 #3 : Spotify Reco
                 if c[0]=='reco':
-                    uris += self.get_spotify_reco(track_seed, 1)
+                    while new_uri == track_uri:
+                        new_uri = self.get_spotify_reco(track_seed, 1)
+                    uris += new_uri
 
             # Calculate insertion index depending of discover_level
             tl_length = self.mopidyHandler.tracklist.get_length()
@@ -638,9 +647,9 @@ class NfcToMopidy:
                         #print("Tag.uris : ",tag.uris)
 
                         if hasattr(tag, "option_types"):
-                            tag.option_types += ['new' for x in slice]
+                            tag.option_types += [new_type for x in slice]
                         else:
-                            tag.option_types = ['new' for x in slice]
+                            tag.option_types = [new_type for x in slice]
                         #print("Option_types : ",tag.option_types)
 
                         #library_link
