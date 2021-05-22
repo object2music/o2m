@@ -912,7 +912,7 @@ class NfcToMopidy:
 
     def autofill_spotify_playlist_action(self, playlist_uri,uri):
         #Toadd : test if writable
-        if 'spotify:playlist' in playlist_uri:
+        if 'spotify:playlist' in playlist_uri and 'spotify:track' in uri:
             playlist_id = playlist_uri.split(":")[2]
             track_id = uri[0].split(":")[2]
             if self.spotifyHandler.is_track_in_playlist(self.username,track_id,playlist_id) == False:
