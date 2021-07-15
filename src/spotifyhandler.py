@@ -108,7 +108,7 @@ class SpotifyHandler:
             tracks = self.sp.artist_top_tracks(artist_id, country="FR")
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
-            self.sp.init_token_sp()
+            self.init_token_sp()
             tracks = self.sp.artist_top_tracks(artist_id, country="FR")
         return self.parse_tracks(tracks)
 
@@ -182,7 +182,12 @@ class SpotifyHandler:
 
     def get_library_tracks(self,limit=1):
         t_list=[]
-        albums = self.sp.current_user_saved_albums()
+        try: 
+            albums = self.sp.current_user_saved_albums()
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            self.init_token_sp()
+            albums = self.sp.current_user_saved_albums() 
 
         for i in range(limit):
             album = random.choice(albums['items'])
