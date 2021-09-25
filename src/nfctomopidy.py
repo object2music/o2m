@@ -69,7 +69,7 @@ class NfcToMopidy:
         if "username" in self.configMopidy["spotify"]:
             self.username = self.configMopidy["spotify"]["username"]
 
-        self.starting_mode()
+        self.starting_mode(clear=True)
 
     def starting_mode(self,clear=False):
         # Default volume setting at beginning (or in main ?)
@@ -116,7 +116,7 @@ class NfcToMopidy:
         # Décommenter la ligne en dessous pour avoir de l'info sur les données récupérées dans le terminal
         # self.pretty_print_nfc_data(addedCards, removedCards)
 
-        # Boucle sur les cartes ajoutées
+        # Loop on added Cards
         for card in addedCards:
             tag = self.dbHandler.get_tag_by_uid(card.id)  # On récupère le tag en base de données via l'identifiant rfid
             if tag != None:
@@ -131,6 +131,7 @@ class NfcToMopidy:
                 else:
                     print("Reading card error ! : " + card)
 
+        # Loop on removed Cards
         for card in removedCards:
             print("card removed")
             tag = self.dbHandler.get_tag_by_uid(card.id)  # On récupère le tag en base de données via l'identifiant rfid
@@ -143,9 +144,9 @@ class NfcToMopidy:
                 # print('Stopping music')
                 self.update_stat_track(
                     self.mopidyHandler.playback.get_current_track(),
-                    self.mopidyHandler.playback.get_time_position(),
+                    self.mopidyHandler.playback.get_time_position()
                 )
-                self.starting_mode(True)
+                self.starting_mode(clear=True)
             elif removedTag.tlids != None:
                 current_tlid = self.mopidyHandler.playback.get_current_tlid()
                 # last_tlindex = 0
@@ -155,27 +156,34 @@ class NfcToMopidy:
                 # all_tracklist_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
                 # current_track = next((x for x in all_tracklist_tracks if x.tlid == current_tlid))
 
+                #Compute NewTlid (after track removing)
                 last_tlindex = self.mopidyHandler.tracklist.index()
                 # print(last_tlindex)
 
                 if current_tlid in removedTag.tlids:
                     self.update_stat_track(
                         self.mopidyHandler.playback.get_current_track(),
-                        self.mopidyHandler.playback.get_time_position(),
+                        self.mopidyHandler.playback.get_time_position()
                     )
                     self.mopidyHandler.playback.stop()
-                self.mopidyHandler.tracklist.remove({"tlid": removedTag.tlids})
-                tl_length = self.mopidyHandler.tracklist.get_length()
 
-                # print(tl_length)
-                all_new_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
-                if tl_length > last_tlindex:
-                    if self.mopidyHandler.playback.get_state() != "playing":
-                        self.mopidyHandler.playback.play(
-                            all_new_tracks[last_tlindex - 1]
-                        )
+                    current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()                
+                    current_tlids = [ sub.tlid for sub in current_tracks ]
+
+                    #Looping on active tracks
+                    for i in current_tlids[last_tlindex:]:
+                        if i not in removedTag.tlids:
+                            next_tlid = i
+                            break
                 else:
-                    self.play_or_resume()
+                    next_tlid = current_tlid
+                                
+                #Removing tracks from playslist
+                self.mopidyHandler.tracklist.remove({"tlid": removedTag.tlids})
+
+                if current_tlid in removedTag.tlids:
+                    self.mopidyHandler.playback.play(tlid=next_tlid)
+
             else:
                 print("no uris with removed tag")
 
@@ -444,9 +452,9 @@ class NfcToMopidy:
         tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
 
         if tltracks_added:
+            uris_rem = []
             # Exclude tracks already read when option is new
             if tag.option_type == 'new':
-                uris_rem = []
                 for t in tltracks_added:
                     if self.dbHandler.stat_exists(t.track.uri):
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
@@ -462,14 +470,13 @@ class NfcToMopidy:
 
             else:
                 #Removing trash and hidden
-                uris_rem = []
-                for t in tltracks_added:
+                '''for t in tltracks_added:
                     if self.dbHandler.stat_exists(t.track.uri):
                         stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                         if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
                             uris_rem.append(t.track.uri)
                     #print (self.mopidyHandler.tracklist.get_tracks())
-                    #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
+                    #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)'''
             
             self.mopidyHandler.tracklist.remove({"uri": uris_rem})
 
@@ -588,11 +595,12 @@ class NfcToMopidy:
             choices = ['album','artist','reco']
             uris = []
             #Ponderation Album / Artist / Reco
-            if ':album' in data:
+            if 'album' in data:
                 p = [0, 0.8, 0.2]
             else:
                 p = [0.5, 0.3, 0.2]
 
+            #Randomly ponderated type of track added
             for i in range(0, limit): 
                 c=np.random.choice(choices,1,replace=False,p=p)
                 new_uri = track_uri
@@ -603,7 +611,7 @@ class NfcToMopidy:
                         new_uri = self.get_same_album_tracks(track_uri, 1)
                     uris += new_uri
                 
-                #2 : Artist
+                #2 : Same Artist
                 if c[0]=='artist':
                     while new_uri == track_uri:
                         new_uri = self.get_same_artist_tracks(track_uri, 1)
@@ -621,16 +629,20 @@ class NfcToMopidy:
                 current_index = self.mopidyHandler.tracklist.index()
             else:
                 current_index = tl_length
-            #new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10))) #old
-            new_index = current_index #test
+
+            if discover_level > 5:
+                new_index = current_index #adding reco just after track
+            else:
+                if 'album' in data:
+                    new_index = tl_length
+                else:
+                    new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10)))
 
             if uris:
                 slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
                 # Updating tag infos
                 # if 'tag' in locals():
-                                        
                 if slice:
-
                     try:
                         tag = self.get_active_tag_by_uri(track_uri)
                         print (f"Tag : {tag}")
@@ -665,8 +677,11 @@ class NfcToMopidy:
                     
                     print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} & tlid {slice[0].tlid}\n")
                     
-                    self.mopidyHandler.playback.play(None,slice[0].tlid)
-
+                    if new_index == current_index:
+                        #playing a track added just forward (jumping a step ahead)
+                        self.mopidyHandler.playback.play(None,slice[0].tlid)
+                    else:
+                        self.mopidyHandler.playback.play(None)
 
         self.play_or_resume()
 
@@ -816,13 +831,13 @@ class NfcToMopidy:
                 #Adding if "new track" played many times
                 if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.option_discover_level)==True :
                     if library_link !='':
-                        #print(f"Autofilling LL : {library_link}")
+                        print(f"Autofilling LL : {library_link}")
                         result = self.autofill_spotify_playlist(library_link,uri)
                         if result: stat.option_type = 'normal'
 
                     if stat.option_type != 'normal' :
                         tag_incoming = self.dbHandler.get_tag_by_option_type('incoming')
-                        #print(f"Autofilling TI : {tag_incoming}")
+                        print(f"Autofilling TI : {tag_incoming}")
                         if tag_incoming:
                             if 'spotify:playlist' in tag_incoming.data: 
                                 result = self.autofill_spotify_playlist(tag_incoming.data,uri)
