@@ -1,10 +1,20 @@
 import configparser, os, json, sys
 from pathlib import Path
 
-sys.path.append('.')
-from lib.spotipy.oauth2 import SpotifyClientCredentials
-import lib.spotipy as spotipy
+import spotipy as spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+from spotipy.oauth2 import SpotifyOAuth
 
+#token = spotipy.util.prompt_for_user_token(username, scope, client_id, client_secret, redirect_uri)
+#logger = logging.getLogger('examples.artist_recommendations')
+#logging.basicConfig(level='INFO')
+#client_credentials_manager = SpotifyClientCredentials()
+#sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+client_credentials_manager = SpotifyClientCredentials()
+sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+#sp = spotipy.Spotify(client_credentials_manager=creds)
 
 '''
     INSTALL : 
@@ -19,13 +29,13 @@ import lib.spotipy as spotipy
 '''
 
 # On récupère le fichier de config de mopidy
-config = configparser.ConfigParser()
-config.read(str(Path.home()) + '/.config/mopidy/mopidy.conf')
+#config = configparser.ConfigParser()
+#config.read(str(Path.home()) + '/.config/mopidy/mopidy.conf')
 # On cible la section spotify
-spotify_config = config['spotify']
+#spotify_config = config['spotify']
 # On passe les valeurs à spotipy
-client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
-sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+#client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
+#1sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 ## Exemple de requete de recommandations
 reco = sp.recommendations(  seed_genres=['french', 'electro'], seed_artists=None, seed_tracks=None, country='from_token', limit=3, 

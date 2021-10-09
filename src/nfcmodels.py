@@ -65,27 +65,23 @@ class Tag(BaseModel):
         index=True,
         primary_key=True,
     )  # Unique tag/card/nfc id
+    user = TextField(null=True)  # user text
     tag_type = CharField(null=True)  # album_local, album_spotify etc...
     data = CharField(null=True)  # media uri or option
     description = TextField(null=True)  # description text
     read_count = IntegerField(default=0)  # Increment each time a tag is used
     last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date
-    option_new = BooleanField(default=False)  # only play new tracks
+    option_type = CharField(default='normal')  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
+    option_new = BooleanField(null=True)  # only play new tracks (depreciated, to be suppressed)
     option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
-    option_duration = IntegerField(
-        null=True
-    )  # max duration of a media : mostly useful for radios
+    option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
     option_max_results = IntegerField(null=True)  # Max results associated to tag
-    option_discover_level = IntegerField(
-        null=True
-    )  # Discover level (0-10) associated to tag
-    option_last_unread = IntegerField(
-        null=True
-    )  # Podcasts max count to read in podcast channel
+    option_discover_level = IntegerField(default=5)  # Discover level (0-10) associated to tag
+    option_last_unread = IntegerField(null=True)  # Podcasts max count to read in podcast channel
 
     def __str__(self):
-        return "TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}".format(
-            self.uid, self.tag_type, self.data, self.description, self.read_count
+        return "TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(
+            self.uid, self.tag_type, self.data, self.description, self.read_count, self.option_type
         )
 
     def add_count(self):
@@ -106,17 +102,20 @@ class Stats(BaseModel):
     read_count = IntegerField(default=0)  # int
     read_count_end = IntegerField(default=0)  # int
     skipped_count = IntegerField(default=0)  # int
-    in_library = IntegerField(default=0)  # Boolean if track ended
+    in_library = TextField(default='')  # Uri track if exist
     day_time_average = IntegerField(default=0)  # int
+    option_type = CharField(null=True)  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
     username = TextField(null=True)  # user text
 
     def __str__(self):
-        return "URI : {} | LAST READ : {} | READ COUNT : {} | READ POSITION : {} | READ END : {}".format(
+        return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
             self.uri,
             self.last_read_date,
-            self.read_count,
+            self.read_count_end,
+            self.skipped_count,
             self.read_position,
-            self.read_end,
+            self.read_end, 
+            self.option_type
         )
 
     """def add_count(self):
@@ -131,7 +130,7 @@ class Stats(BaseModel):
 
 class Stats_Raw(BaseModel):
     read_date = TimestampField(
-        index=True, primary_key=True, null=True, utc=True
+        index=True, null=True, utc=True, primary_key=True
     )  # date # Unique uri
     uri = CharField(default=0)
     read_hour = IntegerField(default=0)  # int
