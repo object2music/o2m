@@ -8,7 +8,7 @@ sudo apt-get upgrade
 # NFC
 sudo apt-get install gcc swig pcsc-tools pcscd autoconf libtool libpcsclite-dev libusb-dev 
 # Python
-sudo apt-get install python3.7 python3.7-dev python3-pip build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev
+sudo apt-get install python3.7 python3.7-dev python3-pip build-essential libssl-dev libffi-dev libxml2-dev libxslt1-dev zlib1g-dev liblircclient-dev lirc
 # Mopidy
 wget -q -O - https://apt.mopidy.com/mopidy.gpg | sudo apt-key add -
 sudo wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/buster.list
@@ -30,6 +30,9 @@ sudo mopidyctl local scan
 
 #Tags db initialisation
 sudo cp samples/o2m.db o2m.db #and modify as needed
+sudo cp samples/o2m.conf /etc/mopidy/o2m.conf
+sudo chmod 777 /etc/mopidy/o2m.conf
+
 
 #autorun o2m
 sudo cp samples/o2m.service /lib/systemd/system/o2m.service
@@ -39,7 +42,7 @@ sudo systemctl enable o2m.service
 sudo systemctl start o2m.service
 
 ```
-
+============================================NFC=======================================================
 **Doesn't work yet! we need a patched version of libnfc for the timeout error on acs acr122u readers**
 
 ```
@@ -76,3 +79,10 @@ For testing your readers and your install :
 Reference (in french): 
 
 https://www.latelierdugeek.fr/2019/09/30/acr122u-resoudre-lerreur-unable-to-set-alternate-setting-on-usb-interface/
+
+=======================================LIRC==============================================================
+sudo apt-get install lirc
+sudo cp samples/lirc/lirc_options.conf.dist /etc/lirc/lirc_options.conf
+sudo cp samples/lirc/lircrc .
+sudo cp samples/lirc/irexec.service /lib/systemd/system/irexec.service
+sudo systemctl enable irexec.service

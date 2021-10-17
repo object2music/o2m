@@ -137,4 +137,6 @@ dmypy.json
 .DS_Store
 
 # vscode config files
-# .vscode/
+.vscode/
+
+*.log

@@ -1,10 +1,10 @@
 import logging, pprint
 
-from peewee import IntegrityError
+from peewee import IntegrityError, fn
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 
-from src.nfcmodels import Tag, db
+from src.nfcmodels import Tag, Stats, Stats_Raw, db
 '''
 Database & Tables creation
 Used only one time from the terminal
@@ -33,6 +33,7 @@ class DatabaseHandler():
             # response = tag.save()
             tag = Tag.create(uid=uid)
             print(tag)
+            return tag
             # if response == 1:
             #     self.log.info('Tag created : {}'.format(tag))
             #     return tag
@@ -50,12 +51,24 @@ class DatabaseHandler():
         self.log.info('searching for tag : {} '.format(uid))
         query = Tag.select().where(Tag.uid == uid)
         results = self.transform_query_to_list(query)
+        print (results)
         if len(results) > 0:
-            return results[0] 
+            return results[0]
+        else:
+            mopidy_tag = self.create_tag('mopidy_tag','')
+            return mopidy_tag
+
     
     def get_tag_by_data(self, data):
         self.log.info(f'searching for tag with data: {data}')
         query = Tag.select().where(Tag.data == data)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results[0] 
+
+    def get_tag_by_option_type(self, option_type):
+        #self.log.info(f'searching for tag with option_type: {option_type}')
+        query = Tag.select().where(Tag.option_type == option_type)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             return results[0] 
@@ -77,6 +90,68 @@ class DatabaseHandler():
         for tag in query:
             tags.append(tag)
         return tags
+
+    #STATS
+    def create_stat(self, uri):
+        try:
+            stat = Stats.create(uri=uri)
+            return stat
+        except IntegrityError as err:
+            self.log.error(err)
+    
+    def get_all_stats(self):
+        query = Stats.select()
+        return self.transform_query_to_list(query)
+    
+    def get_stat_by_uri(self, uri):
+        query = Stats.select().where(Stats.uri == uri)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            #print (results[0])
+            return results[0] 
+    
+    '''def get_stat_by_data(self, data):
+        self.log.info(f'searching for stat with data: {data}')
+        query = Stats.select().where(Stats.data == data)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results[0] '''
+
+    def get_end_stat(self, uri):
+        end = 0
+        results = self.get_stat_by_uri(uri)
+        if results:
+            end = results.read_end
+        return end
+
+    def get_pos_stat(self, uri):
+        pos = 0
+        results = self.get_stat_by_uri(uri)
+        if results:
+            pos = results.read_position
+        return pos
+
+    
+    def stat_exists(self, uri):
+        if len(Stats.select().where(Stats.uri == uri)) > 0:
+            return True
+        else:
+            return False
+
+    #STATS_RAW
+    def create_stat_raw(self, uri, read_time, read_hour, username):
+        stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
+        return stat_raw
+
+    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1):
+        if window > 0:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))).order_by(fn.Rand()).limit(limit)
+        else:
+            query = Stats_Raw.select().where(Stats_Raw.read_hour == read_hour).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
+            return uris
 
 if __name__ == "__main__":
 

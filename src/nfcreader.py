@@ -39,7 +39,8 @@ class PrintObserver(CardObserver):
         # self.mute_all_readers()
         (addedcards, removedcards) = actions
         for card in addedcards:
-            self.mute_reader(card.reader) # The reader has a card on it so we can try to remove the beep
+            #Temporaly ractivate beep sound waiting for better feedback implementation
+            #self.mute_reader(card.reader) # The reader has a card on it so we can try to remove the beep
             # Methode 1
             int_id = self.get_id(card.reader)
             card.id = self.convert_to_hex_as_string(int_id)
