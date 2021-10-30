@@ -148,17 +148,9 @@ class NfcToMopidy:
                 )
                 self.starting_mode(clear=True)
             elif removedTag.tlids != None:
-                current_tlid = self.mopidyHandler.playback.get_current_tlid()
-                # last_tlindex = 0
-                # if current_tlid != None:
-                # if current_tlid in removedTag.tlids:
-                #     removedTag.tlids.remove(current_tlid)
-                # all_tracklist_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
-                # current_track = next((x for x in all_tracklist_tracks if x.tlid == current_tlid))
-
                 #Compute NewTlid (after track removing)
+                current_tlid = self.mopidyHandler.playback.get_current_tlid()
                 last_tlindex = self.mopidyHandler.tracklist.index()
-                # print(last_tlindex)
 
                 if current_tlid in removedTag.tlids:
                     self.update_stat_track(
