@@ -83,7 +83,7 @@ if __name__ == "__main__":
                     max(nfcHandler.dbHandler.get_pos_stat(track.uri) - 10, 0)
                 )
 
-    # Fonction called when tracked finished or skipped
+    # Fonction called when tracked skipped OR completly finished
     @mopidy.on_event("track_playback_ended")
     def track_ended_event(event):
         #Datas
@@ -92,6 +92,7 @@ if __name__ == "__main__":
         option_type = 'new_mopidy'
         library_link = ''
         data = ''
+        position = event.time_position
 
         #Quick and dirty volume Management
         if "radiofrance-podcast.net" in track.uri :
@@ -137,24 +138,32 @@ if __name__ == "__main__":
                 print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track)
 
-        # update stats
-        try: 
-            nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
-        except Exception as val_e: 
-            #except nfcHandler.spotifyhandler.sp.client.SpotifyException: 
-            print(f"Erreur : {val_e}")
-            nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
-            nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
-
         # Podcast
         if "podcast" in track.uri:
-            if (event.time_position / track.length > 0.5):  # Si la lecture de l'épisode est au delà de la moitié
-                tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri)  # To check !!! Récupère le tag correspondant à la chaine
+            stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
+            #If last stat read position is greater than actual: do not update
+            print(f"Event : {position} / stat : {stat.read_position}")
+            if position < stat.read_position: 
+                position = stat.read_position
+            print(f"Event : {position} / stat : {stat.read_position}")                
+            # If directly in tag data (not m3u) : behaviour to ckeck
+            if (position / track.length > 0.5): 
+                tag = nfcHandler.dbHandler.get_tag_by_data(track.uri)  # To check !!! Récupère le tag correspondant à la chaine
                 if tag != None:
                     if tag.tag_type == "podcasts:channel":
                         tag.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
                         tag.update()
                         tag.save()
+
+        # update stats
+        try: 
+            nfcHandler.update_stat_track(track,position,option_type,library_link)
+        except Exception as val_e: 
+            #except nfcHandler.spotifyhandler.sp.client.SpotifyException: 
+            print(f"Erreur : {val_e}")
+            nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
+            nfcHandler.update_stat_track(track,position,option_type,library_link)
+
             
         if "tunein" in track.uri:
             if option_type != 'hidden': nfcHandler.update_stat_raw(track)

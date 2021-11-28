@@ -650,6 +650,7 @@ class NfcToMopidy:
                             tag.uris = uris
                         #print("Tag.uris : ",tag.uris)
 
+                        print("Tag : ",tag)
                         if hasattr(tag, "option_types"):
                             tag.option_types += [new_type for x in slice]
                         else:
