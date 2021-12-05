@@ -409,16 +409,16 @@ class NfcToMopidy:
         feedurl = data.split("+")[1]
 
         shows = self.get_podcast_from_url(feedurl)
-        unread_shows = shows[
-            last_track_played:
-        ]  # Supprime le n premiers éléments (déjà lus)
+        unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
         for item in unread_shows:
+            #print (f"get_end_stat {self.dbHandler.get_end_stat(item.uri)} and item.uri {item.uri}")
             if (
                 self.dbHandler.get_end_stat(item.uri) == 0
                 and "app_rf_promotion" not in item.uri
             ):
                 uris.append(item.uri)
-        #print(shows)
+        #print(f"Show {shows}")
+        #print(f"Unread Show {unread_shows}")
         return uris
 
     # Lance la chanson suivante sur mopidy
@@ -795,6 +795,7 @@ class NfcToMopidy:
         track_finished = False
         if hasattr(track, "length"):
             if pos / track.length > 0.9: track_finished = True
+            if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
         print(f"Track Finished : {track_finished}")
 

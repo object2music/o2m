@@ -100,7 +100,7 @@ if __name__ == "__main__":
             #nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
             nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.75))
         
-        #Update Dynamic datas
+        #Update Dynamic datas linked to Tag object
         if tag:
             if tag.data != '': data = tag.data
             if tag.option_type != 'new':
@@ -139,13 +139,13 @@ if __name__ == "__main__":
                 nfcHandler.update_stat_raw(track)
 
         # Podcast
-        if "podcast" in track.uri:
-            stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
-            #If last stat read position is greater than actual: do not update
-            print(f"Event : {position} / stat : {stat.read_position}")
-            if position < stat.read_position: 
-                position = stat.read_position
-            print(f"Event : {position} / stat : {stat.read_position}")                
+        if "podcast+" in track.uri:
+            if nfcHandler.dbHandler.stat_exists(track.uri):
+                stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
+                #If last stat read position is greater than actual: do not update
+                #print(f"Event : {position} / stat : {stat.read_position}")
+                if position < stat.read_position: position = stat.read_position
+                #print(f"Event : {position} / stat : {stat.read_position}")                
             # If directly in tag data (not m3u) : behaviour to ckeck
             if (position / track.length > 0.5): 
                 tag = nfcHandler.dbHandler.get_tag_by_data(track.uri)  # To check !!! Récupère le tag correspondant à la chaine
@@ -155,7 +155,7 @@ if __name__ == "__main__":
                         tag.update()
                         tag.save()
 
-        # update stats
+        # Update stats
         try: 
             nfcHandler.update_stat_track(track,position,option_type,library_link)
         except Exception as val_e: 
