@@ -284,16 +284,8 @@ class NfcToMopidy:
                     # Podcast channel
                     if "podcast" in track.uri and "#" not in track.uri:
                         print(f"Podcast : {track.uri}")
-                        feedurl = track.uri.split("+")[1]
-                        par = parse.parse_qs(parse.urlparse(feedurl).query)
-                        if 'max_results' in par : max_results_pod = int(par['max_results'][0])
-                        else : max_results_pod = max_results
-                        #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
+                        self.add_podcast_from_channel(tag,track.uri,max_results)
 
-                        shows = self.get_unread_podcasts(track.uri, 0, max_results_pod)
-                        print(f'Shows : {shows}')
-                        print(f'max_results_pod : {max_results_pod}')
-                        self.add_tracks(tag, shows, max_results_pod)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
                         # playlist_uris += self.get_unread_podcasts(shows)
                         content += 1
@@ -336,7 +328,32 @@ class NfcToMopidy:
                         discover_level = self.get_option_for_tag(tag, "option_discover_level")
                         window = int(round(discover_level / 2))
                         playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
-                   
+
+                    # infos:library
+                    elif "infos:library" in track.uri :
+                        print ("infos:library")
+                        hour = datetime.datetime.now().hour
+                        day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
+                        #Week
+                        if day < 5:
+                            if hour >= 8 and hour < 10 : info_url = "rss_10055.xml" #FC 7h
+                            #if hour >= 8 and hour < 10 : info_url = "rss_12632.xml" #FC 7h30
+                            if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
+                            if hour >= 14 and hour < 19: info_url = "rss_11673.xml" #FI 13h
+                            if hour >= 19 and hour < 20: info_url = "rss_11731.xml" #FI 18h
+                            if hour >= 20 or hour < 8 : info_url = "rss_11736.xml" #FI 19h
+                            if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
+                        #Week-end
+                        else:
+                            if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
+                            if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
+                            if hour >= 19 and hour < 20: info_url = "rss_18910.xml" #FI Week end 18h
+                            if hour >= 20  or hour < 8: info_url = "rss_18911.xml" #FI Week end 19h
+                            if hour < 8 and day == 5: info_url = "rss_11736.xml" #FI 19h
+
+                        info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
+                        self.add_podcast_from_channel(tag,info_url, max_results)
+
                     # Other contents in the playlist
                     else : playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
@@ -391,6 +408,19 @@ class NfcToMopidy:
 
         if self.mopidyHandler.tracklist.get_length() > 0:
             self.play_or_resume()
+
+    def add_podcast_from_channel(self,tag,uri, max_results):
+        feedurl = uri.split("+")[1]
+        par = parse.parse_qs(parse.urlparse(feedurl).query)
+        if 'max_results' in par : max_results_pod = int(par['max_results'][0])
+        else : max_results_pod = max_results
+        #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
+
+        shows = self.get_unread_podcasts(uri, 0, max_results_pod)
+        print(f'Shows : {shows}')
+        print(f'max_results_pod : {max_results_pod}')
+        self.add_tracks(tag, shows, max_results_pod)
+
 
     def get_podcast_from_url(self, url):
         f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
