@@ -118,7 +118,6 @@ if __name__ == "__main__":
                             if 'spotify:playlist' in trackp.uri: 
                                 library_link = trackp.uri
                                 break
-
         #print (f"Track :{track}")
         #print (f"Tag :{tag}")
         # print (f"Event {event}")
@@ -143,11 +142,10 @@ if __name__ == "__main__":
             if nfcHandler.dbHandler.stat_exists(track.uri):
                 stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
                 #If last stat read position is greater than actual: do not update
-                #print(f"Event : {position} / stat : {stat.read_position}")
                 if position < stat.read_position: position = stat.read_position
                 #print(f"Event : {position} / stat : {stat.read_position}")                
             # If directly in tag data (not m3u) : behaviour to ckeck
-            if (position / track.length > 0.5): 
+            if (position / track.length > 0.7): 
                 tag = nfcHandler.dbHandler.get_tag_by_data(track.uri)  # To check !!! Récupère le tag correspondant à la chaine
                 if tag != None:
                     if tag.tag_type == "podcasts:channel":

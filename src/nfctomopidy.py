@@ -290,8 +290,8 @@ class NfcToMopidy:
                         else : max_results_pod = max_results
                         #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
 
-                        shows = self.get_unread_podcasts(track.uri, 0)
-                        # print(f'Shows : {shows}')
+                        shows = self.get_unread_podcasts(track.uri, 0, max_results_pod)
+                        print(f'Shows : {shows}')
                         print(f'max_results_pod : {max_results_pod}')
                         self.add_tracks(tag, shows, max_results_pod)
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
@@ -364,7 +364,7 @@ class NfcToMopidy:
             # Podcast:channel
             elif tag.tag_type == "podcasts:channel":
                 print("channel! get unread podcasts")
-                uris = self.get_unread_podcasts(tag.data, tag.option_last_unread)
+                uris = self.get_unread_podcasts(tag.data,  tag.option_last_unread, max_results_pod)
                 self.add_tracks(tag, uris, max_results)
                 content += 1
 
@@ -404,12 +404,13 @@ class NfcToMopidy:
         del shows[self.max_results :]
         return shows
 
-    def get_unread_podcasts(self, data, last_track_played):
+    def get_unread_podcasts(self, data, last_track_played, max_results=15):
         uris = []
         feedurl = data.split("+")[1]
 
         shows = self.get_podcast_from_url(feedurl)
         unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
+        unread_shows = shows[:max_results]  # Cut to max results (to be suppressed if grabbing later than first tracks)
         for item in unread_shows:
             #print (f"get_end_stat {self.dbHandler.get_end_stat(item.uri)} and item.uri {item.uri}")
             if (
@@ -438,102 +439,103 @@ class NfcToMopidy:
 
     # New tag added : adding tracks to tracklist and associate them to tracks table
     def add_tracks(self, tag, uris, max_results=15):
-        prev_length = self.mopidyHandler.tracklist.get_length()
-        current_index = self.mopidyHandler.tracklist.index()
+        if len(uris) > 0:
+            prev_length = self.mopidyHandler.tracklist.get_length()
+            current_index = self.mopidyHandler.tracklist.index()
 
-        tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
+            tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
 
-        if tltracks_added:
-            uris_rem = []
-            # Exclude tracks already read when option is new
-            if tag.option_type == 'new':
-                for t in tltracks_added:
-                    if self.dbHandler.stat_exists(t.track.uri):
-                        stat = self.dbHandler.get_stat_by_uri(t.track.uri)
-                        # When track skipped or too many counts
-                        if (stat.skipped_count > 0
-                            or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
-                            or stat.in_library == 1
-                            #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
-                            or (stat.option_type == 'trash' or stat.option_type == 'hidden')
-                        ): 
-                            uris_rem.append(t.track.uri)
-                    #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
+            if tltracks_added:
+                uris_rem = []
+                # Exclude tracks already read when option is new
+                if tag.option_type == 'new':
+                    for t in tltracks_added:
+                        if self.dbHandler.stat_exists(t.track.uri):
+                            stat = self.dbHandler.get_stat_by_uri(t.track.uri)
+                            # When track skipped or too many counts
+                            if (stat.skipped_count > 0
+                                or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
+                                or stat.in_library == 1
+                                #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
+                                or (stat.option_type == 'trash' or stat.option_type == 'hidden')
+                            ): 
+                                uris_rem.append(t.track.uri)
+                        #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
 
-            else:
-                #Removing trash and hidden
-                '''for t in tltracks_added:
-                    if self.dbHandler.stat_exists(t.track.uri):
-                        stat = self.dbHandler.get_stat_by_uri(t.track.uri)
-                        if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
-                            uris_rem.append(t.track.uri)
-                    #print (self.mopidyHandler.tracklist.get_tracks())
-                    #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)'''
-            
-            self.mopidyHandler.tracklist.remove({"uri": uris_rem})
+                else:
+                    #Removing trash and hidden
+                    '''for t in tltracks_added:
+                        if self.dbHandler.stat_exists(t.track.uri):
+                            stat = self.dbHandler.get_stat_by_uri(t.track.uri)
+                            if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
+                                uris_rem.append(t.track.uri)
+                        #print (self.mopidyHandler.tracklist.get_tracks())
+                        #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)'''
+                
+                self.mopidyHandler.tracklist.remove({"uri": uris_rem})
 
-            #Adding common and library tracks
-            '''discover_level = self.get_option_for_tag(tag, "option_discover_level")
-            limit = int(round(len(tltracks_added) * discover_level / 100))
-            window = int(round(discover_level / 2))
-            print(f"discover_level {discover_level} limit {limit} window {window}")
-            if limit > 0: 
-                uris2 = self.get_common_tracks(datetime.datetime.now().hour,window,limit)
-                tltracks_added2 = self.mopidyHandler.tracklist.add(uris=uris2)
-                tltracks_added.append(tltracks_added2)
-                print (f"Adding common tracks : {uris2}")'''
+                #Adding common and library tracks
+                '''discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                limit = int(round(len(tltracks_added) * discover_level / 100))
+                window = int(round(discover_level / 2))
+                print(f"discover_level {discover_level} limit {limit} window {window}")
+                if limit > 0: 
+                    uris2 = self.get_common_tracks(datetime.datetime.now().hour,window,limit)
+                    tltracks_added2 = self.mopidyHandler.tracklist.add(uris=uris2)
+                    tltracks_added.append(tltracks_added2)
+                    print (f"Adding common tracks : {uris2}")'''
 
-            new_length = self.mopidyHandler.tracklist.get_length()
-            print(f"Length {new_length}")
+                new_length = self.mopidyHandler.tracklist.get_length()
+                print(f"Length {new_length}")
 
-            # Shuffle new tracks if necessary : global shuffle or tag option : now in card 
-            if (self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle":
-                self.shuffle_tracklist(prev_length, new_length)
+                # Shuffle new tracks if necessary : global shuffle or tag option : now in card 
+                if (self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle":
+                    self.shuffle_tracklist(prev_length, new_length)
 
-            # Slice added tracks to max_results
-            if (new_length - prev_length) > max_results:
-                slice1 = self.mopidyHandler.tracklist.slice(prev_length + max_results, new_length)
-                self.mopidyHandler.tracklist.remove(
-                    {"tlid": [x.tlid for x in slice1]}
-                )  # to be optimized ?
+                # Slice added tracks to max_results
+                if (new_length - prev_length) > max_results:
+                    slice1 = self.mopidyHandler.tracklist.slice(prev_length + max_results, new_length)
+                    self.mopidyHandler.tracklist.remove(
+                        {"tlid": [x.tlid for x in slice1]}
+                    )  # to be optimized ?
 
-            # Update Tag Values : Tldis and Uris
-            new_length = self.mopidyHandler.tracklist.get_length()
-            slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
-            print(f"Adding {new_length - prev_length} tracks")
+                # Update Tag Values : Tldis and Uris
+                new_length = self.mopidyHandler.tracklist.get_length()
+                slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
+                print(f"Adding {new_length - prev_length} tracks")
 
-            # TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
-            if hasattr(tag, "tlids"):
-                tag.tlids += [x.tlid for x in slice2]
-            else:
-                tag.tlids = [x.tlid for x in slice2]
-            #print("tag.tlids",tag.tlids)
+                # TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
+                if hasattr(tag, "tlids"):
+                    tag.tlids += [x.tlid for x in slice2]
+                else:
+                    tag.tlids = [x.tlid for x in slice2]
+                #print("tag.tlids",tag.tlids)
 
-            # Uris : Mopidy Uri's associated to added Tag
-            if hasattr(tag, "uris"):
-                tag.uris += [x.track.uri for x in slice2]
-            else:
-                tag.uris = [x.track.uri for x in slice2]
-            #print("tag.uris",tag.uris)
+                # Uris : Mopidy Uri's associated to added Tag
+                if hasattr(tag, "uris"):
+                    tag.uris += [x.track.uri for x in slice2]
+                else:
+                    tag.uris = [x.track.uri for x in slice2]
+                #print("tag.uris",tag.uris)
 
-            # Option types
-            if hasattr(tag, "option_types"):
-                tag.option_types += [tag.option_type for x in slice2]
-            else:
-                tag.option_types = [tag.option_type for x in slice2]
-            #print("Option_types",tag.option_types)
+                # Option types
+                if hasattr(tag, "option_types"):
+                    tag.option_types += [tag.option_type for x in slice2]
+                else:
+                    tag.option_types = [tag.option_type for x in slice2]
+                #print("Option_types",tag.option_types)
 
-            #library_link
-            if hasattr(tag, "library_link"):
-                tag.library_link += ['' for x in slice2]
-            else:
-                tag.library_link = ['' for x in slice2]
-            #print("library_link",tag.library_link)
+                #library_link
+                if hasattr(tag, "library_link"):
+                    tag.library_link += ['' for x in slice2]
+                else:
+                    tag.library_link = ['' for x in slice2]
+                #print("library_link",tag.library_link)
 
-            # Shuffle complete computed tracklist if more than two tags
-            if len(self.activetags) > 1:
-                self.shuffle_tracklist(current_index + 1, new_length)
-        print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
+                # Shuffle complete computed tracklist if more than two tags
+                if len(self.activetags) > 1:
+                    self.shuffle_tracklist(current_index + 1, new_length)
+            print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
 
  
     def play_or_resume(self):
@@ -571,6 +573,7 @@ class NfcToMopidy:
 
     def add_reco_after_track_read(self, track_uri, library_link='', data=''):
         self.mopidyHandler.playback.pause()
+        print("Paused")
 
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
@@ -675,7 +678,7 @@ class NfcToMopidy:
                         self.mopidyHandler.playback.play(None,slice[0].tlid)
                     else:
                         self.mopidyHandler.playback.play(None)
-
+        print("Re-Play")
         self.play_or_resume()
 
 #  TRACKS AND STATS MANAGEMENT
