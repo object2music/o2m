@@ -333,22 +333,24 @@ class NfcToMopidy:
                     elif "infos:library" in track.uri :
                         print ("infos:library")
                         hour = datetime.datetime.now().hour
+                        minute = datetime.datetime.now().minute
                         day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
                         #Week
                         if day < 5:
-                            if hour >= 8 and hour < 10 : info_url = "rss_10055.xml" #FC 7h
-                            #if hour >= 8 and hour < 10 : info_url = "rss_12632.xml" #FC 7h30
+                            if hour <= 7 : info_url = "rss_10055.xml" #FC 7h
+                            if hour ==8 and minute <= 20 : info_url = "rss_10057.xml" #FC 7h30
+                            if (hour == 8 and minute > 20) or hour == 9 : info_url = "rss_12495.xml" #FI 8h
                             if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
                             if hour >= 14 and hour < 19: info_url = "rss_11673.xml" #FI 13h
-                            if hour >= 19 and hour < 20: info_url = "rss_11731.xml" #FI 18h
-                            if hour >= 20 or hour < 8 : info_url = "rss_11736.xml" #FI 19h
+                            if (hour == 18 and minute > 20): info_url = "rss_11731.xml" #FI 18h
+                            if (hour == 19 and minute > 20) or hour >= 20 : info_url = "rss_11736.xml" #FI 19h
                             if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
                         #Week-end
                         else:
                             if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
                             if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
-                            if hour >= 19 and hour < 20: info_url = "rss_18910.xml" #FI Week end 18h
-                            if hour >= 20  or hour < 8: info_url = "rss_18911.xml" #FI Week end 19h
+                            if (hour == 18 and minute > 20) and hour < 20: info_url = "rss_18910.xml" #FI Week end 18h
+                            if (hour == 19 and minute > 20)  or hour < 8: info_url = "rss_18911.xml" #FI Week end 19h
                             if hour < 8 and day == 5: info_url = "rss_11736.xml" #FI 19h
 
                         info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
