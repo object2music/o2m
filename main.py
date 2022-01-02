@@ -70,7 +70,7 @@ if __name__ == "__main__":
         #Quick and dirty volume Management
         if "radiofrance-podcast.net" in track.uri :
             nfcHandler.current_volume = nfcHandler.mopidyHandler.mixer.get_volume()
-            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.current_volume*1.25))
+            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.current_volume*1.5))
             print (f"Get Volume : {nfcHandler.current_volume}")
 
         # Podcast : seek previous position
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         if "radiofrance-podcast.net" in track.uri :
             print (f"Set Volume : {nfcHandler.current_volume}")
             #nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
-            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.75))
+            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.67))
         
         #Update Dynamic datas linked to Tag object
         if tag:

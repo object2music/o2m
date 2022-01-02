@@ -356,6 +356,13 @@ class NfcToMopidy:
                         info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
                         self.add_podcast_from_channel(tag,info_url, max_results)
 
+                    # infos:library
+                    elif "newnotcompleted:library" in track.uri :
+                        print ("Ok : news_notcompleted:library")
+                        uri_new = self.get_new_tracks_notread(max_results)
+                        if len(uri_new)>0:
+                            playlist_uris.append(uri_new)
+
                     # Other contents in the playlist
                     else : playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
@@ -365,6 +372,7 @@ class NfcToMopidy:
                     self.add_tracks(tag, playlist_uris1, max_results) # Envoie les uris en lecture
                     print(f"Adding : {playlist_uris1} tracks")
                     content += 1
+
                    
 
             # Spotify
@@ -736,10 +744,8 @@ class NfcToMopidy:
     def get_common_tracks(self,read_hour,window,limit):
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit)
 
-    def add_playlistnew_tracks(self,limit):
-        tag_new = self.dbHandler.get_tag_by_option_type('new')
-        self.add_tracks(tag_new, limit)
-        return True
+    def get_new_tracks_notread(self,limit):
+        return self.dbHandler.get_uris_new_notread(limit)
 
     def get_active_tag_by_uri(self, uri):
         for tag in self.activetags:
@@ -942,8 +948,6 @@ class NfcToMopidy:
         print(f"\nUpdate stat track {stat}\n")
         stat.update()
         stat.save()
-
-    
 
     # Auto Filling playlist 
     def autofill_spotify_playlist(self, playlist_uri,uri):
