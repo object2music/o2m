@@ -338,7 +338,7 @@ class NfcToMopidy:
                         #Week
                         if day < 5:
                             if hour <= 7 : info_url = "rss_10055.xml" #FC 7h
-                            if hour ==8 and minute <= 20 : info_url = "rss_10057.xml" #FC 7h30
+                            if hour ==8 and minute <= 20 : info_url = "rss_10055.xml" #FC 7h30
                             if (hour == 8 and minute > 20) or hour == 9 : info_url = "rss_12495.xml" #FI 8h
                             if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
                             if hour >= 14 and hour < 19: info_url = "rss_11673.xml" #FI 13h
@@ -358,7 +358,6 @@ class NfcToMopidy:
 
                     # infos:library
                     elif "newnotcompleted:library" in track.uri :
-                        print ("Ok : news_notcompleted:library")
                         uri_new = self.get_new_tracks_notread(max_results)
                         if len(uri_new)>0:
                             playlist_uris.append(uri_new)
@@ -497,7 +496,7 @@ class NfcToMopidy:
                                 or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
                                 or stat.in_library == 1
                                 #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
-                                or (stat.option_type == 'trash' or stat.option_type == 'hidden')
+                                or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'normal' or stat.option_type == 'incoming')
                             ): 
                                 uris_rem.append(t.track.uri)
                         #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
@@ -952,7 +951,8 @@ class NfcToMopidy:
     # Auto Filling playlist 
     def autofill_spotify_playlist(self, playlist_uri,uri):
         try: 
-            self.autofill_spotify_playlist_action(playlist_uri,uri)
+            result = self.autofill_spotify_playlist_action(playlist_uri,uri)
+            return (result)
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
             self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
@@ -960,7 +960,8 @@ class NfcToMopidy:
 
     def autofill_spotify_playlist_action(self, playlist_uri,uri):
         #Toadd : test if writable
-        if 'spotify:playlist' in playlist_uri and 'spotify:track' in uri:
+        print(f"Autofill, playlist_uri : {playlist_uri} uri : {uri}")
+        if 'spotify:playlist' in playlist_uri and ('spotify:track' in uri[0]) :
             playlist_id = playlist_uri.split(":")[2]
             track_id = uri[0].split(":")[2]
             if self.spotifyHandler.is_track_in_playlist(self.username,track_id,playlist_id) == False:
