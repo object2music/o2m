@@ -295,7 +295,7 @@ class NfcToMopidy:
                         feedurl = track.uri.split("+")[1]
                         self.get_podcast_from_url(feedurl)
 
-                    # here&now:library
+                    # here&now:library (daily habits + library auto extract)
                     elif "herenow:library" in track.uri :
                         discover_level = self.get_option_for_tag(tag, "option_discover_level")
                         window = int(round(discover_level / 2))
@@ -307,7 +307,7 @@ class NfcToMopidy:
                         playlist_uris.append(self.get_spotify_library(max_result1))
                         #print(f"Adding herenow : {playlist_uris} tracks")
 
-                    # auto:library
+                    # auto:library testing (daily habits + library auto extract)
                     elif "auto:library" in track.uri :
                         discover_level = self.get_option_for_tag(tag, "option_discover_level")
                         window = int(round(discover_level / 2))
@@ -317,19 +317,19 @@ class NfcToMopidy:
                         self.add_playlistnew_tracks(max_result1)
                         content += 1
 
-                    # spotify:library
+                    # spotify:library (library random extract)
                     elif "spotify:library" in track.uri :
                         print ("spotify:library")
                         playlist_uris.append(self.get_spotify_library(max_results))
 
-                    # now:library
+                    # now:library (daily habits)
                     elif "now:library" in track.uri :
                         print ("now:library")
                         discover_level = self.get_option_for_tag(tag, "option_discover_level")
                         window = int(round(discover_level / 2))
                         playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
 
-                    # infos:library
+                    # infos:library (more recent news podcasts (to be updated))
                     elif "infos:library" in track.uri :
                         print ("infos:library")
                         hour = datetime.datetime.now().hour
@@ -356,11 +356,15 @@ class NfcToMopidy:
                         info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
                         self.add_podcast_from_channel(tag,info_url, max_results)
 
-                    # infos:library
+                    # newnotcompleted:library (adding new tracks only played once)
                     elif "newnotcompleted:library" in track.uri :
                         uri_new = self.get_new_tracks_notread(max_results)
                         if len(uri_new)>0:
-                            playlist_uris.append(uri_new)
+                            #playlist_uris.append(uri_new)
+                            #sending directly to read to lighten the news checking process below
+                            self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
+                            print(f"Adding : {uri_new} tracks")
+                            content += 1
 
                     # Other contents in the playlist
                     else : playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
@@ -368,10 +372,10 @@ class NfcToMopidy:
                 if len(playlist_uris)>0:
                     #some contents are unique in lists, need to be flatten
                     playlist_uris1 = util.flatten_list(playlist_uris)
+                    #max_results to be recalculated function of subadding already done (content var)
                     self.add_tracks(tag, playlist_uris1, max_results) # Envoie les uris en lecture
                     print(f"Adding : {playlist_uris1} tracks")
                     content += 1
-
                    
 
             # Spotify
@@ -493,10 +497,10 @@ class NfcToMopidy:
                             stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                             # When track skipped or too many counts
                             if (stat.skipped_count > 0
-                                or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
                                 or stat.in_library == 1
-                                #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
                                 or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'normal' or stat.option_type == 'incoming')
+                                or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
+                                #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
                             ): 
                                 uris_rem.append(t.track.uri)
                         #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
@@ -956,7 +960,8 @@ class NfcToMopidy:
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
             self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
-            self.autofill_spotify_playlist_action(playlist_uri,uri)
+            result = self.autofill_spotify_playlist_action(playlist_uri,uri)
+            return (result)
 
     def autofill_spotify_playlist_action(self, playlist_uri,uri):
         #Toadd : test if writable
