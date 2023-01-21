@@ -246,7 +246,14 @@ class NfcToMopidy:
             max_results = self.max_results
             if tag.option_max_results: max_results = tag.option_max_results
             print (f"Max results : {max_results}")
-            media_parts = tag.data.split(":")  #on découpe le champs média du tag en utilisant le séparateur :
+            #Temporary hack because of spotify pb
+            if "spotify" in tag.data:
+                media_parts = tag.data_alt.split(":")  #on découpe le champs média du tag en utilisant le séparateur :
+                data = tag.data_alt
+            else:
+                media_parts = tag.data.split(":")  #on découpe le champs média du tag en utilisant le séparateur :
+                data = tag.data
+            #print (media_parts)
 
             #DB Regulation (tmp)
             #self.reg_tag_db(tag)
@@ -278,7 +285,7 @@ class NfcToMopidy:
             # Playlist hybride / mopidy / iris
             elif media_parts[0] == "m3u":
                 playlist_uris = []
-                playlist = self.mopidyHandler.playlists.lookup(tag.data)  # On retrouve le contenu avec son uri
+                playlist = self.mopidyHandler.playlists.lookup(data)  # On retrouve le contenu avec son uri
                 for track in playlist.tracks:  # Parcourt la liste de tracks
                     # Add
                     # Podcast channel
@@ -331,10 +338,10 @@ class NfcToMopidy:
 
                     # infos:library (more recent news podcasts (to be updated))
                     elif "infos:library" in track.uri :
-                        print ("infos:library")
                         hour = datetime.datetime.now().hour
                         minute = datetime.datetime.now().minute
                         day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
+                        print (f"infos:library {day} {hour}")
                         #Week
                         if day < 5:
                             if hour <= 7 : info_url = "rss_10055.xml" #FC 7h
@@ -347,11 +354,11 @@ class NfcToMopidy:
                             if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
                         #Week-end
                         else:
-                            if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
+                            if (hour >= 10 and hour < 14) or (hour == 9 and minute >= 25): info_url= "rss_12735.xml" #FI 9h
                             if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
                             if (hour == 18 and minute > 20) and hour < 20: info_url = "rss_18910.xml" #FI Week end 18h
-                            if (hour == 19 and minute > 20)  or hour < 8: info_url = "rss_18911.xml" #FI Week end 19h
-                            if hour < 8 and day == 5: info_url = "rss_11736.xml" #FI 19h
+                            if (hour == 19 and minute > 20)  or (hour <= 9 and minute < 25) or hour > 19: info_url = "rss_18911.xml" #FI Week end 19h
+                            if hour <= 9 and minute < 25 and day == 5: info_url = "rss_11736.xml" #FI 19h
 
                         info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
                         self.add_podcast_from_channel(tag,info_url, max_results)
@@ -365,7 +372,19 @@ class NfcToMopidy:
                             self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
                             print(f"Adding : {uri_new} tracks")
                             content += 1
-
+                    
+                    # newnotcompleted:library (adding new tracks only played once)
+                    elif "albums:local" in track.uri :
+                        list_album = self.mopidyHandler.libraryController.search({'album': ['']})
+                        random.shuffle(list_album)
+                        list_album = list_album[0]['id']
+                        #list_album = list_album[0]['id']
+                        if len(list_album)>0:
+                            #playlist_uris.append(uri_new)
+                            #sending directly to read to lighten the news checking process below
+                            self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
+                            print(f"Adding : {uri_new} tracks")
+                            content += 1
                     # Other contents in the playlist
                     else : playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
@@ -387,21 +406,22 @@ class NfcToMopidy:
                     self.add_tracks(tag, tracks_uris, max_results)
                     content += 1
                 else:
-                    self.add_tracks(tag, [tag.data], max_results)
+                    self.add_tracks(tag, [data], max_results)
                     content += 1
 
 
             # Podcast:channel
             elif tag.tag_type == "podcasts:channel":
                 print("channel! get unread podcasts")
-                uris = self.get_unread_podcasts(tag.data,  tag.option_last_unread, max_results_pod)
+                uris = self.get_unread_podcasts(data,  tag.option_last_unread, max_results_pod)
                 self.add_tracks(tag, uris, max_results)
                 content += 1
 
 
             # Every other contents
             else:
-                self.add_tracks(tag, [tag.data], max_results)  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
+                print(f"Adding : {[data]}")
+                self.add_tracks(tag, [data], max_results)  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
                 content += 1
 
 
@@ -487,9 +507,10 @@ class NfcToMopidy:
             current_index = self.mopidyHandler.tracklist.index()
 
             tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
+            print(f"Tracks added")
 
             if tltracks_added:
-                uris_rem = []
+                '''uris_rem = []
                 # Exclude tracks already read when option is new
                 if tag.option_type == 'new':
                     for t in tltracks_added:
@@ -507,16 +528,16 @@ class NfcToMopidy:
 
                 else:
                     #Removing trash and hidden
-                    '''for t in tltracks_added:
+                    for t in tltracks_added:
                         if self.dbHandler.stat_exists(t.track.uri):
                             stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                             if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
                                 uris_rem.append(t.track.uri)
                         #print (self.mopidyHandler.tracklist.get_tracks())
-                        #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)'''
+                        #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
                 
                 self.mopidyHandler.tracklist.remove({"uri": uris_rem})
-
+                '''
                 #Adding common and library tracks
                 '''discover_level = self.get_option_for_tag(tag, "option_discover_level")
                 limit = int(round(len(tltracks_added) * discover_level / 100))

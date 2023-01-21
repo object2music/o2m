@@ -143,11 +143,21 @@ class DatabaseHandler():
         stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
         return stat_raw
 
-    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1):
+    def get_stat_raw_by_hour0(self, read_hour, window=0, limit=1):
         if window > 0:
             query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))).order_by(fn.Rand()).limit(limit)
         else:
             query = Stats_Raw.select().where(Stats_Raw.read_hour == read_hour).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
+            return uris
+
+    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1):
+        if window > 0:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains("local"))).order_by(fn.Rand()).limit(limit)
+        else:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains("local"))).order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             uris = [o.uri for o in results]
