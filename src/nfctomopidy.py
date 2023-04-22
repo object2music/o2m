@@ -1,4 +1,4 @@
-import datetime, sys, contextlib
+import datetime, sys, contextlib, random
 import numpy as np
 from mopidy_podcast import Extension, feeds
 from urllib import parse
@@ -356,7 +356,7 @@ class NfcToMopidy:
                         else:
                             if (hour >= 10 and hour < 14) or (hour == 9 and minute >= 25): info_url= "rss_12735.xml" #FI 9h
                             if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
-                            if (hour == 18 and minute > 20) and hour < 20: info_url = "rss_18910.xml" #FI Week end 18h
+                            if ((hour == 18 and minute > 20) and hour < 20) or (hour <= 9 and day == 6): info_url = "rss_18910.xml" #FI Week end 18h
                             if (hour == 19 and minute > 20)  or (hour <= 9 and minute < 25) or hour > 19: info_url = "rss_18911.xml" #FI Week end 19h
                             if hour <= 9 and minute < 25 and day == 5: info_url = "rss_11736.xml" #FI 19h
 
@@ -375,9 +375,13 @@ class NfcToMopidy:
                     
                     # newnotcompleted:library (adding new tracks only played once)
                     elif "albums:local" in track.uri :
-                        list_album = self.mopidyHandler.libraryController.search({'album': ['']})
+                        print("toto")
+                        #list_album = self.mopidyHandler.library.search({'album': ['a']})
+                        list_album = self.mopidyHandler.library.get_distinct("albumartist")
+                        print(f"List albums{list_album}")
                         random.shuffle(list_album)
                         list_album = list_album[0]['id']
+                        print(f"List albums{list_album}")
                         #list_album = list_album[0]['id']
                         if len(list_album)>0:
                             #playlist_uris.append(uri_new)
