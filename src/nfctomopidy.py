@@ -514,13 +514,13 @@ class NfcToMopidy:
             print(f"Tracks added")
 
             if tltracks_added:
-                '''uris_rem = []
+                uris_rem = []
                 # Exclude tracks already read when option is new
                 if tag.option_type == 'new':
                     for t in tltracks_added:
                         if self.dbHandler.stat_exists(t.track.uri):
                             stat = self.dbHandler.get_stat_by_uri(t.track.uri)
-                            # When track skipped or too many counts
+                            # When track skipped or too many counts we remove them
                             if (stat.skipped_count > 0
                                 or stat.in_library == 1
                                 or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'normal' or stat.option_type == 'incoming')
@@ -528,6 +528,7 @@ class NfcToMopidy:
                                 #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
                             ): 
                                 uris_rem.append(t.track.uri)
+                        #Removing double tracks in trackslit
                         #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
 
                 else:
@@ -538,10 +539,11 @@ class NfcToMopidy:
                             if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
                                 uris_rem.append(t.track.uri)
                         #print (self.mopidyHandler.tracklist.get_tracks())
+                        #Removing double tracks in trackslit
                         #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
                 
                 self.mopidyHandler.tracklist.remove({"uri": uris_rem})
-                '''
+                
                 #Adding common and library tracks
                 '''discover_level = self.get_option_for_tag(tag, "option_discover_level")
                 limit = int(round(len(tltracks_added) * discover_level / 100))
@@ -961,16 +963,20 @@ class NfcToMopidy:
                         if 'spotify:playlist' in tag_trash.data: 
                             result = self.autofill_spotify_playlist(tag_trash.data,uri)
                             if result: 
-                                #self.spotifyHandler.remove_tracks_playlist(library_link, uri)
-                                stat.option_type = 'hidden'
+                                if (stat.option_type == "incoming"): 
+                                    self.spotifyHandler.remove_tracks_playlist(library_link, uri)
+                                stat.option_type = 'trash'
+                        '''
                         if 'm3u' in tag_trash.data :
                             playlist = self.mopidyHandler.playlists.lookup(tag_trash.data)
                             for track in playlist.tracks:
                                 if 'spotify:playlist' in track.uri :
                                     result = self.autofill_spotify_playlist(tag_trash,uri)
                                     if result:  
-                                        #self.spotifyHandler.remove_tracks_playlist(track.uri, uri)
-                                        stat.option_type = 'hidden'
+                                        if (stat.option_type == "incoming"): 
+                                            #self.spotifyHandler.remove_tracks_playlist(track.uri, uri)
+                                        stat.option_type = 'trash'
+                        '''
 
 
         print(f"\nUpdate stat track {stat}\n")
@@ -1020,9 +1026,9 @@ class NfcToMopidy:
 
 
     #Threshold for deleting tracks from playlist if too many skipped
-    #discover_level = 5 et read_count_end=0 : skipped_count_end >=5
+    #discover_level = 5 et read_count_end=0 : skipped_count_end >=5 // and (stat.read_count_end == 0)
     def threshold_count_deletion(self,stat,option_discover_level):
-        if float(stat.skipped_count) > ((11-option_discover_level)*(stat.read_count_end+1)*0.7): 
+        if (float(stat.skipped_count) > ((11-option_discover_level)*(stat.read_count_end+1)*0.7)) : 
             return True 
         else: 
             return False
