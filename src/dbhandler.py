@@ -1,4 +1,4 @@
-import logging, pprint
+import logging, pprint, datetime
 
 from peewee import IntegrityError, fn
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
@@ -143,7 +143,7 @@ class DatabaseHandler():
         stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
         return stat_raw
 
-    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1):
+    def get_stat_raw_by_hour0(self, read_hour, window=0, limit=1):
         if window > 0:
             query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))).order_by(fn.Rand()).limit(limit)
         else:
@@ -151,6 +151,27 @@ class DatabaseHandler():
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             uris = [o.uri for o in results]
+            return uris
+
+    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1):
+        if window > 0:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains("local"))).order_by(fn.Rand()).limit(limit)
+        else:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains("local"))).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
+            return uris
+
+    def get_uris_new_notread(self, limit=1, date_now=0):
+        #Track tagged new but only read once, probably because of ephemere availability like spotify. Request above two week
+        date_now = datetime.datetime.utcnow().timestamp()
+        query = Stats.select().where((Stats.uri % '%spotify:track%') & (Stats.read_count_end  >= 1) & (Stats.skipped_count == 0) & (Stats.option_type == 'new') & (Stats.last_read_date < (date_now-1209600))).order_by(fn.Rand()).limit(limit)
+        #query = Stats.select().where((Stats.read_count_end  >= 1) | (Stats.skipped_count == 0) | (Stats.option_type == 'new') | (date - Stats.last_read_date > 1209600)).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
+            print (f"Adding : news_notcompleted:library {len(uris)}")
             return uris
 
 if __name__ == "__main__":
