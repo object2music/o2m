@@ -327,7 +327,10 @@ class NfcToMopidy:
                     # spotify:library (library random extract)
                     elif "spotify:library" in track.uri :
                         print ("spotify:library")
-                        playlist_uris.append(self.get_spotify_library(max_results))
+                        max_results1 = int(round(max_results/2))
+                        playlist_uris.append(self.get_spotify_library(max_results1))
+                        playlist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results1))
+                        #playlist_uris.append(self.spotifyHandler.get_library_recent_tracks(max_results))
 
                     # now:library (daily habits)
                     elif "now:library" in track.uri :
