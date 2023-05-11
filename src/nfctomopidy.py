@@ -291,6 +291,7 @@ class NfcToMopidy:
                     # Podcast channel
                     if "podcast" in track.uri and "#" not in track.uri:
                         print(f"Podcast : {track.uri}")
+                        self.update_stat_raw(track)
                         self.add_podcast_from_channel(tag,track.uri,max_results)
 
                         # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
@@ -378,7 +379,6 @@ class NfcToMopidy:
                     
                     # newnotcompleted:library (adding new tracks only played once)
                     elif "albums:local" in track.uri :
-                        print("toto")
                         #list_album = self.mopidyHandler.library.search({'album': ['a']})
                         list_album = self.mopidyHandler.library.get_distinct("albumartist")
                         print(f"List albums{list_album}")
@@ -393,7 +393,10 @@ class NfcToMopidy:
                             print(f"Adding : {uri_new} tracks")
                             content += 1
                     # Other contents in the playlist
-                    else : playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
+                    else : 
+                        if "playlist" in track.uri: self.update_stat_raw(track)
+                        playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
+
 
                 if len(playlist_uris)>0:
                     #some contents are unique in lists, need to be flatten
@@ -406,6 +409,8 @@ class NfcToMopidy:
 
             # Spotify
             elif media_parts[0] == "spotify":
+                print ([data])
+                self.update_stat_raw([data])
                 if media_parts[1] == "artist":
                     print("find tracks of artist : " + tag.description)
                     tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
@@ -425,7 +430,7 @@ class NfcToMopidy:
                 content += 1
 
 
-            # Every other contents
+            # Every other contents : ...
             else:
                 print(f"Adding : {[data]}")
                 self.add_tracks(tag, [data], max_results)  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy

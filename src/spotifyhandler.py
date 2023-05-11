@@ -214,7 +214,7 @@ class SpotifyHandler:
             tracks=tracks['items']
             random.shuffle(tracks)
             for i in range(limit):
-                print (tracks[i]['track']['uri'])
+                #print (tracks[i]['track']['uri'])
                 t_list.append(tracks[i]['track']['uri'])
 
         return t_list
