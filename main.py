@@ -105,10 +105,12 @@ if __name__ == "__main__":
             if tag.data != '': data = tag.data
             if tag.option_type != 'new':
                 if hasattr(tag, "option_types") and hasattr(tag, "tlids"):
-                    option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+                    try: option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+                    except Exception as val_e: print(f"Erreur : {val_e}")
                 if hasattr(tag, "library_link") and hasattr(tag, "tlids"):
-                    library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
-                #print (f"library_link {library_link}")
+                    try: library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
+                    except Exception as val_e: print(f"Erreur : {val_e}")
+                #Try / except here to check if dynamic playlist computing is not in competition with first playback finishing...
                 if library_link == '': 
                     library_link = tag.data
                     if "m3u" in tag.data:
