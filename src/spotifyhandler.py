@@ -191,15 +191,14 @@ class SpotifyHandler:
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
             self.init_token_sp()
-            albums = self.sp.current_user_saved_albums() 
+            albums = self.sp.current_user_saved_albums()
 
         if albums:
             for i in range(limit):
                 album = random.choice(albums['items'])
-                tracks = self.sp.album_tracks(album['album']['id'])     
+                tracks = self.sp.album_tracks(album['album']['id'])
                 track = random.choice(tracks['items'])
                 t_list.append(track['uri'])
-
         return t_list
 
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
