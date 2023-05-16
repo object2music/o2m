@@ -318,11 +318,7 @@ class NfcToMopidy:
                     # auto:library testing (daily habits + library auto extract)
                     elif "auto:library" in track.uri :
                         discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                        window = int(round(discover_level / 2))
-                        max_result1 = int(round(max_results/3))
-                        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-                        playlist_uris.append(self.get_spotify_library(max_result1))
-                        self.add_playlistnew_tracks(max_result1)
+                        playlist_uris = self.playlistappend_auto(playlist_uris,max_results,discover_level)
                         content += 1
 
                     # spotify:library (library random extract)
@@ -454,6 +450,8 @@ class NfcToMopidy:
         if self.mopidyHandler.tracklist.get_length() > 0:
             self.play_or_resume()
 
+#TRACKLIST MANAGEMENT 
+
     def add_podcast_from_channel(self,tag,uri, max_results):
         feedurl = uri.split("+")[1]
         par = parse.parse_qs(parse.urlparse(feedurl).query)
@@ -497,6 +495,17 @@ class NfcToMopidy:
         #print(f"Unread Show {unread_shows}")
         return uris
 
+
+    def playlistappend_auto(self,playlist_uris,max_results=20,discover_level=5):
+        window = int(round(discover_level / 2))
+        max_result1 = int(round(max_results/3))
+        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+        playlist_uris.append(self.get_spotify_library(max_result1))
+        #self.add_playlistnew_tracks(max_result1)
+        return playlist_uris
+
+
+#LIVE CONTROL MANAGEMENT
     # Lance la chanson suivante sur mopidy
     def launch_next(self):
         self.mopidyHandler.playback.next()
@@ -650,7 +659,7 @@ class NfcToMopidy:
 #   SONGS RECOMMANDATION MANAGEMENT
 
     def add_reco_after_track_read(self, track_uri, library_link='', data=''):
-        self.mopidyHandler.playback.pause()
+        #self.mopidyHandler.playback.pause()
         print("Paused")
 
         if "spotify:track" in track_uri:
@@ -757,7 +766,7 @@ class NfcToMopidy:
                     else:
                         self.mopidyHandler.playback.play(None)
         print("Re-Play")
-        self.play_or_resume()
+        #self.play_or_resume()
 
 #  TRACKS AND STATS MANAGEMENT
 

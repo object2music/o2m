@@ -1,21 +1,11 @@
 import logging
 
 from mopidyapi import MopidyAPI
-
 from src import util
 from src.nfctomopidy import NfcToMopidy
 from src.spotifyhandler import SpotifyHandler
 
-logging.basicConfig(
-    format="%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s",
-    datefmt="%m/%d/%Y %I:%M:%S %p",
-    level=logging.DEBUG,
-    filename="./logs/o2m.log",
-    filemode="a",
-)
-
-START_BOLD = "\033[1m"
-END_BOLD = "\033[0m"
+from flask import Flask
 
 """
     TODO :
@@ -54,6 +44,39 @@ END_BOLD = "\033[0m"
 
     Piste : Ajouter encore une classe mère pour remplacer le main?
 """
+
+api = Flask(__name__)
+@api.route('/api/auto')
+def api_auto():
+    #nfcHandler.clear_tracklist_except_current_song()
+    nfcHandler.starting_mode()
+    playlist_uris = []
+    tag = nfcHandler.get_active_tag_by_uri("mopidy_tag")
+    if tag.option_max_results: max_results = tag.option_max_results 
+    else: max_results=20
+    if tag.option_discover_level: discover_level = tag.option_discover_level 
+    else: discover_level=5
+    playlist_uris = nfcHandler.playlistappend_auto(playlist_uris,max_results,discover_level)
+    playlist_uris1 = util.flatten_list(playlist_uris)
+    nfcHandler.add_tracks(tag, playlist_uris1, max_results)
+    nfcHandler.play_or_resume()
+    return "<p>Auto!</p>"
+
+@api.route('/api/ol')
+def api_ol():
+    return "<p>Opening Level</p>"
+
+logging.basicConfig(
+    format="%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+    level=logging.DEBUG,
+    filename="./logs/o2m.log",
+    filemode="a",
+)
+
+START_BOLD = "\033[1m"
+END_BOLD = "\033[0m"
+
 if __name__ == "__main__":
 
     mopidy = MopidyAPI()
@@ -61,6 +84,7 @@ if __name__ == "__main__":
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
     #mopidyConf = util.get_config_file("snapcast.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
+    #o2m_api = MyRequestHandler()
 
     # Fonction called when track started
     @mopidy.on_event("track_playback_started")
@@ -185,13 +209,17 @@ if __name__ == "__main__":
         #possibility of track catching ?
         if event.new_state == 'stopped': print (f"Stop : {nfcHandler.mopidyHandler.playback.get_current_track()}")"""
 
-    # Infinite loop for NFC detection
+    # Infinite loop for NFC detection and API Launcher
     try:
+        #api.run()
+        api.run(debug=True, host='0.0.0.0', port=6681)
         nfcHandler.start_nfc()
     except Exception as ex:
         print(f"Erreur : {ex}")
         nfcHandler.spotifyHandler.init_token_sp()
         nfcHandler.start_nfc()
+        api.run(debug=True, host='0.0.0.0', port=6681)
+
 
 # Code pour créer manuellement des tags en bdd
 # if __name__ == "__main__":

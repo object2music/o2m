@@ -28,9 +28,10 @@ Linux config folder :
 ```
 
 Samples files are available in the folder samples :
-
 - o2m.conf
 - mopidy.conf
+
+More complete installation process is to follow from file INSTALL.md 
 
 ## NFC Lib : Installation and Usage
 
@@ -83,9 +84,6 @@ I'm not trying serial devices because you haven't told me
 -- but beware that this may break other serial devs
 ```
 
-### Todos
-
--
 
 ## License
 
