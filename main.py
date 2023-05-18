@@ -45,22 +45,23 @@ from flask import Flask
     Piste : Ajouter encore une classe mère pour remplacer le main?
 """
 
+
 api = Flask(__name__)
 @api.route('/api/auto')
 def api_auto():
     #nfcHandler.clear_tracklist_except_current_song()
-    nfcHandler.starting_mode()
+    nfcHandler.starting_mode(True)
     playlist_uris = []
     tag = nfcHandler.get_active_tag_by_uri("mopidy_tag")
     if tag.option_max_results: max_results = tag.option_max_results 
     else: max_results=20
     if tag.option_discover_level: discover_level = tag.option_discover_level 
     else: discover_level=5
-    playlist_uris = nfcHandler.playlistappend_auto(playlist_uris,max_results,discover_level)
+    playlist_uris = nfcHandler.tracklistappend_auto(playlist_uris,max_results,discover_level)
     playlist_uris1 = util.flatten_list(playlist_uris)
     nfcHandler.add_tracks(tag, playlist_uris1, max_results)
     nfcHandler.play_or_resume()
-    return "<p>Auto!</p>"
+    return (' '.join(playlist_uris1))
 
 @api.route('/api/ol')
 def api_ol():
@@ -124,7 +125,7 @@ if __name__ == "__main__":
             #nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
             nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.67))
         
-        #Update Dynamic datas linked to Tag object
+        #Update Dynamic datas linked to Tag object and stats
         if tag:
             if tag.data != '': data = tag.data
             if tag.option_type != 'new':
@@ -233,3 +234,4 @@ if __name__ == "__main__":
 #     #     data = 'spotify:artist:3IYUhFvPQItj6xySrBmZkd',
 #     #     descrition = 'Spotify Artist : Creedence')
 #     print(tag)
+
