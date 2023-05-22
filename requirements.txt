@@ -11,7 +11,7 @@ pyscard==2.0.0
 
 #spotipy
 spotipy
-requests==2.22.0
+requests==2.31.0
 mock==2.0.0
 six==1.12.0
 
