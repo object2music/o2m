@@ -24,7 +24,8 @@ class DatabaseHandler():
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
         self.tags = self.get_all_tags()
-
+    
+    #TAG
     def create_tag(self, uid, media_url):
         try:
             self.log.info('Creating Tag with uid : {} and media url {}'.format(uid, media_url))
@@ -58,7 +59,6 @@ class DatabaseHandler():
             mopidy_tag = self.create_tag('mopidy_tag','')
             return mopidy_tag
 
-    
     def get_tag_by_data(self, data):
         self.log.info(f'searching for tag with data: {data}')
         query = Tag.select().where(Tag.data == data)

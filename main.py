@@ -51,17 +51,19 @@ api = Flask(__name__)
 def api_auto():
     #nfcHandler.clear_tracklist_except_current_song()
     nfcHandler.starting_mode(True)
-    playlist_uris = []
+    
     tag = nfcHandler.get_active_tag_by_uri("mopidy_tag")
     if tag.option_max_results: max_results = tag.option_max_results 
     else: max_results=20
     if tag.option_discover_level: discover_level = tag.option_discover_level 
     else: discover_level=5
-    playlist_uris = nfcHandler.tracklistappend_auto(playlist_uris,max_results,discover_level)
-    playlist_uris1 = util.flatten_list(playlist_uris)
-    nfcHandler.add_tracks(tag, playlist_uris1, max_results)
+
+    nfcHandler.quicklaunch_auto(max_results,discover_level)    
+    nfcHandler.tracklistfill_auto(max_results,discover_level)
+    #print (f"AUTO tracklist_uris : {tracklist_uris}")
+    #nfcHandler.add_tracks(tag, tracklist_uris1, max_results)
     nfcHandler.play_or_resume()
-    return (' '.join(playlist_uris1))
+    return ('auto!')
 
 @api.route('/api/ol')
 def api_ol():

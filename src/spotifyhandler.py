@@ -188,16 +188,17 @@ class SpotifyHandler:
         unit=1
         t_list=[]
         try: 
-            albums = self.sp.current_user_saved_albums()
+            total = self.sp.current_user_saved_albums()['total']
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
             self.init_token_sp()
-            albums = self.sp.current_user_saved_albums() 
+            total = self.sp.current_user_saved_albums()['total']
 
-        if albums:
+        if total>0:
             for i in range(limit):
-                album = random.choice(albums['items'])
-                tracks = self.sp.album_tracks(album['album']['id'])
+                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total))
+                #album = random.choice(albums['items'])
+                tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
                 for j in range(unit):
                     track = random.choice(tracks['items'])
                     t_list.append(track['uri'])
@@ -217,6 +218,7 @@ class SpotifyHandler:
             for i in range(limit):
                 playlist = random.choice(playlists['items'])
                 size = int(len(playlist)*discover_level/10)
+                #We take some of the latests tracks added in the playlist
                 tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]
                 track = random.choice(tracks)
                 t_list.append(track['track']['uri'])
