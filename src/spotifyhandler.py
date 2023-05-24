@@ -206,6 +206,7 @@ class SpotifyHandler:
 
     def get_playlists_tracks(self,limit=1,discover_level=5):
         #Get last tracks from each playlist
+        #To be upgraded : remove trash playlist, enlarge the window
         t_list=[]
         try: 
             playlists = self.sp.current_user_playlists()

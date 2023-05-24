@@ -380,8 +380,9 @@ class NfcToMopidy:
                 #print("library_link",tag.library_link)
 
                 # Shuffle complete computed tracklist if more than two tags
-                if len(self.activetags) > 1:
-                    self.shuffle_tracklist(current_index + 1, new_length)
+                self.shuffle_tracklist(current_index + 1, new_length)
+                '''if len(self.activetags) > 1:
+                    self.shuffle_tracklist(current_index + 1, new_length)'''
             print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
 
     def tracklistfill_auto(self,max_results=20,discover_level=5):      
@@ -398,12 +399,12 @@ class NfcToMopidy:
         #Playlists n=(-0.2*d+7)/30
         max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
         print(f"\nAUTO : Playlist {max_result1} tracks\n")
-        #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
+        tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
 
         #Common tracks n=(-0.3*d+8)/30
         max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
         print(f"\nAUTO : Common {max_result1} tracks\n")
-        #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+        tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
 
         self.add_tracks(tag, tracklist_uris, max_results)
 
@@ -414,11 +415,11 @@ class NfcToMopidy:
         #self.add_playlistnew_tracks(max_result1)
 
         #Podcasts ??? n=(0.5*d)/30
-        max_result1 = int(round((0.6*discover_level)/30*max_results))
+        max_result1 = int(round((0.8*discover_level)/30*max_results))
         print(f"\nAUTO : Podcasts {max_result1} tracks\n")
         tag = self.dbHandler.get_tag_by_option_type('podcast')
         #self.one_tag_changed(tag, max_result1)
-        #self.add_tracks(tag, self.tracklistappend_tag(tag,max_results1), max_results1)
+        self.add_tracks(tag, self.tracklistappend_tag(tag,max_result1), max_result1)
         #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))
 
         #News n=(0.5*d)/30
@@ -426,7 +427,7 @@ class NfcToMopidy:
         print(f"\nAUTO : News {max_result1} tracks\n")
         tag = self.dbHandler.get_tag_by_option_type('new')
         #self.one_tag_changed(tag, max_result1)
-        #self.add_tracks(tag, self.tracklistappend_tag(tag,max_results1), max_results1)
+        self.add_tracks(tag, self.tracklistappend_tag(tag,max_result1), max_result1)
         #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))        
 
         #return tracklist_uris
