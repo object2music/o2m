@@ -196,7 +196,7 @@ class SpotifyHandler:
 
         if total>0:
             for i in range(limit):
-                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total))
+                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
                 #album = random.choice(albums['items'])
                 tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
                 for j in range(unit):
@@ -215,9 +215,17 @@ class SpotifyHandler:
             self.init_token_sp()
             playlists = self.sp.current_user_playlists()
 
+        #hack
+        playlists = playlists['items']
+        for pl in range(len(playlists)):
+            if playlists[pl]['name']=='Trash':
+                print (f"TRASH : {playlists[pl]['name']}")
+                playlists.remove(playlists[pl])
+                break
+
         if playlists:
             for i in range(limit):
-                playlist = random.choice(playlists['items'])
+                playlist = random.choice(playlists)
                 size = int(len(playlist)*discover_level/10)
                 #We take some of the latests tracks added in the playlist
                 tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]

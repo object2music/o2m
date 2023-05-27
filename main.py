@@ -58,7 +58,7 @@ def api_auto():
     if tag.option_discover_level: discover_level = tag.option_discover_level 
     else: discover_level=5
 
-    nfcHandler.quicklaunch_auto(max_results,discover_level)    
+    nfcHandler.quicklaunch_auto(3,discover_level)    
     nfcHandler.tracklistfill_auto(max_results,discover_level)
     #print (f"AUTO tracklist_uris : {tracklist_uris}")
     #nfcHandler.add_tracks(tag, tracklist_uris1, max_results)

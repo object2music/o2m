@@ -1,4 +1,4 @@
-import logging, pprint, datetime
+import logging, pprint, datetime, random
 
 from peewee import IntegrityError, fn
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
@@ -71,7 +71,8 @@ class DatabaseHandler():
         query = Tag.select().where(Tag.option_type == option_type)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
-            return results[0] 
+            r = random.randint(0, len(results)-1)
+            return results[r]
 
     def get_media_tag(self, uid):
         results = self.get_tag_by_uid(uid)
