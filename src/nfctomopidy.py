@@ -235,6 +235,7 @@ class NfcToMopidy:
 
 #O2M CORE / TRACKLIST LAUNCH
     def one_tag_changed(self, tag, max_results=15):
+        print(f"\nNouveau tag détecté: {tag}")
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             print(f"\nNouveau tag détecté: {tag}")
             uri = "tag:"+tag.uid
@@ -244,10 +245,11 @@ class NfcToMopidy:
             if max_results==15:
                 max_results = self.max_results
                 if tag.option_max_results: max_results = tag.option_max_results
-                print (f"Max results : {max_results}")
+                #print (f"Max results : {max_results}")
             
             #tracklist_uris = []
             tracklist_uris = self.tracklistappend_tag(tag,max_results)
+            print (tracklist_uris)
 
             #Let's go to play
             if len(tracklist_uris)>0:
@@ -395,6 +397,9 @@ class NfcToMopidy:
             print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
 
     def tracklistfill_auto(self,max_results=20,discover_level=5,mode='full'):
+        #GO QUICKLY
+        self.quicklaunch_auto(1,discover_level)    
+
         #APPEND
         window = int(round(discover_level / 2))
         tag = self.dbHandler.get_tag_by_option_type('new_mopidy')
@@ -521,7 +526,12 @@ class NfcToMopidy:
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto:library" in track.uri :
                     discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                    tracklist_uris.append(self.playlistappend_auto(tracklist_uris,max_results,discover_level))
+                    tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level))
+
+                # auto:library testing (daily habits + library auto extract)
+                elif "auto_simple:library" in track.uri :
+                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                    tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level,'simple'))
 
                 # spotify:library (library random extract)
                 elif "spotify:library" in track.uri :
@@ -599,9 +609,18 @@ class NfcToMopidy:
                     if "playlist" in track.uri: self.update_stat_raw(track.uri)
                     tracklist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
+        # Autos mode (to be optimized with the above code)
+        elif tag.data == "auto:library":
+            discover_level = self.get_option_for_tag(tag, "option_discover_level")
+            tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level))
+
+        elif tag.data == "auto_simple:library" :
+            discover_level = self.get_option_for_tag(tag, "option_discover_level")
+            tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level,'simple'))
+
         # Spotify
         elif media_parts[0] == "spotify":
-            print ([data])
+            #print ([data])
             #self.update_stat_raw([data])
             if media_parts[1] == "artist":
                 print("find tracks of artist : " + tag.description)

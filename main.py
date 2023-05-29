@@ -6,6 +6,7 @@ from src.nfctomopidy import NfcToMopidy
 from src.spotifyhandler import SpotifyHandler
 
 from flask import Flask, request
+from flask_cors import CORS
 
 """
     TODO :
@@ -19,6 +20,7 @@ from flask import Flask, request
 
 #API à déplacer dans un fichier séparé
 api = Flask(__name__)
+CORS(api)
 
 def api_auto_base(mode='full'):
     #nfcHandler.clear_tracklist_except_current_song()
@@ -30,7 +32,7 @@ def api_auto_base(mode='full'):
     if tag.option_discover_level: discover_level = tag.option_discover_level 
     else: discover_level=5
 
-    nfcHandler.quicklaunch_auto(1,discover_level)    
+    #nfcHandler.quicklaunch_auto(1,discover_level)    
     if mode=='full':
         nfcHandler.tracklistfill_auto(max_results,discover_level)
     else:
@@ -43,19 +45,21 @@ def api_toogle_tag(uid='',option_type=''):
         tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
     if option_type!='':
         tag = nfcHandler.dbHandler.get_tag_by_option_type(option_type)
-    print (f"ACTIVE TAGS : {nfcHandler.activetags}")
+    #print (f"ACTIVE TAGS : {nfcHandler.activetags}")
     if tag != None:
         if tag in nfcHandler.activetags: #REMOVE
             removedTag = next((x for x in nfcHandler.activetags if x.uid == tag.uid), None)
             print(f"removed tag {removedTag}")
             nfcHandler.activetags.remove(tag)
             nfcHandler.tag_action_remove(tag,removedTag)
+            return "TAG removed"
         else:   #ADD
             print("add tag")
             nfcHandler.activetags.append(tag)  #adding tag to list
             nfcHandler.tag_action(tag)
             #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
-    return "<p>TAG added / removed</p>"
+            return "TAG added"
+    else: return "no TAG"
 
 @api.route('/api/auto')
 def api_auto():
@@ -67,20 +71,28 @@ def api_auto_simple():
 
 @api.route('/api/ol')
 def api_ol():
-    return "<p>Opening Level</p>"
+    return "Opening Level"
 
 @api.route('/api/tag')
-def api_tag_podcast():
+def api_tag_toogle():
     uid = request.args.get('uid')
     option_type = request.args.get('option_type')
     if uid==None: uid=''
-    if uid==option_type: option_type=''
+    if option_type==None: option_type=''
     api_toogle_tag(uid,option_type)
+
+@api.route('/api/tag_activated')
+def api_tag_activated():
+    uid = request.args.get('uid')
+    tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
+    if tag != None:
+        if tag in nfcHandler.activetags: return("1")
+        else: return("0")
 
 @api.route('/api/reset')
 def api_reset():
     p = subprocess.run("sudo systemctl restart o2m.service", shell=True, check=True)
-    return p
+    return ("reset")
 
 #CONSTS
 logging.basicConfig(
