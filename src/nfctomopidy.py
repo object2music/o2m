@@ -16,8 +16,8 @@ option_type
 - incoming
 - hidden
 - trash
+- podcast
 '''
-
 
 class NfcToMopidy:
     activecards = {}
@@ -71,14 +71,7 @@ class NfcToMopidy:
 
         self.starting_mode(clear=True)
 
-    def starting_mode(self,clear=False):
-        # Default volume setting at beginning (or in main ?)
-        if clear == True: 
-            self.mopidyHandler.tracklist.clear()
-            self.mopidyHandler.playback.stop()
-        self.mopidyHandler.tracklist.set_random(False)
-        self.mopidyHandler.mixer.set_mute(False)
-        self.mopidyHandler.mixer.set_volume(self.default_volume)
+#TAG MANAGEMENT
 
     def tag_action(self,tag):
         if self.configO2M["discover"] == "true":
@@ -86,15 +79,56 @@ class NfcToMopidy:
                 self.active_tags_changed()
             except Exception as val_e: 
                 print(f"Erreur : {val_e}")
-                self.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+                self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
                 self.active_tags_changed()
         else:
             try: 
                 self.one_tag_changed(tag)
             except Exception as val_e: 
                 print(f"Erreur : {val_e}")
-                self.spotifyhandler.init_token_sp() #pb of expired token to resolve...
+                self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
                 self.one_tag_changed(tag)
+
+    def tag_action_remove(self,tag,removedTag):
+        if len(self.activetags) == 0:
+                # print('Stopping music')
+                self.update_stat_track(
+                    self.mopidyHandler.playback.get_current_track(),
+                    self.mopidyHandler.playback.get_time_position()
+                )
+                self.starting_mode(clear=True)
+        elif removedTag.tlids != None:
+            #Compute NewTlid (after track removing)
+            current_tlid = self.mopidyHandler.playback.get_current_tlid()
+            last_tlindex = self.mopidyHandler.tracklist.index()
+
+            if current_tlid in removedTag.tlids:
+                self.update_stat_track(
+                    self.mopidyHandler.playback.get_current_track(),
+                    self.mopidyHandler.playback.get_time_position()
+                )
+                self.mopidyHandler.playback.stop()
+
+                current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+                current_tlids = [ sub.tlid for sub in current_tracks ]
+
+                #Looping on active tracks
+                for i in current_tlids[last_tlindex:]:
+                    if i not in removedTag.tlids:
+                        next_tlid = i
+                        break
+            else:
+                next_tlid = current_tlid
+                            
+            #Removing tracks from playslist
+            self.mopidyHandler.tracklist.remove({"tlid": removedTag.tlids})
+
+            if current_tlid in removedTag.tlids:
+                self.mopidyHandler.playback.play(tlid=next_tlid)
+
+        else:
+            print("no uris with removed tag")
+
 
     def start_nfc(self):
         # Test mode provided in command line (NFC uids separated by space)
@@ -122,7 +156,6 @@ class NfcToMopidy:
             if tag != None:
                 tag.add_count()  # Incrémente le compteur de contacts pour ce tag
                 self.activetags.append(tag)  # Ajoute le tag détecté dans la liste des tags actifs
-
                 self.tag_action(tag)
 
             else:
@@ -139,45 +172,7 @@ class NfcToMopidy:
 
             if tag != None and tag in self.activetags:
                 self.activetags.remove(tag)
-
-            if len(self.activetags) == 0:
-                # print('Stopping music')
-                self.update_stat_track(
-                    self.mopidyHandler.playback.get_current_track(),
-                    self.mopidyHandler.playback.get_time_position()
-                )
-                self.starting_mode(clear=True)
-            elif removedTag.tlids != None:
-                #Compute NewTlid (after track removing)
-                current_tlid = self.mopidyHandler.playback.get_current_tlid()
-                last_tlindex = self.mopidyHandler.tracklist.index()
-
-                if current_tlid in removedTag.tlids:
-                    self.update_stat_track(
-                        self.mopidyHandler.playback.get_current_track(),
-                        self.mopidyHandler.playback.get_time_position()
-                    )
-                    self.mopidyHandler.playback.stop()
-
-                    current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()                
-                    current_tlids = [ sub.tlid for sub in current_tracks ]
-
-                    #Looping on active tracks
-                    for i in current_tlids[last_tlindex:]:
-                        if i not in removedTag.tlids:
-                            next_tlid = i
-                            break
-                else:
-                    next_tlid = current_tlid
-                                
-                #Removing tracks from playslist
-                self.mopidyHandler.tracklist.remove({"tlid": removedTag.tlids})
-
-                if current_tlid in removedTag.tlids:
-                    self.mopidyHandler.playback.play(tlid=next_tlid)
-
-            else:
-                print("no uris with removed tag")
+                self.tag_action_remove(tag,removedTag)
 
         print(f"Active tags count: {len(self.activetags)}")
 
@@ -238,211 +233,36 @@ class NfcToMopidy:
             - channel / album
     """
 
-    def one_tag_changed(self, tag):
+#O2M CORE / TRACKLIST LAUNCH
+    def one_tag_changed(self, tag, max_results=15):
+        print(f"\nNouveau tag détecté: {tag}")
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             print(f"\nNouveau tag détecté: {tag}")
+            uri = "tag:"+tag.uid
+            self.update_stat_raw(uri)
 
             # Variables
-            max_results = self.max_results
-            if tag.option_max_results: max_results = tag.option_max_results
-            print (f"Max results : {max_results}")
-            #Temporary hack because of spotify pb
-            if "spotify" in tag.data:
-                media_parts = tag.data_alt.split(":")  #on découpe le champs média du tag en utilisant le séparateur :
-                data = tag.data_alt
-            else:
-                media_parts = tag.data.split(":")  #on découpe le champs média du tag en utilisant le séparateur :
-                data = tag.data
-            #print (media_parts)
+            if max_results==15:
+                max_results = self.max_results
+                if tag.option_max_results: max_results = tag.option_max_results
+                #print (f"Max results : {max_results}")
+            
+            #tracklist_uris = []
+            tracklist_uris = self.tracklistappend_tag(tag,max_results)
+            print (tracklist_uris)
 
-            #DB Regulation (tmp)
-            #self.reg_tag_db(tag)
-            content = 0
+            #Let's go to play
+            if len(tracklist_uris)>0:
+                #max_results to be recalculated function of subadding already done (content var)
+                self.add_tracks(tag, tracklist_uris, max_results) # Envoie les uris en lecture
+                #print(f"Adding : {tracklist_uris1} tracks")
 
-            # Recommandation
-            if "recommendation" in media_parts:
-                if media_parts[3] == "genres":  # si les seeds sont des genres
-                    genres = media_parts[4].split(
-                        ","
-                    )  # on sépare les genres et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(
-                        seed_genres=genres, limit=max_results
-                    )  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
-                    self.add_tracks(
-                        tag, tracks_uris, max_results
-                    )  # Envoie les uris au mopidy Handler pour modifier la tracklist
-                elif media_parts[3] == "artists":  # si les seeds sont des artistes
-                    artists = media_parts[4].split(
-                        ","
-                    )  # on sépare les artistes et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(
-                        seed_artists=artists, limit=max_results
-                    )  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
-                    self.add_tracks(
-                        tag, tracks_uris, max_results
-                    )  # Envoie les uris au mopidy Handler pour modifier la tracklist
-
-            # Playlist hybride / mopidy / iris
-            elif media_parts[0] == "m3u":
-                playlist_uris = []
-                playlist = self.mopidyHandler.playlists.lookup(data)  # On retrouve le contenu avec son uri
-                for track in playlist.tracks:  # Parcourt la liste de tracks
-                    # Add
-                    # Podcast channel
-                    if "podcast" in track.uri and "#" not in track.uri:
-                        print(f"Podcast : {track.uri}")
-                        self.update_stat_raw(track)
-                        self.add_podcast_from_channel(tag,track.uri,max_results)
-
-                        # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
-                        # playlist_uris += self.get_unread_podcasts(shows)
-                        content += 1
-
-                    # Podcast episode
-                    elif "podcast" in track.uri and "#" in track.uri:
-                        feedurl = track.uri.split("+")[1]
-                        self.get_podcast_from_url(feedurl)
-
-                    # here&now:library (daily habits + library auto extract)
-                    elif "herenow:library" in track.uri :
-                        discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                        window = int(round(discover_level / 2))
-                        #max_result1 = int(round((11-discover_level)*max_results/10))
-                        #playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-                        #playlist_uris.append(self.get_spotify_library((max_results-max_result1)))
-                        max_result1 = int(round(max_results/2))
-                        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-                        playlist_uris.append(self.get_spotify_library(max_result1))
-                        #print(f"Adding herenow : {playlist_uris} tracks")
-
-                    # auto:library testing (daily habits + library auto extract)
-                    elif "auto:library" in track.uri :
-                        discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                        window = int(round(discover_level / 2))
-                        max_result1 = int(round(max_results/3))
-                        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-                        playlist_uris.append(self.get_spotify_library(max_result1))
-                        self.add_playlistnew_tracks(max_result1)
-                        content += 1
-
-                    # spotify:library (library random extract)
-                    elif "spotify:library" in track.uri :
-                        print ("spotify:library")
-                        max_results1 = int(round(max_results/3))
-                        playlist_uris.append(self.get_spotify_library(2*max_results1))
-                        playlist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results1))
-                        #playlist_uris.append(self.spotifyHandler.get_library_recent_tracks(max_results))
-
-                    # now:library (daily habits)
-                    elif "now:library" in track.uri :
-                        print ("now:library")
-                        discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                        window = int(round(discover_level / 2))
-                        playlist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
-
-                    # infos:library (more recent news podcasts (to be updated))
-                    elif "infos:library" in track.uri :
-                        hour = datetime.datetime.now().hour
-                        minute = datetime.datetime.now().minute
-                        day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
-                        print (f"infos:library {day} {hour}")
-                        #Week
-                        if day < 5:
-                            if hour <= 7 : info_url = "rss_10055.xml" #FC 7h
-                            if hour ==8 and minute <= 20 : info_url = "rss_10055.xml" #FC 7h30
-                            if (hour == 8 and minute > 20) or hour == 9 : info_url = "rss_12495.xml" #FI 8h
-                            if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
-                            if hour >= 14 and hour < 19: info_url = "rss_11673.xml" #FI 13h
-                            if (hour == 18 and minute > 20): info_url = "rss_11731.xml" #FI 18h
-                            if (hour == 19 and minute > 20) or hour >= 20 : info_url = "rss_11736.xml" #FI 19h
-                            if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
-                        #Week-end
-                        else:
-                            if (hour >= 10 and hour < 14) or (hour == 9 and minute >= 25): info_url= "rss_12735.xml" #FI 9h
-                            if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
-                            if ((hour == 18 and minute > 20) and hour < 20) or (hour <= 9 and day == 6): info_url = "rss_18910.xml" #FI Week end 18h
-                            if (hour == 19 and minute > 20)  or (hour <= 9 and minute < 25) or hour > 19: info_url = "rss_18911.xml" #FI Week end 19h
-                            if hour <= 9 and minute < 25 and day == 5: info_url = "rss_11736.xml" #FI 19h
-
-                        info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
-                        self.add_podcast_from_channel(tag,info_url, max_results)
-
-                    # newnotcompleted:library (adding new tracks only played once)
-                    elif "newnotcompleted:library" in track.uri :
-                        uri_new = self.get_new_tracks_notread(max_results)
-                        if len(uri_new)>0:
-                            #playlist_uris.append(uri_new)
-                            #sending directly to read to lighten the news checking process below
-                            self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
-                            print(f"Adding : {uri_new} tracks")
-                            content += 1
-                    
-                    # newnotcompleted:library (adding new tracks only played once)
-                    elif "albums:local" in track.uri :
-                        #list_album = self.mopidyHandler.library.search({'album': ['a']})
-                        list_album = self.mopidyHandler.library.get_distinct("albumartist")
-                        print(f"List albums{list_album}")
-                        random.shuffle(list_album)
-                        list_album = list_album[0]['id']
-                        print(f"List albums{list_album}")
-                        #list_album = list_album[0]['id']
-                        if len(list_album)>0:
-                            #playlist_uris.append(uri_new)
-                            #sending directly to read to lighten the news checking process below
-                            self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
-                            print(f"Adding : {uri_new} tracks")
-                            content += 1
-                    # Other contents in the playlist
-                    else : 
-                        if "playlist" in track.uri: self.update_stat_raw(track)
-                        playlist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
-
-
-                if len(playlist_uris)>0:
-                    #some contents are unique in lists, need to be flatten
-                    playlist_uris1 = util.flatten_list(playlist_uris)
-                    #max_results to be recalculated function of subadding already done (content var)
-                    self.add_tracks(tag, playlist_uris1, max_results) # Envoie les uris en lecture
-                    print(f"Adding : {playlist_uris1} tracks")
-                    content += 1
-                   
-
-            # Spotify
-            elif media_parts[0] == "spotify":
-                print ([data])
-                self.update_stat_raw([data])
-                if media_parts[1] == "artist":
-                    print("find tracks of artist : " + tag.description)
-                    tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
-                    tracks_uris = (tracks_uris+ self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
-                    self.add_tracks(tag, tracks_uris, max_results)
-                    content += 1
-                else:
-                    self.add_tracks(tag, [data], max_results)
-                    content += 1
-
-
-            # Podcast:channel
-            elif tag.tag_type == "podcasts:channel":
-                print("channel! get unread podcasts")
-                uris = self.get_unread_podcasts(data,  tag.option_last_unread, max_results_pod)
-                self.add_tracks(tag, uris, max_results)
-                content += 1
-
-
-            # Every other contents : ...
-            else:
-                print(f"Adding : {[data]}")
-                self.add_tracks(tag, [data], max_results)  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
-                content += 1
-
-
-            #Shuffle if several entries in this action
-            if (content > 1) and ((self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle"):
-                index = 0
-                if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
-                length = self.mopidyHandler.tracklist.get_length()
-                self.shuffle_tracklist(index+1,length)
+                #Shuffle if several entries in this action
+                if ((self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle"):
+                    index = 0
+                    if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
+                    length = self.mopidyHandler.tracklist.get_length()
+                    self.shuffle_tracklist(index+1,length)
 
         # Next option
         else:
@@ -450,73 +270,28 @@ class NfcToMopidy:
             self.launch_next()  # Le tag détecté est aussi le dernier détecté donc on passe à la chanson suivante
             return
 
-
         if self.mopidyHandler.tracklist.get_length() > 0:
             self.play_or_resume()
 
-    def add_podcast_from_channel(self,tag,uri, max_results):
-        feedurl = uri.split("+")[1]
-        par = parse.parse_qs(parse.urlparse(feedurl).query)
-        if 'max_results' in par : max_results_pod = int(par['max_results'][0])
-        else : max_results_pod = max_results
-        #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
-
-        shows = self.get_unread_podcasts(uri, 0, max_results_pod)
-        print(f'Shows : {shows}')
-        print(f'max_results_pod : {max_results_pod}')
-        self.add_tracks(tag, shows, max_results_pod)
+    def quicklaunch_auto(self,max_results=1,discover_level=5):
+        window = int(round(discover_level / 2))
+        tag = self.dbHandler.get_tag_by_option_type('new_mopidy')
+        #Common tracks :launch quickly auto with one track
+        self.add_tracks(tag, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results)
+        self.play_or_resume()
 
 
-    def get_podcast_from_url(self, url):
-        f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
-        with contextlib.closing(f) as source:
-            feed = feeds.parse(source)
-        print(f"option_sort : {self.option_sort}")
-        shows = list(feed.items(self.option_sort))
-        """for item in shows:  
-            if "app_rf_promotion" in item.uri:  max_results += 1"""
-        # Conserve les max_results premiers épisodes
-        del shows[self.max_results :]
-        return shows
-
-    def get_unread_podcasts(self, data, last_track_played, max_results=15):
-        uris = []
-        feedurl = data.split("+")[1]
-
-        shows = self.get_podcast_from_url(feedurl)
-        unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
-        unread_shows = shows[:max_results]  # Cut to max results (to be suppressed if grabbing later than first tracks)
-        for item in unread_shows:
-            #print (f"get_end_stat {self.dbHandler.get_end_stat(item.uri)} and item.uri {item.uri}")
-            if (
-                self.dbHandler.get_end_stat(item.uri) == 0
-                and "app_rf_promotion" not in item.uri
-            ):
-                uris.append(item.uri)
-        #print(f"Show {shows}")
-        #print(f"Unread Show {unread_shows}")
-        return uris
-
-    # Lance la chanson suivante sur mopidy
-    def launch_next(self):
-        self.mopidyHandler.playback.next()
-        self.mopidyHandler.playback.play()
-
-    # Shuffling the tracklist
-    def shuffle_tracklist(self, start_index, stop_index):
-        try:
-            if start_index != None:
-                self.mopidyHandler.tracklist.shuffle(start_index, stop_index)
-            else:
-                self.mopidyHandler.tracklist.shuffle(0, stop_index)
-        except:
-            print(f"error")
-
-    # New tag added : adding tracks to tracklist and associate them to tracks table
+#TRACKLIST FILL / ADD
+    # Adding tracks to tracklist and associate them to tracks table
     def add_tracks(self, tag, uris, max_results=15):
         if len(uris) > 0:
+            uris = util.flatten_list(uris)
+
             prev_length = self.mopidyHandler.tracklist.get_length()
-            current_index = self.mopidyHandler.tracklist.index()
+            if self.mopidyHandler.tracklist.index():
+                current_index = self.mopidyHandler.tracklist.index()
+            else: 
+                current_index = 0
 
             tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
             print(f"Tracks added")
@@ -524,6 +299,7 @@ class NfcToMopidy:
             if tltracks_added:
                 uris_rem = []
                 # Exclude tracks already read when option is new
+                #Too long > to be replaced by a trashing action along playing
                 if tag.option_type == 'new':
                     for t in tltracks_added:
                         if self.dbHandler.stat_exists(t.track.uri):
@@ -540,18 +316,22 @@ class NfcToMopidy:
                         #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
 
                 else:
-                    #Removing trash and hidden
+                    #Removing trash and hidden : too long
                     for t in tltracks_added:
-                        if self.dbHandler.stat_exists(t.track.uri):
+                        #Option_type fixing (to be improved)
+                        #self.update_stat_track(t.track,0,tag.option_type,'',True)
+                        
+                        '''if self.dbHandler.stat_exists(t.track.uri):
                             stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                             if (stat.option_type == 'trash' or stat.option_type == 'hidden'):
-                                uris_rem.append(t.track.uri)
+                                uris_rem.append(t.track.uri)'''
+
                         #print (self.mopidyHandler.tracklist.get_tracks())
                         #Removing double tracks in trackslit
                         #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
-                
+
                 self.mopidyHandler.tracklist.remove({"uri": uris_rem})
-                
+
                 #Adding common and library tracks
                 '''discover_level = self.get_option_for_tag(tag, "option_discover_level")
                 limit = int(round(len(tltracks_added) * discover_level / 100))
@@ -611,10 +391,332 @@ class NfcToMopidy:
                 #print("library_link",tag.library_link)
 
                 # Shuffle complete computed tracklist if more than two tags
-                if len(self.activetags) > 1:
-                    self.shuffle_tracklist(current_index + 1, new_length)
+                self.shuffle_tracklist(current_index + 1, new_length)
+                '''if len(self.activetags) > 1:
+                    self.shuffle_tracklist(current_index + 1, new_length)'''
             print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
 
+    def tracklistfill_auto(self,max_results=20,discover_level=5,mode='full'):
+        #GO QUICKLY
+        self.quicklaunch_auto(1,discover_level)    
+
+        #APPEND
+        window = int(round(discover_level / 2))
+        tag = self.dbHandler.get_tag_by_option_type('new_mopidy')
+        tag.option_type == 'normal'
+        tracklist_uris= []
+
+        #Albums n=5/30
+        max_result1 = int(round(discover_level*2/30*max_results))
+        print(f"\nAUTO : Albums {max_result1} tracks\n")
+        #tracklist_uris.append(self.spotifyHandler.get_albums_tracks(max_result1,discover_level))
+        self.add_tracks(tag, self.spotifyHandler.get_albums_tracks(max_result1,discover_level), max_result1)
+
+        #Playlists n=(-0.2*d+7)/30
+        max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
+        print(f"\nAUTO : Playlist {max_result1} tracks\n")
+        #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
+        self.add_tracks(tag, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1)
+
+        #Common tracks n=(-0.3*d+8)/30
+        max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
+        print(f"\nAUTO : Common {max_result1} tracks\n")
+        #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+        tag.option_type == 'new_mopidy'
+        self.add_tracks(tag, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
+
+        #self.add_tracks(tag, tracklist_uris, max_results)
+
+        #ADD_TRACKS
+
+        #Podcasts ??? n=(0.5*d)/30
+        max_result1 = int(round((0.9*discover_level)/30*max_results))
+        print(f"\nAUTO : Podcasts {max_result1} tracks\n")
+        tag = self.dbHandler.get_tag_by_option_type('podcast')
+        #self.one_tag_changed(tag, max_result1)
+        self.add_tracks(tag, self.tracklistappend_tag(tag,max_result1), max_result1)
+        #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))
+
+        if mode=='full':
+            #News n=(0.5*d)/30
+            max_result1 = int(round((0.6*discover_level)/30*max_results))
+            print(f"\nAUTO : News {max_result1} tracks\n")
+            tag = self.dbHandler.get_tag_by_option_type('new')
+            #self.one_tag_changed(tag, max_result1)
+            self.add_tracks(tag, self.tracklistappend_tag(tag,max_result1), max_result1)
+            #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))        
+
+            #Favorites n=5/30
+            max_result1 = int(round(discover_level*2/30*max_results))
+            print(f"\nAUTO : Fav {max_result1} tracks\n")
+            tag1 = self.dbHandler.get_tag_by_option_type('favorites')
+            if 0:
+                tag=tag1
+                fav= self.tracklistappend_tag(tag,max_result1)
+            else:
+                fav = self.spotifyHandler.get_library_favorite_tracks(max_result1)
+            self.add_tracks(tag, fav, max_result1)
+            #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))
+
+        #return tracklist_uris
+
+
+#TRACKLIST APPEND / MANAGEMENT 
+    
+    #Tracklist filling from tag
+    def tracklistappend_tag(self,tag,max_results):
+        #Variables
+        tracklist_uris = []
+
+        #Temporary hack because of spotify pb
+        if "spotify" in tag.data:
+            media_parts = tag.data.split(":")  #on découpe le champs média du tag en utilisant le séparateur :
+            data = tag.data
+        else:
+            media_parts = tag.data.split(":")  #on découpe le champs média du tag en utilisant le séparateur :
+            data = tag.data
+        #print (media_parts)
+
+        #DB Regulation (tmp)
+        #self.reg_tag_db(tag)
+        content = 0
+
+        # Recommandation
+        if "recommendation" in media_parts:
+            if media_parts[3] == "genres":  # si les seeds sont des genres
+                genres = media_parts[4].split(",")  # on sépare les genres et on les ajoute un par un dans une liste
+                tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                #self.add_tracks(tag, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
+                tracklist_uris.append(tracks_uris)
+            elif media_parts[3] == "artists":  # si les seeds sont des artistes
+                artists = media_parts[4].split(",")  # on sépare les artistes et on les ajoute un par un dans une liste
+                tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                #self.add_tracks(tag, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
+                tracklist_uris.append(tracks_uris)
+
+        # Playlist hybride / mopidy / iris
+        elif media_parts[0] == "m3u":
+            playlist = self.mopidyHandler.playlists.lookup(data)  # On retrouve le contenu avec son uri
+            for track in playlist.tracks:  # Browse the list of entries
+
+                # Podcast channel
+                if "podcast" in track.uri and "#" not in track.uri:
+                    print(f"Podcast : {track.uri}")
+                    self.update_stat_raw(track.uri)
+                    #self.add_podcast_from_channel(tag,track.uri,max_results)
+                    tracklist_uris.append(self.add_podcast_from_channel(tag,track.uri,max_results))
+                    # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
+                    # tracklist_uris += self.get_unread_podcasts(shows)
+
+                # Podcast episode
+                elif "podcast" in track.uri and "#" in track.uri:
+                    feedurl = track.uri.split("+")[1]
+                    tracklist_uris.append(self.get_podcast_from_url(feedurl))
+
+                # here&now:library (daily habits + library auto extract)
+                elif "herenow:library" in track.uri :
+                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                    window = int(round(discover_level / 2))
+                    max_result1 = int(round(max_results/2))
+                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+                    tracklist_uris.append(self.spotifyHandler.get_albums_tracks(max_result1,1))
+                    #tracklist_uris.append(self.get_spotify_library(max_result1))
+                    #print(f"Adding herenow : {tracklist_uris} tracks")
+
+                # auto:library testing (daily habits + library auto extract)
+                elif "auto:library" in track.uri :
+                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                    tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level))
+
+                # auto:library testing (daily habits + library auto extract)
+                elif "auto_simple:library" in track.uri :
+                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                    tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level,'simple'))
+
+                # spotify:library (library random extract)
+                elif "spotify:library" in track.uri :
+                    print ("spotify:library")
+                    max_result1 = int(round(max_results/3))
+                    tracklist_uris.append(self.spotifyHandler.get_albums_tracks(2*max_result1,1))
+                    #tracklist_uris.append(self.get_spotify_library(2*max_results1))
+                    tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_result1))
+                    #tracklist_uris.append(self.spotifyHandler.get_library_recent_tracks(max_results))
+
+                # now:library (daily habits)
+                elif "now:library" in track.uri :
+                    print ("now:library")
+                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
+                    window = int(round(discover_level / 2))
+                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
+
+                # infos:library (more recent news podcasts (to be updated))
+                elif "infos:library" in track.uri :
+                    hour = datetime.datetime.now().hour
+                    minute = datetime.datetime.now().minute
+                    day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
+                    print (f"infos:library {day} {hour} {minute}")
+                    #Week
+                    if day < 5:
+                        if hour <= 7 : info_url = "rss_10055.xml" #FC 7h
+                        if hour ==8 and minute <= 20 : info_url = "rss_10055.xml" #FC 7h30
+                        if (hour == 8 and minute > 20) or hour == 9 : info_url = "rss_12495.xml" #FI 8h
+                        if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
+                        if hour >= 14 and hour < 19: info_url = "rss_11673.xml" #FI 13h
+                        if (hour == 18 and minute > 20): info_url = "rss_11731.xml" #FI 18h
+                        if (hour == 19 and minute > 20) or hour >= 20 : info_url = "rss_11736.xml" #FI 19h
+                        if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
+                    #Week-end
+                    else:
+                        if (hour >= 10 and hour < 14) or (hour == 9 and minute >= 25): info_url= "rss_12735.xml" #FI 9h
+                        if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
+                        if ((hour == 18 and minute > 20) and hour < 20) or (hour <= 9 and day == 6): info_url = "rss_18910.xml" #FI Week end 18h
+                        if (hour == 19 and minute > 20)  or (hour <= 9 and minute < 25) or hour > 19: info_url = "rss_18911.xml" #FI Week end 19h
+                        if (hour <= 9 and minute < 25 and day == 5): info_url = "rss_11736.xml" #FI 19h
+
+                    try:
+                        info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
+                        tracklist_uris.append(self.add_podcast_from_channel(tag,info_url, max_results))
+                    except Exception as val_e: 
+                        print(f"Erreur : {val_e}")
+
+                # newnotcompleted:library (adding new tracks only played once)
+                elif "newnotcompleted:library" in track.uri :
+                    uri_new = self.get_new_tracks_notread(max_results)
+                    if len(uri_new)>0:
+                        #tracklist_uris.append(uri_new)
+                        #sending directly to read to lighten the news checking process below
+                        #self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
+                        tracklist_uris.append(uri_new)
+                        print(f"Adding : {uri_new} tracks")
+                
+                # album:local 
+                elif "albums:local" in track.uri :
+                    #list_album = self.mopidyHandler.library.search({'album': ['a']})
+                    list_album = self.mopidyHandler.library.get_distinct("albumartist")
+                    print(f"List albums{list_album}")
+                    random.shuffle(list_album)
+                    list_album = list_album[0]['id']
+                    print(f"List albums{list_album}")
+                    #list_album = list_album[0]['id']
+                    if len(list_album)>0:
+                        tracklist_uris.append(uri_new)
+                        #self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
+                        print(f"Adding : {uri_new} tracks")
+                        content += 1
+
+                # Other contents in the playlist
+                else : 
+                    if "playlist" in track.uri: self.update_stat_raw(track.uri)
+                    tracklist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
+
+        # Autos mode (to be optimized with the above code)
+        elif tag.data == "auto:library":
+            discover_level = self.get_option_for_tag(tag, "option_discover_level")
+            tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level))
+
+        elif tag.data == "auto_simple:library" :
+            discover_level = self.get_option_for_tag(tag, "option_discover_level")
+            tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level,'simple'))
+
+        # Spotify
+        elif media_parts[0] == "spotify":
+            #print ([data])
+            #self.update_stat_raw([data])
+            if media_parts[1] == "artist":
+                print("find tracks of artist : " + tag.description)
+                tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
+                #self.add_tracks(tag, tracks_uris, max_results)
+                tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
+            else:
+                tracklist_uris.append([data])
+
+        # Podcast:channel
+        elif tag.tag_type == "podcasts:channel":
+            print("channel! get unread podcasts")
+            uris = self.get_unread_podcasts(data,  tag.option_last_unread, max_results_pod)
+            #self.add_tracks(tag, uris, max_results)
+            tracklist_uris.append(uris)
+
+        # Every other contents : ...
+        else:
+            print(f"Adding : {[data]}")
+            #self.add_tracks(tag, [data], max_results)  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
+            tracklist_uris.append([data])
+
+        #print (f"AUTO : Tag : {tracklist_uris}")
+        #tracklist_uris = util.flatten_list(tracklist_uris)
+
+        return tracklist_uris  
+
+
+    def add_podcast_from_channel(self,tag,uri, max_results):
+        feedurl = uri.split("+")[1]
+        par = parse.parse_qs(parse.urlparse(feedurl).query)
+        if 'max_results' in par : max_results_pod = int(par['max_results'][0])
+        else : max_results_pod = max_results
+        #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
+
+        shows = self.get_unread_podcasts(uri, 0, max_results_pod)
+        #print(f'Shows : {shows}')
+        #print(f'max_results_pod : {max_results_pod}')
+        #self.add_tracks(tag, shows, max_results_pod)
+        return shows
+
+    def get_podcast_from_url(self, url):
+        f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
+        with contextlib.closing(f) as source:
+            feed = feeds.parse(source)
+        print(f"option_sort : {self.option_sort}")
+        shows = list(feed.items(self.option_sort))
+        """for item in shows:  
+            if "app_rf_promotion" in item.uri:  max_results += 1"""
+        # Conserve les max_results premiers épisodes
+        del shows[self.max_results :]
+        return shows
+
+    def get_unread_podcasts(self, data, last_track_played, max_results=15):
+        uris = []
+        feedurl = data.split("+")[1]
+
+        shows = self.get_podcast_from_url(feedurl)
+        unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
+        unread_shows = shows[:max_results]  # Cut to max results (to be suppressed if grabbing later than first tracks)
+        for item in unread_shows:
+            #print (f"get_end_stat {self.dbHandler.get_end_stat(item.uri)} and item.uri {item.uri}")
+            if (
+                self.dbHandler.get_end_stat(item.uri) == 0
+                and "app_rf_promotion" not in item.uri
+            ):
+                uris.append(item.uri)
+        #print(f"Show {shows}")
+        #print(f"Unread Show {unread_shows}")
+        return uris
+
+
+#MOPIDY LIVE CONTROL 
+    def starting_mode(self,clear=False):
+        # Default volume setting at beginning (or in main ?)
+        if clear == True: 
+            self.mopidyHandler.tracklist.clear()
+            self.mopidyHandler.playback.stop()
+        self.mopidyHandler.tracklist.set_random(False)
+        self.mopidyHandler.mixer.set_mute(False)
+        self.mopidyHandler.mixer.set_volume(self.default_volume)
+
+    # Launch next song
+    def launch_next(self):
+        self.mopidyHandler.playback.next()
+        self.mopidyHandler.playback.play()
+
+    # Shuffling the tracklist
+    def shuffle_tracklist(self, start_index, stop_index):
+        try:
+            if start_index != None:
+                self.mopidyHandler.tracklist.shuffle(start_index, stop_index)
+            else:
+                self.mopidyHandler.tracklist.shuffle(0, stop_index)
+        except:
+            print(f"error")
  
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
@@ -650,7 +752,7 @@ class NfcToMopidy:
 #   SONGS RECOMMANDATION MANAGEMENT
 
     def add_reco_after_track_read(self, track_uri, library_link='', data=''):
-        self.mopidyHandler.playback.pause()
+        #self.mopidyHandler.playback.pause()
         print("Paused")
 
         if "spotify:track" in track_uri:
@@ -663,7 +765,6 @@ class NfcToMopidy:
             track_data = track_uri.split(":")  # on découpe l'uri' :
             track_seed = [track_data[2]]  # track id
             limit = int(round(discover_level * 0.25)) #Fixing number of new tracks
-
 
             choices = ['album','artist','reco']
             uris = []
@@ -757,7 +858,7 @@ class NfcToMopidy:
                     else:
                         self.mopidyHandler.playback.play(None)
         print("Re-Play")
-        self.play_or_resume()
+        #self.play_or_resume()
 
 #  TRACKS AND STATS MANAGEMENT
 
@@ -787,11 +888,11 @@ class NfcToMopidy:
 
     def get_active_tag_by_uri(self, uri):
         for tag in self.activetags:
-            print (tag)
+            #print (tag)
             if hasattr(tag, "uris"):
                 if uri in tag.uris:
                     return tag
-        
+        #No tag so we attribute the default one : mopidy        
         mopidy_tag = self.dbHandler.get_tag_by_uid('mopidy_tag')
         mopidy_tag.uris = [uri]
         self.activetags.append(mopidy_tag)
@@ -841,16 +942,16 @@ class NfcToMopidy:
         tag.save()
 
     # Update raw stat when finished, skipped or system stopped (if possible)
-    def update_stat_raw(self, track):
+    def update_stat_raw(self, uri):
         self.dbHandler.create_stat_raw(
-            track.uri,
+            uri,
             datetime.datetime.utcnow(),
             datetime.datetime.now().hour,
             self.username
         )
 
     # Update tracks stat when finished, skipped or system stopped (if possible)
-    def update_stat_track(self, track, pos=0, option_type='', library_link=''):
+    def update_stat_track(self, track, pos=0, option_type='', library_link='', fix=False):
         #Harmonize option_type if new 
         if 'new' in option_type: option_type='new'
 
@@ -860,10 +961,11 @@ class NfcToMopidy:
         else:
             stat = self.dbHandler.create_stat(track.uri)
 
-        stat.last_read_date = datetime.datetime.utcnow()
-        stat.read_position = pos
-        stat.read_count += 1
-        stat.username = self.username
+        if fix==False:
+            stat.last_read_date = datetime.datetime.utcnow()
+            stat.read_count += 1
+            stat.read_position = pos
+            stat.username = self.username
 
         #Avoid downgrade of option types in DB
         if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming')):
@@ -876,7 +978,7 @@ class NfcToMopidy:
             if pos / track.length > 0.9: track_finished = True
             if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
-        print(f"Track Finished : {track_finished}")
+            print(f"Track Finished : {track_finished}")
 
         #Update stats
         if track_finished:
@@ -895,7 +997,7 @@ class NfcToMopidy:
             stat.skipped_count += 1
 
         #Add / remove the track to playlist(s) if played above/below discover level
-        if self.option_autofill_playlists == True:
+        if self.option_autofill_playlists == True and fix==False:
             uri = []
             uri.append(track.uri)
             print("Autofill activated")

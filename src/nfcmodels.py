@@ -115,7 +115,7 @@ class Stats(BaseModel):
             self.read_count_end,
             self.skipped_count,
             self.read_position,
-            self.read_end, 
+            self.read_end,
             self.option_type
         )
 
