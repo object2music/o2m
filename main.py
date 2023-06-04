@@ -1,67 +1,40 @@
-import logging
+import logging, subprocess
 
 from mopidyapi import MopidyAPI
-
 from src import util
 from src.nfctomopidy import NfcToMopidy
 from src.spotifyhandler import SpotifyHandler
 
-logging.basicConfig(
-    format="%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s",
-    datefmt="%m/%d/%Y %I:%M:%S %p",
-    level=logging.DEBUG,
-    filename="./logs/o2m.log",
-    filemode="a",
-)
-
-START_BOLD = "\033[1m"
-END_BOLD = "\033[0m"
+from flask import Flask, request
+from flask_cors import CORS
 
 """
     TODO :
         * Logs : séparer les logs par ensemble de fonctionnalités (database, websockets, spotify etc...)
         * Timestamps sur les tags
-
-    INSTALL : 
-    pip3 install -r requirements.txt
-
-    CONFIG : 
-    Dans le fichier de conf de mopidy : 
-        [o2m]
-        database_path = src/o2mv1.db
-        discover = true # utilise tous les tags pour de la recommandation / lance le contenu du dernier tag détecté
-
-    Le script de recherche de fichier config est dans le fichier src/util.py
-
-    chemin mac données mopidy : 
-    /Users/antoine/.local/share/mopidy/
-
-
-    On récupère le fichier de config de mopidy
-        config = configparser.ConfigParser()
-        config.read(str(Path.home()) + '/.config/mopidy/mopidy.conf')
-    On cible la section spotify
-        spotify_config = config['spotify']
-    On passe les valeurs à spotipy
-        client_credentials_manager = SpotifyClientCredentials(client_id=spotify_config['client_id'], client_secret=spotify_config['client_secret'])
-        1sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
-"""
-
-
-"""
     Pas très clean de mettre les fonction de callback aux évènements dans le main 
     Mais on a besoin de l'instance de mopidyApi et la fonction callback à besoin de l'instance nfcHandler pour lancer les recos...
 
     Piste : Ajouter encore une classe mère pour remplacer le main?
 """
+
+START_BOLD = "\033[1m"
+END_BOLD = "\033[0m"
+
+
 if __name__ == "__main__":
 
+#CONFS AND CONSTS
     mopidy = MopidyAPI()
     o2mConf = util.get_config_file("o2m.conf")  # o2m
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
     #mopidyConf = util.get_config_file("snapcast.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
+    #o2m_api = MyRequestHandler()
+    api = Flask(__name__)
+    CORS(api)
 
+#MOPIDY LISTENERS
     # Fonction called when track started
     @mopidy.on_event("track_playback_started")
     def track_started_event(event):
@@ -70,7 +43,7 @@ if __name__ == "__main__":
         #Quick and dirty volume Management
         if "radiofrance-podcast.net" in track.uri :
             nfcHandler.current_volume = nfcHandler.mopidyHandler.mixer.get_volume()
-            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.current_volume*1.25))
+            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.current_volume*1.5))
             print (f"Get Volume : {nfcHandler.current_volume}")
 
         # Podcast : seek previous position
@@ -83,7 +56,7 @@ if __name__ == "__main__":
                     max(nfcHandler.dbHandler.get_pos_stat(track.uri) - 10, 0)
                 )
 
-    # Fonction called when tracked finished or skipped
+    # Fonction called when tracked skipped OR completly finished
     @mopidy.on_event("track_playback_ended")
     def track_ended_event(event):
         #Datas
@@ -92,22 +65,25 @@ if __name__ == "__main__":
         option_type = 'new_mopidy'
         library_link = ''
         data = ''
+        position = event.time_position
 
         #Quick and dirty volume Management
         if "radiofrance-podcast.net" in track.uri :
             print (f"Set Volume : {nfcHandler.current_volume}")
             #nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
-            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.75))
+            nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.67))
         
-        #Update Dynamic datas
+        #Update Dynamic datas linked to Tag object and stats
         if tag:
             if tag.data != '': data = tag.data
             if tag.option_type != 'new':
                 if hasattr(tag, "option_types") and hasattr(tag, "tlids"):
-                    option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+                    try: option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+                    except Exception as val_e: print(f"Erreur : {val_e}")
                 if hasattr(tag, "library_link") and hasattr(tag, "tlids"):
-                    library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
-                #print (f"library_link {library_link}")
+                    try: library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
+                    except Exception as val_e: print(f"Erreur : {val_e}")
+                #Try / except here to check if dynamic playlist computing is not in competition with first playback finishing...
                 if library_link == '': 
                     library_link = tag.data
                     if "m3u" in tag.data:
@@ -117,7 +93,6 @@ if __name__ == "__main__":
                             if 'spotify:playlist' in trackp.uri: 
                                 library_link = trackp.uri
                                 break
-
         #print (f"Track :{track}")
         #print (f"Tag :{tag}")
         # print (f"Event {event}")
@@ -135,29 +110,36 @@ if __name__ == "__main__":
                     nfcHandler.add_reco_after_track_read(track.uri,library_link,data)
             if option_type != 'hidden': 
                 print ("Adding raw stats")
-                nfcHandler.update_stat_raw(track)
-
-        # update stats
-        try: 
-            nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
-        except Exception as val_e: 
-            #except nfcHandler.spotifyhandler.sp.client.SpotifyException: 
-            print(f"Erreur : {val_e}")
-            nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
-            nfcHandler.update_stat_track(track,event.time_position,option_type,library_link)
+                nfcHandler.update_stat_raw(track.uri)
 
         # Podcast
-        if "podcast" in track.uri:
-            if (event.time_position / track.length > 0.5):  # Si la lecture de l'épisode est au delà de la moitié
-                tag = nfcHandler.dbHandler.get_tag_by_data(track.album.uri)  # To check !!! Récupère le tag correspondant à la chaine
+        if "podcast+" in track.uri:
+            if nfcHandler.dbHandler.stat_exists(track.uri):
+                stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
+                #If last stat read position is greater than actual: do not update
+                if position < stat.read_position: position = stat.read_position
+                #print(f"Event : {position} / stat : {stat.read_position}")                
+            # If directly in tag data (not m3u) : behaviour to ckeck
+            if (position / track.length > 0.7): 
+                tag = nfcHandler.dbHandler.get_tag_by_data(track.uri)  # To check !!! Récupère le tag correspondant à la chaine
                 if tag != None:
                     if tag.tag_type == "podcasts:channel":
                         tag.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
                         tag.update()
                         tag.save()
+
+        # Update stats
+        try: 
+            nfcHandler.update_stat_track(track,position,option_type,library_link)
+        except Exception as val_e: 
+            #except nfcHandler.spotifyhandler.sp.client.SpotifyException: 
+            print(f"Erreur : {val_e}")
+            nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
+            nfcHandler.update_stat_track(track,position,option_type,library_link)
+
             
         if "tunein" in track.uri:
-            if option_type != 'hidden': nfcHandler.update_stat_raw(track)
+            if option_type != 'hidden': nfcHandler.update_stat_raw(track.uri)
 
         # Tracklist filling when empty
         tracklist_length = mopidy.tracklist.get_length()
@@ -176,13 +158,73 @@ if __name__ == "__main__":
         #possibility of track catching ?
         if event.new_state == 'stopped': print (f"Stop : {nfcHandler.mopidyHandler.playback.get_current_track()}")"""
 
-    # Infinite loop for NFC detection
+
+#API DEF AND LISTENER (to be move in a dedicated part)
+
+    def api_toogle_tag(uid='',option_type=''):
+        if uid!='':
+            tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
+        if option_type!='':
+            tag = nfcHandler.dbHandler.get_tag_by_option_type(option_type)
+        #print (f"ACTIVE TAGS : {nfcHandler.activetags}")
+        if tag != None:
+            print (tag)
+            if tag in nfcHandler.activetags: #REMOVE
+                removedTag = next((x for x in nfcHandler.activetags if x.uid == tag.uid), None)
+                print(f"removed tag {removedTag}")
+                nfcHandler.activetags.remove(tag)
+                nfcHandler.tag_action_remove(tag,removedTag)
+                return "TAG removed"
+            else:   #ADD
+                print("add tag")
+                nfcHandler.activetags.append(tag)  #adding tag to list
+                nfcHandler.tag_action(tag)
+                #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
+                return "TAG added"
+        else: return "no TAG"
+
+    @api.route('/api/ol')
+    def api_ol():
+        return "Opening Level"
+
+    @api.route('/api/tag')
+    def api_tag_toogle():
+        uid = request.args.get('uid')
+        option_type = request.args.get('option_type')
+        if uid==None: uid=''
+        if option_type==None: option_type=''
+        return api_toogle_tag(uid,option_type)
+
+    @api.route('/api/tag_activated')
+    def api_tag_activated():
+        uid = request.args.get('uid')
+        tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
+        if tag != None:
+            if tag in nfcHandler.activetags: return("1")
+            else: return("0")
+
+    @api.route('/api/reset')
+    def api_reset():
+        p = subprocess.run("sudo systemctl restart o2m.service", shell=True, check=True)
+        return ("reset")
+
+    @api.route('/api/relaunch')
+    def api_relaunch():
+        p = subprocess.run("/home/pi/o2m/start_mopidy.sh", shell=True, check=True)
+        return ("reset")
+
+#MAIN LOOP
+    # Infinite loop for NFC detection and API Launcher
     try:
+        #api.run()
+        api.run(debug=True, host='0.0.0.0', port=6681)
         nfcHandler.start_nfc()
     except Exception as ex:
         print(f"Erreur : {ex}")
         nfcHandler.spotifyHandler.init_token_sp()
         nfcHandler.start_nfc()
+        api.run(debug=True, host='0.0.0.0', port=6681)
+
 
 # Code pour créer manuellement des tags en bdd
 # if __name__ == "__main__":
@@ -196,3 +238,4 @@ if __name__ == "__main__":
 #     #     data = 'spotify:artist:3IYUhFvPQItj6xySrBmZkd',
 #     #     descrition = 'Spotify Artist : Creedence')
 #     print(tag)
+

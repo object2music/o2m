@@ -19,14 +19,18 @@ class SpotifyHandler:
 
 
     def init_token_sp(self):
-       #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
+        #Some scopes are not working
+        #scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read"
+        scope='user-library-read, user-follow-modify, playlist-modify-private, playlist-modify-public'
+
+        #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
         if self.spotipy_config["auth_method"] == 'authorization_code':
             token = util.prompt_for_user_token(
             username=self.spotify_config["username"],
-            scope='user-library-read user-follow-modify playlist-modify-private playlist-modify-public',
+            scope=scope,
             client_id=self.spotipy_config["client_id_spotipy"],
             client_secret=self.spotipy_config["client_secret_spotipy"],
-            redirect_uri='http://localhost')
+            redirect_uri='https://localhost')
 
             '''self.spo = oauth.SpotifyOAuth(
             username=spotify_config["username"],
@@ -180,19 +184,93 @@ class SpotifyHandler:
             if track["track"]["id"]==track_id: return True
         return False
 
-    def get_library_tracks(self,limit=1):
+    def get_albums_tracks(self,limit=1,unit=1):
+        unit=1
         t_list=[]
         try: 
-            albums = self.sp.current_user_saved_albums()
+            total = self.sp.current_user_saved_albums()['total']
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
             self.init_token_sp()
-            albums = self.sp.current_user_saved_albums() 
+            total = self.sp.current_user_saved_albums()['total']
 
-        for i in range(limit):
-            album = random.choice(albums['items'])
-            tracks = self.sp.album_tracks(album['album']['id'])     
-            track = random.choice(tracks['items'])
-            t_list.append(track['uri'])
+        if total>0:
+            for i in range(limit):
+                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
+                #album = random.choice(albums['items'])
+                tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
+                for j in range(unit):
+                    track = random.choice(tracks['items'])
+                    t_list.append(track['uri'])
+        return t_list
+
+    def get_playlists_tracks(self,limit=1,discover_level=5):
+        #Get last tracks from each playlist
+        #To be upgraded : remove trash playlist, enlarge the window
+        t_list=[]
+        try: 
+            playlists = self.sp.current_user_playlists()
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            self.init_token_sp()
+            playlists = self.sp.current_user_playlists()
+
+        #hack
+        playlists = playlists['items']
+        for pl in range(len(playlists)):
+            if playlists[pl]['name']=='Trash':
+                print (f"TRASH : {playlists[pl]['name']}")
+                playlists.remove(playlists[pl])
+                break
+
+        if playlists:
+            for i in range(limit):
+                playlist = random.choice(playlists)
+                size = int(len(playlist)*discover_level/10)
+                #We take some of the latests tracks added in the playlist
+                tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]
+                track = random.choice(tracks)
+                t_list.append(track['track']['uri'])
+                #for j in range(unit):
+                    #track = tracks['items'][-unit:]
+                    #track = random.choice(tracks['items'])
+                    #track = tracks[0:1]
+                    #t_list.append(track['uri'])
+        return t_list
+
+
+    def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
+        #Warning : may probably be the last 20 only
+        t_list=[]
+        try: 
+            tracks = self.sp.current_user_saved_tracks()
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            tracks = self.sp.current_user_saved_tracks()        
+        if tracks:
+            tracks=tracks['items']
+            random.shuffle(tracks)
+            for i in range(limit):
+                print (tracks[i]['track']['uri'])
+                t_list.append(tracks[i]['track']['uri'])
 
         return t_list
+
+    def get_library_recent_tracks(self, limit):
+        #Warning : may probably be the last 20 only
+        t_list=[]
+        try: 
+            tracks = self.sp.current_user_recently_played()
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            tracks = self.sp.current_user_recently_played()
+        if tracks:
+            tracks=tracks['items']
+            random.shuffle(tracks)
+            for i in range(limit):
+                #print (tracks[i]['track']['uri'])
+                t_list.append(tracks[i]['track']['uri'])
+
+        return t_list
+
+        

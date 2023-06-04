@@ -1,4 +1,4 @@
-import logging, pprint
+import logging, pprint, datetime, random
 
 from peewee import IntegrityError, fn
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
@@ -24,7 +24,8 @@ class DatabaseHandler():
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
         self.tags = self.get_all_tags()
-
+    
+    #TAG
     def create_tag(self, uid, media_url):
         try:
             self.log.info('Creating Tag with uid : {} and media url {}'.format(uid, media_url))
@@ -58,7 +59,6 @@ class DatabaseHandler():
             mopidy_tag = self.create_tag('mopidy_tag','')
             return mopidy_tag
 
-    
     def get_tag_by_data(self, data):
         self.log.info(f'searching for tag with data: {data}')
         query = Tag.select().where(Tag.data == data)
@@ -71,7 +71,8 @@ class DatabaseHandler():
         query = Tag.select().where(Tag.option_type == option_type)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
-            return results[0] 
+            r = random.randint(0, len(results)-1)
+            return results[r]
 
     def get_media_tag(self, uid):
         results = self.get_tag_by_uid(uid)
@@ -143,14 +144,35 @@ class DatabaseHandler():
         stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
         return stat_raw
 
-    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1):
+    def get_stat_raw_by_hour(self, read_hour, window=0, limit=1, uri_pattern='track:'):
         if window > 0:
-            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))).order_by(fn.Rand()).limit(limit)
+            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
         else:
-            query = Stats_Raw.select().where(Stats_Raw.read_hour == read_hour).order_by(fn.Rand()).limit(limit)
+            query = Stats_Raw.select().where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             uris = [o.uri for o in results]
+            return uris
+
+    def get_stat_raw_by_hour1(self, read_hour, window=0, limit=1):
+        if window > 0:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains("local"))).order_by(fn.Rand()).limit(limit)
+        else:
+            query = Stats_Raw.select().where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains("local"))).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
+            return uris
+
+    def get_uris_new_notread(self, limit=1, date_now=0):
+        #Track tagged new but only read once, probably because of ephemere availability like spotify. Request above two week
+        date_now = datetime.datetime.utcnow().timestamp()
+        query = Stats.select().where((Stats.uri % '%spotify:track%') & (Stats.read_count_end  >= 1) & (Stats.skipped_count == 0) & (Stats.option_type == 'new') & (Stats.last_read_date < (date_now-1209600))).order_by(fn.Rand()).limit(limit)
+        #query = Stats.select().where((Stats.read_count_end  >= 1) | (Stats.skipped_count == 0) | (Stats.option_type == 'new') | (date - Stats.last_read_date > 1209600)).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
+            print (f"Adding : news_notcompleted:library {len(uris)}")
             return uris
 
 if __name__ == "__main__":
