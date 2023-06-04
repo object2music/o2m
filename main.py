@@ -18,103 +18,23 @@ from flask_cors import CORS
     Piste : Ajouter encore une classe mère pour remplacer le main?
 """
 
-#API à déplacer dans un fichier séparé
-api = Flask(__name__)
-CORS(api)
-
-def api_auto_base(mode='full'):
-    #nfcHandler.clear_tracklist_except_current_song()
-    nfcHandler.starting_mode(True)
-    
-    tag = nfcHandler.get_active_tag_by_uri("mopidy_tag")
-    if tag.option_max_results: max_results = tag.option_max_results 
-    else: max_results=20
-    if tag.option_discover_level: discover_level = tag.option_discover_level 
-    else: discover_level=5
-
-    #nfcHandler.quicklaunch_auto(1,discover_level)    
-    if mode=='full':
-        nfcHandler.tracklistfill_auto(max_results,discover_level)
-    else:
-        nfcHandler.tracklistfill_auto(max_results,discover_level,'simple')
-    nfcHandler.play_or_resume()
-    return ('auto!')
-
-def api_toogle_tag(uid='',option_type=''):
-    if uid!='':
-        tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
-    if option_type!='':
-        tag = nfcHandler.dbHandler.get_tag_by_option_type(option_type)
-    #print (f"ACTIVE TAGS : {nfcHandler.activetags}")
-    if tag != None:
-        if tag in nfcHandler.activetags: #REMOVE
-            removedTag = next((x for x in nfcHandler.activetags if x.uid == tag.uid), None)
-            print(f"removed tag {removedTag}")
-            nfcHandler.activetags.remove(tag)
-            nfcHandler.tag_action_remove(tag,removedTag)
-            return "TAG removed"
-        else:   #ADD
-            print("add tag")
-            nfcHandler.activetags.append(tag)  #adding tag to list
-            nfcHandler.tag_action(tag)
-            #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
-            return "TAG added"
-    else: return "no TAG"
-
-@api.route('/api/auto')
-def api_auto():
-    api_auto_base('full')
-
-@api.route('/api/auto_simple')
-def api_auto_simple():
-    api_auto_base('simple')
-
-@api.route('/api/ol')
-def api_ol():
-    return "Opening Level"
-
-@api.route('/api/tag')
-def api_tag_toogle():
-    uid = request.args.get('uid')
-    option_type = request.args.get('option_type')
-    if uid==None: uid=''
-    if option_type==None: option_type=''
-    api_toogle_tag(uid,option_type)
-
-@api.route('/api/tag_activated')
-def api_tag_activated():
-    uid = request.args.get('uid')
-    tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
-    if tag != None:
-        if tag in nfcHandler.activetags: return("1")
-        else: return("0")
-
-@api.route('/api/reset')
-def api_reset():
-    p = subprocess.run("sudo systemctl restart o2m.service", shell=True, check=True)
-    return ("reset")
-
-#CONSTS
-logging.basicConfig(
-    format="%(levelname)s CLASS : %(name)s FUNCTION : %(funcName)s LINE : %(lineno)d TIME : %(asctime)s MESSAGE : %(message)s",
-    datefmt="%m/%d/%Y %I:%M:%S %p",
-    level=logging.DEBUG,
-    filename="./logs/o2m.log",
-    filemode="a",
-)
-
 START_BOLD = "\033[1m"
 END_BOLD = "\033[0m"
 
+
 if __name__ == "__main__":
 
+#CONFS AND CONSTS
     mopidy = MopidyAPI()
     o2mConf = util.get_config_file("o2m.conf")  # o2m
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
     #mopidyConf = util.get_config_file("snapcast.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
     #o2m_api = MyRequestHandler()
+    api = Flask(__name__)
+    CORS(api)
 
+#MOPIDY LISTENERS
     # Fonction called when track started
     @mopidy.on_event("track_playback_started")
     def track_started_event(event):
@@ -238,6 +158,62 @@ if __name__ == "__main__":
         #possibility of track catching ?
         if event.new_state == 'stopped': print (f"Stop : {nfcHandler.mopidyHandler.playback.get_current_track()}")"""
 
+
+#API DEF AND LISTENER (to be move in a dedicated part)
+
+    def api_toogle_tag(uid='',option_type=''):
+        if uid!='':
+            tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
+        if option_type!='':
+            tag = nfcHandler.dbHandler.get_tag_by_option_type(option_type)
+        #print (f"ACTIVE TAGS : {nfcHandler.activetags}")
+        if tag != None:
+            print (tag)
+            if tag in nfcHandler.activetags: #REMOVE
+                removedTag = next((x for x in nfcHandler.activetags if x.uid == tag.uid), None)
+                print(f"removed tag {removedTag}")
+                nfcHandler.activetags.remove(tag)
+                nfcHandler.tag_action_remove(tag,removedTag)
+                return "TAG removed"
+            else:   #ADD
+                print("add tag")
+                nfcHandler.activetags.append(tag)  #adding tag to list
+                nfcHandler.tag_action(tag)
+                #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
+                return "TAG added"
+        else: return "no TAG"
+
+    @api.route('/api/ol')
+    def api_ol():
+        return "Opening Level"
+
+    @api.route('/api/tag')
+    def api_tag_toogle():
+        uid = request.args.get('uid')
+        option_type = request.args.get('option_type')
+        if uid==None: uid=''
+        if option_type==None: option_type=''
+        return api_toogle_tag(uid,option_type)
+
+    @api.route('/api/tag_activated')
+    def api_tag_activated():
+        uid = request.args.get('uid')
+        tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
+        if tag != None:
+            if tag in nfcHandler.activetags: return("1")
+            else: return("0")
+
+    @api.route('/api/reset')
+    def api_reset():
+        p = subprocess.run("sudo systemctl restart o2m.service", shell=True, check=True)
+        return ("reset")
+
+    @api.route('/api/relaunch')
+    def api_relaunch():
+        p = subprocess.run("/home/pi/o2m/start_mopidy.sh", shell=True, check=True)
+        return ("reset")
+
+#MAIN LOOP
     # Infinite loop for NFC detection and API Launcher
     try:
         #api.run()

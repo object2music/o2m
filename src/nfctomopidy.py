@@ -32,8 +32,8 @@ class NfcToMopidy:
     option_sort = "desc"
 
     def __init__(self, mopidyHandler, configO2m, configMopidy, logging):
-        self.log = logging.getLogger(__name__)
-        self.log.info("NFC TO MOPIDY INITIALIZATION")
+        #self.log = logging.getLogger(__name__)
+        #self.log.info("NFC TO MOPIDY INITIALIZATION")
 
         self.configO2M = configO2m["o2m"]
         self.configMopidy = configMopidy
@@ -92,10 +92,10 @@ class NfcToMopidy:
     def tag_action_remove(self,tag,removedTag):
         if len(self.activetags) == 0:
                 # print('Stopping music')
-                self.update_stat_track(
+                '''self.update_stat_track(
                     self.mopidyHandler.playback.get_current_track(),
                     self.mopidyHandler.playback.get_time_position()
-                )
+                )'''
                 self.starting_mode(clear=True)
         elif removedTag.tlids != None:
             #Compute NewTlid (after track removing)
@@ -237,7 +237,6 @@ class NfcToMopidy:
     def one_tag_changed(self, tag, max_results=15):
         print(f"\nNouveau tag détecté: {tag}")
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
-            print(f"\nNouveau tag détecté: {tag}")
             uri = "tag:"+tag.uid
             self.update_stat_raw(uri)
 
@@ -247,15 +246,13 @@ class NfcToMopidy:
                 if tag.option_max_results: max_results = tag.option_max_results
                 #print (f"Max results : {max_results}")
             
-            #tracklist_uris = []
             tracklist_uris = self.tracklistappend_tag(tag,max_results)
-            print (tracklist_uris)
+            #print (tracklist_uris)
 
             #Let's go to play
             if len(tracklist_uris)>0:
                 #max_results to be recalculated function of subadding already done (content var)
                 self.add_tracks(tag, tracklist_uris, max_results) # Envoie les uris en lecture
-                #print(f"Adding : {tracklist_uris1} tracks")
 
                 #Shuffle if several entries in this action
                 if ((self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle"):
@@ -294,7 +291,6 @@ class NfcToMopidy:
                 current_index = 0
 
             tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
-            print(f"Tracks added")
 
             if tltracks_added:
                 uris_rem = []
@@ -344,7 +340,7 @@ class NfcToMopidy:
                     print (f"Adding common tracks : {uris2}")'''
 
                 new_length = self.mopidyHandler.tracklist.get_length()
-                print(f"Length {new_length}")
+                #print(f"Length {new_length}")
 
                 # Shuffle new tracks if necessary : global shuffle or tag option : now in card 
                 if (self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle":
@@ -360,7 +356,7 @@ class NfcToMopidy:
                 # Update Tag Values : Tldis and Uris
                 new_length = self.mopidyHandler.tracklist.get_length()
                 slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
-                print(f"Adding {new_length - prev_length} tracks")
+                #print(f"Adding {new_length - prev_length} tracks")
 
                 # TLIDs : Mopidy Tracks's IDs in tracklist associated to added Tag
                 if hasattr(tag, "tlids"):
@@ -394,16 +390,16 @@ class NfcToMopidy:
                 self.shuffle_tracklist(current_index + 1, new_length)
                 '''if len(self.activetags) > 1:
                     self.shuffle_tracklist(current_index + 1, new_length)'''
-            print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
+            #print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
 
-    def tracklistfill_auto(self,max_results=20,discover_level=5,mode='full'):
+    def tracklistfill_auto(self,tag,max_results=20,discover_level=5,mode='full'):
         #GO QUICKLY
-        self.quicklaunch_auto(1,discover_level)    
+        self.quicklaunch_auto(2,discover_level)    
 
         #APPEND
         window = int(round(discover_level / 2))
-        tag = self.dbHandler.get_tag_by_option_type('new_mopidy')
-        tag.option_type == 'normal'
+        #tag = self.dbHandler.get_tag_by_option_type('new_mopidy')
+        #tag.option_type == 'normal'
         tracklist_uris= []
 
         #Albums n=5/30
@@ -422,7 +418,7 @@ class NfcToMopidy:
         max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
         print(f"\nAUTO : Common {max_result1} tracks\n")
         #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-        tag.option_type == 'new_mopidy'
+        tag.option_type == 'new'
         self.add_tracks(tag, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
 
         #self.add_tracks(tag, tracklist_uris, max_results)
@@ -432,27 +428,27 @@ class NfcToMopidy:
         #Podcasts ??? n=(0.5*d)/30
         max_result1 = int(round((0.9*discover_level)/30*max_results))
         print(f"\nAUTO : Podcasts {max_result1} tracks\n")
-        tag = self.dbHandler.get_tag_by_option_type('podcast')
+        tag1 = self.dbHandler.get_tag_by_option_type('podcast')
         #self.one_tag_changed(tag, max_result1)
-        self.add_tracks(tag, self.tracklistappend_tag(tag,max_result1), max_result1)
+        self.add_tracks(tag, self.tracklistappend_tag(tag1,max_result1), max_result1)
         #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))
 
         if mode=='full':
             #News n=(0.5*d)/30
             max_result1 = int(round((0.6*discover_level)/30*max_results))
             print(f"\nAUTO : News {max_result1} tracks\n")
-            tag = self.dbHandler.get_tag_by_option_type('new')
+            tag1 = self.dbHandler.get_tag_by_option_type('new')
             #self.one_tag_changed(tag, max_result1)
-            self.add_tracks(tag, self.tracklistappend_tag(tag,max_result1), max_result1)
+            self.add_tracks(tag, self.tracklistappend_tag(tag1,max_result1), max_result1)
             #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))        
 
             #Favorites n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
             print(f"\nAUTO : Fav {max_result1} tracks\n")
             tag1 = self.dbHandler.get_tag_by_option_type('favorites')
-            if 0:
-                tag=tag1
-                fav= self.tracklistappend_tag(tag,max_result1)
+            if tag1 != None:
+                #tag=tag1
+                fav= self.tracklistappend_tag(tag1,max_result1)
             else:
                 fav = self.spotifyHandler.get_library_favorite_tracks(max_result1)
             self.add_tracks(tag, fav, max_result1)
@@ -526,12 +522,12 @@ class NfcToMopidy:
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto:library" in track.uri :
                     discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                    tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level))
+                    tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level))
 
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto_simple:library" in track.uri :
                     discover_level = self.get_option_for_tag(tag, "option_discover_level")
-                    tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level,'simple'))
+                    tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level,'simple'))
 
                 # spotify:library (library random extract)
                 elif "spotify:library" in track.uri :
@@ -587,7 +583,7 @@ class NfcToMopidy:
                         #sending directly to read to lighten the news checking process below
                         #self.add_tracks(tag, uri_new, max_results) # Envoie les uris en lecture
                         tracklist_uris.append(uri_new)
-                        print(f"Adding : {uri_new} tracks")
+                        #print(f"Adding : {uri_new} tracks")
                 
                 # album:local 
                 elif "albums:local" in track.uri :
@@ -610,13 +606,13 @@ class NfcToMopidy:
                     tracklist_uris.append(track.uri)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
 
         # Autos mode (to be optimized with the above code)
-        elif tag.data == "auto:library":
+        elif "auto:library" in tag.data:
             discover_level = self.get_option_for_tag(tag, "option_discover_level")
-            tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level))
+            tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level))
 
-        elif tag.data == "auto_simple:library" :
+        elif "auto_simple:library" in tag.data:
             discover_level = self.get_option_for_tag(tag, "option_discover_level")
-            tracklist_uris.append(self.tracklistfill_auto(max_results,discover_level,'simple'))
+            tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level,'simple'))
 
         # Spotify
         elif media_parts[0] == "spotify":
@@ -639,7 +635,7 @@ class NfcToMopidy:
 
         # Every other contents : ...
         else:
-            print(f"Adding : {[data]}")
+            #print(f"Adding : {[data]}")
             #self.add_tracks(tag, [data], max_results)  # Ce n'est pas un cas particulier alors on envoie directement l'uri à mopidy
             tracklist_uris.append([data])
 
@@ -753,7 +749,6 @@ class NfcToMopidy:
 
     def add_reco_after_track_read(self, track_uri, library_link='', data=''):
         #self.mopidyHandler.playback.pause()
-        print("Paused")
 
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
@@ -819,7 +814,7 @@ class NfcToMopidy:
                 if slice:
                     try:
                         tag = self.get_active_tag_by_uri(track_uri)
-                        print (f"Tag : {tag}")
+                        #print (f"Tag : {tag}")
                         if hasattr(tag, "tlids"):
                             tag.tlids += [x.tlid for x in slice]
                         else:
@@ -832,7 +827,7 @@ class NfcToMopidy:
                             tag.uris = uris
                         #print("Tag.uris : ",tag.uris)
 
-                        print("Tag : ",tag)
+                        #print("Tag : ",tag)
                         if hasattr(tag, "option_types"):
                             tag.option_types += [new_type for x in slice]
                         else:
@@ -845,7 +840,7 @@ class NfcToMopidy:
                         else:
                             tag.library_link = [library_link for x in slice]
                         #print("library_link",tag.library_link)
-                        print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} and tlid {slice[0].tlid}\n")
+                        #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} tag.option_types {tag.option_types} tag.library_link {tag.library_link} and tlid {slice[0].tlid}\n")
 
                     except Exception as e:
                         print(f"Erreur : {e}")
@@ -857,7 +852,7 @@ class NfcToMopidy:
                         self.mopidyHandler.playback.play(None,slice[0].tlid)
                     else:
                         self.mopidyHandler.playback.play(None)
-        print("Re-Play")
+
         #self.play_or_resume()
 
 #  TRACKS AND STATS MANAGEMENT
@@ -978,8 +973,6 @@ class NfcToMopidy:
             if pos / track.length > 0.9: track_finished = True
             if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
-            print(f"Track Finished : {track_finished}")
-
         #Update stats
         if track_finished:
             stat.read_end = True
@@ -1000,19 +993,19 @@ class NfcToMopidy:
         if self.option_autofill_playlists == True and fix==False:
             uri = []
             uri.append(track.uri)
-            print("Autofill activated")
 
             if track_finished == True :
+                print("Finished : autofill activated")
                 #Adding if "new track" played many times
                 if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.option_discover_level)==True :
                     if library_link !='':
-                        print(f"Autofilling LL : {library_link}")
+                        print(f"Autofilling Lirbray : {library_link}")
                         result = self.autofill_spotify_playlist(library_link,uri)
                         if result: stat.option_type = 'normal'
 
                     if stat.option_type != 'normal' :
                         tag_incoming = self.dbHandler.get_tag_by_option_type('incoming')
-                        print(f"Autofilling TI : {tag_incoming}")
+                        print(f"Autofilling Incoming : {tag_incoming}")
                         if tag_incoming:
                             if 'spotify:playlist' in tag_incoming.data: 
                                 result = self.autofill_spotify_playlist(tag_incoming.data,uri)
@@ -1045,10 +1038,10 @@ class NfcToMopidy:
                                         if result: stat.option_type = 'normal'
                         '''
 
-                #Adding any track to incoming if played many times
+                #Adding any track to favorites if played many times
                 if self.threshold_adding_favorites(stat.read_count_end,self.option_discover_level)==True :
                     tag_favorites = self.dbHandler.get_tag_by_option_type('favorites')
-                    print(f"Autofilling TF : {tag_favorites}")
+                    print(f"Autofilling Favorites : {tag_favorites}")
                     if tag_favorites:
                         if 'spotify:playlist' in tag_favorites.data: 
                             result = self.autofill_spotify_playlist(tag_favorites.data,uri)
@@ -1073,6 +1066,7 @@ class NfcToMopidy:
                         if 'spotify:playlist' in tag_trash.data: 
                             result = self.autofill_spotify_playlist(tag_trash.data,uri)
                             if result: 
+                                self.spotifyHandler.remove_tracks_playlist(library_link, uri)
                                 if (stat.option_type == "incoming"): 
                                     self.spotifyHandler.remove_tracks_playlist(library_link, uri)
                                 stat.option_type = 'trash'
@@ -1088,8 +1082,7 @@ class NfcToMopidy:
                                         stat.option_type = 'trash'
                         '''
 
-
-        print(f"\nUpdate stat track {stat}\n")
+        print(f"\n\nUpdate stat track {stat}\n\n")
         stat.update()
         stat.save()
 
