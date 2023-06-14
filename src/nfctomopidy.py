@@ -5,7 +5,7 @@ from urllib import parse
 
 import src.util as util
 from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Tag
-from src.nfcreader import NfcReader
+#from src.nfcreader import NfcReader
 from src.spotifyhandler import SpotifyHandler
 
 '''
@@ -41,7 +41,7 @@ class NfcToMopidy:
         self.mopidyHandler = mopidyHandler  # Commandes mopidy via websockets
         self.spotifyHandler = SpotifyHandler()  # Api spotify pour recommandations
         # Contrôle les lecteurs nfc et renvoie les identifiants des cartes
-        self.nfcHandler = NfcReader(self)
+        #self.nfcHandler = NfcReader(self)
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -91,12 +91,12 @@ class NfcToMopidy:
 
     def tag_action_remove(self,tag,removedTag):
         if len(self.activetags) == 0:
+                self.starting_mode(True)
                 # print('Stopping music')
                 '''self.update_stat_track(
                     self.mopidyHandler.playback.get_current_track(),
                     self.mopidyHandler.playback.get_time_position()
                 )'''
-                self.starting_mode(clear=True)
         elif removedTag.tlids != None:
             #Compute NewTlid (after track removing)
             current_tlid = self.mopidyHandler.playback.get_current_tlid()
@@ -123,7 +123,7 @@ class NfcToMopidy:
             #Removing tracks from playslist
             self.mopidyHandler.tracklist.remove({"tlid": removedTag.tlids})
 
-            if current_tlid in removedTag.tlids:
+            if current_tlid in removedTag.tlids and next_tlid!=None:
                 self.mopidyHandler.playback.play(tlid=next_tlid)
 
         else:
@@ -139,7 +139,7 @@ class NfcToMopidy:
                 self.activetags.append(tag)  # Ajoute le tag détecté dans la liste des tags actifs
                 self.tag_action(tag)
         else:
-            self.nfcHandler.loop()  # démarre la boucle infinie de détection nfc/rfid
+            self.nfcHandlnfcreaderer.loop()  # démarre la boucle infinie de détection nfc/rfid
 
     """
     Fonction appellée automatiquement dès qu'un changement est détecté au niveau des lecteurs rfid

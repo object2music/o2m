@@ -21,7 +21,6 @@ from flask_cors import CORS
 START_BOLD = "\033[1m"
 END_BOLD = "\033[0m"
 
-
 if __name__ == "__main__":
 
 #CONFS AND CONSTS
@@ -161,47 +160,62 @@ if __name__ == "__main__":
 
 #API DEF AND LISTENER (to be move in a dedicated part)
 
-    def api_toogle_tag(uid='',option_type=''):
+    def api_box_action(uid='',option_type='',mode='toogle'):
         if uid!='':
             tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
         if option_type!='':
             tag = nfcHandler.dbHandler.get_tag_by_option_type(option_type)
         #print (f"ACTIVE TAGS : {nfcHandler.activetags}")
+        
         if tag != None:
-            print (tag)
-            if tag in nfcHandler.activetags: #REMOVE
+            action = 'No'
+            #PRESENT
+            if tag in nfcHandler.activetags: 
+                if mode == 'toogle' or mode == 'remove': 
+                    action = 'remove'
+            #ABSENT
+            else:
+                if mode == 'toogle' or mode == 'add': 
+                    action = 'add'
+
+            if action == 'remove':
                 removedTag = next((x for x in nfcHandler.activetags if x.uid == tag.uid), None)
                 print(f"removed tag {removedTag}")
                 nfcHandler.activetags.remove(tag)
                 nfcHandler.tag_action_remove(tag,removedTag)
                 return "TAG removed"
-            else:   #ADD
-                print("add tag")
+            if action == 'add':
+                print(f"added tag {tag}")
                 nfcHandler.activetags.append(tag)  #adding tag to list
                 nfcHandler.tag_action(tag)
-                #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
+                tag.add_count()  # Incrémente le compteur de contacts pour ce tag
                 return "TAG added"
         else: return "no TAG"
 
-    @api.route('/api/ol')
-    def api_ol():
-        return "Opening Level"
-
-    @api.route('/api/tag')
-    def api_tag_toogle():
+    #API BOX (mode : toogle, add, remove)
+    @api.route('/api/box')
+    def api_box():
         uid = request.args.get('uid')
+        mode = request.args.get('mode')
         option_type = request.args.get('option_type')
         if uid==None: uid=''
         if option_type==None: option_type=''
-        return api_toogle_tag(uid,option_type)
+        if mode==None: mode='toogle'
+        return api_box_action(uid,option_type,mode)
 
-    @api.route('/api/tag_activated')
-    def api_tag_activated():
+    #API box checking (activated or not)
+    @api.route('/api/box_activated')
+    def api_box_activated():
         uid = request.args.get('uid')
         tag = nfcHandler.dbHandler.get_tag_by_uid(uid)
         if tag != None:
             if tag in nfcHandler.activetags: return("1")
             else: return("0")
+
+    #API Opening Level
+    @api.route('/api/ol')
+    def api_ol():
+        return "Opening Level"
 
     @api.route('/api/reset')
     def api_reset():
@@ -218,11 +232,11 @@ if __name__ == "__main__":
     try:
         #api.run()
         api.run(debug=True, host='0.0.0.0', port=6681)
-        nfcHandler.start_nfc()
+        #nfcHandler.start_nfc()
     except Exception as ex:
         print(f"Erreur : {ex}")
         nfcHandler.spotifyHandler.init_token_sp()
-        nfcHandler.start_nfc()
+        #nfcHandler.start_nfc()
         api.run(debug=True, host='0.0.0.0', port=6681)
 
 
@@ -238,4 +252,3 @@ if __name__ == "__main__":
 #     #     data = 'spotify:artist:3IYUhFvPQItj6xySrBmZkd',
 #     #     descrition = 'Spotify Artist : Creedence')
 #     print(tag)
-

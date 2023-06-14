@@ -1,26 +1,28 @@
-# events
-events==0.3
-PyMysql==0.9
+# misc
+spotipy
+requests
+mock
+six
+events
+youtube-dl
+
+#Mopidy
+Mopidy-Iris #3.46.0
+Mopidy-Local
+Mopidy-Podcast
+Mopidy-Spotify
+Mopidy-Podcast-iTunes
+Mopidy-TuneIn
+Mopidy-YouTube
+#Mopidy-Beets
+#Mopidy-IRControl
 
 # mopidy websocket client
-mopidyapi==1.0.0
+mopidyapi
+
 # database sqlite orm
-peewee==3.13.1
+peewee
+PyMysql
+
 # nfc tags
-pyscard==2.0.0
-
-#spotipy
-spotipy
-requests==2.22.0
-mock==2.0.0
-six==1.12.0
-
-Mopidy-Iris==3.54.2 #3.46.0
-Mopidy-Local==3.1.1
-Mopidy-Podcast==3.0.0
-Mopidy-Spotify==4.0.1
-Mopidy-Podcast-iTunes==3.0.0
-Mopidy-TuneIn==1.0.0
-Mopidy-YouTube==3.1
-#Mopidy-Beets==4.0
-#Mopidy-IRControl
+pyscard
