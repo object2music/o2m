@@ -14,8 +14,7 @@ Mopidy-Spotify
 Mopidy-Podcast-iTunes
 Mopidy-TuneIn
 Mopidy-YouTube
-#Mopidy-Beets
-#Mopidy-IRControl
+Mopidy-mpd
 
 # mopidy websocket client
 mopidyapi
@@ -24,5 +23,3 @@ mopidyapi
 peewee
 PyMysql
 
-# nfc tags
-pyscard

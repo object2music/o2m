@@ -233,9 +233,9 @@ class NfcToMopidy:
             - channel / album
     """
 
-#O2M CORE / TRACKLIST LAUNCH
+#O2M CORE / TRACKLIST LAUNCH 
     def one_tag_changed(self, tag, max_results=15):
-        print(f"\nNouveau tag détecté: {tag}")
+        #print(f"\nNouveau tag détecté: {tag}")
         if (tag.uid != self.last_tag_uid):  # Si différent du précédent tag détecté (Fonctionnel uniquement avec un lecteur)
             uri = "tag:"+tag.uid
             self.update_stat_raw(uri)
@@ -247,7 +247,7 @@ class NfcToMopidy:
                 #print (f"Max results : {max_results}")
             
             tracklist_uris = self.tracklistappend_tag(tag,max_results)
-            #print (tracklist_uris)
+            print (tracklist_uris)
 
             #Let's go to play
             if len(tracklist_uris)>0:
@@ -288,7 +288,7 @@ class NfcToMopidy:
             if self.mopidyHandler.tracklist.index():
                 current_index = self.mopidyHandler.tracklist.index()
             else: 
-                current_index = 0
+                current_index = 0 
 
             tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
 
@@ -394,7 +394,7 @@ class NfcToMopidy:
 
     def tracklistfill_auto(self,tag,max_results=20,discover_level=5,mode='full'):
         #GO QUICKLY
-        self.quicklaunch_auto(2,discover_level)    
+        self.quicklaunch_auto(1,discover_level)    
 
         #APPEND
         window = int(round(discover_level / 2))
@@ -453,6 +453,11 @@ class NfcToMopidy:
                 fav = self.spotifyHandler.get_library_favorite_tracks(max_result1)
             self.add_tracks(tag, fav, max_result1)
             #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))
+
+        #INFOS
+        tag.option_type == 'podcast'
+        tag.option_sort == 'desc'
+        self.add_tracks(tag, self.append_lastinfos([],tag,max_results), 1)
 
         #return tracklist_uris
 
@@ -547,33 +552,7 @@ class NfcToMopidy:
 
                 # infos:library (more recent news podcasts (to be updated))
                 elif "infos:library" in track.uri :
-                    hour = datetime.datetime.now().hour
-                    minute = datetime.datetime.now().minute
-                    day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
-                    print (f"infos:library {day} {hour} {minute}")
-                    #Week
-                    if day < 5:
-                        if hour <= 7 : info_url = "rss_10055.xml" #FC 7h
-                        if hour ==8 and minute <= 20 : info_url = "rss_10055.xml" #FC 7h30
-                        if (hour == 8 and minute > 20) or hour == 9 : info_url = "rss_12495.xml" #FI 8h
-                        if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
-                        if hour >= 14 and hour < 19: info_url = "rss_11673.xml" #FI 13h
-                        if (hour == 18 and minute > 20): info_url = "rss_11731.xml" #FI 18h
-                        if (hour == 19 and minute > 20) or hour >= 20 : info_url = "rss_11736.xml" #FI 19h
-                        if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
-                    #Week-end
-                    else:
-                        if (hour >= 10 and hour < 14) or (hour == 9 and minute >= 25): info_url= "rss_12735.xml" #FI 9h
-                        if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
-                        if ((hour == 18 and minute > 20) and hour < 20) or (hour <= 9 and day == 6): info_url = "rss_18910.xml" #FI Week end 18h
-                        if (hour == 19 and minute > 20)  or (hour <= 9 and minute < 25) or hour > 19: info_url = "rss_18911.xml" #FI Week end 19h
-                        if (hour <= 9 and minute < 25 and day == 5): info_url = "rss_11736.xml" #FI 19h
-
-                    try:
-                        info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
-                        tracklist_uris.append(self.add_podcast_from_channel(tag,info_url, max_results))
-                    except Exception as val_e: 
-                        print(f"Erreur : {val_e}")
+                    tracklist_uris = self.append_lastinfos(tracklist_uris,tag,max_results)
 
                 # newnotcompleted:library (adding new tracks only played once)
                 elif "newnotcompleted:library" in track.uri :
@@ -614,6 +593,9 @@ class NfcToMopidy:
             discover_level = self.get_option_for_tag(tag, "option_discover_level")
             tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level,'simple'))
 
+        elif "infos:library" in tag.data:
+            tracklist_uris = self.append_lastinfos(tracklist_uris,tag,max_results)
+
         # Spotify
         elif media_parts[0] == "spotify":
             #print ([data])
@@ -628,10 +610,9 @@ class NfcToMopidy:
 
         # Podcast:channel
         elif tag.tag_type == "podcasts:channel":
-            print("channel! get unread podcasts")
-            uris = self.get_unread_podcasts(data,  tag.option_last_unread, max_results_pod)
-            #self.add_tracks(tag, uris, max_results)
-            tracklist_uris.append(uris)
+            self.update_stat_raw(tag.data)
+            #self.add_podcast_from_channel(tag,track.uri,max_results)
+            tracklist_uris.append(self.add_podcast_from_channel(tag,tag.data,max_results))            
 
         # Every other contents : ...
         else:
@@ -644,6 +625,36 @@ class NfcToMopidy:
 
         return tracklist_uris  
 
+    def append_lastinfos(self,tracklist_uris,tag,max_results):
+        hour = datetime.datetime.now().hour
+        minute = datetime.datetime.now().minute
+        day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
+        print (f"infos:library {day} {hour} {minute}")
+        #Week
+        if day < 5:
+            if hour <= 7 : info_url = "rss_10055.xml" #FC 7h
+            if hour ==8 and minute <= 20 : info_url = "rss_10055.xml" #FC 7h30
+            if (hour == 8 and minute > 20) or (hour >=9 and hour < 14) : info_url = "rss_12495.xml" #FI 8h
+            #if hour >= 10 and hour < 14: info_url= "rss_12735.xml" #FI 9h
+            if hour >= 14 and hour < 19: info_url = "rss_11673.xml" #FI 13h
+            if (hour == 18 and minute > 20): info_url = "rss_11731.xml" #FI 18h
+            if (hour == 19 and minute > 20) or hour >= 20 : info_url = "rss_11736.xml" #FI 19h
+            if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
+        #Week-end
+        else:
+            if (hour >= 10 and hour < 14) or (hour == 9 and minute >= 25): info_url= "rss_12735.xml" #FI 9h
+            if hour >= 14 and hour < 19: info_url = "rss_18909.xml" #FI Week end 13h
+            if ((hour == 18 and minute > 20) and hour < 20) or (hour <= 9 and day == 6): info_url = "rss_18910.xml" #FI Week end 18h
+            if (hour == 19 and minute > 20)  or (hour <= 9 and minute < 25) or hour > 19: info_url = "rss_18911.xml" #FI Week end 19h
+            if (hour <= 9 and minute < 25 and day == 5): info_url = "rss_11736.xml" #FI 19h
+
+        try:
+            info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
+            tracklist_uris.append(self.add_podcast_from_channel(tag,info_url, max_results))
+            return tracklist_uris
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            return tracklist_uris
 
     def add_podcast_from_channel(self,tag,uri, max_results):
         feedurl = uri.split("+")[1]
@@ -1065,10 +1076,14 @@ class NfcToMopidy:
                     if tag_trash:
                         if 'spotify:playlist' in tag_trash.data: 
                             result = self.autofill_spotify_playlist(tag_trash.data,uri)
+
                             if result: 
-                                self.spotifyHandler.remove_tracks_playlist(library_link, uri)
-                                if (stat.option_type == "incoming"): 
+                                try:
                                     self.spotifyHandler.remove_tracks_playlist(library_link, uri)
+                                except Exception as val_e: 
+                                    print(f"Erreur : {val_e}")
+                                    if (stat.option_type == "incoming"): 
+                                        self.spotifyHandler.remove_tracks_playlist(library_link, uri)
                                 stat.option_type = 'trash'
                         '''
                         if 'm3u' in tag_trash.data :

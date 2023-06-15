@@ -27,9 +27,7 @@ if __name__ == "__main__":
     mopidy = MopidyAPI()
     o2mConf = util.get_config_file("o2m.conf")  # o2m
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
-    #mopidyConf = util.get_config_file("snapcast.conf")  # mopidy
     nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
-    #o2m_api = MyRequestHandler()
     api = Flask(__name__)
     CORS(api)
 
@@ -46,14 +44,12 @@ if __name__ == "__main__":
             print (f"Get Volume : {nfcHandler.current_volume}")
 
         # Podcast : seek previous position
-        if "podcast" in track.uri and "#" in track.uri:
-            if nfcHandler.dbHandler.get_pos_stat(track.uri):
-                print(
-                    f"seeking prev position : {nfcHandler.dbHandler.get_pos_stat(track.uri)}"
-                )
-                nfcHandler.mopidyHandler.playback.seek(
-                    max(nfcHandler.dbHandler.get_pos_stat(track.uri) - 10, 0)
-                )
+        if "podcast" in track.uri and ("#" or "episode") in track.uri:
+            if nfcHandler.dbHandler.get_pos_stat(track.uri) > 0:
+                nfcHandler.mopidyHandler.playback.seek(max(nfcHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
+            #skip advertising on sismique
+            elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
+                nfcHandler.mopidyHandler.playback.seek(63000)
 
     # Fonction called when tracked skipped OR completly finished
     @mopidy.on_event("track_playback_ended")
@@ -65,9 +61,10 @@ if __name__ == "__main__":
         library_link = ''
         data = ''
         position = event.time_position
+        print (position) 
 
         #Quick and dirty volume Management
-        if "radiofrance-podcast.net" in track.uri :
+        if "radiofrance-podcast.net" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
             print (f"Set Volume : {nfcHandler.current_volume}")
             #nfcHandler.mopidyHandler.mixer.set_volume(nfcHandler.current_volume)
             nfcHandler.mopidyHandler.mixer.set_volume(int(nfcHandler.mopidyHandler.mixer.get_volume()*0.67))
@@ -92,9 +89,6 @@ if __name__ == "__main__":
                             if 'spotify:playlist' in trackp.uri: 
                                 library_link = trackp.uri
                                 break
-        #print (f"Track :{track}")
-        #print (f"Tag :{tag}")
-        # print (f"Event {event}")
         print(f"\nEnded song : {track} with option_type {option_type} and library_link {library_link}")
 
         # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
@@ -103,21 +97,28 @@ if __name__ == "__main__":
                 #int(round(discover_level * 0.25))
                 try: nfcHandler.add_reco_after_track_read(track.uri,library_link,data)
                 except Exception as val_e: 
-                    #except nfcHandler.spotifyHandler.sp.client.SpotifyException: nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
                     print(f"Erreur : {val_e}")
                     nfcHandler.spotifyHandler.init_token_sp()
                     nfcHandler.add_reco_after_track_read(track.uri,library_link,data)
-            if option_type != 'hidden': 
+            if option_type != 'hidden' and option_type != 'trash' : 
                 print ("Adding raw stats")
                 nfcHandler.update_stat_raw(track.uri)
 
         # Podcast
         if "podcast+" in track.uri:
+            #URI harmonization if max_results used : pb to update track.uri
+            '''if "?max_results=" in track.uri: 
+                uri1 = track.uri.split("?max_results=")
+                if "#" in uri1[1]: 
+                    uri2 = uri1[1].split("#")
+                    track_uri = str(uri1[0]) + "#" + str(uri2[1])
+                else : track_uri = str(uri1[0])'''
+
             if nfcHandler.dbHandler.stat_exists(track.uri):
                 stat = nfcHandler.dbHandler.get_stat_by_uri(track.uri)
                 #If last stat read position is greater than actual: do not update
                 if position < stat.read_position: position = stat.read_position
-                #print(f"Event : {position} / stat : {stat.read_position}")                
+                print(f"Event : {position} / stat : {stat.read_position}")
             # If directly in tag data (not m3u) : behaviour to ckeck
             if (position / track.length > 0.7): 
                 tag = nfcHandler.dbHandler.get_tag_by_data(track.uri)  # To check !!! Récupère le tag correspondant à la chaine
@@ -127,13 +128,12 @@ if __name__ == "__main__":
                         tag.update()
                         tag.save()
 
-        # Update stats
+        # Update stats 
         try: 
             nfcHandler.update_stat_track(track,position,option_type,library_link)
         except Exception as val_e: 
-            #except nfcHandler.spotifyhandler.sp.client.SpotifyException: 
             print(f"Erreur : {val_e}")
-            nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve...
+            nfcHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve
             nfcHandler.update_stat_track(track,position,option_type,library_link)
 
             
@@ -171,12 +171,10 @@ if __name__ == "__main__":
             action = 'No'
             #PRESENT
             if tag in nfcHandler.activetags: 
-                if mode == 'toogle' or mode == 'remove': 
-                    action = 'remove'
+                if mode == 'toogle' or mode == 'remove': action = 'remove'
             #ABSENT
             else:
-                if mode == 'toogle' or mode == 'add': 
-                    action = 'add'
+                if mode == 'toogle' or mode == 'add': action = 'add'
 
             if action == 'remove':
                 removedTag = next((x for x in nfcHandler.activetags if x.uid == tag.uid), None)
@@ -185,10 +183,10 @@ if __name__ == "__main__":
                 nfcHandler.tag_action_remove(tag,removedTag)
                 return "TAG removed"
             if action == 'add':
-                print(f"added tag {tag}")
                 nfcHandler.activetags.append(tag)  #adding tag to list
+                print(f"added tag {tag}") 
                 nfcHandler.tag_action(tag)
-                tag.add_count()  # Incrémente le compteur de contacts pour ce tag
+                #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
                 return "TAG added"
         else: return "no TAG"
 
