@@ -22,4 +22,7 @@ mopidyapi
 # database sqlite orm
 peewee
 PyMysql
-
+numpy 
+flask
+flask_cors
+mysql-connector-python

@@ -202,7 +202,7 @@ class NfcReader():
         if (removedCards != None):
             for uid in removedCards:
                 params = {'uid':uid.id, 'mode':'remove'}
-                r = requests.get(url = url, params = params)
+                r = requests.get(url = url1, params = params)
                 #data = r.json()             
                 #url = url1+"?uid="+uid.id+"&mode=remove"
                 #thing = urlretrieve(url)

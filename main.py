@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     @api.route('/api/reset')
     def api_reset():
-        p = subprocess.run("sudo systemctl restart o2m.service", shell=True, check=True)
+        p = subprocess.run("/home/pi/o2m/start_o2m.sh", shell=True, check=True)
         return ("reset")
 
     @api.route('/api/relaunch')

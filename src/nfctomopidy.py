@@ -69,6 +69,10 @@ class NfcToMopidy:
         if "username" in self.configMopidy["spotify"]:
             self.username = self.configMopidy["spotify"]["username"]
 
+        if "nfc" in self.configO2M:
+            self.nfc = bool(self.configO2M["nfc"])
+        else: self.nfc = False
+
         self.starting_mode(clear=True)
 
 #TAG MANAGEMENT
