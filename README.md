@@ -1,7 +1,7 @@
+
+
 # Object 2 Music
 O2M is an experimentation using daily objects to control and mix music individually or collectively... and auto-build data-driven playlists. 
-
-Open-source; o2m is based on mopidy + iris and running server side or localy on raspberry-pi. 
 
 More info available [here](https://docs.google.com/presentation/d/e/2PACX-1vRiTzoTVNB-PQwGmiBY3MrfeiRCu8HMdW8Qt5ERrgwrR_FcNjoTsllp1wOffLfbNzaeB_ASKQO3Q97F/pub?start=false&loop=false&delayms=3000)
 
