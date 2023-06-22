@@ -2,7 +2,7 @@ import logging, subprocess
 
 from mopidyapi import MopidyAPI
 from src import util
-from src.nfctomopidy import NfcToMopidy
+from src.o2mtomopidy import O2mToMopidy
 from src.spotifyhandler import SpotifyHandler
 
 from flask import Flask, request
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     mopidy = MopidyAPI()
     o2mConf = util.get_config_file("o2m.conf")  # o2m
     mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
-    nfcHandler = NfcToMopidy(mopidy, o2mConf, mopidyConf, logging)
+    nfcHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
     api = Flask(__name__)
     CORS(api)
 

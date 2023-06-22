@@ -19,7 +19,7 @@ option_type
 - podcast
 '''
 
-class NfcToMopidy:
+class O2mToMopidy:
     activecards = {}
     activetags = []
     last_tag_uid = None
