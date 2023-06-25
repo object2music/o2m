@@ -99,14 +99,32 @@
       create_button_box("04AD43D2204B80","Auto");
       create_button_box("auto_simple","Auto simple");
 
-    //Range
-      var b5 = document.createElement("input");
-      b5.setAttribute("type", "range");
-      b5.setAttribute("value", "5");
-      b5.setAttribute("min", "0");  
-      b5.setAttribute("value", "10");
+    //OpenLevel Input and value
+      var xhr0 = new XMLHttpRequest();
+      xhr0.onreadystatechange = function() {
+          if (xhr0.readyState == xhr0.DONE) {
+              if (xhr0.status === 200) {
+              ol = xhr0.responseText
+              var b5 = document.createElement("input");
+              b5.setAttribute("type", "range");
+              b5.setAttribute("value", ol);
+              b5.setAttribute("min", "0");  
+              b5.setAttribute("max", "10");
+              b5.onchange = function(){
+                setTimeout(() => {
+                var xhr = new XMLHttpRequest();
+                xhr.open("GET",base_url+"dl_on?dl="+b5.value);
+                xhr.send();
+                },1000);
+              };
 
-      list.insertBefore(b5, list.children[0]);
+          list.insertBefore(b5, list.children[0]);
+          }}
+      }
+      xhr0.open("GET",base_url+"dl");
+      xhr0.send();
+
+
       //<input type="range" value="70" min="0" max="100" oninput="rangevalue.value=value"/>
       //<output id="rangevalue">70</output>
 

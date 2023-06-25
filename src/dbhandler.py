@@ -4,7 +4,7 @@ from peewee import IntegrityError, fn
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 
-from src.nfcmodels import Tag, Stats, Stats_Raw, db
+from src.o2mmodels import Tag, Stats, Stats_Raw, db
 '''
 Database & Tables creation
 Used only one time from the terminal

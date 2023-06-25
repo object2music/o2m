@@ -5,7 +5,6 @@ from urllib import parse
 
 import src.util as util
 from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Tag
-#from src.nfcreader import NfcReader
 from src.spotifyhandler import SpotifyHandler
 
 '''
@@ -27,13 +26,11 @@ class O2mToMopidy:
     suffle = False
     max_results = 50
     default_volume = 70  # 0-100
-    option_discover_level = 5  # 0-10
+    discover_level = 5  # 0-10
     podcast_newest_first = False
     option_sort = "desc"
 
     def __init__(self, mopidyHandler, configO2m, configMopidy, logging):
-        #self.log = logging.getLogger(__name__)
-        #self.log.info("NFC TO MOPIDY INITIALIZATION")
 
         self.configO2M = configO2m["o2m"]
         self.configMopidy = configMopidy
@@ -51,7 +48,9 @@ class O2mToMopidy:
         self.current_volume = self.default_volume
 
         if "discover_level" in self.configO2M:
-            self.option_discover_level = int(self.configO2M["discover_level"])
+            self.discover_level = int(self.configO2M["discover_level"])
+        #Wether discover_level is on from the outside (api) or not
+        self.discover_level_on = False
 
         if "podcast_newest_first" in self.configO2M:
             self.podcast_newest_first = self.configO2M["podcast_newest_first"] == "true"
@@ -308,7 +307,7 @@ class O2mToMopidy:
                             if (stat.skipped_count > 0
                                 or stat.in_library == 1
                                 or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'normal' or stat.option_type == 'incoming')
-                                or self.threshold_playing_count_new(stat.read_count_end-1,self.option_discover_level) == True
+                                or self.threshold_playing_count_new(stat.read_count_end-1,self.discover_level) == True
                                 #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
                             ): 
                                 uris_rem.append(t.track.uri)
@@ -472,6 +471,12 @@ class O2mToMopidy:
     def tracklistappend_tag(self,tag,max_results):
         #Variables
         tracklist_uris = []
+        
+        #If discover level has been pushed by api since the begining of session, we priorise it
+        if self.discover_level_on:
+            discover_level = self.discover_level
+        else:
+            discover_level = self.get_option_for_tag(tag, "option_discover_level")
 
         #Temporary hack because of spotify pb
         if "spotify" in tag.data:
@@ -520,7 +525,6 @@ class O2mToMopidy:
 
                 # here&now:library (daily habits + library auto extract)
                 elif "herenow:library" in track.uri :
-                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
                     window = int(round(discover_level / 2))
                     max_result1 = int(round(max_results/2))
                     tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
@@ -530,12 +534,10 @@ class O2mToMopidy:
 
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto:library" in track.uri :
-                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
                     tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level))
 
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto_simple:library" in track.uri :
-                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
                     tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level,'simple'))
 
                 # spotify:library (library random extract)
@@ -550,7 +552,6 @@ class O2mToMopidy:
                 # now:library (daily habits)
                 elif "now:library" in track.uri :
                     print ("now:library")
-                    discover_level = self.get_option_for_tag(tag, "option_discover_level")
                     window = int(round(discover_level / 2))
                     tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
 
@@ -590,11 +591,9 @@ class O2mToMopidy:
 
         # Autos mode (to be optimized with the above code)
         elif "auto:library" in tag.data:
-            discover_level = self.get_option_for_tag(tag, "option_discover_level")
             tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level))
 
         elif "auto_simple:library" in tag.data:
-            discover_level = self.get_option_for_tag(tag, "option_discover_level")
             tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level,'simple'))
 
         elif "infos:library" in tag.data:
@@ -705,14 +704,26 @@ class O2mToMopidy:
 
 
 #MOPIDY LIVE CONTROL 
-    def starting_mode(self,clear=False):
-        # Default volume setting at beginning (or in main ?)
+    def starting_mode(self,clear=False,start=False):
+        #Cleaning 
         if clear == True: 
             self.mopidyHandler.tracklist.clear()
             self.mopidyHandler.playback.stop()
+            for tag in self.activetags:
+                tag.tlids.clear()
+                tag.uris.clear()
+                tag.option_types.clear()
+                tag.library_link.clear()
+
+        # Default volume setting at beginning (or in main ?)
         self.mopidyHandler.tracklist.set_random(False)
         self.mopidyHandler.mixer.set_mute(False)
         self.mopidyHandler.mixer.set_volume(self.default_volume)
+
+        #Restart with active tags if actived
+        if start == True: 
+            for tag in self.activetags:
+                self.tag_action(tag)
 
     # Launch next song
     def launch_next(self):
@@ -767,7 +778,10 @@ class O2mToMopidy:
 
         if "spotify:track" in track_uri:
             # tag associated & update discover_level
-            discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
+            if self.discover_level_on:
+                discover_level = self.discover_level
+            else:
+                discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
             if discover_level < 10: new_type ='new' 
             else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
 
@@ -931,7 +945,7 @@ class O2mToMopidy:
             if tag.option_discover_level is not None:
                 if tag.option_discover_level != '':
                     return tag.option_discover_level
-        return self.option_discover_level
+        return self.discover_level
 
 
     # Track DB Regulation (tmp)
@@ -1012,7 +1026,7 @@ class O2mToMopidy:
             if track_finished == True :
                 print("Finished : autofill activated")
                 #Adding if "new track" played many times
-                if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.option_discover_level)==True :
+                if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.discover_level)==True :
                     if library_link !='':
                         print(f"Autofilling Lirbray : {library_link}")
                         result = self.autofill_spotify_playlist(library_link,uri)
@@ -1054,7 +1068,7 @@ class O2mToMopidy:
                         '''
 
                 #Adding any track to favorites if played many times
-                if self.threshold_adding_favorites(stat.read_count_end,self.option_discover_level)==True :
+                if self.threshold_adding_favorites(stat.read_count_end,self.discover_level)==True :
                     tag_favorites = self.dbHandler.get_tag_by_option_type('favorites')
                     print(f"Autofilling Favorites : {tag_favorites}")
                     if tag_favorites:
@@ -1073,9 +1087,9 @@ class O2mToMopidy:
 
             else:
                 #Remove track from playlist if skipped many times
-                if self.threshold_count_deletion(stat,self.option_discover_level)==True :
+                if self.threshold_count_deletion(stat,self.discover_level)==True :
                     '''and library_link !='''
-                    print (f"Trashing track {stat.skipped_count} {self.option_discover_level}")
+                    print (f"Trashing track {stat.skipped_count} {self.discover_level}")
                     tag_trash = self.dbHandler.get_tag_by_option_type('trash')
                     if tag_trash:
                         if 'spotify:playlist' in tag_trash.data: 
@@ -1133,24 +1147,24 @@ class O2mToMopidy:
 
     #Threshold for stopping playing and autofilling new tracks (add_tracks or autofill)
     #discover_level = 5 : read_count_end>=3
-    def threshold_playing_count_new(self,read_count_end,option_discover_level):
-        #print (f"read_count_end : {read_count_end} option_discover_level : {option_discover_level}")
-        if float(read_count_end) >= ((11-option_discover_level)/2): return True
+    def threshold_playing_count_new(self,read_count_end,discover_level):
+        #print (f"read_count_end : {read_count_end} discover_level : {discover_level}")
+        if float(read_count_end) >= ((11-discover_level)/2): return True
         else: return False
 
     #Threshold for adding tracks to favorites (autofill)
     #Need to integrate global ratio, not pertinent now
     #discover_level = 5 : read_count_end>=12
-    def threshold_adding_favorites(self,read_count_end,option_discover_level):
-        '''if float(read_count_end) >= ((11-option_discover_level)*2): return True
+    def threshold_adding_favorites(self,read_count_end,discover_level):
+        '''if float(read_count_end) >= ((11-discover_level)*2): return True
         else: return False'''
         return False
 
 
     #Threshold for deleting tracks from playlist if too many skipped
     #discover_level = 5 et read_count_end=0 : skipped_count_end >=5 // and (stat.read_count_end == 0)
-    def threshold_count_deletion(self,stat,option_discover_level):
-        if (float(stat.skipped_count) > ((11-option_discover_level)*(stat.read_count_end+1)*0.7)) : 
+    def threshold_count_deletion(self,stat,discover_level):
+        if (float(stat.skipped_count) > ((11-discover_level)*(stat.read_count_end+1)*0.7)) : 
             return True 
         else: 
             return False
