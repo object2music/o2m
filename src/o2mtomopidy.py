@@ -34,11 +34,9 @@ class O2mToMopidy:
 
         self.configO2M = configO2m["o2m"]
         self.configMopidy = configMopidy
-        self.dbHandler = DatabaseHandler()  # Gère la base de données
-        self.mopidyHandler = mopidyHandler  # Commandes mopidy via websockets
-        self.spotifyHandler = SpotifyHandler()  # Api spotify pour recommandations
-        # Contrôle les lecteurs nfc et renvoie les identifiants des cartes
-        #self.nfcHandler = NfcReader(self)
+        self.dbHandler = DatabaseHandler()  # Database management
+        self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
+        self.spotifyHandler = SpotifyHandler()  # Spotify API 
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -138,18 +136,6 @@ class O2mToMopidy:
         else:
             print("no uris with removed tag")
 
-
-    def start_nfc(self):
-        # Test mode provided in command line (NFC uids separated by space)
-        if len(sys.argv) > 1:
-            for i in range(1, len(sys.argv)):
-                print(sys.argv[i])
-                tag = self.dbHandler.get_tag_by_uid(sys.argv[i])
-                self.activetags.append(tag)  # Ajoute le tag détecté dans la liste des tags actifs
-                self.tag_action(tag)
-        else:
-            self.nfcHandlnfcreaderer.loop()  # démarre la boucle infinie de détection nfc/rfid
-
     """
     Fonction appellée automatiquement dès qu'un changement est détecté au niveau des lecteurs rfid
     """
@@ -223,23 +209,23 @@ class O2mToMopidy:
         return data_string.split(",")
 
     """
-    Fonction appellée quand un nouveau tag est détecté et que l'on fonctionne en mode télécommande
-    Un tag -> une action -> un contenu :
-        Recommandations : 
-            - Genres : Recommandation sur le ou les genres inclus dans le tag
-            - Artists : Recommandation sur le ou les artistes ...
-        m3u : Parsing de la playlist hybride 
-        spotify : 
-            - artist : Top tracks ou all tracks de l'artiste
-            - album 
-            - track
-        local :
-            - artist
-            - album
-            - track
-        podcasts : 
-            - show
-            - channel / album
+    Function called when a new box is detected and operating in remote control mode
+     A tag -> an action -> a set of content:
+         Recommendations:
+             - Genres: Recommendation on the genre(s) included in the tag
+             - Artists: Recommendation on the artist(s) ...
+         m3u: Hybrid playlist parsing
+         spotify:
+             - artist: Top tracks or all tracks of the artist
+             - scrapbook
+             - track
+         local :
+             - artist
+             - scrapbook
+             - track
+         podcast:
+             - show
+             - channel / album
     """
 
 #O2M CORE / TRACKLIST LAUNCH 

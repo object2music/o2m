@@ -271,11 +271,9 @@ if __name__ == "__main__":
     try:
         #api.run()
         api.run(debug=True, host='0.0.0.0', port=6681)
-        #o2mHandler.start_nfc()
     except Exception as ex:
         print(f"Erreur : {ex}")
         o2mHandler.spotifyHandler.init_token_sp()
-        #o2mHandler.start_nfc()
         api.run(debug=True, host='0.0.0.0', port=6681)
 
 
