@@ -1,0 +1,47 @@
+version: "3.7"
+services:
+  o2m:
+    image: o2m
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:6680"
+      - "5005:6681"
+
+    env_file:
+      - .env
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./music:/app/Music
+      - ./main.py:/app/main.py
+      - ./schema.py:/app/schema.py
+      - ./samples/o2m.conf:/etc/mopidy/o2m.conf
+      
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: o2m
+      MYSQL_USER: o2m
+      MYSQL_PASSWORD: o2m
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./db:/var/lib/mysql
+      - ./dump.sql:/docker-entrypoint-initdb.d/dump.sql
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: o2m
+      PMA_PASSWORD: o2m
+    ports:
+      - "5001:80"
+    depends_on:
+      - mysql
