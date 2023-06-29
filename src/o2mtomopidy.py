@@ -59,8 +59,12 @@ class O2mToMopidy:
             self.option_sort = self.configO2M["option_sort"] == "desc"
 
         if "option_autofill_playlists" in self.configO2M:
-            self.option_autofill_playlists = self.configO2M["option_autofill_playlists"] == "True"
+            self.option_autofill_playlists = bool(self.configO2M["option_autofill_playlists"])
         else: self.option_autofill_playlists = False
+
+        if "option_add_reco_after_track" in self.configO2M:
+            self.option_add_reco_after_track = bool(self.configO2M["option_add_reco_after_track"])
+        else: self.option_add_reco_after_track = False
 
         if "shuffle" in self.configO2M:
             self.shuffle = bool(self.configO2M["shuffle"])
@@ -68,9 +72,11 @@ class O2mToMopidy:
         if "username" in self.configMopidy["spotify"]:
             self.username = self.configMopidy["spotify"]["username"]
 
-        if "nfc" in self.configO2M:
-            self.nfc = bool(self.configO2M["nfc"])
-        else: self.nfc = False
+        if "enabled" in self.configMopidy["local"]:
+            self.local = bool(self.configMopidy["local"]["enabled"])
+
+        if "default_box" in self.configO2M:
+            self.default_box = self.configO2M["default_box"]
 
         self.starting_mode(clear=True)
 
@@ -396,6 +402,7 @@ class O2mToMopidy:
             #print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
 
     def tracklistfill_auto(self,tag,max_results=20,discover_level=5,mode='full'):
+        print (f"DL AUTO : {discover_level}")
         #GO QUICKLY
         self.quicklaunch_auto(1,discover_level)    
 
@@ -438,7 +445,7 @@ class O2mToMopidy:
 
         if mode=='full':
             #News n=(0.5*d)/30
-            max_result1 = int(round((0.6*discover_level)/30*max_results))
+            max_result1 = int(round((0.7*discover_level)/30*max_results))
             print(f"\nAUTO : News {max_result1} tracks\n")
             tag1 = self.dbHandler.get_tag_by_option_type('new')
             #self.one_tag_changed(tag, max_result1)
@@ -446,7 +453,7 @@ class O2mToMopidy:
             #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))        
 
             #Favorites n=5/30
-            max_result1 = int(round(discover_level*2/30*max_results))
+            max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
             print(f"\nAUTO : Fav {max_result1} tracks\n")
             tag1 = self.dbHandler.get_tag_by_option_type('favorites')
             if tag1 != None:
@@ -704,7 +711,7 @@ class O2mToMopidy:
 
 
 #MOPIDY LIVE CONTROL 
-    def starting_mode(self,clear=False,start=False):
+    def starting_mode(self,clear=False,start=False,uid=None):
         #Cleaning 
         if clear == True: 
             self.mopidyHandler.tracklist.clear()
@@ -724,6 +731,11 @@ class O2mToMopidy:
         if start == True: 
             for tag in self.activetags:
                 self.tag_action(tag)
+            if uid != None:
+                box = self.dbHandler.get_tag_by_uid(uid)
+                if box != None:
+                    self.activetags.append(box)
+                    self.tag_action(box)
 
     # Launch next song
     def launch_next(self):
@@ -777,12 +789,12 @@ class O2mToMopidy:
         #self.mopidyHandler.playback.pause()
 
         if "spotify:track" in track_uri:
-            # tag associated & update discover_level
+            # Calculate the discover_level : tag associated or updated discover_level via api
             if self.discover_level_on:
                 discover_level = self.discover_level
             else:
                 discover_level = self.get_option_for_tag_uri(track_uri,"option_discover_level")
-            if discover_level < 10: new_type ='new' 
+            if discover_level < 10: new_type ='new'
             else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
 
             # Get tracks recommandations
@@ -828,13 +840,14 @@ class O2mToMopidy:
             else:
                 current_index = tl_length
 
-            if discover_level > 5:
-                new_index = current_index #adding reco just after track
-            else:
-                if 'album' in data:
-                    new_index = tl_length
+            if self.option_add_reco_after_track: 
+                if discover_level ==10:
+                    new_index = current_index #adding reco just after track
                 else:
-                    new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10)))
+                    if 'album' in data:
+                        new_index = tl_length #at the end
+                    else:
+                        new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10))) #somewhere in the middle of the tracklist
 
             if uris:
                 slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
@@ -905,14 +918,18 @@ class O2mToMopidy:
         return self.spotifyHandler.get_library_tracks(limit)
 
     def get_common_tracks(self,read_hour,window,limit):
-        return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit)
+        pattern = "track:"
+        if not self.local and self.username != None: pattern = "track:spotify"
+        if self.local and self.username == None : pattern = "track:local"
+        print (pattern)
+        return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)
 
     def get_new_tracks_notread(self,limit):
         return self.dbHandler.get_uris_new_notread(limit)
 
     def get_active_tag_by_uri(self, uri):
         for tag in self.activetags:
-            #print (tag)
+            #print (tag
             if hasattr(tag, "uris"):
                 if uri in tag.uris:
                     return tag
@@ -1019,7 +1036,7 @@ class O2mToMopidy:
             stat.skipped_count += 1
 
         #Add / remove the track to playlist(s) if played above/below discover level
-        if self.option_autofill_playlists == True and fix==False:
+        if self.option_autofill_playlists and not fix:
             uri = []
             uri.append(track.uri)
 
@@ -1028,7 +1045,7 @@ class O2mToMopidy:
                 #Adding if "new track" played many times
                 if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.discover_level)==True :
                     if library_link !='':
-                        print(f"Autofilling Lirbray : {library_link}")
+                        print(f"Autofilling Library : {library_link}")
                         result = self.autofill_spotify_playlist(library_link,uri)
                         if result: stat.option_type = 'normal'
 

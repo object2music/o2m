@@ -89,6 +89,7 @@ if __name__ == "__main__":
             else: return("0")
 
     #API Opening Level
+    #Get the value
     @api.route('/api/dl')
     def api_dl():
         if o2mHandler.discover_level != None:
@@ -96,20 +97,40 @@ if __name__ == "__main__":
         else:
             return "No Opening Level"
 
+    #Activate and apply a new value
     @api.route('/api/dl_on')
     def api_dl_on():
         dl = request.args.get('dl')
         if dl != None:
             o2mHandler.discover_level = int(dl)
             o2mHandler.discover_level_on = True
-            o2mHandler.starting_mode(True,True)
-            return "New dl : relaunch"
+
+            #Should we relaunch when dl is changed?
+            state = o2mHandler.mopidyHandler.playback.get_state()
+            relaunch = False
+            if state == "stopped": relaunch = True
+            else:
+                for tag in o2mHandler.activetags:
+                    if "auto" in tag.data: relaunch = True
+                    elif "m3u" in tag.data:
+                        contents = o2mHandler.mopidyHandler.playlists.lookup(tag.data) 
+                        for track in contents.tracks:
+                            if "auto" in track.uri: relaunch = True
+            if relaunch == True:
+                #relaunching with the actual boxes
+                if len(o2mHandler.activetags)>0:
+                    o2mHandler.starting_mode(True,True)
+                #relaunching with default_box if exists
+                elif o2mHandler.default_box != None:
+                    o2mHandler.starting_mode(True,True,o2mHandler.default_box)
+            return "New dl"
         else:
             return "No new dl"
 
     @api.route('/api/reset')
     def api_reset():
         p = subprocess.run("/home/pi/o2m/start_o2m.sh", shell=True, check=True)
+        #o2mHandler.starting_mode(True,True)
         return ("reset")
 
     @api.route('/api/relaunch')

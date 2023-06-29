@@ -42,7 +42,8 @@
           },1000);
         };
       list.insertBefore(b, list.children[0]);
-      setInterval(update_style_button_box(uid,b), 50000);
+      update_style_button_box(uid,b)
+      timerId = setInterval(() => update_style_button_box(uid,b), 600000);
       }
 
     //setInterval(update_style_button_box, 50000);
@@ -96,8 +97,8 @@
       create_button_box("04CE6F193E2580","Jazz");
       create_button_box("04C52351962280","Danse");
       create_button_box("04463DD2204B80","Calm");
-      create_button_box("04AD43D2204B80","Auto");
       create_button_box("auto_simple","Auto simple");
+      create_button_box("04AD43D2204B80","Auto");
 
     //OpenLevel Input and value
       var xhr0 = new XMLHttpRequest();
