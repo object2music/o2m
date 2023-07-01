@@ -6,9 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "5000:6680"
-      - "5005:6681"
-
+      - 6680:6680
+      - 6681:6681
     env_file:
       - .env
     depends_on:
@@ -17,9 +16,19 @@ services:
     volumes:
       - ./music:/app/Music
       - ./main.py:/app/main.py
+      - ./src:/app/src
       - ./schema.py:/app/schema.py
-      - ./samples/o2m.conf:/etc/mopidy/o2m.conf
-      
+      - /tmp/snapserver:/tmp
+  snapserver:
+    image: jaedb/snapserver
+    ports:
+      - 1704:1704
+      - 1705:1705
+      - 1780:1780
+    volumes:
+      - /tmp/snapserver:/tmp
+      - ./docker/snapserver.conf:/etc/snapserver.conf
+      #- ./docker/snapserver/snapserver.json:/root/.config/snapserver/server.json
   mysql:
     image: mysql:5.7
     environment:
