@@ -1,21 +1,12 @@
 #!/bin/bash
 
-echo "Creating config files"
+bash create_conf_files.sh
 
-sh create_conf_files.sh
+# replace index.html with our own
+cp index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
-
-echo "Starting o2m service"
-
-systemctl start o2m.service
-
-echo "Starting mopidy service"
-
-/usr/bin/ mopidyctl  local scan
-
-/usr/bin/mopidy --config /etc/mopidy/mopidy.conf &
-
-
-python3 main.py
+# Launch
+mopidy --config /etc/mopidy/mopidy.conf -vvv &
+python3 main.py -m flask &
 
 tail -f /dev/null
