@@ -1,5 +1,5 @@
 //  o2m.js and o2m.css should be inserted in the mopidy-iris extension
-//  in /usr/local/lib/python3.7/dist-packages/mopidy_iris/static
+//  in /usr/local/lib/pythonx.x/dist-packages/mopidy_iris/static
 //  and inserted in index.html 
 //     <link rel="stylesheet" href="o2m.css">
 //    <script type="text/javascript" src="o2m.js"></script>

@@ -1,7 +1,6 @@
 import configparser, os, json, sys, random
 from pathlib import Path
 
-
 # sys.path.append('.')
 # from lib.spotipy.oauth2 import SpotifyClientCredentials
 # import lib.spotipy as spotipy
@@ -10,13 +9,11 @@ from spotipy.oauth2 import SpotifyClientCredentials
 from spotipy.oauth2 import SpotifyOAuth
 import src.util as util
 
-
 class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("mopidy.conf")["spotipy"]
         self.spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
         self.init_token_sp()
-
 
     def init_token_sp(self):
         #Some scopes are not working
@@ -24,13 +21,24 @@ class SpotifyHandler:
         scope='user-library-read, user-follow-modify, playlist-modify-private, playlist-modify-public'
 
         #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
+        
         if self.spotipy_config["auth_method"] == 'authorization_code':
+            self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+            username=self.spotify_config["username"],
+            scope=scope,
+            client_id=self.spotipy_config["client_id_spotipy"],
+            client_secret=self.spotipy_config["client_secret_spotipy"],
+            redirect_uri='http://localhost:8080'
+            ))
+
+        if self.spotipy_config["auth_method"] == 'authorization_code1':
+            print ("auth sp")
             token = util.prompt_for_user_token(
             username=self.spotify_config["username"],
             scope=scope,
             client_id=self.spotipy_config["client_id_spotipy"],
             client_secret=self.spotipy_config["client_secret_spotipy"],
-            redirect_uri='https://localhost')
+            redirect_uri='http://localhost:6681')
 
             '''self.spo = oauth.SpotifyOAuth(
             username=spotify_config["username"],
@@ -46,10 +54,10 @@ class SpotifyHandler:
                 self.spotipy_config["auth_method"] = ''
 
         #Method 2 : Client Credential (simple but not allow to modify users playlists)
-        if self.spotipy_config["auth_method"] != 'authorization_code':
+        if self.spotipy_config["auth_method"] == 'authorization_code2':
             client_credentials_manager = SpotifyClientCredentials(
-                client_id=spotipy_config["client_id_spotipy"],
-                client_secret=spotipy_config["client_secret_spotipy"]
+                client_id=self.spotipy_config["client_id_spotipy"],
+                client_secret=self.spotipy_config["client_secret_spotipy"]
             )
             self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
             print ("Spotipy initialisation 2")

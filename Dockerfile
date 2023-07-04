@@ -1,4 +1,4 @@
-FROM ubuntu:20.04 as builder
+FROM ubuntu:22.04 as builder
 
 # interactive mode
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,7 +17,7 @@ RUN git clone --depth 1 https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs
 WORKDIR /app/gst-plugins-rs
 RUN cargo build --package gst-plugin-spotify -Z sparse-registry  --release 
 
-FROM ubuntu:20.04
+FROM ubuntu:22.04
 
 # interactive mode
 ENV DEBIAN_FRONTEND=noninteractive
@@ -25,7 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install dependencies
 RUN apt update 
 
-# Insstall dependencies
+# Install dependencies
 RUN apt install -y wget 
 
 # Install Python
@@ -37,13 +37,13 @@ RUN wget -q -O /etc/apt/keyrings/mopidy-archive-keyring.gpg \
     https://apt.mopidy.com/mopidy.gpg
 RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bullseye.list
 RUN apt-get update
-RUN apt-get -y install mopidy python-spotify libspotify-dev
-RUN  apt-get install -y swig libpcsclite-dev libcairo2-dev
+RUN apt-get -y install mopidy libspotify-dev
+#RUN  apt-get install -y swig python-spotify libpcsclite-dev libcairo2-dev
 # copy default config
 COPY ./samples/mopidy.conf /etc/mopidy/mopidy.conf
 
 # Install libspotify
-RUN apt install -y libspotify-dev
+#RUN apt install -y libspotify-dev
 
 WORKDIR /app
 
@@ -58,11 +58,15 @@ COPY ./docker/create_conf_files.sh ./create_conf_files.sh
 RUN chmod +x ./entrypoint.sh
 RUN chmod +x ./create_conf_files.sh
 
-# put in iris folder
+# copies from local (to solve with a backoffice later)
+COPY ./samples/m3u /root/.local/share/mopidy/m3u
+COPY ./samples/podcasts/Podcasts.opml /etc/mopidy/podcasts.opml
 
-COPY  ./samples/o2m.css /usr/local/lib/python3.8/dist-packages/mopidy_iris/static/o2m.css
-COPY  ./samples/o2m.js /usr/local/lib/python3.8/dist-packages/mopidy_iris/static/o2m.js
+# put in iris folder
+COPY  ./samples/o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
+COPY  ./samples/o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
 COPY ./samples/index.html /app/index.html
+#COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
 # Install Python dependencies with caching
 RUN --mount=type=cache,target=/root/.cache \
@@ -73,6 +77,7 @@ COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/tar
 #RUN install -m 644 /app/target/release/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
 RUN install -m 644 target/release/libgstspotify.so $(pkg-config --variable=pluginsdir gstreamer-1.0)/
 # install mopidy-spotify
-RUN pip install Mopidy-Spotify #==4.0.1
+#RUN pip install Mopidy-Spotify #==4.0.1
+RUN pip3 install https://github.com/mopidy/mopidy-spotify/archive/master.zip
 
 ENTRYPOINT ["./entrypoint.sh"]
