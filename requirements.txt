@@ -10,7 +10,7 @@ youtube-dl
 Mopidy-Iris #3.46.0
 Mopidy-Local
 Mopidy-Podcast
-Mopidy-Spotify
+#Mopidy-Spotify
 Mopidy-Podcast-iTunes
 Mopidy-TuneIn
 Mopidy-YouTube

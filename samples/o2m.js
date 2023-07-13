@@ -62,7 +62,7 @@
       xhr.send();
       setTimeout(() => {
           var but = document.getElementsByTagName('button');
-          for(i = 0; i < but.length; i++) {but[i].classList.remove("sidebar__menu__item--active");}
+          for(i = 0; i < but.length; i++) {but[i].classLmainist.remove("sidebar__menu__item--active");}
         },500);
       };
 

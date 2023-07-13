@@ -100,6 +100,7 @@ echo "o2m.conf file created successfully."
 
 # move the files to the correct location
 cp mopidy.conf /etc/mopidy/mopidy.conf
+#cp mopidy.conf /root/.config/mopidy/mopidy.conf
 cp o2m.conf /etc/mopidy/o2m.conf
 
 # TODO: put the correct permissions on the files

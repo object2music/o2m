@@ -29,7 +29,7 @@ RUN apt update
 RUN apt install -y wget 
 
 # Install Python
-RUN apt install -y  python3 python3-pip git
+RUN apt install -y python3 python3-pip git
 
 # Mopidy
 RUN mkdir -p /etc/apt/keyrings
@@ -70,14 +70,13 @@ COPY ./samples/index.html /app/index.html
 
 # Install Python dependencies with caching
 RUN --mount=type=cache,target=/root/.cache \
-    pip3 install -r requirements.txt
+    python3 -m pip install -r requirements.txt
 
 # Install Rust gstreamer
-COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/target/release/libgstspotify.so
-#RUN install -m 644 /app/target/release/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
-RUN install -m 644 target/release/libgstspotify.so $(pkg-config --variable=pluginsdir gstreamer-1.0)/
+COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/libgstspotify.so
+RUN cp /app/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
+
 # install mopidy-spotify
-#RUN pip install Mopidy-Spotify #==4.0.1
-RUN pip3 install https://github.com/mopidy/mopidy-spotify/archive/master.zip
+RUN python3 -m pip install https://github.com/mopidy/mopidy-spotify/archive/master.zip
 
 ENTRYPOINT ["./entrypoint.sh"]
