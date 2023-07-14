@@ -392,35 +392,13 @@ class O2mToMopidy:
         #GO QUICKLY
         self.quicklaunch_auto(1,discover_level)    
 
-        #APPEND
+        #Variables
         window = int(round(discover_level / 2))
         #tag = self.dbHandler.get_tag_by_option_type('new_mopidy')
         #tag.option_type == 'normal'
         tracklist_uris= []
 
-        #Albums n=5/30
-        max_result1 = int(round(discover_level*2/30*max_results))
-        print(f"\nAUTO : Albums {max_result1} tracks\n")
-        #tracklist_uris.append(self.spotifyHandler.get_albums_tracks(max_result1,discover_level))
-        self.add_tracks(tag, self.spotifyHandler.get_albums_tracks(max_result1,discover_level), max_result1)
-
-        #Playlists n=(-0.2*d+7)/30
-        max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
-        print(f"\nAUTO : Playlist {max_result1} tracks\n")
-        #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
-        self.add_tracks(tag, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1)
-
-        #Common tracks n=(-0.3*d+8)/30
-        max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
-        print(f"\nAUTO : Common {max_result1} tracks\n")
-        #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-        tag.option_type == 'new'
-        self.add_tracks(tag, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
-
-        #self.add_tracks(tag, tracklist_uris, max_results)
-
         #ADD_TRACKS
-
         #Podcasts ??? n=(0.5*d)/30
         max_result1 = int(round((0.9*discover_level)/30*max_results))
         print(f"\nAUTO : Podcasts {max_result1} tracks\n")
@@ -454,6 +432,28 @@ class O2mToMopidy:
         tag.option_type == 'podcast'
         tag.option_sort == 'desc'
         self.add_tracks(tag, self.append_lastinfos([],tag,max_results), 1)
+
+        #APPEND
+        #Albums n=5/30
+        max_result1 = int(round(discover_level*2/30*max_results))
+        print(f"\nAUTO : Albums {max_result1} tracks\n")
+        #tracklist_uris.append(self.spotifyHandler.get_albums_tracks(max_result1,discover_level))
+        self.add_tracks(tag, self.spotifyHandler.get_albums_tracks(max_result1,discover_level), max_result1)
+
+        #Playlists n=(-0.2*d+7)/30
+        max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
+        print(f"\nAUTO : Playlist {max_result1} tracks\n")
+        #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
+        self.add_tracks(tag, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1)
+
+        #Common tracks n=(-0.3*d+8)/30
+        max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
+        print(f"\nAUTO : Common {max_result1} tracks\n")
+        #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+        tag.option_type == 'new'
+        self.add_tracks(tag, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
+
+        #self.add_tracks(tag, tracklist_uris, max_results)
 
         #return tracklist_uris
 

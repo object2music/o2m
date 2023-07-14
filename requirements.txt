@@ -7,7 +7,7 @@ events
 youtube-dl
 
 #Mopidy
-Mopidy-Iris #3.46.0
+Mopidy-Iris #3.67.0
 Mopidy-Local
 Mopidy-Podcast
 #Mopidy-Spotify

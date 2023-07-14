@@ -8,6 +8,7 @@ services:
     ports:
       - 6680:6680
       - 6681:6681
+      - 6682:6682
     env_file:
       - .env
     depends_on:

@@ -28,7 +28,7 @@ class SpotifyHandler:
             scope=scope,
             client_id=self.spotipy_config["client_id_spotipy"],
             client_secret=self.spotipy_config["client_secret_spotipy"],
-            redirect_uri='http://localhost:8080'
+            redirect_uri='http://localhost:6682'
             ))
 
         if self.spotipy_config["auth_method"] == 'authorization_code1':
@@ -38,7 +38,7 @@ class SpotifyHandler:
             scope=scope,
             client_id=self.spotipy_config["client_id_spotipy"],
             client_secret=self.spotipy_config["client_secret_spotipy"],
-            redirect_uri='http://localhost:6681')
+            redirect_uri='http://localhost:6682')
 
             '''self.spo = oauth.SpotifyOAuth(
             username=spotify_config["username"],
@@ -80,7 +80,7 @@ class SpotifyHandler:
             auth = self.spo.get_authorize_url()
             print(auth)
             auth_url = input('Click the link above and copy and paste the url here: ')
-            _re_auth = re.findall(_auth_finder, auth_url)
+            re_auth = re.findall(_auth_finder, auth_url)
             access_token = self.spo.get_access_token(_re_auth[0])
             return access_token
 
