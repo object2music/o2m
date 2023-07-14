@@ -140,3 +140,8 @@ dmypy.json
 .vscode/
 
 *.log
+
+## Misc
+db/*
+
+dump.sql
