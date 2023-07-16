@@ -127,15 +127,20 @@ if __name__ == "__main__":
         else:
             return "No new dl"
 
-    @api.route('/api/reset')
-    def api_reset():
-        p = subprocess.run("/home/pi/o2m/start_o2m.sh", shell=True, check=True)
-        #o2mHandler.starting_mode(True,True)
+    @api.route('/api/reset_o2m')
+    def api_reset_o2m():
+        o2mHandler.starting_mode(True,True)
         return ("reset")
 
-    @api.route('/api/relaunch')
-    def api_relaunch():
-        p = subprocess.run("/home/pi/o2m/start_mopidy.sh", shell=True, check=True)
+    @api.route('/api/restart_o2m')
+    def api_restart_o2m():
+        p = subprocess.run("start_o2m.sh", shell=True, check=True)
+        return ("reset")
+
+
+    @api.route('/api/restart_mopidy')
+    def api_restart_mopidy():
+        p = subprocess.run("start_mopidy.sh", shell=True, check=True)
         return ("reset")
 
 #MOPIDY LISTENERS

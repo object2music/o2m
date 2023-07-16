@@ -58,7 +58,7 @@
       b3.className = "sidebar__menu__item icon icon--material";
       b3.onclick = function(){  
       var xhr = new XMLHttpRequest();
-      xhr.open("GET",base_url+"reset");
+      xhr.open("GET",base_url+"reset_o2m");
       xhr.send();
       setTimeout(() => {
           var but = document.getElementsByTagName('button');
@@ -71,7 +71,7 @@
       b4.className = "sidebar__menu__item icon icon--material";
       b4.onclick = function(){  
       var xhr = new XMLHttpRequest();
-      xhr.open("GET",base_url+"relaunch");
+      xhr.open("GET",base_url+"restart_mopidy");
       xhr.send();
       setTimeout(() => {
           var but = document.getElementsByTagName('button');
@@ -124,13 +124,6 @@
       }
       xhr0.open("GET",base_url+"dl");
       xhr0.send();
-
-
-      //<input type="range" value="70" min="0" max="100" oninput="rangevalue.value=value"/>
-      //<output id="rangevalue">70</output>
-
-
-
 
       }, 2000);
     }
