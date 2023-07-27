@@ -7,12 +7,14 @@ class SpotifyHandler:
     def __init__(self,session):
         self.spotipy_config = util.get_config_file("mopidy.conf")["spotipy"]
         self.spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
-        self.cache_path = "cache_spotipy" 
+        self.cache_path = ".cache_spotipy" 
         self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read" 
-        os.environ['SPOTIPY_REDIRECT_URI'] = "/api/spotipy_init"
+        os.environ['SPOTIPY_REDIRECT_URI'] = "http://"+str(self.define_IP())+":6681/api/spotipy_init"
+        os.environ['SPOTIPY_REDIRECT_URI'] = "http://localhost:6681/api/spotipy_init"
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
         self.init_token_sp()
+        print (str(self.define_IP()))
 
     def init_token_sp(self):
         cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
@@ -22,7 +24,18 @@ class SpotifyHandler:
         else:
             print("Token is not valid")    
 
-    
+    def define_IP(self):
+        #Determine IP of the machine
+        if sys.platform == "linux" or sys.platform == "linux2": # linux
+            self.ip = os.popen('hostname -I').read().split(' ')[0]
+        elif sys.platform == "darwin": # OS X
+            self.ip = os.popen('ipconfig getifaddr en0').read().split('\n')[0]
+        elif sys.platform == "win32": # Windows...
+            self.ip = os.popen('ipconfig').read().split('\n')[0].split(':')[1].strip()
+        else:
+            self.ip = " "
+        return self.ip
+
     def refresh_token0(self):
         cached_token = self.spo.get_cached_token()
         refreshed_token = cached_token['refresh_token']

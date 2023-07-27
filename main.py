@@ -200,9 +200,14 @@ if __name__ == "__main__":
 
         @api.route('/api/spotipy_out')
         def api_spotipy_out():
-            session.pop("token_info", None)
+            #session.pop("token_info", None)
+            if os.path.exists(file_path):
+                # Delete the file
+                os.remove(o2mHandler.spotifyHandler.cache_path)
+                print("File deleted successfully.")
+            else:
+                print("File does not exist.")
             return redirect('/api/spotipy_init')
-
 
 
 #MOPIDY LISTENERS
