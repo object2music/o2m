@@ -82,6 +82,7 @@ default_volume = $O2M_DEFAULT_VOLUME
 discover_level = $O2M_DISCOVER_LEVEL
 podcast_newest_first = $O2M_PODCAST_NEWEST_FIRST
 option_autofill_playlists = $O2M_OPTION_AUTOFILL_PLAYLISTS
+option_add_reco_after_track = $O2M_OPTION_ADD_RECO_AFTER_TRACK
 
 # mysql or sqlite
 db_type = $DB_TYPE

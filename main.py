@@ -339,11 +339,11 @@ if __name__ == "__main__":
 #MAIN LOOP
     # Infinite loop for API listener
     try:
-        api.run(debug=True, host='0.0.0.0', port=6681)
+        api.run(host='0.0.0.0', port=6681)
     except Exception as ex:
         print(f"Erreur : {ex}")
         o2mHandler.spotifyHandler.init_token_sp()
-        api.run(threaded=True, host='0.0.0.0', port=6681)
+        api.run(host='0.0.0.0', port=6681)
 
 # Code pour créer manuellement des tags en bdd
 # if __name__ == "__main__":

@@ -150,14 +150,7 @@ class SpotifyHandler:
     def get_albums_tracks(self,limit=1,unit=1):
         unit=1
         t_list=[]
-        print(self.sp.me()["display_name"])
-        try: 
-            total = self.sp.current_user_saved_albums()['total']
-            print (total)
-        except Exception as val_e: 
-            print(f"Erreur : {val_e}")
-            #self.init_token_sp()
-            total = self.sp.current_user_saved_albums()['total']
+        total = self.sp.current_user_saved_albums()['total']
 
         if total>0:
             for i in range(limit):
@@ -184,7 +177,6 @@ class SpotifyHandler:
         playlists = playlists['items']
         for pl in range(len(playlists)):
             if playlists[pl]['name']=='Trash':
-                print (f"TRASH : {playlists[pl]['name']}")
                 playlists.remove(playlists[pl])
                 break
 
@@ -202,7 +194,6 @@ class SpotifyHandler:
                     #track = tracks[0:1]
                     #t_list.append(track['uri'])
         return t_list
-
 
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
         #Warning : may probably be the last 20 only
