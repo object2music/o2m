@@ -9,8 +9,8 @@ cp index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.h
 #mopidy --config /etc/mopidy/mopidy.conf -vvv &
 mopidy --config /etc/mopidy/mopidy.conf &
 P1=$!
-sleep 40
-/usr/bin/python3 main.py -m flask &
+#sleep 40
+/usr/bin/python3 -u main.py -m flask &
 P2=$!
 
 #wait $P1 $P2

@@ -30,13 +30,12 @@ class O2mToMopidy:
     podcast_newest_first = False
     option_sort = "desc"
 
-    def __init__(self, mopidyHandler, configO2m, configMopidy, logging):
-
+    def __init__(self, mopidyHandler, configO2m, configMopidy, logging, session):
         self.configO2M = configO2m["o2m"]
         self.configMopidy = configMopidy
         self.dbHandler = DatabaseHandler()  # Database management
         self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
-        self.spotifyHandler = SpotifyHandler()  # Spotify API 
+        self.spotifyHandler = SpotifyHandler(session)  # Spotify API 
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])

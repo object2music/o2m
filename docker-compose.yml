@@ -20,6 +20,9 @@ services:
       - ./src:/app/src
       - ./schema.py:/app/schema.py
       - /tmp/snapserver:/tmp
+    #web:
+    environment:
+      - PYTHONUNBUFFERED=1
   snapserver:
     image: jaedb/snapserver
     ports:

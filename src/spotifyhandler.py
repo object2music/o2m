@@ -1,67 +1,26 @@
 import configparser, os, json, sys, random
 from pathlib import Path
-
-# sys.path.append('.')
-# from lib.spotipy.oauth2 import SpotifyClientCredentials
-# import lib.spotipy as spotipy
 import spotipy as spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
-from spotipy.oauth2 import SpotifyOAuth
 import src.util as util
 
 class SpotifyHandler:
-    def __init__(self):
+    def __init__(self,session):
         self.spotipy_config = util.get_config_file("mopidy.conf")["spotipy"]
         self.spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
-        self.init_token_sp()
+        self.cache_path = "cache_spotipy" 
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read" 
+        os.environ['SPOTIPY_REDIRECT_URI'] = "http://localhost:6681/api/spotipy_init"
+        os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
+        os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
 
-    def init_token_sp(self):
-        #Some scopes are not working
-        #scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read"
-        scope='user-library-read, user-follow-modify, playlist-modify-private, playlist-modify-public'
+        cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
+        auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope,cache_handler=cache_handler,show_dialog=False)
+        if auth_manager.validate_token(cache_handler.get_cached_token()):
+            self.sp = spotipy.Spotify(auth_manager=auth_manager)
+        else:
+            print("Token is not valid")    
 
-        #Method 1 : Authorization Code (all authorizations but need explicit credential via terminal)
-        
-        if self.spotipy_config["auth_method"] == 'authorization_code':
-            self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
-            username=self.spotify_config["username"],
-            scope=scope,
-            client_id=self.spotipy_config["client_id_spotipy"],
-            client_secret=self.spotipy_config["client_secret_spotipy"],
-            redirect_uri='http://localhost:6682'
-            ))
-
-        if self.spotipy_config["auth_method"] == 'authorization_code1':
-            print ("auth sp")
-            token = util.prompt_for_user_token(
-            username=self.spotify_config["username"],
-            scope=scope,
-            client_id=self.spotipy_config["client_id_spotipy"],
-            client_secret=self.spotipy_config["client_secret_spotipy"],
-            redirect_uri='http://localhost:6682')
-
-            '''self.spo = oauth.SpotifyOAuth(
-            username=spotify_config["username"],
-            scope='user-library-read user-follow-modify playlist-modify-private playlist-modify-public',
-            client_id=spotipy_config["client_id_spotipy"],
-            client_secret=spotipy_config["client_secret_spotipy"],
-            redirect_uri='http://localhost')'''
-
-            if token:
-                self.sp = spotipy.Spotify(auth=token)
-                print ("Spotipy initialisation 1")
-            else:
-                self.spotipy_config["auth_method"] = ''
-
-        #Method 2 : Client Credential (simple but not allow to modify users playlists)
-        if self.spotipy_config["auth_method"] == 'authorization_code2':
-            client_credentials_manager = SpotifyClientCredentials(
-                client_id=self.spotipy_config["client_id_spotipy"],
-                client_secret=self.spotipy_config["client_secret_spotipy"]
-            )
-            self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
-            print ("Spotipy initialisation 2")
-
+    
     def refresh_token0(self):
         cached_token = self.spo.get_cached_token()
         refreshed_token = cached_token['refresh_token']
@@ -83,12 +42,6 @@ class SpotifyHandler:
             re_auth = re.findall(_auth_finder, auth_url)
             access_token = self.spo.get_access_token(_re_auth[0])
             return access_token
-
-    '''
-    except spotipy.client.SpotifyException:
-    SpotifyHandler.init_token_sp()
-    print("Got an exception ")
-    '''
 
     def get_recommendations(
         self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, **kwargs
@@ -195,11 +148,13 @@ class SpotifyHandler:
     def get_albums_tracks(self,limit=1,unit=1):
         unit=1
         t_list=[]
+        print(self.sp.me()["display_name"])
         try: 
             total = self.sp.current_user_saved_albums()['total']
+            print (total)
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
-            self.init_token_sp()
+            #self.init_token_sp()
             total = self.sp.current_user_saved_albums()['total']
 
         if total>0:
