@@ -17,7 +17,7 @@ client_id = $SPOTIFY_CLIENT_ID
 client_secret = $SPOTIFY_CLIENT_SECRET
 
 [spotipy]
-auth_method = $SPOTIPY_AUTH_METHOD
+spotipy_redirect_uri = $SPOTIPY_REDIRECT_URI
 client_id_spotipy = $SPOTIPY_CLIENT_ID
 client_secret_spotipy = $SPOTIPY_CLIENT_SECRET
 
