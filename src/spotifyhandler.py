@@ -9,10 +9,12 @@ class SpotifyHandler:
         self.spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
         self.cache_path = "cache_spotipy" 
         self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read" 
-        os.environ['SPOTIPY_REDIRECT_URI'] = "http://localhost:6681/api/spotipy_init"
+        os.environ['SPOTIPY_REDIRECT_URI'] = "/api/spotipy_init"
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
+        self.init_token_sp()
 
+    def init_token_sp(self):
         cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
         auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope,cache_handler=cache_handler,show_dialog=False)
         if auth_manager.validate_token(cache_handler.get_cached_token()):
