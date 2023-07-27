@@ -10,7 +10,7 @@ class SpotifyHandler:
         self.cache_path = ".cache_spotipy" 
         self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read" 
         os.environ['SPOTIPY_REDIRECT_URI'] = "http://"+str(self.define_IP())+":6681/api/spotipy_init"
-        os.environ['SPOTIPY_REDIRECT_URI'] = "http://localhost:6681/api/spotipy_init"
+        #os.environ['SPOTIPY_REDIRECT_URI'] = "http://localhost:6681/api/spotipy_init"
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
         self.init_token_sp()
