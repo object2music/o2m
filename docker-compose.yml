@@ -6,9 +6,9 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - 6680:6680 #Mopidy
-      - 6681:6681 #O2M API connexion
-      - 6600:6600 #MPD server and control
+      - 6690:6680 #Mopidy
+      - 6691:6681 #O2M API connexion
+      - 6610:6600 #MPD server and control
     env_file:
       - .env
    #depends_on:
@@ -26,9 +26,9 @@ services:
   snapserver:
     image: jaedb/snapserver
     ports:
-      - 1704:1704
-      - 1705:1705
-      - 1780:1780
+      - 1714:1704
+      - 1715:1705
+      - 1790:1780
     volumes:
       - ./tmp/snapserver:/tmp
       - ./docker/snapserver.conf:/etc/snapserver.conf
@@ -43,7 +43,7 @@ services:
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
     ports:
-      - "3370:3306"
+      - "3380:3306"
     volumes:
       - ./db:/var/lib/mysql
       - ./dump.sql:/docker-entrypoint-initdb.d/dump.sql
@@ -55,6 +55,6 @@ services:
       PMA_USER: o2m
       PMA_PASSWORD: o2m
     ports:
-      - "5001:80"
+      - "5011:80"
   #depends_on:
   #    - mysql
