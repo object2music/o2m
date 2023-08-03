@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - 6680:6680 #Mopidy
-      - 6681:6681 #O2M API
+      - 6681:6681 #O2M API connexion
       - 6600:6600 #MPD server and control
     env_file:
       - .env
