@@ -19,7 +19,7 @@ services:
       - ./main.py:/app/main.py
       - ./src:/app/src
       - ./schema.py:/app/schema.py
-      - /tmp/snapserver:/tmp
+      - ./tmp/snapserver:/tmp
     #web:
     environment:
       - PYTHONUNBUFFERED=1
@@ -30,7 +30,7 @@ services:
       - 1705:1705
       - 1780:1780
     volumes:
-      - /tmp/snapserver:/tmp
+      - ./tmp/snapserver:/tmp
       - ./docker/snapserver.conf:/etc/snapserver.conf
       #- ./docker/snapserver/snapserver.json:/root/.config/snapserver/server.json
   mysql:
