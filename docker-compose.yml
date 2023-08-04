@@ -40,13 +40,11 @@ services:
       MYSQL_DATABASE: o2m
       MYSQL_USER: o2m
       MYSQL_PASSWORD: o2m
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
     ports:
       - "3380:3306"
     volumes:
       - ./db:/var/lib/mysql
-      - ./db_dump:/docker-entrypoint-initdb.d
+      - ./samples/mysql:/docker-entrypoint-initdb.d
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     environment:

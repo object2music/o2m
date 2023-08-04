@@ -72,9 +72,6 @@ COPY ./samples/index.html /app/index.html
 #RUN --mount=type=cache,target=/root/.cache \
 RUN python3 -m pip install -r requirements.txt
 
-# Init mysql if dump.sql is present
-RUN if [ -f /app/dump.sql ]; then COPY ./dump.sql /docker-entrypoint-initdb.d/dump.sql; fi
-
 # Install Rust gstreamer
 COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/libgstspotify.so
 RUN cp /app/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
