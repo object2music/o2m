@@ -7,9 +7,10 @@ cp index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.h
 
 # Get env var O2M_API_PORT
 O2M_API_PORT=${O2M_API_PORT:-5000}
-
-# sed /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js  replace :6681/api/ with :$O2M_API_PORT/api/
 sed -i "s/:6681\/api\//:$O2M_API_PORT\/api\//g" /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
+
+#Create Mysql
+#rm -rf mysql_data
 
 # Launch processes
 #mopidy --config /etc/mopidy/mopidy.conf -vvv &
