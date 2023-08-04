@@ -30,12 +30,12 @@ class O2mToMopidy:
     podcast_newest_first = False
     option_sort = "desc"
 
-    def __init__(self, mopidyHandler, configO2m, configMopidy, logging, session):
+    def __init__(self, mopidyHandler, configO2m, configMopidy, logging):
         self.configO2M = configO2m["o2m"]
         self.configMopidy = configMopidy
         self.dbHandler = DatabaseHandler()  # Database management
         self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
-        self.spotifyHandler = SpotifyHandler(session)  # Spotify API 
+        self.spotifyHandler = SpotifyHandler() # Spotify API 
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -86,14 +86,14 @@ class O2mToMopidy:
             except Exception as val_e: 
                 print(f"Erreur : {val_e}")
                 self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
-                self.active_tags_changed()
+                #self.active_tags_changed()
         else:
             try: 
                 self.one_tag_changed(tag)
             except Exception as val_e: 
                 print(f"Erreur : {val_e}")
                 self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
-                self.one_tag_changed(tag)
+                #self.one_tag_changed(tag)
 
     def tag_action_remove(self,tag,removedTag):
         if len(self.activetags) == 0:

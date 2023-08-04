@@ -4,12 +4,11 @@ import spotipy as spotipy
 import src.util as util
 
 class SpotifyHandler:
-    def __init__(self,session):
+    def __init__(self):
         self.spotipy_config = util.get_config_file("mopidy.conf")["spotipy"]
         self.spotify_config = util.get_config_file("mopidy.conf")["spotify"] 
         self.cache_path = ".cache_spotipy" 
         self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read" 
-        #os.environ['SPOTIPY_REDIRECT_URI'] = "http://"+str(self.define_IP())+":6681/api/spotipy_init"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]

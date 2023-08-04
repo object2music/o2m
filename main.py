@@ -40,7 +40,6 @@ if __name__ == "__main__":
         api.config['SESSION_TYPE'] = 'filesystem'
         api.config['SESSION_FILE_DIR'] = './.flask_session/'
         Session(api)
-
         return api
 
     api=create_api()
@@ -49,10 +48,9 @@ if __name__ == "__main__":
     while True:
         strer = 1
         try:
-            with api.app_context():
-                mopidy = MopidyAPI()
-                o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging, session)
-                strer = 0
+            mopidy = MopidyAPI()
+            o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
+            strer = 0
         except Exception as err_value:
             strer = 1
             print (err_value)
@@ -85,17 +83,27 @@ if __name__ == "__main__":
                 if mode == 'toogle' or mode == 'add': action = 'add'
 
             if action == 'remove':
-                removedTag = next((x for x in o2mHandler.activetags if x.uid == tag.uid), None)
-                print(f"removed tag {removedTag}")
-                o2mHandler.activetags.remove(tag)
-                o2mHandler.tag_action_remove(tag,removedTag)
-                return "TAG removed"
+                try: 
+                    removedTag = next((x for x in o2mHandler.activetags if x.uid == tag.uid), None)
+                    print(f"removed tag {removedTag}")
+                    o2mHandler.activetags.remove(tag)
+                    o2mHandler.tag_action_remove(tag,removedTag)
+                    return "TAG removed"
+                except Exception as val_e: 
+                    print(f"Erreur : {val_e}")
+                    return(val_e)
+
             if action == 'add':
-                o2mHandler.activetags.append(tag)  #adding tag to list
-                print(f"added tag {tag}") 
-                o2mHandler.tag_action(tag)
-                #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
-                return "TAG added"
+                try:
+                    o2mHandler.activetags.append(tag)  #adding tag to list
+                    print(f"added tag {tag}") 
+                    o2mHandler.tag_action(tag)
+                    #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
+                    return "TAG added"
+                except Exception as val_e: 
+                    print(f"Erreur : {val_e}")
+                    return(val_e)
+                
         else: return "no TAG"
 
     #API BOX (mode : toogle, add, remove)
