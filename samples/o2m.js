@@ -46,13 +46,11 @@
       timerId = setInterval(() => update_style_button_box(uid,b), 600000);
       }
 
-    //setInterval(update_style_button_box, 50000);
-
       //////////////////////////////////////////////////////////////////////////////////
       var b = document.createElement("div");
       b.innerHTML = "<br/>";      
       list.insertBefore(b, list.children[0]);
-
+      /*
       var b3 = document.createElement("button");
       b3.innerHTML = "<i class=\"icon icon--material \">explore</i>Reset o2m";
       b3.className = "sidebar__menu__item icon icon--material";
@@ -65,7 +63,9 @@
           for(i = 0; i < but.length; i++) {but[i].classLmainist.remove("sidebar__menu__item--active");}
         },500);
       };
+      */
 
+      //RESET
       var b4 = document.createElement("button");
       b4.innerHTML = "<i class=\"icon icon--material \">explore</i>Relaunch mopidy";
       b4.className = "sidebar__menu__item icon icon--material";
@@ -79,9 +79,28 @@
         },500);
       };
 
-      list.insertBefore(b3, list.children[0]);
       list.insertBefore(b4, list.children[0]);
 
+
+      //SPOTIPY
+      var xhr1 = new XMLHttpRequest();
+
+      xhr1.onreadystatechange = function() {
+          if (xhr1.readyState == xhr1.DONE) {
+              if (xhr1.status === 200) {
+              sp = xhr1.responseText;
+
+              var a1 = document.createElement("a");
+              a1.innerHTML = sp;
+              a1.setAttribute("href",base_url+sp);
+              a1.setAttribute("target","_blank");
+              list.insertBefore(a1, list.children[0]);
+
+            }}};
+      xhr1.open("GET",base_url+"spotipy_check");
+      xhr1.send();
+
+      
       create_button_box("04DC44D2204B80","Vava");
       create_button_box("049745D2204B80","Maud");
       create_button_box("048F45D2204B80","Liv");
@@ -105,7 +124,8 @@
       xhr0.onreadystatechange = function() {
           if (xhr0.readyState == xhr0.DONE) {
               if (xhr0.status === 200) {
-              ol = xhr0.responseText
+              ol = xhr0.responseText;
+
               var b5 = document.createElement("input");
               b5.setAttribute("type", "range");
               b5.setAttribute("value", ol);
@@ -118,12 +138,32 @@
                 xhr.send();
                 },1000);
               };
-
+              b5.addEventListener("wheel", function(e){
+                if (e.deltaY < 0){
+                  slider.valueAsNumber += 1;
+                }else{
+                  slider.value -= 1;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+              })
           list.insertBefore(b5, list.children[0]);
           }}
       }
       xhr0.open("GET",base_url+"dl");
       xhr0.send();
+      
+      var slider = document.getElementsByClassName("slider__input");
+      slider.addEventListener("wheel", function(e){
+        if (e.deltaY < 0){
+          slider.valueAsNumber += 1;
+        }else{
+          slider.value -= 1;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+      })
 
-      }, 2000);
+
+    }, 2000);
     }

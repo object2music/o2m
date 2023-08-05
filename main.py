@@ -103,6 +103,9 @@ if __name__ == "__main__":
                 except Exception as val_e: 
                     print(f"Erreur : {val_e}")
                     return(val_e)
+            
+            if action == 'No':
+                return ("No action")
                 
         else: return "no TAG"
 
@@ -184,6 +187,14 @@ if __name__ == "__main__":
 
     #SPOTIPY
     if o2mHandler.spotifyHandler.spotipy_config:
+        @api.route('/api/spotipy_check')
+        def api_spotipy_check():
+            cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=o2mHandler.spotifyHandler.cache_path)        
+            auth_manager = spotipy.oauth2.SpotifyOAuth(scope=o2mHandler.spotifyHandler.scope,cache_handler=cache_handler,show_dialog=True)
+            if not auth_manager.validate_token(cache_handler.get_cached_token()):
+                return ("spotipy_init")
+            else:
+                return ("spotipy_out")
 
         @api.route('/api/spotipy_init')
         def api_spotipy_init():

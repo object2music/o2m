@@ -32,7 +32,7 @@ input[type="number"] {
 input[type="number"]:focus {
   box-shadow: 0 0 3px 1px #08d58f;
   outline: none;
-} */
+} 
 
 input[type="range"] {
   -webkit-appearance: none;
@@ -45,3 +45,4 @@ input[type="range"] {
   background-size: 70% 100%;
   background-repeat: no-repeat;
 }
+*/

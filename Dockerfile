@@ -52,6 +52,7 @@ COPY ./samples /app/samples
 COPY ./sandbox /app/sandbox
 COPY ./src /app/src
 COPY main.py /app/main.py
+COPY start_mopidy.sh /app/start_mopidy.sh
 COPY requirements.txt /app/requirements.txt
 COPY ./docker/entrypoint.sh ./entrypoint.sh
 COPY ./docker/create_conf_files.sh ./create_conf_files.sh
