@@ -96,7 +96,7 @@
       create_button_box("04CE6F193E2580","Jazz");
       create_button_box("04C52351962280","Danse");
       create_button_box("04463DD2204B80","Calm");
-      create_button_box("auto_simple","Auto simple");
+      create_button_box("auto_podcast","Auto podcast");
       create_button_box("04AD43D2204B80","Auto");
 
       //SPOTIPY

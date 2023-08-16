@@ -409,7 +409,7 @@ class O2mToMopidy:
 
         #return tracklist_uris
 
-    def tracklistfill_auto(self,tag,max_results=20,discover_level=5,mode='full'):
+    def tracklistfill_auto(self,tag,max_results=20,discover_level=5,mode='normal'):
         try:
             print (f"DL AUTO : {discover_level}")
             #GO QUICKLY
@@ -422,33 +422,33 @@ class O2mToMopidy:
             tracklist_uris= []
 
             #ADD_TRACKS
-            #Podcasts ??? n=(0.5*d)/30
-            max_result1 = int(round((0.9*discover_level)/30*max_results))
-            print(f"\nAUTO : Podcasts {max_result1} tracks\n")
-            tag1 = self.dbHandler.get_tag_by_option_type('podcast')
+            #News n=(0.5*d)/30
+            max_result1 = int(round((0.7*discover_level)/30*max_results))
+            print(f"\nAUTO : News {max_result1} tracks\n")
+            tag1 = self.dbHandler.get_tag_by_option_type('new')
             #self.one_tag_changed(tag, max_result1)
             self.add_tracks(tag, self.tracklistappend_tag(tag1,max_result1), max_result1)
+            #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))        
+
+            #Favorites n=5/30
+            max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
+            print(f"\nAUTO : Fav {max_result1} tracks\n")
+            tag1 = self.dbHandler.get_tag_by_option_type('favorites')
+            if tag1 != None:
+                #tag=tag1
+                fav= self.tracklistappend_tag(tag1,max_result1)
+            else:
+                fav = self.spotifyHandler.get_library_favorite_tracks(max_result1)
+            self.add_tracks(tag, fav, max_result1)
             #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))
 
-            if mode=='full':
-                #News n=(0.5*d)/30
-                max_result1 = int(round((0.7*discover_level)/30*max_results))
-                print(f"\nAUTO : News {max_result1} tracks\n")
-                tag1 = self.dbHandler.get_tag_by_option_type('new')
+            if mode=='podcast':
+                #Podcasts ??? n=(0.5*d)/30
+                max_result1 = int(round((0.9*discover_level)/30*max_results))
+                print(f"\nAUTO : Podcasts {max_result1} tracks\n")
+                tag1 = self.dbHandler.get_tag_by_option_type('podcast')
                 #self.one_tag_changed(tag, max_result1)
                 self.add_tracks(tag, self.tracklistappend_tag(tag1,max_result1), max_result1)
-                #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))        
-
-                #Favorites n=5/30
-                max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
-                print(f"\nAUTO : Fav {max_result1} tracks\n")
-                tag1 = self.dbHandler.get_tag_by_option_type('favorites')
-                if tag1 != None:
-                    #tag=tag1
-                    fav= self.tracklistappend_tag(tag1,max_result1)
-                else:
-                    fav = self.spotifyHandler.get_library_favorite_tracks(max_result1)
-                self.add_tracks(tag, fav, max_result1)
                 #tracklist_uris.append(self.tracklistappend_tag(tag,max_result1))
 
             #INFOS
@@ -457,6 +457,14 @@ class O2mToMopidy:
             self.add_tracks(tag, self.append_lastinfos([],tag,max_results), 1)
 
             #APPEND
+            #Common tracks n=(-0.3*d+8)/30
+            max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
+            print(f"\nAUTO : Common {max_result1} tracks\n")
+            #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+            tag.option_type == 'new'
+            self.add_tracks(tag, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
+            #self.add_tracks(tag, tracklist_uris, max_results)
+
             #Albums n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
             print(f"\nAUTO : Albums {max_result1} tracks\n")
@@ -469,14 +477,6 @@ class O2mToMopidy:
             #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
             self.add_tracks(tag, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1)
 
-            #Common tracks n=(-0.3*d+8)/30
-            max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
-            print(f"\nAUTO : Common {max_result1} tracks\n")
-            #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-            tag.option_type == 'new'
-            self.add_tracks(tag, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
-
-            #self.add_tracks(tag, tracklist_uris, max_results)
 
             #return tracklist_uris
         except Exception as val_e: 
@@ -558,8 +558,8 @@ class O2mToMopidy:
                     tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level))
 
                 # auto:library testing (daily habits + library auto extract)
-                elif "auto_simple:library" in track.uri :
-                    tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level,'simple'))
+                elif "auto_podcast:library" in track.uri :
+                    tracklist_uris.append(self.tracklistfill_auto(tag,max_results,discover_level,'podcast'))
 
                 # spotify:library (library random extract)
                 elif "spotify:library" in track.uri :
