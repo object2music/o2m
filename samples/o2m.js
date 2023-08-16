@@ -9,7 +9,7 @@
       list = document.getElementsByClassName('sidebar__menu')[0];
       base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
       //host = window.location.host;
-      base_url += ':6681/api/'
+      base_url += ':6691/api/'
       //alert(base_url)
 
       function update_style_all_button() {
@@ -81,6 +81,23 @@
 
       list.insertBefore(b4, list.children[0]);
 
+      create_button_box("04DC44D2204B80","Vava");
+      create_button_box("049745D2204B80","Maud");
+      create_button_box("048F45D2204B80","Liv");
+      create_button_box("048745D2204B80","Paul");
+      create_button_box("0454F7C90B0280","Pat");
+      create_button_box("04CD41193E2580","Podcast");
+      create_button_box("04B444D2204B80","Infos");
+      create_button_box("last_info","Last infos");
+      create_button_box("pod_sismique","Pod Sismique");
+      create_button_box("incoming","Incoming");
+      create_button_box("04D444D2204B80","New");
+      create_button_box("049F45D2204B80","Favorites");
+      create_button_box("04CE6F193E2580","Jazz");
+      create_button_box("04C52351962280","Danse");
+      create_button_box("04463DD2204B80","Calm");
+      create_button_box("auto_simple","Auto simple");
+      create_button_box("04AD43D2204B80","Auto");
 
       //SPOTIPY
       var xhr1 = new XMLHttpRequest();
@@ -99,25 +116,6 @@
             }}};
       xhr1.open("GET",base_url+"spotipy_check");
       xhr1.send();
-
-      
-      create_button_box("04DC44D2204B80","Vava");
-      create_button_box("049745D2204B80","Maud");
-      create_button_box("048F45D2204B80","Liv");
-      create_button_box("048745D2204B80","Paul");
-      create_button_box("0454F7C90B0280","Pat");
-      create_button_box("04CD41193E2580","Podcast");
-      create_button_box("04B444D2204B80","Infos");
-      create_button_box("last_info","Last infos");
-      create_button_box("pod_sismique","Pod Sismique");
-      create_button_box("incoming","Incoming");
-      create_button_box("04D444D2204B80","New");
-      create_button_box("049F45D2204B80","Favorites");
-      create_button_box("04CE6F193E2580","Jazz");
-      create_button_box("04C52351962280","Danse");
-      create_button_box("04463DD2204B80","Calm");
-      create_button_box("auto_simple","Auto simple");
-      create_button_box("04AD43D2204B80","Auto");
 
     //OpenLevel Input and value
       var xhr0 = new XMLHttpRequest();

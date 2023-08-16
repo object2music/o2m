@@ -540,6 +540,10 @@ class O2mToMopidy:
                     feedurl = track.uri.split("+")[1]
                     tracklist_uris.append(self.get_podcast_from_url(feedurl))
 
+                # Unfinished podcasts
+                elif "unfinished:podcasts" in track.uri:
+                    tracklist_uris.append(self.get_unfinished_podcasts())
+
                 # here&now:library (daily habits + library auto extract)
                 elif "herenow:library" in track.uri :
                     window = int(round(discover_level / 2))
@@ -719,6 +723,13 @@ class O2mToMopidy:
         #print(f"Unread Show {unread_shows}")
         return uris
 
+    def self.get_unfinished_podcasts(self, max_results=15):
+        uris = []
+        shows = self.get_podcast_from_url(self.uri)
+        for item in shows:
+            if self.dbHandler.get_end_stat(item.uri) == 0:
+                uris.append(item.uri)
+        return uris
 
 #MOPIDY LIVE CONTROL 
     def starting_mode(self,clear=False,start=False,uid=None):
