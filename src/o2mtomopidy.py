@@ -246,10 +246,10 @@ class O2mToMopidy:
             #Let's go to play
             if len(tracklist_uris)>0:
                 #max_results to be recalculated function of subadding already done (content var)
-                self.add_tracks(tag, tracklist_uris, max_results) # Envoie les uris en lecture
+                length = self.add_tracks(tag, tracklist_uris, max_results) # Envoie les uris en lecture
 
                 #Shuffle if several entries in this action
-                if ((self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle"):
+                if ((self.shuffle == "true" and tag.option_sort != "desc" and tag.option_sort != "asc") or tag.option_sort == "shuffle") and (length>0):
                     index = 0
                     if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
                     length = self.mopidyHandler.tracklist.get_length()
@@ -275,17 +275,19 @@ class O2mToMopidy:
 #TRACKLIST FILL / ADD
     # Adding tracks to tracklist and associate them to tracks table
     def add_tracks(self, tag, uris, max_results=15):
+        length = 0
         if len(uris) > 0:
             uris = util.flatten_list(uris)
-
+            print (uris)
             prev_length = self.mopidyHandler.tracklist.get_length()
             if self.mopidyHandler.tracklist.index():
                 current_index = self.mopidyHandler.tracklist.index()
             else: 
                 current_index = 0 
             tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
-            print (len(tltracks_added))
-            if tltracks_added:
+            length = len(tltracks_added)
+            print (f"Lenght added {len(tltracks_added)}")
+            if len(tltracks_added)>0:
                 uris_rem = []
                 # Exclude tracks already read when option is new
                 #Too long > to be replaced by a trashing action along playing
@@ -384,7 +386,7 @@ class O2mToMopidy:
                 '''if len(self.activetags) > 1:
                     self.shuffle_tracklist(current_index + 1, new_length)'''
             #print(f"\nTracks added to Tag {tag} with option_types {tag.option_types} and library_link {tag.library_link} \n")
-
+        return (length)
 
     def tracklistfill_auto0(self,tag,max_results=20,discover_level=5,mode='full'):
         print (f"DL AUTO : {discover_level}")
