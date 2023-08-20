@@ -50,8 +50,8 @@ services:
     environment:
       PMA_HOST: mysql
       PMA_PORT: 3306
-      PMA_USER: o2m
-      PMA_PASSWORD: o2m
+      #PMA_USER: xxx
+      #PMA_PASSWORD: xxx
     ports:
       - "5011:80"
   #depends_on:

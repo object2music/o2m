@@ -723,7 +723,7 @@ class O2mToMopidy:
         #print(f"Unread Show {unread_shows}")
         return uris
 
-    def self.get_unfinished_podcasts(self, max_results=15):
+    def get_unfinished_podcasts(self, max_results=15):
         uris = []
         shows = self.get_podcast_from_url(self.uri)
         for item in shows:
