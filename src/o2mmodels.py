@@ -11,7 +11,7 @@ from peewee import (
     MySQLDatabase,
 )
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
-from playhouse.shortcuts import ReconnectMixin
+from playhouse.shortcuts import ReconnectMixin, model_to_dict, dict_to_model
 
 sys.path.append(".")
 import src.util as util
@@ -79,10 +79,10 @@ class Box(BaseModel):
     public= IntegerField(default=0) #Bool (is the content shared or not)
 
     def __str__(self):
-        return "TAG UID : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(
-            self.uid, self.data, self.description, self.read_count, self.option_type
-        )
-
+        #return "TAG UID : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(self.uid, self.data, self.description, self.read_count, self.option_type)
+        json_data = json.dumps(model_to_dict(user_obj))
+        return json_data
+    
     def add_count(self):
         if self.read_count != None:
             self.read_count += 1

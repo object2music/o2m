@@ -62,6 +62,7 @@ if __name__ == "__main__":
 
     
 #API DEF AND LISTENER (to be move in a dedicated part)
+    #API BOX ACTION (mode : toogle, add, remove) AND SHOW
     def api_box_action(uid='',option_type='',mode='toogle'):
         if uid!='':
             box = o2mHandler.dbHandler.get_box_by_uid(uid)
@@ -109,8 +110,6 @@ if __name__ == "__main__":
                 
         else: return "no TAG"
 
-    #API BOX (mode : toogle, add, remove)
-
     @api.route('/api/box')
     def api_box():
         uid = request.args.get('uid')
@@ -120,6 +119,12 @@ if __name__ == "__main__":
         if option_type==None: option_type=''
         if mode==None: mode='toogle'
         return api_box_action(uid,option_type,mode)
+
+    @api.route('/api/box_favorites')
+    def api_box_favorites():
+        boxes = o2mHandler.dbHandler.get_boxes_pinned()
+        print (boxes)
+        return (boxes)
 
     #API box checking (activated or not)
     @api.route('/api/box_activated')
@@ -226,7 +231,7 @@ if __name__ == "__main__":
             else:
                 print("File does not exist.")
             return redirect('/api/spotipy_init')
-
+    
 #MOPIDY LISTENERS
     # Fonction called when track started
     @mopidy.on_event("track_playback_started")

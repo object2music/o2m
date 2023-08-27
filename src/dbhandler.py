@@ -49,15 +49,24 @@ class DatabaseHandler():
         return self.transform_query_to_list(query)
     
     def get_box_by_uid(self, uid):
-        self.log.info('searching for box : {} '.format(uid))
+        #self.log.info('searching for box : {} '.format(uid))
         query = Box.select().where(Box.uid == uid)
         results = self.transform_query_to_list(query)
-        print (results)
+        #print (results)
         if len(results) > 0:
             return results[0]
         else:
             mopidy_box = self.create_box('mopidy_box','')
             return mopidy_box
+
+    def get_boxes_pinned(self):
+        query = Box.select().where(Box.favorite == 1)
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results
+        else:
+            return []
+
 
     def get_box_by_data(self, data):
         self.log.info(f'searching for box with data: {data}')
