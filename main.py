@@ -15,7 +15,7 @@ import spotipy
 """
     TODO :
         * Logs : séparer les logs par ensemble de fonctionnalités (database, websockets, spotify etc...)
-        * Timestamps sur les tags
+        * Timestamps sur les boxs
     Pas très clean de mettre les fonction de callback aux évènements dans le main 
     Mais on a besoin de l'instance de mopidyApi et la fonction callback à besoin de l'instance o2mHandler pour lancer les recos...
 
@@ -64,19 +64,19 @@ if __name__ == "__main__":
 #API DEF AND LISTENER (to be move in a dedicated part)
     def api_box_action(uid='',option_type='',mode='toogle'):
         if uid!='':
-            tag = o2mHandler.dbHandler.get_tag_by_uid(uid)
+            box = o2mHandler.dbHandler.get_box_by_uid(uid)
         if option_type!='':
-            tag = o2mHandler.dbHandler.get_tag_by_option_type(option_type)
-        #print (f"ACTIVE TAGS : {o2mHandler.activetags}")
+            box = o2mHandler.dbHandler.get_box_by_option_type(option_type)
+        #print (f"ACTIVE TAGS : {o2mHandler.activeboxs}")
         
         #Active Toogle  Add     Remove
         #yes     Remove  Not     Remove  
         #no      Add     Add     Not
         
-        if tag != None:
+        if box != None:
             action = 'No'
             #PRESENT
-            if tag in o2mHandler.activetags: 
+            if box in o2mHandler.activeboxs: 
                 if mode == 'toogle' or mode == 'remove': action = 'remove'
             #ABSENT
             else:
@@ -84,10 +84,10 @@ if __name__ == "__main__":
 
             if action == 'remove':
                 try: 
-                    removedTag = next((x for x in o2mHandler.activetags if x.uid == tag.uid), None)
-                    print(f"removed tag {removedTag}")
-                    o2mHandler.activetags.remove(tag)
-                    o2mHandler.tag_action_remove(tag,removedTag)
+                    removedBox = next((x for x in o2mHandler.activeboxs if x.uid == box.uid), None)
+                    print(f"removed box {removedBox}")
+                    o2mHandler.activeboxs.remove(box)
+                    o2mHandler.box_action_remove(box,removedBox)
                     return "TAG removed"
                 except Exception as val_e: 
                     print(f"Erreur : {val_e}")
@@ -95,10 +95,10 @@ if __name__ == "__main__":
 
             if action == 'add':
                 try:
-                    o2mHandler.activetags.append(tag)  #adding tag to list
-                    print(f"added tag {tag}") 
-                    o2mHandler.tag_action(tag)
-                    #tag.add_count()  # Incrémente le compteur de contacts pour ce tag
+                    o2mHandler.activeboxs.append(box)  #adding box to list
+                    print(f"added box {box}") 
+                    o2mHandler.box_action(box)
+                    #box.add_count()  # Incrémente le compteur de contacts pour ce box
                     return "TAG added"
                 except Exception as val_e: 
                     print(f"Erreur : {val_e}")
@@ -125,9 +125,9 @@ if __name__ == "__main__":
     @api.route('/api/box_activated')
     def api_box_activated():
         uid = request.args.get('uid')
-        tag = o2mHandler.dbHandler.get_tag_by_uid(uid)
-        if tag != None:
-            if tag in o2mHandler.activetags: return("1")
+        box = o2mHandler.dbHandler.get_box_by_uid(uid)
+        if box != None:
+            if box in o2mHandler.activeboxs: return("1")
             else: return("0")
 
     #API Opening Level
@@ -152,15 +152,15 @@ if __name__ == "__main__":
             relaunch = False
             if state == "stopped": relaunch = True
             else:
-                for tag in o2mHandler.activetags:
-                    if "auto" in tag.data: relaunch = True
-                    elif "m3u" in tag.data:
-                        contents = o2mHandler.mopidyHandler.playlists.lookup(tag.data) 
+                for box in o2mHandler.activeboxs:
+                    if "auto" in box.data: relaunch = True
+                    elif "m3u" in box.data:
+                        contents = o2mHandler.mopidyHandler.playlists.lookup(box.data) 
                         for track in contents.tracks:
                             if "auto" in track.uri: relaunch = True
             if relaunch == True:
                 #relaunching with the actual boxes
-                if len(o2mHandler.activetags)>0:
+                if len(o2mHandler.activeboxs)>0:
                     o2mHandler.starting_mode(True,True)
                 #relaunching with default_box if exists
                 elif o2mHandler.default_box != None:
@@ -252,7 +252,7 @@ if __name__ == "__main__":
     def track_ended_event(event):
         #Datas
         track = event.tl_track.track
-        tag = o2mHandler.get_active_tag_by_uri(track.uri)
+        box = o2mHandler.get_active_box_by_uri(track.uri)
         option_type = 'new_mopidy'
         library_link = ''
         data = ''
@@ -265,21 +265,21 @@ if __name__ == "__main__":
             #o2mHandler.mopidyHandler.mixer.set_volume(o2mHandler.current_volume)
             o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
         
-        #Update Dynamic datas linked to Tag object and stats
-        if tag:
-            if tag.data != '': data = tag.data
-            if tag.option_type != 'new':
-                if hasattr(tag, "option_types") and hasattr(tag, "tlids"):
-                    try: option_type = tag.option_types[tag.tlids.index(event.tl_track.tlid)]
+        #Update Dynamic datas linked to Box object and stats
+        if box:
+            if box.data != '': data = box.data
+            if box.option_type != 'new':
+                if hasattr(box, "option_types") and hasattr(box, "tlids"):
+                    try: option_type = box.option_types[box.tlids.index(event.tl_track.tlid)]
                     except Exception as val_e: print(f"Erreur : {val_e}")
-                if hasattr(tag, "library_link") and hasattr(tag, "tlids"):
-                    try: library_link = tag.library_link[tag.tlids.index(event.tl_track.tlid)]
+                if hasattr(box, "library_link") and hasattr(box, "tlids"):
+                    try: library_link = box.library_link[box.tlids.index(event.tl_track.tlid)]
                     except Exception as val_e: print(f"Erreur : {val_e}")
                 #Try / except here to check if dynamic playlist computing is not in competition with first playback finishing...
                 if library_link == '': 
-                    library_link = tag.data
-                    if "m3u" in tag.data:
-                        playlist = o2mHandler.mopidyHandler.playlists.lookup(tag.data)
+                    library_link = box.data
+                    if "m3u" in box.data:
+                        playlist = o2mHandler.mopidyHandler.playlists.lookup(box.data)
                         for trackp in playlist.tracks:
                             #need to be updated : in which playlist is track if manies ?
                             if 'spotify:playlist' in trackp.uri: 
@@ -315,14 +315,14 @@ if __name__ == "__main__":
                 #If last stat read position is greater than actual: do not update
                 if position < stat.read_position: position = stat.read_position
                 print(f"Event : {position} / stat : {stat.read_position}")
-            # If directly in tag data (not m3u) : behaviour to ckeck
+            # If directly in box data (not m3u) : behaviour to ckeck
             if (position / track.length > 0.7): 
-                tag = o2mHandler.dbHandler.get_tag_by_data(track.uri)  # To check !!! Récupère le tag correspondant à la chaine
-                if tag != None:
-                    if tag.tag_type == "podcasts:channel":
-                        tag.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
-                        tag.update()
-                        tag.save()
+                box = o2mHandler.dbHandler.get_box_by_data(track.uri)  # To check !!! Récupère le box correspondant à la chaine
+                if box != None:
+                    if box.box_type == "podcasts:channel":
+                        box.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
+                        box.update()
+                        box.save()
 
         # Update stats 
         try: 
@@ -364,15 +364,15 @@ if __name__ == "__main__":
         o2mHandler.spotifyHandler.init_token_sp()
         api.run(host='0.0.0.0', port=6681)
 
-# Code pour créer manuellement des tags en bdd
+# Code pour créer manuellement des boxs en bdd
 # if __name__ == "__main__":
 #     mydb = DatabaseHandler()
-#     tag = mydb.get_tag_by_uid('AB34A324')
-#     tag.description = 'Spotify Artist : Creedence'
-#     tag.save()
-#     # tag = Tag.create('AB34A324')
+#     box = mydb.get_box_by_uid('AB34A324')
+#     box.description = 'Spotify Artist : Creedence'
+#     box.save()
+#     # box = Box.create('AB34A324')
 #     #     uid='AB34A324',
-#     #     tag_type = 'spotify:artist',
+#     #     box_type = 'spotify:artist',
 #     #     data = 'spotify:artist:3IYUhFvPQItj6xySrBmZkd',
 #     #     descrition = 'Spotify Artist : Creedence')
-#     print(tag)
+#     print(box)
