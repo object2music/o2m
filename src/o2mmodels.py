@@ -1,4 +1,4 @@
-import sys, datetime
+import sys, datetime, json
 from peewee import (
     UUIDField,
     CharField,
@@ -78,10 +78,12 @@ class Box(BaseModel):
     favorite= IntegerField(default=0) #Bool (is the box pinned or not)	
     public= IntegerField(default=0) #Bool (is the content shared or not)
 
-    def __str__(self):
+    '''def __str__(self):
         #return "TAG UID : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(self.uid, self.data, self.description, self.read_count, self.option_type)
-        json_data = json.dumps(model_to_dict(user_obj))
-        return json_data
+        json_data = "{uid : "+self.uid+" , media : "+self.data+", description : "+self.description+" , read_count : "+self.read_count+" , option_type : "+self.option_type+" }"
+        #json_data = json.dumps(model_to_dict(user_obj))
+        json_data = json.dumps(json_data)
+        return json_data'''
     
     def add_count(self):
         if self.read_count != None:

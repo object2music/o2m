@@ -1,8 +1,10 @@
-import logging, pprint, datetime, random
+import logging, pprint, datetime, random, json
 
 from peewee import IntegrityError, fn
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
+from playhouse.shortcuts import model_to_dict, dict_to_model
+
 
 from src.o2mmodels import Box, Stats, Stats_Raw, db
 '''
@@ -60,9 +62,14 @@ class DatabaseHandler():
             return mopidy_box
 
     def get_boxes_pinned(self):
-        query = Box.select().where(Box.favorite == 1)
-        results = self.transform_query_to_list(query)
+        query = Box.select().where(Box.favorite == 1).get()
+        query = list(Box.select().where(Box.favorite == 1).dicts()) 
+        print (query)
+        results = json.dumps(model_to_dict(query))
+
+        #results = self.transform_query_to_list(query)
         if len(results) > 0:
+            print (results)
             return results
         else:
             return []

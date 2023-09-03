@@ -1,4 +1,4 @@
-import logging, subprocess, os
+import logging, subprocess, os, spotipy, json
 
 from mopidyapi import MopidyAPI
 from src import util
@@ -9,8 +9,6 @@ from time import sleep
 from flask import Flask, request, session, redirect
 from flask_session import Session
 from flask_cors import CORS
-
-import spotipy
 
 """
     TODO :
@@ -123,7 +121,9 @@ if __name__ == "__main__":
     @api.route('/api/box_favorites')
     def api_box_favorites():
         boxes = o2mHandler.dbHandler.get_boxes_pinned()
-        print (boxes)
+        #print (f"BOITES : {boxes}")
+        #boxes = json.dumps(boxes)
+        print (f"BOITES : {boxes}")
         return (boxes)
 
     #API box checking (activated or not)
