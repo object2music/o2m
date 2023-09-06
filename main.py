@@ -121,9 +121,8 @@ if __name__ == "__main__":
     @api.route('/api/box_favorites')
     def api_box_favorites():
         boxes = o2mHandler.dbHandler.get_boxes_pinned()
-        #print (f"BOITES : {boxes}")
         #boxes = json.dumps(boxes)
-        print (f"BOITES : {boxes}")
+        #print (f"BOITES : {boxes}")
         return (boxes)
 
     #API box checking (activated or not)

@@ -7,7 +7,7 @@ cp index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.h
 
 # Get env var O2M_API_PORT
 O2M_API_PORT=${O2M_API_PORT:-5000}
-sed -i "s/:6681\/api\//:$O2M_API_PORT\/api\//g" /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
+sed -i "s/:6691\/api\//:$O2M_API_PORT\/api\//g" /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
 
 #Create Mysql
 #rm -rf mysql_data

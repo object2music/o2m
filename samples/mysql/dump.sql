@@ -114,18 +114,18 @@ CREATE TABLE `box` (
 --
 
 INSERT INTO `box` (`uid`, `description`, `favorite`, `public`, `data`, `data_alt`, `read_count`, `last_read_date`, `option_type`, `option_sort`, `option_duration`, `option_max_results`, `option_discover_level`, `user`) VALUES
-('auto_demo', 'Auto', 1, 0, 'auto:library', NULL, 0, 1686401887, 'normal', 'shuffle', NULL, 50, 3, '1181464119'),
-('playlist_demo', 'Playlist electro demo', 1, 0, 'spotify:playlist:0qBFSMuP85q8oDn8wRyegC', '', 710, 1686827783, 'normal', 'shuffle', 0, NULL, 6, '1181464119'),
-('recommandation_genre_demo', 'Reco genre jazz demo', 1, 0, 'spotify:recommendation:seeds:genres:french,jazz', '', 64, 1606308740, 'normal', '', 0, NULL, 5, 'lecok5'),
-('recommandation_artist_demo', 'Reco artist justice demo', 1, 0, 'spotify:recommendation:seeds:artists:1gR0gsQYfi6joyO1dlp76N', ' 63MQldklfxkjYDoUE4T', 82, 1606577090, 'normal', '', 0, NULL, 5, 'lecok5'),
-('radio_demo', 'Radio demo', 1, 0, 'tunein:station:s24875', '', 261, 1603522595, 'normal', '', 0, NULL, 5, '1181464119'),
-('discover_demo', 'Discover demo', 1, 0, 'spotify:playlist:37i9dQZEVXcFRmKfy3mdyu', '', 5438, 1686827507, 'new', 'shuffle', 0, 30, 0, '1181464119'),
+('trash_demo', 'Trash', 0, 0, 'spotify:playlist:4CAjrciXNfqiDdr757UwBx', NULL, 0, 1608365810, 'Trash', NULL, NULL, 15, 5, '1181464119'),
+('box_new_demo', 'mopidy_box', 0, 0, ' mopidy_box', NULL, 0, 1621086457, 'new_mopidy', NULL, NULL, 30, 3, '1181464119');
 ('incoming_demo', 'Incoming', 1, 0, 'spotify:playlist:0zM5DUb7FYRVvVjBg3ULp3', NULL, 1, 1686824105, 'Incoming', 'shuffle', NULL, 15, 5, '1181464119'),
 ('favorites_demo', 'Favorites demo', 1, 0, 'spotify:playlist:4oXELBuV9B6QtxYwMdzsoE', '', 281, 1686472653, 'favorites', 'shuffle', 0, 30, 4, '1181464119'),
 ('last_info', 'Last infos', 1, 0, 'infos:library', ' ', 17, 1686826163, 'podcast', 'desc', NULL, 15, 3, '1181464119'),
 ('podcast_demo', 'Podcast demo', 1, 0, 'podcast+https://feeds.acast.com/public/shows/9851446c-d9b9-47a2-99a9-26d0a4968cc3', ' ', 6, 1686826210, 'podcast', 'shuffle', NULL, 150, 3, '1181464119'),
-('trash_demo', 'Trash', 0, 0, 'spotify:playlist:4CAjrciXNfqiDdr757UwBx', NULL, 0, 1608365810, 'Trash', NULL, NULL, 15, 5, '1181464119'),
-('box_new_demo', 'mopidy_box', 0, 0, ' mopidy_box', NULL, 0, 1621086457, 'new_mopidy', NULL, NULL, 30, 3, '1181464119');
+('radio_demo', 'Radio demo', 1, 0, 'tunein:station:s24875', '', 261, 1603522595, 'normal', '', 0, NULL, 5, '1181464119'),
+('discover_demo', 'Discover demo', 1, 0, 'spotify:playlist:37i9dQZEVXcFRmKfy3mdyu', '', 5438, 1686827507, 'new', 'shuffle', 0, 30, 0, '1181464119'),
+('recommandation_genre_demo', 'Reco genre jazz demo', 1, 0, 'spotify:recommendation:seeds:genres:french,jazz', '', 64, 1606308740, 'normal', '', 0, NULL, 5, 'lecok5'),
+('recommandation_artist_demo', 'Reco artist justice demo', 1, 0, 'spotify:recommendation:seeds:artists:1gR0gsQYfi6joyO1dlp76N', ' 63MQldklfxkjYDoUE4T', 82, 1606577090, 'normal', '', 0, NULL, 5, 'lecok5'),
+('playlist_demo', 'Playlist electro demo', 1, 0, 'spotify:playlist:0qBFSMuP85q8oDn8wRyegC', '', 710, 1686827783, 'normal', 'shuffle', 0, NULL, 6, '1181464119'),
+('auto_demo', 'Auto', 1, 0, 'auto:library', NULL, 0, 1686401887, 'normal', 'shuffle', NULL, 50, 3, '1181464119'),
 
 
 --

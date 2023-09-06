@@ -65,6 +65,38 @@
       };
       */
 
+
+      //BOXES Edit
+      //http://localhost:5011/index.php?route=/sql&pos=0&db=o2m&table=box
+      var a1 = document.createElement("a");
+      a1.innerHTML = "Backoffice";
+      a1.setAttribute("href","http://localhost:5011/index.php?route=/sql&pos=0&db=o2m&table=box");
+      a1.setAttribute("target","_blank");
+      list.insertBefore(a1, list.children[0]);
+
+      var a1 = document.createElement("br");
+      list.insertBefore(a1, list.children[0]);
+
+    //SPOTIPY
+    var xhr1 = new XMLHttpRequest();
+
+    xhr1.onreadystatechange = function() {
+        if (xhr1.readyState == xhr1.DONE) {
+            if (xhr1.status === 200) {
+            sp = xhr1.responseText;
+
+            var a1 = document.createElement("a");
+            a1.innerHTML = sp;
+            a1.setAttribute("href",base_url+sp);
+            a1.setAttribute("target","_blank");
+            list.insertBefore(a1, list.children[0]);
+
+          }}};
+    xhr1.open("GET",base_url+"spotipy_check");
+    xhr1.send();
+
+
+
       //RESET
       var b4 = document.createElement("button");
       b4.innerHTML = "<i class=\"icon icon--material \">explore</i>Relaunch mopidy";
@@ -78,44 +110,23 @@
           for(i = 0; i < but.length; i++) {but[i].classList.remove("sidebar__menu__item--active");}
         },500);
       };
-
       list.insertBefore(b4, list.children[0]);
 
-      create_button_box("04DC44D2204B80","Vava");
-      create_button_box("049745D2204B80","Maud");
-      create_button_box("048F45D2204B80","Liv");
-      create_button_box("048745D2204B80","Paul");
-      create_button_box("0454F7C90B0280","Pat");
-      create_button_box("04CD41193E2580","Podcast");
-      create_button_box("04B444D2204B80","Infos");
-      create_button_box("last_info","Last infos");
-      create_button_box("pod_sismique","Pod Sismique");
-      create_button_box("incoming","Incoming");
-      create_button_box("04D444D2204B80","New");
-      create_button_box("049F45D2204B80","Favorites");
-      create_button_box("04CE6F193E2580","Jazz");
-      create_button_box("04C52351962280","Danse");
-      create_button_box("04463DD2204B80","Calm");
-      create_button_box("auto_podcast","Auto podcast");
-      create_button_box("04AD43D2204B80","Auto");
+      //BOXES FROm API
+      var xhr5 = new XMLHttpRequest();
 
-      //SPOTIPY
-      var xhr1 = new XMLHttpRequest();
-
-      xhr1.onreadystatechange = function() {
-          if (xhr1.readyState == xhr1.DONE) {
-              if (xhr1.status === 200) {
-              sp = xhr1.responseText;
-
-              var a1 = document.createElement("a");
-              a1.innerHTML = sp;
-              a1.setAttribute("href",base_url+sp);
-              a1.setAttribute("target","_blank");
-              list.insertBefore(a1, list.children[0]);
-
+      xhr5.onreadystatechange = function() {
+          if (xhr5.readyState == xhr5.DONE) {
+              if (xhr5.status === 200) {
+              boxes = xhr5.responseText;
+              const obj = JSON.parse(boxes);
+              for(let i = 0; i < obj.length; i++) {
+                create_button_box(obj[i].uid,obj[i].description);
+              }
             }}};
-      xhr1.open("GET",base_url+"spotipy_check");
-      xhr1.send();
+      xhr5.open("GET",base_url+"box_favorites");
+      xhr5.send();
+
 
     //OpenLevel Input and value
       var xhr0 = new XMLHttpRequest();
