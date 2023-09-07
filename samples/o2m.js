@@ -10,6 +10,7 @@
       base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
       //host = window.location.host;
       base_url += ':6691/api/'
+      backoffice_uri = 'http://localhost:5011'
       //alert(base_url)
 
       function update_style_all_button() {
@@ -65,12 +66,11 @@
       };
       */
 
-
       //BOXES Edit
       //http://localhost:5011/index.php?route=/sql&pos=0&db=o2m&table=box
       var a1 = document.createElement("a");
       a1.innerHTML = "Backoffice";
-      a1.setAttribute("href","http://localhost:5011/index.php?route=/sql&pos=0&db=o2m&table=box");
+      a1.setAttribute("href",backoffice_uri);
       a1.setAttribute("target","_blank");
       list.insertBefore(a1, list.children[0]);
 
@@ -94,8 +94,6 @@
           }}};
     xhr1.open("GET",base_url+"spotipy_check");
     xhr1.send();
-
-
 
       //RESET
       var b4 = document.createElement("button");
