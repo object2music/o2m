@@ -10,13 +10,13 @@ services:
     env_file:
       - .env
   mopidy:
-    image: pvincent4/o2m:latest
+    image: pvincent4/mopidy:latest
     build:
       context: .
       dockerfile: Dockerfile
     ports:
       - 6690:6680 #Mopidy
-      - 6691:6681 #O2M API connexion
+      #- 6691:6681 #O2M API connexion
       - 6610:6600 #MPD server and control
     env_file:
       - .env
