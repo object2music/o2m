@@ -3,6 +3,15 @@ services:
   o2m:
     image: pvincent4/o2m:latest
     build:
+      context: ./o2m
+      dockerfile: Dockerfile
+    ports:
+      - 6691:6681
+    env_file:
+      - .env
+  mopidy:
+    image: pvincent4/o2m:latest
+    build:
       context: .
       dockerfile: Dockerfile
     ports:
@@ -43,8 +52,8 @@ services:
     ports:
       - "3380:3306"
     volumes:
-      - ./db:/var/lib/mysql
-      - ./samples/mysql:/docker-entrypoint-initdb.d
+      #- ./db:/var/lib/mysql
+      - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     environment:
