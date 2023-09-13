@@ -3,10 +3,10 @@
  After=mopidy.service
 
 [Service]
- Type=idle
+ Type=simple
  WorkingDirectory=/home/pi/o2m/
- ExecStartPre=/bin/sleep 10
- ExecStart=/usr/bin/python3 -u main.py
+ ExecStartPre=/bin/sleep 1
+ ExecStart=/usr/bin/python3 -u main.py -m flask 
  StandardOutput=syslog+console
  StandardError=syslog+console
  Restart=always
@@ -14,3 +14,4 @@
 
 [Install]
  WantedBy=multi-user.target
+

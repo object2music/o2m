@@ -1,4 +1,4 @@
-import sys, datetime
+import sys, datetime, json
 from peewee import (
     UUIDField,
     CharField,
@@ -11,7 +11,7 @@ from peewee import (
     MySQLDatabase,
 )
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
-from playhouse.shortcuts import ReconnectMixin
+from playhouse.shortcuts import ReconnectMixin, model_to_dict, dict_to_model
 
 sys.path.append(".")
 import src.util as util
@@ -58,33 +58,33 @@ class BaseModel(Model):
     class Meta:
         database = db
 
-
-class Tag(BaseModel):
+class Box(BaseModel):
     uid = CharField(
         unique=True,
         index=True,
         primary_key=True,
-    )  # Unique tag/card/nfc id
+    )  # Unique nfc or box id
     user = TextField(null=True)  # user text
-    tag_type = CharField(null=True)  # album_local, album_spotify etc...
     data = CharField(null=True)  # media uri or option
     data_alt = CharField(null=True)  # media uri or option
     description = TextField(null=True)  # description text
     read_count = IntegerField(default=0)  # Increment each time a tag is used
     last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date
     option_type = CharField(default='normal')  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
-    option_new = BooleanField(null=True)  # only play new tracks (depreciated, to be suppressed)
     option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
     option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
     option_max_results = IntegerField(null=True)  # Max results associated to tag
     option_discover_level = IntegerField(default=5)  # Discover level (0-10) associated to tag
-    option_last_unread = IntegerField(null=True)  # Podcasts max count to read in podcast channel
+    favorite= IntegerField(default=0) #Bool (is the box pinned or not)	
+    public= IntegerField(default=0) #Bool (is the content shared or not)
 
-    def __str__(self):
-        return "TAG UID : {} | TYPE : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(
-            self.uid, self.tag_type, self.data, self.description, self.read_count, self.option_type
-        )
-
+    '''def __str__(self):
+        #return "TAG UID : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(self.uid, self.data, self.description, self.read_count, self.option_type)
+        json_data = "{uid : "+self.uid+" , media : "+self.data+", description : "+self.description+" , read_count : "+self.read_count+" , option_type : "+self.option_type+" }"
+        #json_data = json.dumps(model_to_dict(user_obj))
+        json_data = json.dumps(json_data)
+        return json_data'''
+    
     def add_count(self):
         if self.read_count != None:
             self.read_count += 1
@@ -93,6 +93,7 @@ class Tag(BaseModel):
         self.last_read_date = datetime.datetime.utcnow()
         self.update()
         self.save()
+
 
 
 class Stats(BaseModel):

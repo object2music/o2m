@@ -138,5 +138,12 @@ dmypy.json
 
 # vscode config files
 .vscode/
-
 *.log
+
+## Misc
+db/*
+dump.sql
+
+
+#Docker
+docker-compose.yml
