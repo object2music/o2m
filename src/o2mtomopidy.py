@@ -515,7 +515,7 @@ class O2mToMopidy:
 
         # Looping on hybrid playlist (delimited by \n)
         data = box.data.split("\n")
-        #data = [x for x in data if not x.startswith('#')]
+        data = [x for x in data if not x.startswith('#')]
 
         for content in data:
             # Recommandation
