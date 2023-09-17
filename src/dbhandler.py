@@ -63,7 +63,7 @@ class DatabaseHandler():
 
     def get_boxes_pinned(self):
         #results = Box.select().where(Box.favorite == 1).get()
-        results = list(Box.select().where(Box.favorite == 1).dicts()) 
+        results = list(Box.select().where(Box.favorite == 1).dicts().order_by(Box.description))
         #results = json.dumps(model_to_dict(query))
         #results = self.transform_query_to_list(query)
         if len(results) > 0:

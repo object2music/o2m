@@ -66,7 +66,7 @@
       };
       */
 
-      //BOXES Edit
+    //BOXES Edit
       //http://localhost:5011/index.php?route=/sql&pos=0&db=o2m&table=box
       var a1 = document.createElement("a");
       a1.innerHTML = "Backoffice";
@@ -78,24 +78,24 @@
       list.insertBefore(a1, list.children[0]);
 
     //SPOTIPY
-    var xhr1 = new XMLHttpRequest();
+      var xhr1 = new XMLHttpRequest();
 
-    xhr1.onreadystatechange = function() {
-        if (xhr1.readyState == xhr1.DONE) {
-            if (xhr1.status === 200) {
-            sp = xhr1.responseText;
+      xhr1.onreadystatechange = function() {
+          if (xhr1.readyState == xhr1.DONE) {
+              if (xhr1.status === 200) {
+              sp = xhr1.responseText;
 
-            var a1 = document.createElement("a");
-            a1.innerHTML = sp;
-            a1.setAttribute("href",base_url+sp);
-            a1.setAttribute("target","_blank");
-            list.insertBefore(a1, list.children[0]);
+              var a1 = document.createElement("a");
+              a1.innerHTML = sp;
+              a1.setAttribute("href",base_url+sp);
+              a1.setAttribute("target","_blank");
+              list.insertBefore(a1, list.children[0]);
 
-          }}};
-    xhr1.open("GET",base_url+"spotipy_check");
-    xhr1.send();
+            }}};
+      xhr1.open("GET",base_url+"spotipy_check");
+      xhr1.send();
 
-      //RESET
+    //RESET
       var b4 = document.createElement("button");
       b4.innerHTML = "<i class=\"icon icon--material \">explore</i>Relaunch mopidy";
       b4.className = "sidebar__menu__item icon icon--material";
@@ -110,7 +110,7 @@
       };
       list.insertBefore(b4, list.children[0]);
 
-      //BOXES FROm API
+    //BOXES DISPLAY (From API)
       var xhr5 = new XMLHttpRequest();
 
       xhr5.onreadystatechange = function() {
