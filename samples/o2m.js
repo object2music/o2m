@@ -66,16 +66,15 @@
       };
       */
 
-    //BOXES Edit
+    //BACKOFFICE
       //http://localhost:5011/index.php?route=/sql&pos=0&db=o2m&table=box
-      var a1 = document.createElement("a");
-      a1.innerHTML = "Backoffice";
-      a1.setAttribute("href",backoffice_uri);
-      a1.setAttribute("target","_blank");
-      list.insertBefore(a1, list.children[0]);
-
-      var a1 = document.createElement("br");
-      list.insertBefore(a1, list.children[0]);
+      var b9 = document.createElement("button");
+      b9.innerHTML = "<i class=\"icon icon--material \">explore</i>Backoffice";
+      b9.className = "sidebar__menu__item icon icon--material";
+      b9.onclick = function(){
+        window.open(backoffice_uri, '_blank');
+      }
+      list.insertBefore(b9, list.children[0]);
 
     //SPOTIPY
       var xhr1 = new XMLHttpRequest();
@@ -84,13 +83,14 @@
           if (xhr1.readyState == xhr1.DONE) {
               if (xhr1.status === 200) {
               sp = xhr1.responseText;
-
-              var a1 = document.createElement("a");
-              a1.innerHTML = sp;
-              a1.setAttribute("href",base_url+sp);
-              a1.setAttribute("target","_blank");
-              list.insertBefore(a1, list.children[0]);
-
+              
+              var b8 = document.createElement("button");
+              b8.innerHTML = "<i class=\"icon icon--material \">explore</i>"+sp;
+              b8.className = "sidebar__menu__item icon icon--material";
+              b8.onclick = function(){ 
+                window.open(base_url+sp, '_blank');
+              }
+              list.insertBefore(b8, list.children[0]);
             }}};
       xhr1.open("GET",base_url+"spotipy_check");
       xhr1.send();
@@ -117,7 +117,7 @@
           if (xhr5.readyState == xhr5.DONE) {
               if (xhr5.status === 200) {
               boxes = xhr5.responseText;
-              const obj = JSON.parse(boxes);
+              const obj = JSON.parse(boxes).reverse();
               for(let i = 0; i < obj.length; i++) {
                 create_button_box(obj[i].uid,obj[i].description);
               }

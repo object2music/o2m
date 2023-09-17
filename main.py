@@ -244,7 +244,7 @@ if __name__ == "__main__":
             print (f"Get Volume : {o2mHandler.current_volume}")
 
         # Podcast : seek previous position
-        if "podcast" in track.uri and ("#" or "episode") in track.uri:
+        if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri):
             if o2mHandler.dbHandler.get_pos_stat(track.uri) > 0:
                 o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
             #skip advertising on sismique

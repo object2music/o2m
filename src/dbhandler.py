@@ -63,14 +63,12 @@ class DatabaseHandler():
 
     def get_boxes_pinned(self):
         #results = Box.select().where(Box.favorite == 1).get()
-        results = list(Box.select().where(Box.favorite == 1).dicts().order_by(Box.description))
-        #results = json.dumps(model_to_dict(query))
-        #results = self.transform_query_to_list(query)
+        results = list(Box.select().where(Box.favorite == 1).order_by(Box.description).dicts())
+        #results = list(Box.select().where(Box.favorite == 1).order_by(Box.description.desc()).dicts())
         if len(results) > 0:
             return results
         else:
             return []
-
 
     def get_box_by_data(self, data):
         self.log.info(f'searching for box with data: {data}')
@@ -186,6 +184,17 @@ class DatabaseHandler():
         if len(results) > 0:
             uris = [o.uri for o in results]
             print (f"Adding : news_notcompleted:library {len(uris)}")
+            return uris
+
+    def get_uris_podcasts_notread(self, limit=15 ):
+        #Track unfinished
+        #pattern="%podcast+%"
+        date_now = datetime.datetime.utcnow().timestamp()
+        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%'))& (Stats.read_position > 30000)).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        print (results)
+        if len(results) > 0:
+            uris = [o.uri for o in results]
             return uris
 
 if __name__ == "__main__":
