@@ -20,6 +20,7 @@ services:
       - ./src:/app/src
       - ./schema.py:/app/schema.py
       - ./tmp/snapserver:/tmp
+      - ./samples/o2m.js:/usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
     #web:
     environment:
       - PYTHONUNBUFFERED=1
@@ -38,8 +39,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: o2m
-      MYSQL_USER: o2m
-      MYSQL_PASSWORD: o2m
+      MYSQL_USER: o2m_demo!
+      MYSQL_PASSWORD: o2m_demo!
     ports:
       - "3380:3306"
     volumes:

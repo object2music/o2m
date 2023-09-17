@@ -5,6 +5,7 @@ mock
 six
 events
 youtube-dl
+yt_dlp
 
 #Mopidy
 Mopidy-Iris #3.67.0
