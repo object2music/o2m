@@ -186,11 +186,11 @@ class DatabaseHandler():
             print (f"Adding : news_notcompleted:library {len(uris)}")
             return uris
 
-    def get_uris_podcasts_notread(self, limit=15 ):
+    def get_uris_podcasts_notread(self, limit=15):
         #Track unfinished
         #pattern="%podcast+%"
         date_now = datetime.datetime.utcnow().timestamp()
-        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%'))& (Stats.read_position > 30000)).order_by(fn.Rand()).limit(limit)
+        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%'))& (Stats.read_end == 0)& (Stats.read_position > 30000)).limit(limit)
         results = self.transform_query_to_list(query)
         print (results)
         if len(results) > 0:
