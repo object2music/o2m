@@ -190,7 +190,7 @@ class DatabaseHandler():
         #Track unfinished
         #pattern="%podcast+%"
         date_now = datetime.datetime.utcnow().timestamp()
-        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%'))& (Stats.read_end == 0)& (Stats.read_position > 30000)).order_by(Stats.last_read_date.desc()).limit(limit)
+        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")).order_by(Stats.last_read_date.desc()).limit(limit)
         results = self.transform_query_to_list(query)
         print (results)
         if len(results) > 0:

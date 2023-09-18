@@ -1043,15 +1043,19 @@ class O2mToMopidy:
             if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
                 stat.option_type = option_type
 
-        #Variable
+        #Using rate reading average instead of bool
         track_finished = False
+        rate = 0.5
         if hasattr(track, "length"):
+            rate = pos / track.length
             if pos / track.length > 0.9: track_finished = True
-            if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
+            #if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
+        stat.read_end = ((stat.read_end * stat.read_count_end) + rate) / (stat.read_count_end + 1)
+        print (stat.read_end)
         #Update stats
         if track_finished:
-            stat.read_end = True
+            #stat.read_end = True
             stat.read_count_end += 1
             if stat.read_count_end > 0 and stat.day_time_average != None:
                 stat.day_time_average = (
@@ -1061,8 +1065,7 @@ class O2mToMopidy:
             else:
                 stat.day_time_average = datetime.datetime.now().hour
         else:
-            if stat.read_end != True:
-                stat.read_end = False
+            #if stat.read_end != True: stat.read_end = False
             stat.skipped_count += 1
 
         #Add / remove the track to playlist(s) if played above/below discover level

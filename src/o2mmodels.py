@@ -5,6 +5,7 @@ from peewee import (
     IntegerField,
     TextField,
     TimestampField,
+    FloatField,
     BooleanField,
     Model,
     OperationalError,
@@ -95,12 +96,11 @@ class Box(BaseModel):
         self.save()
 
 
-
 class Stats(BaseModel):
     uri = CharField(unique=True, index=True, primary_key=True)  # Unique uri
     last_read_date = TimestampField(null=True, utc=True)  # date
     read_position = IntegerField(default=0)  # description text
-    read_end = IntegerField(default=0)  # Boolean if track ended
+    read_end = FloatField(default=0)  # Rate average
     read_count = IntegerField(default=0)  # int
     read_count_end = IntegerField(default=0)  # int
     skipped_count = IntegerField(default=0)  # int
