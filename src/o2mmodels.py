@@ -66,8 +66,8 @@ class Box(BaseModel):
         primary_key=True,
     )  # Unique nfc or box id
     user = TextField(null=True)  # user text
-    data = CharField(null=True)  # media uri or option
-    data_alt = CharField(null=True)  # media uri or option
+    data = TextField(null=True)  # media uri or option
+    data_alt = TextField(null=True)  # media uri or option
     description = TextField(null=True)  # description text
     read_count = IntegerField(default=0)  # Increment each time a tag is used
     last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date

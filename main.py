@@ -118,14 +118,14 @@ if __name__ == "__main__":
         if mode==None: mode='toogle'
         return api_box_action(uid,option_type,mode)
 
+    #Return list of favorite boxes
     @api.route('/api/box_favorites')
     def api_box_favorites():
         boxes = o2mHandler.dbHandler.get_boxes_pinned()
         #boxes = json.dumps(boxes)
-        #print (f"BOITES : {boxes}")
         return (boxes)
 
-    #API box checking (activated or not)
+    #API box checking if activated or not
     @api.route('/api/box_activated')
     def api_box_activated():
         uid = request.args.get('uid')
@@ -234,18 +234,17 @@ if __name__ == "__main__":
 #MOPIDY LISTENERS
     # Fonction called when track started
     @mopidy.on_event("track_playback_started")
-    #@mopidy.audio.AudioListener.state_changed("PAUSED","PLAYING",None)
     def track_started_event(event):
         track = event.tl_track.track
 
         #Quick and dirty volume Management
         if "radiofrance-podcast.net" in track.uri :
-            o2mHandler.current_volume = o2mHandler.mopidyHandler.mixer.get_volume()
-            o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.current_volume*1.5))
-            print (f"Get Volume : {o2mHandler.current_volume}")
+            volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
+            if volume > 100: volume = 100
+            o2mHandler.mopidyHandler.mixer.set_volume(int(volume))
 
         # Podcast : seek previous position
-        if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri):
+        if "podcast" in track.uri and ("#" or "episode") in track.uri:
             if o2mHandler.dbHandler.get_pos_stat(track.uri) > 0:
                 o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
             #skip advertising on sismique
@@ -253,9 +252,7 @@ if __name__ == "__main__":
                 o2mHandler.mopidyHandler.playback.seek(63000)
 
     # Fonction called when tracked skipped OR completly finished
-    #@mopidy.audio.AudioListener.state_changed("PLAYING","PAUSED",None)
-    #@mopidy.audio.AudioListener.reached_end_of_stream()   
-   
+    @mopidy.on_event("track_playback_ended")
     def track_ended_event(event):
         #Datas
         track = event.tl_track.track
@@ -264,7 +261,14 @@ if __name__ == "__main__":
         library_link = ''
         data = ''
         position = event.time_position
-            
+        print (position) 
+
+        #Quick and dirty volume Management
+        if "radiofrance-podcast.net" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
+            print (f"Set Volume : {o2mHandler.current_volume}")
+            #o2mHandler.mopidyHandler.mixer.set_volume(o2mHandler.current_volume)
+            o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
+        
         #Update Dynamic datas linked to Box object and stats
         if box:
             if box.data != '': data = box.data
@@ -277,36 +281,28 @@ if __name__ == "__main__":
                     except Exception as val_e: print(f"Erreur : {val_e}")
                 #Try / except here to check if dynamic playlist computing is not in competition with first playback finishing...
                 if library_link == '': 
-                    #library_link = box.data
-                    playlist = o2mHandler.mopidyHandler.playlists.lookup(box.data)
-                    data = box.data.split("\n")
-                    data = [x for x in data if not x.startswith('#')]
-                    data = [x for x in data if not x.startswith('\r')]
-                    for content in data:
-                        #need to be updated : in which playlist is track if manies ?
-                        if 'spotify:playlist' in content: 
-                            library_link = content
-                            break
+                    library_link = box.data
+                    if "m3u" in box.data:
+                        playlist = o2mHandler.mopidyHandler.playlists.lookup(box.data)
+                        for trackp in playlist.tracks:
+                            #need to be updated : in which playlist is track if manies ?
+                            if 'spotify:playlist' in trackp.uri: 
+                                library_link = trackp.uri
+                                break
+        print(f"\nEnded song : {track} with option_type {option_type} and library_link {library_link}")
 
-        if event.event == "track_playback_ended":
-            #Quick and dirty volume Management
-            if "radiofrance-podcast.net" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
-                print (f"Set Volume : {o2mHandler.current_volume}")
-                #o2mHandler.mopidyHandler.mixer.set_volume(o2mHandler.current_volume)
-                o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
-
-            # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
-            if "track" in track.uri and event.time_position / track.length > 0.9:
-                if option_type != 'new': 
-                    #int(round(discover_level * 0.25))
-                    try: o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
-                    except Exception as val_e: 
-                        print(f"Erreur : {val_e}")
-                        o2mHandler.spotifyHandler.init_token_sp()
-                        o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
-                if option_type != 'hidden' and option_type != 'trash' : 
-                    print ("Adding raw stats")
-                    o2mHandler.update_stat_raw(track.uri)
+        # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
+        if "track" in track.uri and event.time_position / track.length > 0.9:
+            if option_type != 'new': 
+                #int(round(discover_level * 0.25))
+                try: o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
+                except Exception as val_e: 
+                    print(f"Erreur : {val_e}")
+                    o2mHandler.spotifyHandler.init_token_sp()
+                    o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
+            if option_type != 'hidden' and option_type != 'trash' : 
+                print ("Adding raw stats")
+                o2mHandler.update_stat_raw(track.uri)
 
         # Podcast
         if "podcast+" in track.uri:
@@ -332,8 +328,6 @@ if __name__ == "__main__":
                         box.update()
                         box.save()
 
-        print(f"\nEnded or Paused song : {track.name} with option_type {option_type} and library_link {library_link}")
-
         # Update stats 
         try: 
             o2mHandler.update_stat_track(track,position,option_type,library_link)
@@ -356,14 +350,6 @@ if __name__ == "__main__":
             )  # Nombre de chansons restante dans la tracklist
             if tracks_left_count < 1:
                 o2mHandler.update_tracks()  # si besoin on ajoute des chansons à la tracklist avec de la reco
-
-    @mopidy.on_event("track_playback_ended")
-    def event_track_playback_ended(event):
-        track_ended_event(event)
-    
-    @mopidy.on_event("track_playback_paused")
-    def event_track_playback_paused(event):
-        track_ended_event(event)
 
     # Fonction called when status change ie : stop but impossible to catch track before
     """@mopidy.on_event('playback_state_changed')
