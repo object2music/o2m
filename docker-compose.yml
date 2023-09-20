@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - 6691:6681
+    volumes:
+      - ./o2m:/app
     env_file:
       - .env
   mopidy:
@@ -25,9 +27,7 @@ services:
      #   condition: service_healthy
     volumes:
       - ./music:/app/Music
-      - ./main.py:/app/main.py
       - ./src:/app/src
-      - ./schema.py:/app/schema.py
       - ./tmp/snapserver:/tmp
     #web:
     environment:
