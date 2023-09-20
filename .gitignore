@@ -143,7 +143,7 @@ dmypy.json
 ## Misc
 db/*
 dump.sql
-
+!o2m/samples/mysql/dump.sql
 
 #Docker
 docker-compose.yml
