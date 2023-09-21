@@ -451,7 +451,8 @@ class O2mToMopidy:
                 print(f"\nAUTO : Podcasts {max_result1} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('podcast')
                 #self.one_box_changed(box, max_result1)
-                self.add_tracks(box, self.tracklistappend_box(box1,max_result1), max_result1)
+                if box1:
+                    self.add_tracks(box, self.tracklistappend_box(box1,max_result1), max_result1)
                 #tracklist_uris.append(self.tracklistappend_box(box,max_result1))
 
             #INFOS
