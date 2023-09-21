@@ -416,7 +416,7 @@ class O2mToMopidy:
         try:
             print (f"DL AUTO : {discover_level}")
             #GO QUICKLY
-            self.quicklaunch_auto(1,discover_level,box)    
+            self.quicklaunch_auto(1,discover_level,box)
 
             #Variables
             window = int(round(discover_level / 2))
@@ -544,34 +544,7 @@ class O2mToMopidy:
                     #self.add_tracks(box, tracks_uris, max_results)
                     tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
                 else:
-                    tracklist_uris.append(content)
-
-            # Unfinished podcasts
-            elif "podcasts:unfinished" in content:
-                uris = self.dbHandler.get_uris_podcasts_notread(max_results)
-                if uris is not None:
-                    tracklist_uris.append(uris)
-
-            # Podcast channel
-            elif "podcast" in content and "#" not in content:
-                print(f"Podcast : {content}")
-                self.update_stat_raw(content)
-                #self.add_podcast_from_channel(box,content,max_results)
-                tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
-                # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
-                # tracklist_uris += self.get_unread_podcasts(shows)
-
-            # Podcast episode
-            elif "podcast" in content and "#" in content:
-                feedurl = content.split("+")[1]
-                tracklist_uris.append(self.get_podcast_from_url(feedurl))
-
-            # Podcast:channel
-            elif "podcasts:channel" in box.data:
-                self.update_stat_raw(box.data)
-                #self.add_podcast_from_channel(box,content,max_results)
-                tracklist_uris.append(self.add_podcast_from_channel(box,box.data,max_results))            
-
+                    tracklist_uris.append(content)        
 
             # here&now:library (daily habits + library auto extract)
             elif "herenow:library" in content :
@@ -634,8 +607,6 @@ class O2mToMopidy:
                     print(f"Adding : {uri_new} tracks")
                     content += 1
 
-
-
             # Autos mode (to be optimized with the above code)
             elif "auto:library" in content:
                 tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level))
@@ -645,6 +616,32 @@ class O2mToMopidy:
 
             elif "infos:library" in content:
                 tracklist_uris = self.append_lastinfos(tracklist_uris,box,max_results)
+
+            # Unfinished podcasts
+            elif "podcasts:unfinished" in content:
+                uris = self.dbHandler.get_uris_podcasts_notread(max_results)
+                if uris is not None:
+                    tracklist_uris.append(uris)
+
+            # Podcast channel
+            elif "podcast" in content and "#" not in content:
+                print(f"Podcast : {content}")
+                self.update_stat_raw(content)
+                #self.add_podcast_from_channel(box,content,max_results)
+                tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
+                # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
+                # tracklist_uris += self.get_unread_podcasts(shows)
+
+            # Podcast episode
+            elif "podcast" in content and "#" in content:
+                feedurl = content.split("+")[1]
+                tracklist_uris.append(self.get_podcast_from_url(feedurl))
+
+            # Podcast:channel
+            elif "podcasts:channel" in box.data:
+                self.update_stat_raw(box.data)
+                #self.add_podcast_from_channel(box,content,max_results)
+                tracklist_uris.append(self.add_podcast_from_channel(box,box.data,max_results))    
 
             # Other contents in the playlist
             else : 
