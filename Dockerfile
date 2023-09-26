@@ -64,8 +64,8 @@ COPY ./samples/m3u /root/.local/share/mopidy/m3u
 COPY ./samples/podcasts/Podcasts.opml /etc/mopidy/podcasts.opml
 
 # put in iris folder
-COPY  ./samples/o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
-COPY  ./samples/o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
+COPY ./samples/o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
+COPY ./samples/o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
 COPY ./samples/index.html /app/index.html
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
