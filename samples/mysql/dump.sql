@@ -31,7 +31,7 @@ CREATE TABLE `stats` (
   `uri` varchar(255) NOT NULL,
   `last_read_date` bigint(20) NOT NULL,
   `read_position` int(11) NOT NULL DEFAULT 0 COMMENT 'Last read position',
-  `read_end` decimal(10,0) NOT NULL DEFAULT 0 COMMENT 'Is last read gone to end ? (Boolean)',
+  `read_end` float NOT NULL DEFAULT 0 COMMENT 'Is last read gone to end ? (Boolean)',
   `read_count` tinyint(11) NOT NULL DEFAULT 0 COMMENT 'Count total read',
   `read_count_end` tinyint(11) NOT NULL DEFAULT 0 COMMENT 'Count total read to end',
   `skipped_count` tinyint(11) NOT NULL DEFAULT 0 COMMENT 'Count total skipped actions',
