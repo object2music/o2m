@@ -9,8 +9,8 @@
       list = document.getElementsByClassName('sidebar__menu')[0];
       base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
       //host = window.location.host;
-      base_url += ':6681/api/'
-      backoffice_uri = 'http://joan4181.odns.fr/o2m/admin//'
+      base_url += ':6691/api/'
+      backoffice_uri = 'http://localhost:5011'
       //backoffice_uri += 'sql.php?table=box&sql_query=SELECT+%2A+FROM+%60box%60++%0AORDER+BY+%60box%60.%60favorite%60++DESC&session_max_rows=100&is_browse_distinct=0'
       //alert(base_url)
 
