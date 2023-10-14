@@ -416,7 +416,7 @@ class O2mToMopidy:
         try:
             print (f"DL AUTO : {discover_level}")
             #GO QUICKLY
-            #self.quicklaunch_auto(1,discover_level,box)
+            self.quicklaunch_auto(1,discover_level,box)
 
             #Variables
             window = int(round(discover_level / 2))
