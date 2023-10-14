@@ -279,6 +279,10 @@ class O2mToMopidy:
         length = 0
         if len(uris) > 0:
             uris = util.flatten_list(uris)
+            if None in uris:
+                uris.remove(None)
+            if "None" in uris:
+                uris.remove("None")
             print (uris)
             prev_length = self.mopidyHandler.tracklist.get_length()
             if self.mopidyHandler.tracklist.index():
@@ -458,7 +462,7 @@ class O2mToMopidy:
             #INFOS
             box.option_type == 'podcast'
             box.option_sort == 'desc'
-            self.add_tracks(box, self.append_lastinfos([],box,max_results), 1)
+            self.add_tracks(box, self.lastinfos(box,max_results), 1)
 
             #APPEND
             #Common tracks n=(-0.3*d+8)/30
@@ -580,7 +584,7 @@ class O2mToMopidy:
 
             # infos:library (more recent news podcasts (to be updated))
             elif "infos:library" in content :
-                tracklist_uris = self.append_lastinfos(tracklist_uris,box,max_results)
+                tracklist_uris.append(self.lastinfos(box,max_results))
 
             # newnotcompleted:library (adding new tracks only played once)
             elif "newnotcompleted:library" in content :
@@ -615,7 +619,7 @@ class O2mToMopidy:
                 tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level,'simple'))
 
             elif "infos:library" in content:
-                tracklist_uris = self.append_lastinfos(tracklist_uris,box,max_results)
+                tracklist_uris.append(self.lastinfos(box,max_results))
 
             # Unfinished podcasts
             elif "podcasts:unfinished" in content:
@@ -653,7 +657,7 @@ class O2mToMopidy:
 
         return tracklist_uris  
 
-    def append_lastinfos(self,tracklist_uris,box,max_results):
+    def lastinfos(self,box,max_results):
         hour = datetime.datetime.now().hour
         minute = datetime.datetime.now().minute
         day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
@@ -678,11 +682,11 @@ class O2mToMopidy:
 
         try:
             info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
-            tracklist_uris.append(self.add_podcast_from_channel(box,info_url, max_results))
+            tracklist_uris = self.add_podcast_from_channel(box,info_url, max_results)
             return tracklist_uris
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
-            return tracklist_uris
+            #return []
 
     def add_podcast_from_channel(self,box,uri, max_results):
         feedurl = uri.split("+")[1]
