@@ -4,6 +4,12 @@
 
 # Create the o2m.conf file
 cat > o2m.conf << EOF
+
+[spotipy]
+spotipy_redirect_uri = $SPOTIPY_REDIRECT_URI
+client_id_spotipy = $SPOTIPY_CLIENT_ID
+client_secret_spotipy = $SPOTIPY_CLIENT_SECRET
+
 [o2m]
 discover = $O2M_DISCOVER
 api_result_limit = $O2M_API_RESULT_LIMIT

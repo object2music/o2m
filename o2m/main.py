@@ -29,7 +29,8 @@ if __name__ == "__main__":
 
     #Launch Connectors and modules
     o2mConf = util.get_config_file("o2m.conf")  # o2m
-    mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
+    #mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
+    mopidyConf = ""
     def create_api():
         #FLASK INIT
         api = Flask(__name__)

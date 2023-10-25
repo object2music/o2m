@@ -3,11 +3,22 @@ services:
   o2m:
     image: pvincent4/o2m:latest
     build:
+      context: ./o2m
+      dockerfile: Dockerfile
+    ports:
+      - 6691:6681
+    volumes:
+      - ./o2m:/app
+    env_file:
+      - .env
+  mopidy:
+    image: pvincent4/mopidy:latest
+    build:
       context: .
       dockerfile: Dockerfile
     ports:
       - 6690:6680 #Mopidy
-      - 6691:6681 #O2M API connexion
+      #- 6691:6681 #O2M API connexion
       - 6610:6600 #MPD server and control
     env_file:
       - .env
@@ -16,9 +27,7 @@ services:
      #   condition: service_healthy
     volumes:
       - ./music:/app/Music
-      - ./main.py:/app/main.py
       - ./src:/app/src
-      - ./schema.py:/app/schema.py
       - ./tmp/snapserver:/tmp
     #web:
     environment:
@@ -44,8 +53,8 @@ services:
     ports:
       - "3380:3306"
     volumes:
-      - ./db:/var/lib/mysql
-      - ./samples/mysql:/docker-entrypoint-initdb.d
+      #- ./db:/var/lib/mysql
+      - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     environment:

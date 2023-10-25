@@ -32,7 +32,7 @@ class O2mToMopidy:
 
     def __init__(self, mopidyHandler, configO2m, configMopidy, logging):
         self.configO2M = configO2m["o2m"]
-        self.configMopidy = configMopidy
+        #self.configMopidy = configMopidy
         self.dbHandler = DatabaseHandler()  # Database management
         self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
         self.spotifyHandler = SpotifyHandler() # Spotify API 
@@ -66,11 +66,11 @@ class O2mToMopidy:
         if "shuffle" in self.configO2M:
             self.shuffle = bool(self.configO2M["shuffle"])
 
-        if "username" in self.configMopidy["spotify"]:
+        '''if "username" in self.configMopidy["spotify"]:
             self.username = self.configMopidy["spotify"]["username"]
 
         if "enabled" in self.configMopidy["local"]:
-            self.local = bool(self.configMopidy["local"]["enabled"])
+            self.local = bool(self.configMopidy["local"]["enabled"])'''
 
         if "default_box" in self.configO2M:
             self.default_box = self.configO2M["default_box"]
