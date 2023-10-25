@@ -47,7 +47,7 @@ if __name__ == "__main__":
     while True:
         strer = 1
         try:
-            mopidy = MopidyAPI()
+            mopidy = MopidyAPI(host='localhost', port=o2mConf["o2m"]["port_mopidy"])
             o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
             strer = 0
         except Exception as err_value:

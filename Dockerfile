@@ -39,8 +39,6 @@ RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bulls
 RUN apt-get update
 RUN apt-get -y install mopidy libspotify-dev
 #RUN  apt-get install -y swig python-spotify libpcsclite-dev libcairo2-dev
-# copy default config
-COPY ./samples/mopidy.conf /etc/mopidy/mopidy.conf
 
 # Install libspotify
 #RUN apt install -y libspotify-dev

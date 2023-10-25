@@ -67,5 +67,7 @@ EOF
 
 echo "mopidy.conf file created successfully."
 
+
+# move the files to the correct location
 cp mopidy.conf /etc/mopidy/mopidy.conf
 chmod 777 /etc/mopidy/mopidy.conf
