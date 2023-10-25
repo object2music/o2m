@@ -19,6 +19,7 @@ discover_level = $O2M_DISCOVER_LEVEL
 podcast_newest_first = $O2M_PODCAST_NEWEST_FIRST
 option_autofill_playlists = $O2M_OPTION_AUTOFILL_PLAYLISTS
 option_add_reco_after_track = $O2M_OPTION_ADD_RECO_AFTER_TRACK
+port_mopidy=$PORT_MOPIDY
 
 # mysql or sqlite
 db_type = $DB_TYPE
@@ -34,4 +35,10 @@ db_name = $DB_NAME
 EOF
 
 echo "o2m.conf file created successfully."
+
+#cp mopidy.conf /root/.config/mopidy/mopidy.conf
+cp o2m.conf /etc/mopidy/o2m.conf
+
+# TODO: put the correct permissions on the files
+chmod 777 /etc/mopidy/o2m.conf
 
