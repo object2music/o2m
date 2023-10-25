@@ -28,18 +28,6 @@ rm tmp_o2m1.js
 #rm -rf mysql_data
 
 # Launch processes
-#mopidy --config /etc/mopidy/mopidy.conf -vvv &
 mopidy --config /etc/mopidy/mopidy.conf &
-P1=$!
-#sleep 40
-/usr/bin/python3 -u main.py -m flask &
-P2=$!
-
-#wait $P1 $P2
-# Wait for any process to exit
-#wait -n
-
-# Exit with status of process that exited first
-#exit $?
 
 tail -f /dev/null
