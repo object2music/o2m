@@ -52,4 +52,3 @@ cp o2m.conf /etc/mopidy/o2m.conf
 
 # TODO: put the correct permissions on the files
 chmod 777 /etc/mopidy/o2m.conf
-

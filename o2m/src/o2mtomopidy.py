@@ -279,6 +279,10 @@ class O2mToMopidy:
         length = 0
         if len(uris) > 0:
             uris = util.flatten_list(uris)
+            if None in uris:
+                uris.remove(None)
+            if "None" in uris:
+                uris.remove("None")
             print (uris)
             prev_length = self.mopidyHandler.tracklist.get_length()
             if self.mopidyHandler.tracklist.index():
@@ -416,7 +420,7 @@ class O2mToMopidy:
         try:
             print (f"DL AUTO : {discover_level}")
             #GO QUICKLY
-            self.quicklaunch_auto(1,discover_level,box)    
+            self.quicklaunch_auto(1,discover_level,box)
 
             #Variables
             window = int(round(discover_level / 2))
@@ -451,13 +455,14 @@ class O2mToMopidy:
                 print(f"\nAUTO : Podcasts {max_result1} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('podcast')
                 #self.one_box_changed(box, max_result1)
-                self.add_tracks(box, self.tracklistappend_box(box1,max_result1), max_result1)
+                if box1:
+                    self.add_tracks(box, self.tracklistappend_box(box1,max_result1), max_result1)
                 #tracklist_uris.append(self.tracklistappend_box(box,max_result1))
 
             #INFOS
             box.option_type == 'podcast'
             box.option_sort == 'desc'
-            self.add_tracks(box, self.append_lastinfos([],box,max_results), 1)
+            self.add_tracks(box, self.lastinfos(box,max_results), 1)
 
             #APPEND
             #Common tracks n=(-0.3*d+8)/30
@@ -543,34 +548,7 @@ class O2mToMopidy:
                     #self.add_tracks(box, tracks_uris, max_results)
                     tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
                 else:
-                    tracklist_uris.append(content)
-
-            # Unfinished podcasts
-            elif "podcasts:unfinished" in content:
-                uris = self.dbHandler.get_uris_podcasts_notread(max_results)
-                if uris is not None:
-                    tracklist_uris.append(uris)
-
-            # Podcast channel
-            elif "podcast" in content and "#" not in content:
-                print(f"Podcast : {content}")
-                self.update_stat_raw(content)
-                #self.add_podcast_from_channel(box,content,max_results)
-                tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
-                # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
-                # tracklist_uris += self.get_unread_podcasts(shows)
-
-            # Podcast episode
-            elif "podcast" in content and "#" in content:
-                feedurl = content.split("+")[1]
-                tracklist_uris.append(self.get_podcast_from_url(feedurl))
-
-            # Podcast:channel
-            elif "podcasts:channel" in box.data:
-                self.update_stat_raw(box.data)
-                #self.add_podcast_from_channel(box,content,max_results)
-                tracklist_uris.append(self.add_podcast_from_channel(box,box.data,max_results))            
-
+                    tracklist_uris.append(content)        
 
             # here&now:library (daily habits + library auto extract)
             elif "herenow:library" in content :
@@ -606,7 +584,7 @@ class O2mToMopidy:
 
             # infos:library (more recent news podcasts (to be updated))
             elif "infos:library" in content :
-                tracklist_uris = self.append_lastinfos(tracklist_uris,box,max_results)
+                tracklist_uris.append(self.lastinfos(box,max_results))
 
             # newnotcompleted:library (adding new tracks only played once)
             elif "newnotcompleted:library" in content :
@@ -633,8 +611,6 @@ class O2mToMopidy:
                     print(f"Adding : {uri_new} tracks")
                     content += 1
 
-
-
             # Autos mode (to be optimized with the above code)
             elif "auto:library" in content:
                 tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level))
@@ -643,7 +619,33 @@ class O2mToMopidy:
                 tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level,'simple'))
 
             elif "infos:library" in content:
-                tracklist_uris = self.append_lastinfos(tracklist_uris,box,max_results)
+                tracklist_uris.append(self.lastinfos(box,max_results))
+
+            # Unfinished podcasts
+            elif "podcasts:unfinished" in content:
+                uris = self.dbHandler.get_uris_podcasts_notread(max_results)
+                if uris is not None:
+                    tracklist_uris.append(uris)
+
+            # Podcast channel
+            elif "podcast" in content and "#" not in content:
+                print(f"Podcast : {content}")
+                self.update_stat_raw(content)
+                #self.add_podcast_from_channel(box,content,max_results)
+                tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
+                # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
+                # tracklist_uris += self.get_unread_podcasts(shows)
+
+            # Podcast episode
+            elif "podcast" in content and "#" in content:
+                feedurl = content.split("+")[1]
+                tracklist_uris.append(self.get_podcast_from_url(feedurl))
+
+            # Podcast:channel
+            elif "podcasts:channel" in box.data:
+                self.update_stat_raw(box.data)
+                #self.add_podcast_from_channel(box,content,max_results)
+                tracklist_uris.append(self.add_podcast_from_channel(box,box.data,max_results))    
 
             # Other contents in the playlist
             else : 
@@ -655,7 +657,7 @@ class O2mToMopidy:
 
         return tracklist_uris  
 
-    def append_lastinfos(self,tracklist_uris,box,max_results):
+    def lastinfos(self,box,max_results):
         hour = datetime.datetime.now().hour
         minute = datetime.datetime.now().minute
         day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
@@ -680,11 +682,11 @@ class O2mToMopidy:
 
         try:
             info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
-            tracklist_uris.append(self.add_podcast_from_channel(box,info_url, max_results))
+            tracklist_uris = self.add_podcast_from_channel(box,info_url, max_results)
             return tracklist_uris
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
-            return tracklist_uris
+            #return []
 
     def add_podcast_from_channel(self,box,uri, max_results):
         feedurl = uri.split("+")[1]

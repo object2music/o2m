@@ -1,5 +1,3 @@
-#!/bin/bash
-
 ############## mopidy.conf ##############
 # Create the mopidy.conf file
 cat > mopidy.conf << EOF
