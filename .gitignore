@@ -148,3 +148,4 @@ dump.sql
 #Docker
 #docker-compose.yml
 o2m/.flask_session/
+o2m/o2m.conf
