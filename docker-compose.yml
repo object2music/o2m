@@ -29,13 +29,13 @@ services:
     build:
       context: ./o2m
       dockerfile: Dockerfile
-      args:
-        BASE_SERVICE_HOST: mopidy
-        BASE_SERVICE_PORT: 6680
+      #args:
+        #BASE_SERVICE_HOST: mopidy
+        #BASE_SERVICE_PORT: 6680
     ports:
-      - ${PORT_API}:6681
-      - 6680
+      - 6680 #Mopidy connexion
       - ${PORT_MOPIDY} #Mopidy connexion
+      - ${PORT_API}:6681
     #depends_on:
      #mopidy:
         #condition: service_healthy
