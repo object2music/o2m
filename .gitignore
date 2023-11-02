@@ -149,3 +149,4 @@ dump.sql
 #docker-compose.yml
 o2m/.flask_session/
 o2m/o2m.conf
+o2m/.cache_spotipy
