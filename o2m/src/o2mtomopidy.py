@@ -66,11 +66,11 @@ class O2mToMopidy:
         if "shuffle" in self.configO2M:
             self.shuffle = bool(self.configO2M["shuffle"])
 
-        '''if "username" in self.configMopidy["spotify"]:
-            self.username = self.configMopidy["spotify"]["username"]
+        if "username" in configO2m["spotify"]:
+            self.username = configO2m["spotify"]["username"]
 
-        if "enabled" in self.configMopidy["local"]:
-            self.local = bool(self.configMopidy["local"]["enabled"])'''
+        if "enabled" in configO2m["local"]:
+            self.local = bool(configO2m["local"]["enabled"])
 
         if "default_box" in self.configO2M:
             self.default_box = self.configO2M["default_box"]
@@ -1109,7 +1109,6 @@ class O2mToMopidy:
     def get_common_tracks(self,read_hour,window,limit):
         pattern = "track:"
         print (self.local)
-        print (self.username)
         if not self.local and self.username != None: pattern = "track:spotify"
         if self.local and self.username == None : pattern = "track:local"
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)

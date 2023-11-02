@@ -10,6 +10,16 @@ spotipy_redirect_uri = $SPOTIPY_REDIRECT_URI
 client_id_spotipy = $SPOTIPY_CLIENT_ID
 client_secret_spotipy = $SPOTIPY_CLIENT_SECRET
 
+[spotify]
+username = $SPOTIFY_USERNAME
+password = $SPOTIFY_PASSWORD
+client_id = $SPOTIFY_CLIENT_ID
+client_secret = $SPOTIFY_CLIENT_SECRET
+
+[local]
+enabled = $LOCAL_ENABLED
+media_dir = $LOCAL_MEDIA_DIR
+
 [o2m]
 discover = $O2M_DISCOVER
 api_result_limit = $O2M_API_RESULT_LIMIT
@@ -19,7 +29,8 @@ discover_level = $O2M_DISCOVER_LEVEL
 podcast_newest_first = $O2M_PODCAST_NEWEST_FIRST
 option_autofill_playlists = $O2M_OPTION_AUTOFILL_PLAYLISTS
 option_add_reco_after_track = $O2M_OPTION_ADD_RECO_AFTER_TRACK
-port_mopidy=$PORT_MOPIDY
+port_mopidy = $PORT_MOPIDY
+host_mopidy = $HOST_MOPIDY
 
 # mysql or sqlite
 db_type = $DB_TYPE
