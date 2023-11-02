@@ -3,6 +3,10 @@
 ############## mopidy.conf ##############
 # Create the mopidy.conf file
 cat > mopidy.conf << EOF
+[core]
+max_tracklist_length =2000
+restore_state = true
+
 [logging]
 config_file = /etc/mopidy/logging.conf
 debug_file = /var/log/mopidy/mopidy-debug.log
@@ -15,11 +19,6 @@ username = $SPOTIFY_USERNAME
 password = $SPOTIFY_PASSWORD
 client_id = $SPOTIFY_CLIENT_ID
 client_secret = $SPOTIFY_CLIENT_SECRET
-
-[spotipy]
-spotipy_redirect_uri = $SPOTIPY_REDIRECT_URI
-client_id_spotipy = $SPOTIPY_CLIENT_ID
-client_secret_spotipy = $SPOTIPY_CLIENT_SECRET
 
 [http]
 enabled = $HTTP_ENABLED

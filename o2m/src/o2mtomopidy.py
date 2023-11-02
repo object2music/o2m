@@ -34,7 +34,7 @@ class O2mToMopidy:
         self.configO2M = configO2m["o2m"]
         #self.configMopidy = configMopidy
         self.dbHandler = DatabaseHandler()  # Database management
-        self.mopidyHandler = mopidyHandler()  # Websocket mopidy for reading control
+        self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
         self.spotifyHandler = SpotifyHandler() # Spotify API 
 
         if "api_result_limit" in self.configO2M:

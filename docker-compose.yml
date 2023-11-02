@@ -1,16 +1,8 @@
 version: "3.3"
+networks:
+  service_net:
+    name: service_net
 services:
-  o2m:
-    image: pvincent4/o2m:latest
-    build:
-      context: ./o2m
-      dockerfile: Dockerfile
-    ports:
-      - ${PORT_API}:6681
-    volumes:
-      - ./o2m:/app
-    env_file:
-      - .env
   mopidy:
     image: pvincent4/mopidy:latest
     build:
@@ -29,8 +21,28 @@ services:
       - ./src:/app/src
       - ./tmp/snapserver:/tmp
     #web:
+    restart: always
     environment:
       - PYTHONUNBUFFERED=1
+  o2m:
+    image: pvincent4/o2m:latest
+    build:
+      context: ./o2m
+      dockerfile: Dockerfile
+      args:
+        BASE_SERVICE_HOST: mopidy
+        BASE_SERVICE_PORT: 6680
+    ports:
+      - ${PORT_API}:6681
+      - 6680
+      - ${PORT_MOPIDY} #Mopidy connexion
+    #depends_on:
+     #mopidy:
+        #condition: service_healthy
+    volumes:
+      - ./o2m:/app
+    env_file:
+      - .env
   snapserver:
     image: jaedb/snapserver
     ports:

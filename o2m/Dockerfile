@@ -4,7 +4,8 @@ WORKDIR /app
 
 COPY ./ /app/
 
-RUN pip install -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache \
+python3 -m pip install -r requirements.txt
 
 RUN chmod +x ./entrypoint.sh
 RUN chmod +x ./create_conf_files.sh

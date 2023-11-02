@@ -63,8 +63,8 @@ COPY ./mopidy/index.html /app/index.html
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
 # Install Python dependencies with caching
-#RUN --mount=type=cache,target=/root/.cache \
-RUN python3 -m pip install -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache \
+python3 -m pip install -r requirements.txt
 
 # Install Rust gstreamer
 COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/libgstspotify.so
