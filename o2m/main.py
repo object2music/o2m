@@ -29,7 +29,8 @@ if __name__ == "__main__":
 
     #Launch Connectors and modules
     o2mConf = util.get_config_file("o2m.conf")  # o2m
-    mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
+    #mopidyConf = util.get_config_file("mopidy.conf")  # mopidy
+    mopidyConf = ""
     def create_api():
         #FLASK INIT
         api = Flask(__name__)
@@ -46,7 +47,10 @@ if __name__ == "__main__":
     while True:
         strer = 1
         try:
-            mopidy = MopidyAPI()
+            mopidy = MopidyAPI(host='mopidy', port=6680)
+            #mopidy = MopidyAPI(host='localhost', port=o2mConf["o2m"]["port_mopidy"])
+            #mopidy = MopidyAPI(host='51.15.205.150', port='6680')
+            #mopidy = MopidyAPI()
             o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
             strer = 0
         except Exception as err_value:

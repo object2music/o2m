@@ -1,14 +1,13 @@
 version: "3.3"
 services:
-  o2m:
-    image: pvincent4/o2m:latest
+  mopidy:
+    image: pvincent4/mopidy:latest
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - 6690:6680 #Mopidy
-      - 6691:6681 #O2M API connexion
-      - 6610:6600 #MPD server and control
+      - ${PORT_MOPIDY}:6680 #Mopidy
+      - ${PORT_MPD}:6600 #MPD server and control
     env_file:
       - .env
    #depends_on:
@@ -16,20 +15,39 @@ services:
      #   condition: service_healthy
     volumes:
       - ./music:/app/Music
-      - ./main.py:/app/main.py
       - ./src:/app/src
-      - ./schema.py:/app/schema.py
       - ./tmp/snapserver:/tmp
       - ./samples/o2m.js:/usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
     #web:
+    restart: always
     environment:
       - PYTHONUNBUFFERED=1
+    networks: 
+      - app_network
+  o2m:
+    image: pvincent4/o2m:latest
+    build:
+      context: ./o2m
+      dockerfile: Dockerfile
+    ports:
+      - ${PORT_API}:6681
+      - 6680  #Mopidy connexion
+      - ${PORT_MOPIDY} #Mopidy connexion
+    #depends_on:
+     #mopidy:
+        #condition: service_healthy
+    volumes:
+      - ./o2m:/app
+    env_file:
+      - .env
+    networks: 
+      - app_network
   snapserver:
     image: jaedb/snapserver
     ports:
-      - 1714:1704
-      - 1715:1705
-      - 1790:1780
+      - ${PORT_SNAPSERVER_1}:1704
+      - ${PORT_SNAPSERVER_2}:1705
+      - ${PORT_SNAPSERVER_HTTP}:1780
     volumes:
       - ./tmp/snapserver:/tmp
       - ./docker/snapserver.conf:/etc/snapserver.conf
@@ -42,10 +60,10 @@ services:
       MYSQL_USER: o2m_demo!
       MYSQL_PASSWORD: o2m_demo!
     ports:
-      - "3380:3306"
+      - "${PORT_MYSQL}:3306"
     volumes:
-      - ./db:/var/lib/mysql
-      - ./samples/mysql:/docker-entrypoint-initdb.d
+      #- ./db:/var/lib/mysql
+      - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     environment:
@@ -54,6 +72,10 @@ services:
       #PMA_USER: xxx
       #PMA_PASSWORD: xxx
     ports:
-      - "5011:80"
+      - "${PORT_PHPMYADMIN}:80"
   #depends_on:
   #    - mysql
+
+networks:
+  app_network:
+    driver: bridge

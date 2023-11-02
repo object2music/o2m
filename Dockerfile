@@ -39,39 +39,32 @@ RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bulls
 RUN apt-get update
 RUN apt-get -y install mopidy libspotify-dev
 #RUN  apt-get install -y swig python-spotify libpcsclite-dev libcairo2-dev
-# copy default config
-COPY ./samples/mopidy.conf /etc/mopidy/mopidy.conf
 
 # Install libspotify
 #RUN apt install -y libspotify-dev
 
 WORKDIR /app
 
-COPY ./assets /app/assets
-COPY ./samples /app/samples
-COPY ./sandbox /app/sandbox
-COPY ./src /app/src
-COPY main.py /app/main.py
-COPY start_mopidy.sh /app/start_mopidy.sh
-COPY requirements.txt /app/requirements.txt
+COPY ./mopidy/start_mopidy.sh /app/start_mopidy.sh
+COPY ./mopidy/requirements.txt /app/requirements.txt
 COPY ./docker/entrypoint.sh ./entrypoint.sh
 COPY ./docker/create_conf_files.sh ./create_conf_files.sh
 RUN chmod +x ./entrypoint.sh
 RUN chmod +x ./create_conf_files.sh
 
 # copies from local (to solve with a backoffice later)
-COPY ./samples/m3u /root/.local/share/mopidy/m3u
-COPY ./samples/podcasts/Podcasts.opml /etc/mopidy/podcasts.opml
+#COPY ./samples/m3u /root/.local/share/mopidy/m3u
+#COPY ./samples/podcasts/Podcasts.opml /etc/mopidy/podcasts.opml
 
 # put in iris folder
-COPY  ./samples/o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
-COPY  ./samples/o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
-COPY ./samples/index.html /app/index.html
+COPY  ./mopidy/o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
+COPY  ./mopidy/o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
+COPY ./mopidy/index.html /app/index.html
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
 # Install Python dependencies with caching
-#RUN --mount=type=cache,target=/root/.cache \
-RUN python3 -m pip install -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache \
+python3 -m pip install -r requirements.txt
 
 # Install Rust gstreamer
 COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/libgstspotify.so

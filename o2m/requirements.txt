@@ -1,0 +1,19 @@
+# misc
+spotipy
+requests
+mock
+six
+events
+
+# mopidy websocket client
+mopidyapi
+mopidy_podcast
+
+# database sqlite orm
+peewee
+PyMysql
+numpy 
+flask
+flask_cors
+flask_session
+mysql-connector-python
