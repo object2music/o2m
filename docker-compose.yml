@@ -1,7 +1,4 @@
 version: "3.3"
-networks:
-  service_net:
-    name: service_net
 services:
   mopidy:
     image: pvincent4/mopidy:latest
@@ -24,18 +21,17 @@ services:
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
+    networks: 
+      - app_network
   o2m:
     image: pvincent4/o2m:latest
     build:
       context: ./o2m
       dockerfile: Dockerfile
-      #args:
-        #BASE_SERVICE_HOST: mopidy
-        #BASE_SERVICE_PORT: 6680
     ports:
-      - 6680 #Mopidy connexion
-      - ${PORT_MOPIDY} #Mopidy connexion
       - ${PORT_API}:6681
+      - 6680  #Mopidy connexion
+      - ${PORT_MOPIDY} #Mopidy connexion
     #depends_on:
      #mopidy:
         #condition: service_healthy
@@ -43,6 +39,8 @@ services:
       - ./o2m:/app
     env_file:
       - .env
+    networks: 
+      - app_network
   snapserver:
     image: jaedb/snapserver
     ports:
@@ -76,3 +74,7 @@ services:
       - "${PORT_PHPMYADMIN}:80"
   #depends_on:
   #    - mysql
+
+networks:
+  app_network:
+    driver: bridge
