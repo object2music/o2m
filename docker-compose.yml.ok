@@ -3,36 +3,44 @@ services:
   mopidy:
     image: pvincent4/mopidy:latest
     build:
-      context: ./mopidy
+      context: .
       dockerfile: Dockerfile
     ports:
       - ${PORT_MOPIDY}:6680 #Mopidy
       - ${PORT_MPD}:6600 #MPD server and control
     env_file:
       - .env
+   #depends_on:
+     #mysql:
+     #   condition: service_healthy
     volumes:
-      - ./data/music:/app/Music
-      - ./data/tmp/snapserver:/tmp
+      - ./music:/app/Music
+      - ./src:/app/src
+      - ./tmp/snapserver:/tmp
+    #web:
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
-
+    networks: 
+      - app_network
   o2m:
     image: pvincent4/o2m:latest
     build:
       context: ./o2m
       dockerfile: Dockerfile
     ports:
-      - ${PORT_O2M_API}:6681
-    depends_on: 
-      - mopidy
-      - mysql
+      - ${PORT_API}:6681
+      - 6680  #Mopidy connexion
+      - ${PORT_MOPIDY} #Mopidy connexion
+    #depends_on:
+     #mopidy:
+        #condition: service_healthy
     volumes:
       - ./o2m:/app
-    restart: always
     env_file:
       - .env
-
+    networks: 
+      - app_network
   snapserver:
     image: jaedb/snapserver
     ports:
@@ -41,24 +49,21 @@ services:
       - ${PORT_SNAPSERVER_HTTP}:1780
     volumes:
       - ./tmp/snapserver:/tmp
-      - ./snapserver/snapserver.conf:/etc/snapserver.conf
+      - ./docker/snapserver.conf:/etc/snapserver.conf
+      - ./samples/o2m.js:/usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
       #- ./docker/snapserver/snapserver.json:/root/.config/snapserver/server.json
-    depends_on: 
-      - mopidy
-
   mysql:
     image: mysql:5.7
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: o2m
-      MYSQL_USER: o2m
-      MYSQL_PASSWORD: o2m
+      MYSQL_USER: o2m_demo!
+      MYSQL_PASSWORD: o2m_demo!
     ports:
       - "${PORT_MYSQL}:3306"
     volumes:
-      - ./data/db:/var/lib/mysql
+      #- ./db:/var/lib/mysql
       - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
-
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     environment:
@@ -68,5 +73,9 @@ services:
       #PMA_PASSWORD: xxx
     ports:
       - "${PORT_PHPMYADMIN}:80"
-    depends_on:
-      - mysql
+  #depends_on:
+  #    - mysql
+
+networks:
+  app_network:
+    driver: bridge

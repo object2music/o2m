@@ -1,0 +1,30 @@
+# misc
+spotipy
+requests
+mock
+six
+events
+#youtube-dl
+yt_dlp
+
+#Mopidy
+Mopidy-Iris #3.67.0
+Mopidy-Local
+Mopidy-Podcast
+#Mopidy-Spotify
+Mopidy-Podcast-iTunes
+Mopidy-TuneIn
+Mopidy-YouTube
+Mopidy-mpd
+
+# mopidy websocket client
+mopidyapi
+
+# database sqlite orm
+peewee
+PyMysql
+numpy 
+flask
+flask_cors
+flask_session
+mysql-connector-python

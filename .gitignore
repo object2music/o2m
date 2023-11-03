@@ -143,7 +143,11 @@ dmypy.json
 ## Misc
 db/*
 dump.sql
-
+!o2m/samples/mysql/dump.sql
 
 #Docker
-docker-compose.yml
+#docker-compose.yml
+o2m/.flask_session/
+o2m/o2m.conf
+o2m/.cache_spotipy
+data/
