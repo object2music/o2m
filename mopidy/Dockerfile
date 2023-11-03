@@ -45,10 +45,10 @@ RUN apt-get -y install mopidy libspotify-dev
 
 WORKDIR /app
 
-COPY ./mopidy/start_mopidy.sh /app/start_mopidy.sh
-COPY ./mopidy/requirements.txt /app/requirements.txt
-COPY ./docker/entrypoint.sh ./entrypoint.sh
-COPY ./docker/create_conf_files.sh ./create_conf_files.sh
+COPY ./start_mopidy.sh /app/start_mopidy.sh
+COPY ./requirements.txt /app/requirements.txt
+COPY ./entrypoint.sh ./entrypoint.sh
+COPY ./create_conf_files.sh ./create_conf_files.sh
 RUN chmod +x ./entrypoint.sh
 RUN chmod +x ./create_conf_files.sh
 
@@ -57,9 +57,9 @@ RUN chmod +x ./create_conf_files.sh
 #COPY ./samples/podcasts/Podcasts.opml /etc/mopidy/podcasts.opml
 
 # put in iris folder
-COPY  ./mopidy/o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
-COPY  ./mopidy/o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
-COPY ./mopidy/index.html /app/index.html
+COPY  ./o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
+COPY  ./o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
+COPY ./index.html /app/index.html
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
 # Install Python dependencies with caching

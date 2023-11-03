@@ -3,26 +3,20 @@ services:
   mopidy:
     image: pvincent4/mopidy:latest
     build:
-      context: .
+      context: ./mopidy
       dockerfile: Dockerfile
     ports:
       - ${PORT_MOPIDY}:6680 #Mopidy
       - ${PORT_MPD}:6600 #MPD server and control
     env_file:
       - .env
-   #depends_on:
-     #mysql:
-     #   condition: service_healthy
     volumes:
-      - ./music:/app/Music
-      - ./src:/app/src
-      - ./tmp/snapserver:/tmp
-    #web:
+      - ./data/music:/app/Music
+      - ./data/tmp/snapserver:/tmp
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
-    networks: 
-      - app_network
+
   o2m:
     image: pvincent4/o2m:latest
     build:
@@ -30,17 +24,15 @@ services:
       dockerfile: Dockerfile
     ports:
       - ${PORT_O2M_API}:6681
-      - 6680  #Mopidy connexion
-      - ${PORT_MOPIDY} #Mopidy connexion
-    #depends_on:
-     #mopidy:
-        #condition: service_healthy
+    depends_on: 
+      - mopidy
+      - mysql
     volumes:
       - ./o2m:/app
+    restart: always
     env_file:
       - .env
-    networks: 
-      - app_network
+
   snapserver:
     image: jaedb/snapserver
     ports:
@@ -49,8 +41,11 @@ services:
       - ${PORT_SNAPSERVER_HTTP}:1780
     volumes:
       - ./tmp/snapserver:/tmp
-      - ./docker/snapserver.conf:/etc/snapserver.conf
+      - ./snapserver/snapserver.conf:/etc/snapserver.conf
       #- ./docker/snapserver/snapserver.json:/root/.config/snapserver/server.json
+    depends_on: 
+      - mopidy
+
   mysql:
     image: mysql:5.7
     environment:
@@ -61,8 +56,9 @@ services:
     ports:
       - "${PORT_MYSQL}:3306"
     volumes:
-      #- ./db:/var/lib/mysql
+      - ./data/db:/var/lib/mysql
       - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
+
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     environment:
@@ -72,9 +68,5 @@ services:
       #PMA_PASSWORD: xxx
     ports:
       - "${PORT_PHPMYADMIN}:80"
-  #depends_on:
-  #    - mysql
-
-networks:
-  app_network:
-    driver: bridge
+    depends_on:
+      - mysql
