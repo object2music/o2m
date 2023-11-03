@@ -249,7 +249,7 @@ if __name__ == "__main__":
                 o2mHandler.mopidyHandler.mixer.set_volume(int(volume))
 
             # Podcast : seek previous position
-            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri):
+            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri) or ("yt:" in track.uri):
                 if o2mHandler.dbHandler.get_pos_stat(track.uri) > 0:
                     o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
                 #skip advertising on sismique
@@ -338,15 +338,16 @@ if __name__ == "__main__":
                             box.update()
                             box.save()
 
-            print(f"\nEnded or Paused song : {track.name} with option_type {option_type} and library_link {library_link}")
+            print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
 
             # Update stats 
-            try: 
-                o2mHandler.update_stat_track(track,position,option_type,library_link)
-            except Exception as val_e: 
-                print(f"Erreur : {val_e}")
-                o2mHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve
-                o2mHandler.update_stat_track(track,position,option_type,library_link)
+            if (event.event == "track_playback_ended") or ("podcast+" in track.uri):
+                try: 
+                    o2mHandler.update_stat_track(track,position,option_type,library_link)
+                except Exception as val_e: 
+                    print(f"Erreur : {val_e}")
+                    o2mHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve
+                    o2mHandler.update_stat_track(track,position,option_type,library_link)
                 
             if "tunein" in track.uri:
                 if option_type != 'hidden': o2mHandler.update_stat_raw(track.uri)
@@ -374,7 +375,6 @@ if __name__ == "__main__":
     def event_print(event):
         #possibility of track catching ?
         if event.new_state == 'stopped': print (f"Stop : {o2mHandler.mopidyHandler.playback.get_current_track()}")"""
-
 
 
 #MAIN LOOP

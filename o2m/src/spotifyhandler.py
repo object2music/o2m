@@ -146,7 +146,7 @@ class SpotifyHandler:
         return False
 
     def get_albums_tracks(self,limit=1,unit=1):
-        unit=1
+        #unit=1
         t_list=[]
         total = self.sp.current_user_saved_albums()['total']
 
@@ -155,9 +155,14 @@ class SpotifyHandler:
                 album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
                 #album = random.choice(albums['items'])
                 tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
-                for j in range(unit):
-                    track = random.choice(tracks['items'])
-                    t_list.append(track['uri'])
+                if unit != 0:
+                    for j in range(unit):
+                        track = random.choice(tracks['items'])
+                        t_list.append(track['uri'])
+                else:
+                    for j in range(len(tracks['items'])):
+                        t_list.append(tracks['items'][j]['uri'])
+        
         return t_list
 
     def get_playlists_tracks(self,limit=1,discover_level=5):

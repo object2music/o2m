@@ -436,6 +436,14 @@ class O2mToMopidy:
             #self.one_box_changed(box, max_result1)
             self.add_tracks(box, self.tracklistappend_box(box1,max_result1), max_result1)
             #tracklist_uris.append(self.tracklistappend_box(box,max_result1))        
+            
+            #Incoming n=(0.5*d)/30
+            max_result1 = int(round((0.7*discover_level)/30*max_results))
+            print(f"\nAUTO : Incoming {max_result1} tracks\n")
+            box1 = self.dbHandler.get_box_by_option_type('incoming')
+            #self.one_box_changed(box, max_result1)
+            self.add_tracks(box, self.tracklistappend_box(box1,max_result1), max_result1)
+            #tracklist_uris.append(self.tracklistappend_box(box,max_result1))  
 
             #Favorites n=5/30
             max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
@@ -538,18 +546,6 @@ class O2mToMopidy:
                     #self.add_tracks(box, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
                     tracklist_uris.append(tracks_uris)
 
-            # Spotify
-            elif "spotify" in content:
-                #print ([data])
-                #self.update_stat_raw([data])
-                media_parts = content.split(":")
-                if media_parts[1] == "artist":
-                    tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
-                    #self.add_tracks(box, tracks_uris, max_results)
-                    tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
-                else:
-                    tracklist_uris.append(content)        
-
             # here&now:library (daily habits + library auto extract)
             elif "herenow:library" in content :
                 window = int(round(discover_level / 2))
@@ -591,8 +587,6 @@ class O2mToMopidy:
                 uri_new = self.get_new_tracks_notread(max_results)
                 if len(uri_new)>0:
                     #tracklist_uris.append(uri_new)
-                    #sending directly to read to lighten the news checking process below
-                    #self.add_tracks(box, uri_new, max_results) # Envoie les uris en lecture
                     tracklist_uris.append(uri_new)
                     #print(f"Adding : {uri_new} tracks")
             
@@ -610,6 +604,11 @@ class O2mToMopidy:
                     #self.add_tracks(box, uri_new, max_results) # Envoie les uris en lecture
                     print(f"Adding : {uri_new} tracks")
                     content += 1
+
+            # album:spotify 
+            elif "albums:spotify" in content :
+                print ("album random")
+                tracklist_uris.append(self.spotifyHandler.get_albums_tracks(1,0))
 
             # Autos mode (to be optimized with the above code)
             elif "auto:library" in content:
@@ -646,6 +645,18 @@ class O2mToMopidy:
                 self.update_stat_raw(box.data)
                 #self.add_podcast_from_channel(box,content,max_results)
                 tracklist_uris.append(self.add_podcast_from_channel(box,box.data,max_results))    
+
+            # Spotify
+            elif "spotify" in content:
+                #print ([data])
+                #self.update_stat_raw([data])
+                media_parts = content.split(":")
+                if media_parts[1] == "artist":
+                    tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
+                    #self.add_tracks(box, tracks_uris, max_results)
+                    tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
+                else:
+                    tracklist_uris.append(content)        
 
             # Other contents in the playlist
             else : 
