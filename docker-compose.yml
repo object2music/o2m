@@ -29,7 +29,7 @@ services:
       context: ./o2m
       dockerfile: Dockerfile
     ports:
-      - ${PORT_API}:6681
+      - ${PORT_O2M_API}:6681
       - 6680  #Mopidy connexion
       - ${PORT_MOPIDY} #Mopidy connexion
     #depends_on:
