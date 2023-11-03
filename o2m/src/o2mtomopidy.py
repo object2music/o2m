@@ -484,8 +484,8 @@ class O2mToMopidy:
             #Albums n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
             print(f"\nAUTO : Albums {max_result1} tracks\n")
-            #tracklist_uris.append(self.spotifyHandler.get_albums_tracks(max_result1,discover_level))
-            self.add_tracks(box, self.spotifyHandler.get_albums_tracks(max_result1,discover_level), max_result1)
+            #tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level))
+            self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1)
 
             #Playlists n=(-0.2*d+7)/30
             max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
@@ -551,7 +551,7 @@ class O2mToMopidy:
                 window = int(round(discover_level / 2))
                 max_result1 = int(round(max_results/2))
                 tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-                tracklist_uris.append(self.spotifyHandler.get_albums_tracks(max_result1,1))
+                tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
                 #tracklist_uris.append(self.get_spotify_library(max_result1))
                 #print(f"Adding herenow : {tracklist_uris} tracks")
 
@@ -567,7 +567,7 @@ class O2mToMopidy:
             elif "spotify:library" in content :
                 print ("spotify:library")
                 max_result1 = int(round(max_results/3))
-                tracklist_uris.append(self.spotifyHandler.get_albums_tracks(2*max_result1,1))
+                tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(2*max_result1,1))
                 #tracklist_uris.append(self.get_spotify_library(2*max_results1))
                 tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_result1))
                 #tracklist_uris.append(self.spotifyHandler.get_library_recent_tracks(max_results))
@@ -607,8 +607,10 @@ class O2mToMopidy:
 
             # album:spotify 
             elif "albums:spotify" in content :
-                print ("album random")
-                tracklist_uris.append(self.spotifyHandler.get_albums_tracks(1,0))
+                if (random.choice([1,2])) == 1:
+                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(1,0))
+                else:
+                    tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(1,0))
 
             # Autos mode (to be optimized with the above code)
             elif "auto:library" in content:

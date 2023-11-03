@@ -68,45 +68,7 @@ class SpotifyHandler:
                 uris.append(item["uri"])
         return uris
 
-    def get_artist_top_tracks(self, artist_id):
-        try: 
-            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
-        except Exception as val_e: 
-            print(f"Erreur : {val_e}")
-            self.init_token_sp()
-            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
-        return self.parse_tracks(tracks)
-
-    def get_track_artist(self, track_id):
-        artists=self.sp.track(track_id)['artists']
-        #print (artists)
-        random.shuffle(artists)
-        artist_id = artists[0]['id']
-        return artist_id
-
-    def get_track_album(self, track_id):
-        album=self.sp.track(track_id)['album']
-        #print (album)
-        album_uri = album['uri']
-        return album_uri
-
-    def get_artist_all_tracks(self, artist_id, limit=10):
-        albums = self.sp.artist_albums(artist_id, country="FR")
-        tracks_uris = []
-
-        for album in albums["items"]:
-            tracks_json = self.sp.album_tracks(album["uri"])
-            tracks_uris += self.parse_tracks(tracks_json)
-
-        random.shuffle(tracks_uris)
-        return tracks_uris[:limit]
-
-    def get_album_all_tracks(self, album_uri, limit=10):
-        tracks_uris = []
-        tracks_json = self.sp.album_tracks(album_uri)
-        tracks_uris = self.parse_tracks(tracks_json)
-        random.shuffle(tracks_uris)
-        return tracks_uris[:limit]
+################### PLAYLISTS #############################
 
     def add_tracks_playlist(self, username, playlist_uri, track_uris):
         results = self.sp.user_playlist_add_tracks(username, playlist_uri, track_uris)
@@ -144,27 +106,7 @@ class SpotifyHandler:
         for track in tracks:
             if track["track"]["id"]==track_id: return True
         return False
-
-    def get_albums_tracks(self,limit=1,unit=1):
-        #unit=1
-        t_list=[]
-        total = self.sp.current_user_saved_albums()['total']
-
-        if total>0:
-            for i in range(limit):
-                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
-                #album = random.choice(albums['items'])
-                tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
-                if unit != 0:
-                    for j in range(unit):
-                        track = random.choice(tracks['items'])
-                        t_list.append(track['uri'])
-                else:
-                    for j in range(len(tracks['items'])):
-                        t_list.append(tracks['items'][j]['uri'])
-        
-        return t_list
-
+    
     def get_playlists_tracks(self,limit=1,discover_level=5):
         #Get last tracks from each playlist
         #To be upgraded : remove trash playlist, enlarge the window
@@ -198,6 +140,93 @@ class SpotifyHandler:
                     #t_list.append(track['uri'])
         return t_list
 
+
+################### ALBUMS  #############################
+
+    def get_album_all_tracks(self, album_uri, limit=10):
+        tracks_uris = []
+        tracks_json = self.sp.album_tracks(album_uri)
+        tracks_uris = self.parse_tracks(tracks_json)
+        random.shuffle(tracks_uris)
+        return tracks_uris[:limit]
+
+    def get_my_albums_tracks(self,limit=1,unit=1):
+        t_list=[]
+        total = self.sp.current_user_saved_albums()['total']
+
+        if total>0:
+            for i in range(limit-1):
+                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
+                #album = random.choice(albums['items'])
+                tracks = self.sp.album_tracks(album['items'][i]['album']['id'])
+                if unit != 0:
+                    for j in range(unit):
+                        track = random.choice(tracks['items'])
+                        t_list.append(track['uri'])
+                else:
+                    t_list.append('spotify:album:'+album['items'][i]['album']['id'])
+                    #for j in range(len(tracks['items'])):
+                    #    t_list.append(tracks['items'][j]['uri'])
+        return t_list
+
+
+    def get_track_album(self, track_id):
+        album=self.sp.track(track_id)['album']
+        #print (album)
+        album_uri = album['uri']
+        return album_uri
+
+
+################### ARTIST #############################
+
+    def get_artist_top_tracks(self, artist_id):
+        try: 
+            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
+            self.init_token_sp()
+            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
+        return self.parse_tracks(tracks)
+
+    def get_track_artist(self, track_id):
+        artists=self.sp.track(track_id)['artists']
+        #print (artists)
+        random.shuffle(artists)
+        artist_id = artists[0]['id']
+        return artist_id
+
+    def get_artist_all_tracks(self, artist_id, limit=10):
+        albums = self.sp.artist_albums(artist_id, country="FR")
+        tracks_uris = []
+
+        for album in albums["items"]:
+            tracks_json = self.sp.album_tracks(album["uri"])
+            tracks_uris += self.parse_tracks(tracks_json)
+
+        random.shuffle(tracks_uris)
+        return tracks_uris[:limit]
+
+    def get_my_artists_tracks(self,limit=1,unit=1):
+        t_list=[]
+        total = self.sp.current_user_followed_artists()['total']
+
+        if total>0:
+            for i in range(limit-1):
+                artists = self.sp.current_user_followed_artists(limit=1,offset=random.randint(0,total-1))
+                #album = random.choice(albums['items'])
+                tracks = self.sp.get_artist_top_tracks(artists['items'][i]['artist']['id'])
+                if unit != 0:
+                    for j in range(unit):
+                        track = random.choice(tracks['items'])
+                        t_list.append(track['uri'])
+                else:
+                    t_list.append('spotify:artist:'+artists['items'][i]['artist']['id'])
+                    #for j in range(len(tracks['items'])):
+                    #    t_list.append(tracks['items'][j]['uri'])
+        return t_list
+
+################### FAVORITES AND MISC #############################
+
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
         #Warning : may probably be the last 20 only
         t_list=[]
@@ -214,7 +243,6 @@ class SpotifyHandler:
                 t_list.append(tracks[i]['track']['uri'])
 
         return t_list
-
     def get_library_recent_tracks(self, limit):
         #Warning : may probably be the last 20 only
         t_list=[]
