@@ -12,7 +12,7 @@ services:
       - .env
     volumes:
       - ./data/music:/app/Music
-      - ./data/tmp/snapserver:/tmp
+      - ./tmp/snapserver:/tmp
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
