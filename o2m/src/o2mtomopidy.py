@@ -1019,7 +1019,7 @@ class O2mToMopidy:
         #Avoid downgrade of option types in DB
         if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming')):
             #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
-            if not(option_type == 'normal' and (stat.option_type == 'favorites'):
+            if not(option_type == 'normal' and stat.option_type == 'favorites'):
                 stat.option_type = option_type
 
         #Using rate reading average instead of bool
