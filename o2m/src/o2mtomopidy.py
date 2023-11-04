@@ -136,43 +136,7 @@ class O2mToMopidy:
             print("no uris with removed box")
 
     """
-    Fonction appellée automatiquement dès qu'un changement est détecté au niveau des lecteurs rfid
-    """
-
-    def get_new_cards(self, addedCards, removedCards, activeCards):
-        self.activecards = activeCards
-        # Décommenter la ligne en dessous pour avoir de l'info sur les données récupérées dans le terminal
-        # self.pretty_print_nfc_data(addedCards, removedCards)
-
-        # Loop on added Cards
-        for card in addedCards:
-            box = self.dbHandler.get_box_by_uid(card.id)  # On récupère le box en base de données via l'identifiant rfid
-            if box != None:
-                box.add_count()  # Incrémente le compteur de contacts pour ce box
-                self.activeboxs.append(box)  # Ajoute le box détecté dans la liste des boxs actifs
-                self.box_action(box)
-
-            else:
-                if card.id != "":
-                    self.dbHandler.create_box(card.id, "")  # le box n'est pas présent en bdd donc on le rajoute
-                else:
-                    print("Reading card error ! : " + card)
-
-        # Loop on removed Cards
-        for card in removedCards:
-            print("card removed")
-            box = self.dbHandler.get_box_by_uid(card.id)  # On récupère le box en base de données via l'identifiant rfid
-            removedBox = next((x for x in self.activeboxs if x.uid == card.id), None)
-
-            if box != None and box in self.activeboxs:
-                self.activeboxs.remove(box)
-                self.box_action_remove(box,removedBox)
-
-        print(f"Active boxs count: {len(self.activeboxs)}")
-
-    """
-    Fonction alternative executée à chaque détecton de box : 
-    Ne coupe pas la lecture mais augmente et modifie la tracklist en fonction des paramètres de trois boxs.
+    Daemon function called when change in active boxes
     """
 
     def active_boxs_changed(self):
@@ -227,7 +191,7 @@ class O2mToMopidy:
              - channel / album
     """
 
-#O2M CORE / TRACKLIST LAUNCH 
+#O2M CORE / TRACKLIST INIT 
     def one_box_changed(self, box, max_results=15):
         #print(f"\nNouveau box détecté: {box}")
         if (box.uid != self.last_box_uid):  # Si différent du précédent box détecté (Fonctionnel uniquement avec un lecteur)
@@ -315,7 +279,7 @@ class O2mToMopidy:
                     #Removing trash and hidden : too long
                     for t in tltracks_added:
                         #Option_type fixing (to be improved)
-                        #self.update_stat_track(t.track,0,box.option_type,'',True)
+                        self.update_stat_track(t.track,0,box.option_type,'',True)
                         
                         '''if self.dbHandler.stat_exists(t.track.uri):
                             stat = self.dbHandler.get_stat_by_uri(t.track.uri)
@@ -1054,7 +1018,8 @@ class O2mToMopidy:
 
         #Avoid downgrade of option types in DB
         if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming')):
-            if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+            #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+            if not(option_type == 'normal' and (stat.option_type == 'favorites'):
                 stat.option_type = option_type
 
         #Using rate reading average instead of bool
@@ -1078,7 +1043,7 @@ class O2mToMopidy:
                 ) / (stat.read_count_end)
             else:
                 stat.day_time_average = datetime.datetime.now().hour
-        else:
+        elif not fix:
             #if stat.read_end != True: stat.read_end = False
             stat.skipped_count += 1
 

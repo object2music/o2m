@@ -7,7 +7,7 @@ class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("o2m.conf")["spotipy"]
         self.cache_path = ".cache_spotipy" 
-        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read" 
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
@@ -155,7 +155,7 @@ class SpotifyHandler:
         total = self.sp.current_user_saved_albums()['total']
 
         if total>0:
-            for i in range(limit-1):
+            for i in range(limit):
                 album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
                 #album = random.choice(albums['items'])
                 tracks = self.sp.album_tracks(album['items'][i]['album']['id'])
@@ -164,9 +164,9 @@ class SpotifyHandler:
                         track = random.choice(tracks['items'])
                         t_list.append(track['uri'])
                 else:
-                    t_list.append('spotify:album:'+album['items'][i]['album']['id'])
-                    #for j in range(len(tracks['items'])):
-                    #    t_list.append(tracks['items'][j]['uri'])
+                    #t_list.append('spotify:album:'+album['items'][i]['album']['id'])
+                    for j in range(len(tracks['items'])):
+                        t_list.append(tracks['items'][j]['uri'])
         return t_list
 
 
@@ -208,19 +208,22 @@ class SpotifyHandler:
 
     def get_my_artists_tracks(self,limit=1,unit=1):
         t_list=[]
-        total = self.sp.current_user_followed_artists()['total']
-
+        total = self.sp.current_user_followed_artists()['artists']['total']
         if total>0:
-            for i in range(limit-1):
-                artists = self.sp.current_user_followed_artists(limit=1,offset=random.randint(0,total-1))
+            print ("1")
+            for i in range(limit):
+                print ("2")
+                artists = self.sp.current_user_followed_artists(limit=1,after=random.randint(0,total-1))
+
                 #album = random.choice(albums['items'])
-                tracks = self.sp.get_artist_top_tracks(artists['items'][i]['artist']['id'])
+                print (artists)
+                tracks = self.get_artist_top_tracks(artists['artists']['items'][i]['id'])
                 if unit != 0:
                     for j in range(unit):
                         track = random.choice(tracks['items'])
                         t_list.append(track['uri'])
                 else:
-                    t_list.append('spotify:artist:'+artists['items'][i]['artist']['id'])
+                    t_list.append('spotify:artist:'+artists['artists']['items'][i]['id'])
                     #for j in range(len(tracks['items'])):
                     #    t_list.append(tracks['items'][j]['uri'])
         return t_list
