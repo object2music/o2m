@@ -50,10 +50,10 @@ class O2mToMopidy:
         self.discover_level_on = False
 
         if "podcast_newest_first" in self.configO2M:
-            self.podcast_newest_first = self.configO2M["podcast_newest_first"] == "true"
+            self.podcast_newest_first = self.configO2M["podcast_newest_first"] 
 
         if "option_sort" in self.configO2M:
-            self.option_sort = self.configO2M["option_sort"] == "desc"
+            self.option_sort = self.configO2M["option_sort"] 
 
         if "option_autofill_playlists" in self.configO2M:
             self.option_autofill_playlists = bool(self.configO2M["option_autofill_playlists"])
@@ -64,16 +64,19 @@ class O2mToMopidy:
         else: self.option_add_reco_after_track = False
 
         if "shuffle" in self.configO2M:
-            self.shuffle = bool(self.configO2M["shuffle"])
+            self.shuffle = bool(self.configO2M["shuffle"]) 
 
         if "username" in configO2m["spotify"]:
-            self.username = configO2m["spotify"]["username"]
+            self.username = configO2m["spotify"]["username"] 
 
         if "enabled" in configO2m["local"]:
             self.local = bool(configO2m["local"]["enabled"])
 
         if "default_box" in self.configO2M:
             self.default_box = self.configO2M["default_box"]
+
+        if "fix_stats" in self.configO2M:
+            self.fix_stats = self.configO2M["fix_stats"]
 
         self.starting_mode(clear=True)
 
@@ -279,7 +282,7 @@ class O2mToMopidy:
                     #Removing trash and hidden : too long
                     for t in tltracks_added:
                         #Option_type fixing (to be improved)
-                        self.update_stat_track(t.track,0,box.option_type,'',True)
+                        if self.fix_stats==True: self.update_stat_track(t.track,0,box.option_type,'',True)
                         
                         '''if self.dbHandler.stat_exists(t.track.uri):
                             stat = self.dbHandler.get_stat_by_uri(t.track.uri)
