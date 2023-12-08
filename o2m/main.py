@@ -47,8 +47,8 @@ if __name__ == "__main__":
     while True:
         strer = 1
         try:
-            mopidy = MopidyAPI(host='mopidy', port=6680)
-            #mopidy = MopidyAPI(host='localhost', port=o2mConf["o2m"]["port_mopidy"])
+            #mopidy = MopidyAPI(host='mopidy', port=6680)
+            mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
             #mopidy = MopidyAPI(host='51.15.205.150', port='6680')
             #mopidy = MopidyAPI()
             o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
