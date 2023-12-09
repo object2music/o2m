@@ -1018,9 +1018,11 @@ class O2mToMopidy:
             stat.read_count += 1
             stat.read_position = pos
             stat.username = self.username
+        else:
+            stat.skipped_count = stat.read_count - stat.read_count_end
 
         #Avoid downgrade of option types in DB
-        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
             #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
             if not(option_type == 'normal' and stat.option_type == 'favorites'):
                 stat.option_type = option_type
@@ -1034,7 +1036,7 @@ class O2mToMopidy:
             #if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
         stat.read_end = ((stat.read_end * stat.read_count_end) + rate) / (stat.read_count_end + 1)
-        print (stat.read_end)
+
         #Update stats
         if track_finished:
             #stat.read_end = True
@@ -1057,7 +1059,7 @@ class O2mToMopidy:
 
             if track_finished == True :
                 print("Finished : autofill activated")
-                #Adding if "new track" played many times
+                #Adding to incoming if "new track" played many times
                 if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.discover_level)==True :
                     if library_link !='':
                         print(f"Autofilling Library : {library_link}")
@@ -1127,14 +1129,13 @@ class O2mToMopidy:
                         if 'spotify:playlist' in box_trash.data: 
                             result = self.autofill_spotify_playlist(box_trash.data,uri)
 
-                            if result: 
+                            if result and stat.option_type == "incoming": 
                                 try:
                                     self.spotifyHandler.remove_tracks_playlist(library_link, uri)
                                 except Exception as val_e: 
                                     print(f"Erreur : {val_e}")
-                                    if (stat.option_type == "incoming"): 
-                                        self.spotifyHandler.remove_tracks_playlist(library_link, uri)
-                                stat.option_type = 'trash'
+                            #stat.option_type = 'trash'
+
                         '''
                         if 'm3u' in box_trash.data :
                             playlist = self.mopidyHandler.playlists.lookup(box_trash.data)
@@ -1193,10 +1194,11 @@ class O2mToMopidy:
         return False
 
 
-    #Threshold for deleting tracks from playlist if too many skipped
+    #Threshold for deleting tracks from playlist if too many skip
     #discover_level = 5 et read_count_end=0 : skipped_count_end >=5 // and (stat.read_count_end == 0)
     def threshold_count_deletion(self,stat,discover_level):
-        if (float(stat.skipped_count) > ((11-discover_level)*(stat.read_count_end+1)*0.7)) : 
+        #if (float(stat.skipped_count) > ((11-discover_level)*(stat.read_count_end+1)*0.7)) : 
+        if (float(stat.skipped_count) > ((5)*(stat.read_count_end + 1)*0.7)) : 
             return True 
         else: 
             return False
