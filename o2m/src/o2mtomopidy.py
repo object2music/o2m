@@ -354,9 +354,9 @@ class O2mToMopidy:
                 #print("library_link",box.library_link)
 
                 # Shuffle complete computed tracklist if more than two boxs
-                self.shuffle_tracklist(current_index + 1, new_length)
-                '''if len(self.activeboxs) > 1:
-                    self.shuffle_tracklist(current_index + 1, new_length)'''
+                #self.shuffle_tracklist(current_index + 1, new_length)
+                if len(self.activeboxs) > 1:
+                    self.shuffle_tracklist(current_index + 1, new_length)
             #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
 
