@@ -495,9 +495,9 @@ class O2mToMopidy:
 
         # Looping on hybrid playlist (delimited by \n)
         data = box.data.split("\n")
-        data = [x.replace('\r', '') for x in data]
         data = [x for x in data if not x.startswith('#')]
         data = [x for x in data if not x.startswith('\r')]
+        data = [x.replace('\r', '') for x in data]
 
         for content in data:
             # Recommandation
