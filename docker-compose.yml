@@ -1,6 +1,9 @@
 version: "3.3"
 services:
   mopidy:
+    profiles:
+      - dev
+      - prod
     image: pvincent4/mopidy:latest
     build:
       context: ./mopidy
@@ -18,6 +21,9 @@ services:
       - PYTHONUNBUFFERED=1
 
   o2m:
+    profiles:
+    # - dev
+      - prod
     image: pvincent4/o2m:latest
     build:
       context: ./o2m
@@ -34,6 +40,9 @@ services:
       - .env
 
   snapserver:
+    profiles:
+      - dev
+      - prod
     image: jaedb/snapserver
     ports:
       - ${PORT_SNAPSERVER_1}:1704
@@ -46,7 +55,31 @@ services:
     depends_on: 
       - mopidy
 
+  back:
+    profiles:
+      - dev
+    #  - prod
+    build: backend/
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./backend/pb_migrations/:/pb_migrations
+      - ./backend/pb_data/:/pb_data/
+  front:
+    profiles:
+      - dev
+    # - prod
+    build: frontend/
+    volumes:
+      - ./frontend/src/:/app/src
+    network_mode: host
+    env_file:
+      - .env
+
   mysql:
+    profiles:
+    #  - dev
+      - prod
     image: mysql:5.7
     environment:
       MYSQL_ROOT_PASSWORD: root
@@ -60,6 +93,9 @@ services:
       - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
 
   phpmyadmin:
+    profiles:
+    #  - dev
+      - prod
     image: phpmyadmin/phpmyadmin
     environment:
       PMA_HOST: mysql
