@@ -55,7 +55,7 @@
 	}
 </script>
 
-<section class="fixed bottom-10 bg-primary w-full h-15">
+<section class="fixed bottom-10 bg-neutral-content text-neutral w-full h-15">
 	<audio class="hidden" controls bind:this={audio}>
 		<source
 			src="https://raw.githubusercontent.com/anars/blank-audio/master/10-seconds-of-silence.mp3"

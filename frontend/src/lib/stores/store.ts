@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store';
 export const modal = writable(false);
 export const loginModal = writable(false);
 import PocketBase from 'pocketbase';
-import {PUBLIC_POCKETBASE_URL} from '$env/static/public'
+import {PUBLIC_POCKETBASE_URL, PUBLIC_MOPIDY_WS_PORT} from '$env/static/public'
 import type { Player, Track, Tracklist } from '../models/index';
 
 
@@ -17,7 +17,7 @@ export let tracklist = writable(<Tracklist[]>[]);
 
 
 
-const socket = new WebSocket('ws://localhost:6680/mopidy/ws/');
+const socket = new WebSocket(`ws://localhost:${PUBLIC_MOPIDY_WS_PORT}/mopidy/ws/`);
 
 socket.addEventListener("open", () => {
     console.log("Opened");

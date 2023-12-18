@@ -17,7 +17,7 @@
                 </a>
             </li>
             <li>
-                <a href="/playlists">
+                <a href="/library">
                     <Fa icon={faMusic} />
                 </a>
             </li>

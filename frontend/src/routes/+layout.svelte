@@ -10,10 +10,9 @@
   $: console.log("### Player ###", $player);
 
   </script>
-  <div class="flex">
+  <div class="">
     <slot />
-  </div>
-  <Player/>
-  <Nav/>
-
+    <Player/>
+    <Nav/>
+</div>
 
