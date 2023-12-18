@@ -33,10 +33,10 @@
 	"type": "module",
 	"dependencies": {
 		"@fortawesome/free-solid-svg-icons": "^6.4.2",
-		"daisyui": "^2.51.5",
+		"daisyui": "^4.4.2",
 		"libflacjs": "^5.4.0",
 		"mopidy": "^1.3.0",
-		"pocketbase": "^0.13.1",
+		"pocketbase": "^0.20.1",
 		"svelte-fa": "^3.0.4",
 		"svelvet": "^8.0.6"
 	}

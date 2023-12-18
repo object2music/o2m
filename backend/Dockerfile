@@ -1,7 +1,7 @@
 FROM alpine:3 as downloader
 
-RUN wget https://github.com/pocketbase/pocketbase/releases/download/v0.16.5/pocketbase_0.16.5_linux_amd64.zip \
-    && unzip pocketbase_0.16.5_linux_amd64.zip \
+RUN wget https://github.com/pocketbase/pocketbase/releases/download/v0.20.1/pocketbase_0.20.1_linux_amd64.zip \
+    && unzip pocketbase_0.20.1_linux_amd64.zip\
     && chmod +x /pocketbase
 
 FROM alpine:3
