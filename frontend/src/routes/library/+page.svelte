@@ -1,6 +1,9 @@
 <script lang="ts">
+	import type { Box } from "$lib/models";
+	import { currentUser } from "$lib/stores/store";
+	import { createBox } from "$lib/utils/box";
 	import { faBox, faL, faMusic, faPlus, faSearch } from "@fortawesome/free-solid-svg-icons";
-import Fa from "svelte-fa";
+    import Fa from "svelte-fa";
 
 let items = [
     {
@@ -22,6 +25,14 @@ let items = [
         name: 'Genres',
     }
 ]
+
+let currentItem = "Boxes"
+
+let box: Box = {
+    name: '',
+}
+
+$: console.log($currentUser)
 
 let showBottomNav = false
 
@@ -46,20 +57,50 @@ let showBottomNav = false
 
         </div>
     </div>
-    <div class="flex flex-row overflow-y-scroll pb-4">
+    <div class="flex flex-row overflow-y-scroll pb-4 mb-4">
         {#each items as item}
-                    <button class="flex flex-col items-center justify-center pl-2 pr-2 bg-neutral text-neutral-content rounded-3xl ml-4">
+                    <button 
+                    class="flex flex-col items-center justify-center pl-2 pr-2  text-neutral-content rounded-3xl ml-4 {item.name === currentItem ? "bg-neutral" : ""}"
+                    on:click={() => currentItem = item.name}
+                    >
                         <p>{item.name}</p>
                     </button>
         {/each}
     </div>
+    <div>
+        {#if currentItem === "Boxes"}
+            {#if $currentUser?.expand?.boxes}
+                {#each $currentUser.expand.boxes as box}
+                    <a href={"/library/box/" + box.id }>
+                        <div class="flex flex-col pl-2 pr-2  text-neutral-content rounded-3xl">
+                            <div class="flex items-center mb-4">
+                                <div class="w-14 mr-4">
+                                    <img src={"https://picsum.photos/seed/" + box.name + "/200/200"} class="rounded-xl" />
+                                </div>
+                                <p>{box.name}</p>
+                            </div>
+                        </div>
+                    </a>
+                {/each}
+            {:else}
+                <p class="text-center ">You don't have any boxes yet</p>
+            {/if}
+        {/if}
+        {#if currentItem === "Playlist"}
+            Playlist
+        {/if}
+    </div>
 
-    <!-- Open the modal using ID.showModal() method -->
-    <button class="btn" onclick="playlist_modal.showModal()">open modal</button>
     <dialog id="playlist_modal" class="modal">
     <div class="modal-box">
         <h3 class="font-bold text-lg">Create a new box</h3>
         <p class="py-4">Give your box a name </p>
+        <input type="text" class="input input-bordered" placeholder="Box name" bind:value={box.name} />
+        <form method="dialog" class="modal-backdrop">
+            <div class="mt-4 flex justify-center">
+                <button class="btn btn-primary" on:click={async () => {await createBox(box); showBottomNav=false}}>Create</button>
+            </div>
+        </form>
     </div>
     <form method="dialog" class="modal-backdrop">
         <button>close</button>
