@@ -50,10 +50,10 @@ class O2mToMopidy:
         self.discover_level_on = False
 
         if "podcast_newest_first" in self.configO2M:
-            self.podcast_newest_first = self.configO2M["podcast_newest_first"] == "true"
+            self.podcast_newest_first = self.configO2M["podcast_newest_first"] 
 
         if "option_sort" in self.configO2M:
-            self.option_sort = self.configO2M["option_sort"] == "desc"
+            self.option_sort = self.configO2M["option_sort"] 
 
         if "option_autofill_playlists" in self.configO2M:
             self.option_autofill_playlists = bool(self.configO2M["option_autofill_playlists"])
@@ -64,16 +64,19 @@ class O2mToMopidy:
         else: self.option_add_reco_after_track = False
 
         if "shuffle" in self.configO2M:
-            self.shuffle = bool(self.configO2M["shuffle"])
+            self.shuffle = bool(self.configO2M["shuffle"]) 
 
         if "username" in configO2m["spotify"]:
-            self.username = configO2m["spotify"]["username"]
+            self.username = configO2m["spotify"]["username"] 
 
         if "enabled" in configO2m["local"]:
             self.local = bool(configO2m["local"]["enabled"])
 
         if "default_box" in self.configO2M:
             self.default_box = self.configO2M["default_box"]
+
+        if "fix_stats" in self.configO2M:
+            self.fix_stats = self.configO2M["fix_stats"]
 
         self.starting_mode(clear=True)
 
@@ -279,7 +282,7 @@ class O2mToMopidy:
                     #Removing trash and hidden : too long
                     for t in tltracks_added:
                         #Option_type fixing (to be improved)
-                        self.update_stat_track(t.track,0,box.option_type,'',True)
+                        if self.fix_stats==True: self.update_stat_track(t.track,0,box.option_type,'',True)
                         
                         '''if self.dbHandler.stat_exists(t.track.uri):
                             stat = self.dbHandler.get_stat_by_uri(t.track.uri)
@@ -351,9 +354,9 @@ class O2mToMopidy:
                 #print("library_link",box.library_link)
 
                 # Shuffle complete computed tracklist if more than two boxs
-                self.shuffle_tracklist(current_index + 1, new_length)
-                '''if len(self.activeboxs) > 1:
-                    self.shuffle_tracklist(current_index + 1, new_length)'''
+                #self.shuffle_tracklist(current_index + 1, new_length)
+                if len(self.activeboxs) > 1:
+                    self.shuffle_tracklist(current_index + 1, new_length)
             #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
 
@@ -494,6 +497,7 @@ class O2mToMopidy:
         data = box.data.split("\n")
         data = [x for x in data if not x.startswith('#')]
         data = [x for x in data if not x.startswith('\r')]
+        data = [x.replace('\r', '') for x in data]
 
         for content in data:
             # Recommandation
@@ -1015,9 +1019,11 @@ class O2mToMopidy:
             stat.read_count += 1
             stat.read_position = pos
             stat.username = self.username
+        else:
+            stat.skipped_count = stat.read_count - stat.read_count_end
 
         #Avoid downgrade of option types in DB
-        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
             #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
             if not(option_type == 'normal' and stat.option_type == 'favorites'):
                 stat.option_type = option_type
@@ -1031,7 +1037,7 @@ class O2mToMopidy:
             #if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
         stat.read_end = ((stat.read_end * stat.read_count_end) + rate) / (stat.read_count_end + 1)
-        print (stat.read_end)
+
         #Update stats
         if track_finished:
             #stat.read_end = True
@@ -1054,7 +1060,7 @@ class O2mToMopidy:
 
             if track_finished == True :
                 print("Finished : autofill activated")
-                #Adding if "new track" played many times
+                #Adding to incoming if "new track" played many times
                 if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.discover_level)==True :
                     if library_link !='':
                         print(f"Autofilling Library : {library_link}")
@@ -1124,14 +1130,13 @@ class O2mToMopidy:
                         if 'spotify:playlist' in box_trash.data: 
                             result = self.autofill_spotify_playlist(box_trash.data,uri)
 
-                            if result: 
+                            if result and stat.option_type == "incoming": 
                                 try:
                                     self.spotifyHandler.remove_tracks_playlist(library_link, uri)
                                 except Exception as val_e: 
                                     print(f"Erreur : {val_e}")
-                                    if (stat.option_type == "incoming"): 
-                                        self.spotifyHandler.remove_tracks_playlist(library_link, uri)
-                                stat.option_type = 'trash'
+                            #stat.option_type = 'trash'
+
                         '''
                         if 'm3u' in box_trash.data :
                             playlist = self.mopidyHandler.playlists.lookup(box_trash.data)
@@ -1190,10 +1195,11 @@ class O2mToMopidy:
         return False
 
 
-    #Threshold for deleting tracks from playlist if too many skipped
+    #Threshold for deleting tracks from playlist if too many skip
     #discover_level = 5 et read_count_end=0 : skipped_count_end >=5 // and (stat.read_count_end == 0)
     def threshold_count_deletion(self,stat,discover_level):
-        if (float(stat.skipped_count) > ((11-discover_level)*(stat.read_count_end+1)*0.7)) : 
+        #if (float(stat.skipped_count) > ((11-discover_level)*(stat.read_count_end+1)*0.7)) : 
+        if (float(stat.skipped_count) > ((5)*(stat.read_count_end + 1)*0.7)) : 
             return True 
         else: 
             return False

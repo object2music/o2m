@@ -47,8 +47,8 @@ if __name__ == "__main__":
     while True:
         strer = 1
         try:
-            mopidy = MopidyAPI(host='mopidy', port=6680)
-            #mopidy = MopidyAPI(host='localhost', port=o2mConf["o2m"]["port_mopidy"])
+            #mopidy = MopidyAPI(host='mopidy', port=6680)
+            mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
             #mopidy = MopidyAPI(host='51.15.205.150', port='6680')
             #mopidy = MopidyAPI()
             o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
@@ -250,7 +250,7 @@ if __name__ == "__main__":
 
             # Podcast : seek previous position
             if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri) or ("yt:" in track.uri):
-                if o2mHandler.dbHandler.get_pos_stat(track.uri) > 0:
+                if o2mHandler.dbHandler.get_pos_stat(track.uri) > 0 and (track.length/o2mHandler.dbHandler.get_pos_stat(track.uri) < 0.9) :
                     o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
                 #skip advertising on sismique
                 elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
@@ -269,7 +269,6 @@ if __name__ == "__main__":
             library_link = ''
             data = ''
             position = event.time_position
-
             #Update Dynamic datas linked to Box object and stats
             if box:
                 if box.data != '': data = box.data
