@@ -9,6 +9,10 @@
   $: console.log("### Tracklist ###", $tracklist);
   $: console.log("### Player ###", $player);
 
+    onMount(() => {
+      watchUserChange();
+    });
+
   </script>
   <div class="">
     <slot />
