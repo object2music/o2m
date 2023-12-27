@@ -50,9 +50,9 @@ services:
     image: mysql:5.7
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: o2m
-      MYSQL_USER: o2m
-      MYSQL_PASSWORD: o2m
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
     ports:
       - "${PORT_MYSQL}:3306"
     volumes:
