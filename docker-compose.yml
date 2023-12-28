@@ -78,7 +78,7 @@ services:
 
   mysql:
     profiles:
-    #  - dev
+      - dev
       - prod
     image: mysql:5.7
     environment:
@@ -94,7 +94,7 @@ services:
 
   phpmyadmin:
     profiles:
-    #  - dev
+      - dev
       - prod
     image: phpmyadmin/phpmyadmin
     environment:

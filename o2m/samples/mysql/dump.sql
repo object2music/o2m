@@ -97,7 +97,7 @@ CREATE TABLE `box` (
   `description` varchar(53) DEFAULT NULL,
   `favorite` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Bool (is the box pinned or not)',
   `public` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Bool (is the content shared or not)',
-  `data` text DEFAULT '''''''''''''' COMMENT 'Concatenation of : spotify:playlist,artist,album,genre / podcast: or tunein:station or local:artist,album\r\nExamples : local:album:md5:e431c158da4fbb855da74cc68e2c845\r\nspotify:album:3gPOWmWT0q7Ygp95Xiuw1v\r\nm3u:iris.m3u8\r\npodcast+https://feed.pippa.io/public/shows/5b0030a',
+  `data` text DEFAULT NULL COMMENT 'Concatenation of : spotify:playlist,artist,album,genre / podcast: or tunein:station or local:artist,album\r\nExamples : local:album:md5:e431c158da4fbb855da74cc68e2c845\r\nspotify:album:3gPOWmWT0q7Ygp95Xiuw1v\r\nm3u:iris.m3u8\r\npodcast+https://feed.pippa.io/public/shows/5b0030a',
   `data_alt` text DEFAULT NULL,
   `read_count` smallint(6) DEFAULT NULL,
   `last_read_date` bigint(20) DEFAULT NULL,
