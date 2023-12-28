@@ -241,6 +241,7 @@ if __name__ == "__main__":
         #@mopidy.audio.AudioListener.state_changed("PAUSED","PLAYING",None)
         def track_started_event(event):
             track = event.tl_track.track
+            print (event)
 
             #Quick and dirty volume Management
             if "radiofrance-podcast.net" in track.uri :
@@ -250,7 +251,7 @@ if __name__ == "__main__":
 
             # Podcast : seek previous position
             if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri) or ("yt:" in track.uri):
-                if o2mHandler.dbHandler.get_pos_stat(track.uri) > 0 and (track.length/o2mHandler.dbHandler.get_pos_stat(track.uri) < 0.9) :
+                if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
                     o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
                 #skip advertising on sismique
                 elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :

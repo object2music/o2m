@@ -435,9 +435,9 @@ class O2mToMopidy:
                 #tracklist_uris.append(self.tracklistappend_box(box,max_result1))
 
             #INFOS
-            box.option_type == 'podcast'
-            box.option_sort == 'desc'
-            self.add_tracks(box, self.lastinfos(box,max_results), 1)
+            #box.option_type == 'podcast'
+            #box.option_sort == 'desc'
+            #self.add_tracks(box, self.lastinfos(box,max_results), 1)
 
             #APPEND
             #Common tracks n=(-0.3*d+8)/30
