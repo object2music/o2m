@@ -40,6 +40,7 @@ media_dir = $LOCAL_MEDIA_DIR
 enabled = $YOUTUBE_ENABLED
 youtube_api_key = $YOUTUBE_API_KEY
 api_enabled = $YOUTUBE_API_ENABLED
+youtube_dl_package = $YOUTUBE_DL_PACKAGE
 
 [podcast]
 enabled = $PODCAST_ENABLED
