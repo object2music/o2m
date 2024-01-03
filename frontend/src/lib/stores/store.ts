@@ -63,7 +63,6 @@ export async function watchUserChange() {
 const socket = new WebSocket(`ws://localhost:${PUBLIC_MOPIDY_WS_PORT}/mopidy/ws/`);
 
 socket.addEventListener("open", () => {
-    console.log("Opened");
     // get playlists
     let request = {"jsonrpc": "2.0", "id": 1, "method": "core.playlists.as_list"};
     socket.send(JSON.stringify(request));
@@ -75,7 +74,6 @@ socket.addEventListener("open", () => {
     // subscribe to currentPlaylistId
     currentPlaylistId.subscribe((currentPlaylistId) => {
         if (currentPlaylistId) {
-            console.log("currentPlaylistId", currentPlaylistId);
             const request = {"jsonrpc": "2.0", "id": 2, "method": "core.playlists.lookup", "params": {"uri": currentPlaylistId}};
             socket.send(JSON.stringify(request));            
         }
@@ -105,8 +103,6 @@ socket.addEventListener("open", () => {
                 socket.send(JSON.stringify(request));
             }
 
-            //const request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.set_state", "params": {"new_state": player.state}};
-            //socket.send(JSON.stringify(request));
         }
         if (player.track) {
             console.log("player.track", player.track);
@@ -141,17 +137,17 @@ socket.addEventListener("open", () => {
         }
         // response.id 3 is the playback state
         if (response.id == 3) {
-            console.log("Player state", response);
+            console.log("player.state", response.result);
             player.set({state: response.result});
         }
         // response.id 4 is the playback state
         if (response.id == 4) {
-            console.log("Player state", response);
+            console.log("player.state", response.result);
             player.set({state: response.result});
         }
         // response.id 5 is the tracklist add
         if (response.id == 5) {
-            console.log("Tracklist add", response);
+            console.log("tracklist", response.result);
             // set the tracklist
             tracklist.set(response.result);
             // get player state
@@ -159,7 +155,6 @@ socket.addEventListener("open", () => {
           
         }
         if (response.id == 6) {
-
             const playlistUri = Object.keys(response?.result)[0];
             const image = response.result[playlistUri][0]?.uri;
 
@@ -179,6 +174,41 @@ socket.addEventListener("open", () => {
   socket.close();
 });
 
+
+export function  setCurrentTrack(trackUri: string) {
+    // clear tracklist and add the track to the tracklist
+    let request = {"jsonrpc": "2.0", "id": 5, "method": "core.tracklist.clear"};
+    socket.send(JSON.stringify(request));
+    request = {"jsonrpc": "2.0", "id": 5, "method": "core.tracklist.add", "params": {"uris": [trackUri]}};
+    socket.send(JSON.stringify(request));
+    // play the track
+    request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.play"};
+    socket.send(JSON.stringify(request));
+    // get player state
+    request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_state"};
+    socket.send(JSON.stringify(request));
+}
+
+export function getPlayerState() {
+    
+    //get_state()
+    let request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_state"};
+    socket.send(JSON.stringify(request));
+
+    //get_current_track()
+    request = {"jsonrpc": "2.0", "id": 2, "method": "core.playback.get_current_track"};
+    socket.send(JSON.stringify(request));
+
+    //volume
+    request = {"jsonrpc": "2.0", "id": 3, "method": "core.mixer.get_volume"};
+    socket.send(JSON.stringify(request));
+
+    //time_position
+    request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_time_position"};
+    socket.send(JSON.stringify(request));
+
+
+}
 
 export function getPlaylistsImage(playlistUri: string) {
     const request = {"jsonrpc": "2.0", "id": 6, "method": "core.library.get_images", "params": {"uris": [playlistUri]}};

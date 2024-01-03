@@ -1,18 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { currentPlaylist, currentPlaylistId, currentPlaylistsImages, getPlaylistsImage, player, tracklist } from '$lib/stores/store';
-	import { onMount } from 'svelte';
+	import { player, currentPlaylist, currentPlaylistId, currentPlaylistsImages, getPlaylistsImage, setCurrentTrack} from '$lib/stores/store';
 	const playlistId: string = $page.params.id;
-
-	console.log(playlistId);
-
 	$currentPlaylistId = playlistId;
-
-    $: console.log("currentPlaylistsImages",$currentPlaylistsImages);
-
 	$: {
-        if($currentPlaylist?.tracks){
-            $currentPlaylist.tracks.forEach((track) => {
+        if($currentPlaylist){
+			console.log("currentPlaylist",$currentPlaylist);
+            $currentPlaylist.forEach((track) => {
                 getPlaylistsImage(track.uri);
             });
         }
@@ -22,8 +16,20 @@
 <section>
 	{#if $currentPlaylist}
 		{#each $currentPlaylist as track}
-			{track.uri}
-            {$currentPlaylistsImages[track.uri]}
+			<a href={'/library/playlist/' + track.uri}  on:click={() => (setCurrentTrack(track.uri))}>
+				<div class="flex flex-col pl-2 pr-2 text-neutral-content rounded-3xl">
+					<div class="flex items-center mb-4">
+						<div class="w-14 mr-4">
+							<img
+								loading="lazy"
+								src={$currentPlaylistsImages[track.uri]}
+								class="rounded-xl"
+							/>
+						</div>
+						<p>{track.name}</p>
+					</div>
+				</div>
+			</a>
 		{/each}
 	{/if}
 </section>
