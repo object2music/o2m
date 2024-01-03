@@ -2,7 +2,15 @@
 	import Fa from 'svelte-fa';
 	import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
 
-	import { getPlaylistsImage, player, tracklist, currentPlaylistsImages } from '$lib/stores/store';
+	import {
+		getPlaylistsImage,
+		player,
+		tracklist,
+		currentPlaylistsImages,
+		getPlayerTimePosition,
+		getPlayerState,
+		setPlayerState
+	} from '$lib/stores/store';
 	import { onMount } from 'svelte';
 	import SnapStream from '$lib/utils/snapstream';
 
@@ -18,6 +26,9 @@
 			$player.state = 'paused';
 			playerIcon = faPause;
 		}
+		setInterval(() => {
+			//getPlayerState();
+		}, 2000);
 	});
 
 	$: {
@@ -27,15 +38,15 @@
 		}
 	}
 
-	$: console.log($player.state);
-
 	function returnPlayerState(state) {
+		console.log('returnPlayerState', state);
 		// if state stopped, play if paused play if playing pause
 		if (state === 'stopped') {
 			console.log('will play');
 			if (!snapStream) {
 				snapStream = new SnapStream('ws://localhost:1780');
 				snapStream.play();
+				setPlayerState('playing');
 			}
 			$player.state = 'playing';
 			playerIcon = faPlay;
@@ -45,6 +56,7 @@
 			if (!snapStream) {
 				snapStream = new SnapStream('ws://localhost:1780');
 				snapStream.play();
+				setPlayerState('playing');
 			}
 			$player.state = 'playing';
 			playerIcon = faPlay;
@@ -52,8 +64,8 @@
 		if (state === 'playing') {
 			console.log('will pause');
 			$player.state = 'paused';
-
 			playerIcon = faPause;
+			setPlayerState('paused');
 		}
 	}
 </script>

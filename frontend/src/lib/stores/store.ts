@@ -83,33 +83,33 @@ socket.addEventListener("open", () => {
     request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_state"};
     socket.send(JSON.stringify(request));
 
-    // subscribe to player.state and set the playback state
-    player.subscribe((player) => {
-        if (player.state) {
-            console.log("player.state", player.state);
-            if (player.state == "playing") {
-                console.log("▶️ player.state", player.state);
-                const request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.play"};
-                socket.send(JSON.stringify(request));
-            }
-            if (player.state == "paused") {
-                console.log("▶️ player.state", player.state);
-                const request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.pause"};
-                socket.send(JSON.stringify(request));
-            }
-            if (player.state == "stopped") {
-                console.log("▶️ player.state", player.state);
-                const request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.stop"};
-                socket.send(JSON.stringify(request));
-            }
+    // // subscribe to player.state and set the playback state
+    // player.subscribe((player) => {
+    //     if (player.state) {
+    //         console.log("player.state", player.state);
+    //         if (player.state == "playing") {
+    //             console.log("▶️ player.state", player.state);
+    //             const request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.play"};
+    //             socket.send(JSON.stringify(request));
+    //         }
+    //         if (player.state == "paused") {
+    //             console.log("▶️ player.state", player.state);
+    //             const request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.pause"};
+    //             socket.send(JSON.stringify(request));
+    //         }
+    //         if (player.state == "stopped") {
+    //             console.log("▶️ player.state", player.state);
+    //             const request = {"jsonrpc": "2.0", "id": 4, "method": "core.playback.stop"};
+    //             socket.send(JSON.stringify(request));
+    //         }
 
-        }
-        if (player.track) {
-            console.log("player.track", player.track);
-            const request = {"jsonrpc": "2.0", "id": 5, "method": "core.tracklist.add", "params": {"uris": [player.track.uri]}};
-            socket.send(JSON.stringify(request));
-        }
-    });
+    //     }
+    //     if (player.track) {
+    //         console.log("player.track", player.track);
+    //         const request = {"jsonrpc": "2.0", "id": 5, "method": "core.tracklist.add", "params": {"uris": [player.track.uri]}};
+    //         socket.send(JSON.stringify(request));
+    //     }
+    // });
 
     // subscribe to tracklist and set the tracklist
     tracklist.subscribe((tracklist) => {
@@ -137,8 +137,15 @@ socket.addEventListener("open", () => {
         }
         // response.id 3 is the playback state
         if (response.id == 3) {
-            console.log("player.state", response.result);
-            player.set({state: response.result});
+            console.log("#####################", response.result);
+            if (typeof response.result === "string") {
+                console.log("player.state", response.result);
+                player.set({state: response.result});
+            }
+            if (typeof response.result === "number") {
+                //console.log("player.state", response.result);
+                player.set({time_position: response.result});
+            }
         }
         // response.id 4 is the playback state
         if (response.id == 4) {
@@ -186,6 +193,18 @@ export function  setCurrentTrack(trackUri: string) {
     socket.send(JSON.stringify(request));
     // get player state
     request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_state"};
+    socket.send(JSON.stringify(request));
+}
+
+
+export async function setPlayerState(state: string) {
+    console.log("setPlayerState", state);
+    const request = {"jsonrpc": "2.0", "id": 4, "method": `core.playback.${state}`};
+    socket.send(JSON.stringify(request));
+}
+
+export async function getPlayerTimePosition() {
+    const request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_time_position"};
     socket.send(JSON.stringify(request));
 }
 
