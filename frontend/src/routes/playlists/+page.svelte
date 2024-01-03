@@ -5,5 +5,4 @@
     {#each $currentPlaylists as playlist}
     <a href="/playlists/{playlist.uri}">{playlist.name}</a>
     {/each}
-
 </section>

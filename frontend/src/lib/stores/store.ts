@@ -3,21 +3,22 @@ export const modal = writable(false);
 export const loginModal = writable(false);
 import PocketBase from 'pocketbase';
 import {PUBLIC_POCKETBASE_URL, PUBLIC_MOPIDY_WS_PORT} from '$env/static/public'
-import type { Player, Track, Tracklist, User } from '../models/index';
+import type { Player, Playlist,Tracklist, User } from '../models/index';
 
 
 export const pb = new PocketBase(PUBLIC_POCKETBASE_URL);
 
 export const currentUser = writable(pb.authStore.model as User);
-export const currentPlaylists = writable([]);
+export const currentPlaylists = writable(<Playlist[]>[]);
+export const currentPlaylistsImages = writable(<Record<string,string>>{});
+
 export const currentPlaylist = writable([]);
+export const currentPlaylistImages = writable(<Record<string,string>>{});
 export const currentPlaylistId = writable("");
 export let player = writable(<Player>{});
 export let tracklist = writable(<Tracklist[]>[]);
 
 
-
-// subscibes vars
 let userSub = null;
 
 
@@ -25,8 +26,6 @@ pb.authStore.onChange(() => {
     currentUser.set(pb.authStore.model);
     watchUserChange();
 });
-
-
 
 
 
@@ -157,6 +156,17 @@ socket.addEventListener("open", () => {
             tracklist.set(response.result);
             // get player state
             const request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_state"};
+          
+        }
+        if (response.id == 6) {
+
+            const playlistUri = Object.keys(response?.result)[0];
+            const image = response.result[playlistUri][0]?.uri;
+
+            currentPlaylistsImages.update((currentPlaylistsImages) => {
+                currentPlaylistsImages[playlistUri] = image;
+                return currentPlaylistsImages;
+            });
         }
         else{
             console.log("Uknown response id", response);
@@ -168,5 +178,11 @@ socket.addEventListener("open", () => {
   console.error("WebSocket error:", event);
   socket.close();
 });
+
+
+export function getPlaylistsImage(playlistUri: string) {
+    const request = {"jsonrpc": "2.0", "id": 6, "method": "core.library.get_images", "params": {"uris": [playlistUri]}};
+    socket.send(JSON.stringify(request));
+}
 
 
