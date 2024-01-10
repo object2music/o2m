@@ -22,7 +22,7 @@ services:
 
   o2m:
     profiles:
-    # - dev
+      - dev
       - prod
     image: pvincent4/o2m:latest
     build:

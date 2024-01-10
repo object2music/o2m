@@ -33,24 +33,17 @@ class DatabaseHandler():
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
         self.boxs = self.get_all_boxs()
+        #Pocketbase
         self.boxs = self.get_all_boxs_pb()
+        Box.create(name="test")
     
     #BOX
     def create_box(self, uid, media_url):
         try:
-            self.log.info('Creating Box with uid : {} and media url {}'.format(uid, media_url))
             print('Creating Box with uid : {} and media url {}'.format(uid, media_url))
-            # box = Box(uid=uid)
-            # response = box.save()
             box = Box.create(uid=uid)
             print(box)
             return box
-            # if response == 1:
-            #     self.log.info('Box created : {}'.format(box))
-            #     return box
-            # else:
-            #     print('error')
-            #     print(response)
         except IntegrityError as err:
             self.log.error(err)
     

@@ -18,6 +18,14 @@ sys.path.append(".")
 import src.util as util
 
 
+#POCKETBASE
+from pocketbase import PocketBase  # Client also works the same
+from pocketbase.client import FileUpload
+client = PocketBase('http://back:8090')
+# or as admin
+admin_data = client.admins.auth_with_password("pvincent4@gmail.com", "o2m_pvincent!")
+
+
 class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):
     pass
 
@@ -60,24 +68,18 @@ class BaseModel(Model):
         database = db
 
 class Box(BaseModel):
-    uid = CharField(
-        unique=True,
-        index=True,
-        primary_key=True,
-    )  # Unique nfc or box id
-    user = TextField(null=True)  # user text
-    data = TextField(null=True)  # media uri or option
-    data_alt = TextField(null=True)  # media uri or option
-    description = TextField(null=True)  # description text
-    read_count = IntegerField(default=0)  # Increment each time a tag is used
-    last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date
-    option_type = CharField(default='normal')  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
-    option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
-    option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
-    option_max_results = IntegerField(null=True)  # Max results associated to tag
-    option_discover_level = IntegerField(default=5)  # Discover level (0-10) associated to tag
-    favorite= IntegerField(default=0) #Bool (is the box pinned or not)	
-    public= IntegerField(default=0) #Bool (is the content shared or not)
+    id = str
+    name = str
+    image = str
+    favorite = bool
+    public = bool
+    contents = [str]
+    read_count = int
+    last_read_date = str
+    flow = [str]
+
+    #Content parsing : Box.contents[i].name
+
 
     '''def __str__(self):
         #return "TAG UID : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(self.uid, self.data, self.description, self.read_count, self.option_type)
@@ -86,6 +88,12 @@ class Box(BaseModel):
         json_data = json.dumps(json_data)
         return json_data'''
     
+    def create(self):
+        print("CREATE")
+        print(self)
+        PocketBase.collection("boxes").create()
+
+
     def add_count(self):
         if self.read_count != None:
             self.read_count += 1
