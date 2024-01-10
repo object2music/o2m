@@ -1,3 +1,4 @@
+#MYSQL
 import logging, pprint, datetime, random, json
 
 from peewee import IntegrityError, fn
@@ -5,6 +6,12 @@ from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 from playhouse.shortcuts import model_to_dict, dict_to_model
 
+#POCKETBASE
+from pocketbase import PocketBase  # Client also works the same
+from pocketbase.client import FileUpload
+client = PocketBase('http://back:8090')
+# or as admin
+admin_data = client.admins.auth_with_password("pvincent4@gmail.com", "o2m_pvincent!")
 
 from src.o2mmodels import Box, Stats, Stats_Raw, db
 '''
@@ -26,6 +33,7 @@ class DatabaseHandler():
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
         self.boxs = self.get_all_boxs()
+        self.boxs = self.get_all_boxs_pb()
     
     #BOX
     def create_box(self, uid, media_url):
@@ -49,7 +57,13 @@ class DatabaseHandler():
     def get_all_boxs(self):
         query = Box.select()
         return self.transform_query_to_list(query)
-    
+
+    def get_all_boxs_pb(self):
+        query = client.collection('boxes').get_full_list()
+        print (query)
+        print ('ok')
+        return query
+
     def get_box_by_uid(self, uid):
         #self.log.info('searching for box : {} '.format(uid))
         query = Box.select().where(Box.uid == uid)
