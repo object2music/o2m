@@ -36,10 +36,10 @@ if "db_type" in config_o2m:
         db_username = config_o2m["db_username"]
         db_password = config_o2m["db_password"]
         db_host = config_o2m["db_host"]
-        db_port = config_o2m["db_port"]
+        db_port = int(config_o2m["db_port"])
         db_name = config_o2m["db_name"]
         db = ReconnectMySQLDatabase(
-            db_name, host=db_host, user=db_username, password=db_password
+            db_name, host=db_host, user=db_username, password=db_password, port=db_port
         )
     elif db_type == "sqlite":
         database_path = config_o2m["db_sqlite_path"]
