@@ -17,3 +17,4 @@ flask
 flask_cors
 flask_session
 mysql-connector-python
+pocketbase
