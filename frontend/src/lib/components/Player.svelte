@@ -2,55 +2,70 @@
 	import Fa from 'svelte-fa';
 	import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
 
-	import { player } from '$lib/stores/store';
-	import type { Player } from '$lib/models/player';
+	import {
+		getPlaylistsImage,
+		player,
+		tracklist,
+		currentPlaylistsImages,
+		getPlayerTimePosition,
+		getPlayerState,
+		setPlayerState
+	} from '$lib/stores/store';
 	import { onMount } from 'svelte';
 	import SnapStream from '$lib/utils/snapstream';
-	import SnapControl from '$lib/utils/snapcontrol';
-	import Audiostream from '$lib/utils/snapstream';
 
 	let audio;
 	let snapStream;
-    let playerIcon = $player.state === 'playing' ? faPause : faPlay;
+	let playerIcon = $player.state === 'playing' ? faPause : faPlay;
 
+	onMount(() => {
+		console.log('mounted');
+		console.log(player);
+		if ($player.state === 'playing') {
+			console.log('playing');
+			$player.state = 'paused';
+			playerIcon = faPause;
+		}
+		setInterval(() => {
+			//getPlayerState();
+		}, 2000);
+	});
 
-    onMount(() => {
-        console.log('mounted');
-        console.log(player);
-        if ($player.state === 'playing') {
-            console.log('playing');
-            $player.state = 'paused';
-            playerIcon = faPause;
-        }
-    });
-
-    $: console.log($player.state);
+	$: {
+		if ($tracklist[0]) {
+			console.log($tracklist[0].track.name);
+			getPlaylistsImage($tracklist[0].track.uri);
+		}
+	}
 
 	function returnPlayerState(state) {
+		console.log('returnPlayerState', state);
 		// if state stopped, play if paused play if playing pause
 		if (state === 'stopped') {
-            console.log('will play');
-            if (!snapStream) {
-                snapStream = new SnapStream('ws://localhost:1780');
-                snapStream.play();
-            }
-            $player.state = 'playing';
+			console.log('will play');
+			if (!snapStream) {
+				snapStream = new SnapStream('ws://localhost:1780');
+				snapStream.play();
+				setPlayerState('playing');
+			}
+			$player.state = 'playing';
 			playerIcon = faPlay;
 		}
 		if (state === 'paused') {
-            console.log('paused before will play');
-            if (!snapStream) {
-                snapStream = new SnapStream('ws://localhost:1780');
-                snapStream.play();
-            }
-            $player.state = 'playing';
+			console.log('paused before will play');
+			if (!snapStream) {
+				snapStream = new SnapStream('ws://localhost:1780');
+				snapStream.play();
+				setPlayerState('playing');
+			}
+			$player.state = 'playing';
 			playerIcon = faPlay;
 		}
 		if (state === 'playing') {
-            console.log('will pause');
-            $player.state = 'paused';
-
+			console.log('will pause');
+			$player.state = 'paused';
 			playerIcon = faPause;
+			setPlayerState('paused');
 		}
 	}
 </script>
@@ -65,37 +80,43 @@
 	</audio>
 	<div class="flex items-center h-12 justify-between">
 		<div class="flex items-center">
-			<div
-				class="bg-contain bg-center bg-no-repeat w-10 h-8"
-				style="background-image: url('https://placekitten.com/512/512')"
-			/>
+			{#if $tracklist[0]?.track?.uri}
+				<div
+					class="bg-contain bg-center bg-no-repeat w-10 h-8"
+					style="background-image: url('{$currentPlaylistsImages[$tracklist[0].track.uri]}')"
+				/>
+			{:else}
+				<div
+					class="bg-contain bg-center bg-no-repeat w-10 h-8"
+					style="background-image: url('https://placekitten.com/512/512')"
+				/>
+			{/if}
+
 			<div>
 				<div class="text-sm">
-                    {#if $player?.track?.name}
-                        {$player.track.name}
-                        {:else}
-                            Unknown Album
-                    {/if}
-                        
-                </div>
+					{#if $tracklist[0]?.track.name}
+						{$tracklist[0]?.track.name}
+					{:else}
+						Unknown Album
+					{/if}
+				</div>
 				<div class="text-sm">
-                    {#if $player?.track?.artists}
-                        {#each $player.track.artists as artist}
-                            {artist.name}
-                        {/each}
-                        {:else}
-                            Unknown Artist
-                    {/if}
-                    
-                </div>
+					{#if $tracklist[0]?.track.artists}
+						{#each $tracklist[0]?.track.artists as artist}
+							{artist.name}
+						{/each}
+					{:else}
+						Unknown Artist
+					{/if}
+				</div>
 			</div>
 		</div>
 
 		<div class="mr-6" on:click={returnPlayerState($player.state)}>
-			<Fa icon={playerIcon}/>
+			<Fa icon={playerIcon} />
 		</div>
 	</div>
-    
+
 	<!-- {#if $player}
         <button on:click={() => $player.state = returnPlayerState($player.state)}>{ $player.state }</button>
     {/if} -->
