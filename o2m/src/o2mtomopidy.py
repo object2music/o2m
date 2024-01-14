@@ -473,9 +473,8 @@ class O2mToMopidy:
         tracklist_uris = []
         
         #If discover level has been pushed by api since the begining of session, we priorise it
-        if self.discover_level_on:
-            discover_level = self.discover_level
-        else:
+        discover_level = self.discover_level
+        if not(self.discover_level_on) and (self.get_option_for_box(box, "option_discover_level")!=None) :
             discover_level = self.get_option_for_box(box, "option_discover_level")
         
         '''
