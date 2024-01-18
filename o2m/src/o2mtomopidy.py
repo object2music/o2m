@@ -1148,7 +1148,7 @@ class O2mToMopidy:
                                         stat.option_type = 'trash'
                         '''
 
-        print(f"\n\nUpdate stat track {stat}\n\n")
+        print(f"\n\nUpdate and Fix {fix} stat track {stat}\n\n")
         stat.update()
         stat.save()
 
