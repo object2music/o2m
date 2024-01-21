@@ -270,6 +270,7 @@ if __name__ == "__main__":
             library_link = ''
             data = ''
             position = event.time_position
+            
             #Update Dynamic datas linked to Box object and stats
             if box:
                 if box.data != '': data = box.data
@@ -277,7 +278,7 @@ if __name__ == "__main__":
                 if box.option_type != 'new':
                     if hasattr(box, "option_types") and hasattr(box, "tlids"):
                         try: option_type = box.option_types[box.tlids.index(event.tl_track.tlid)]
-                        except Exception as val_e: print(f"Erreur : {val_e}")
+                        except Exception as val_e: print(f"Error end_track : {val_e}")
                     if hasattr(box, "library_link") and hasattr(box, "tlids"):
                         try: library_link = box.library_link[box.tlids.index(event.tl_track.tlid)]
                         except Exception as val_e: print(f"Erreur : {val_e}")
@@ -303,6 +304,7 @@ if __name__ == "__main__":
 
                 # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
                 if "track" in track.uri and event.time_position / track.length > 0.9:
+                    print (f"Ending with option_type {option_type}")
                     if option_type != 'new': 
                         #int(round(discover_level * 0.25))
                         try: o2mHandler.add_reco_after_track_read(track.uri,library_link,data)

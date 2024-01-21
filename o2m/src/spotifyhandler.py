@@ -7,7 +7,7 @@ class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("o2m.conf")["spotipy"]
         self.cache_path = ".cache_spotipy" 
-        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read"
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
@@ -115,31 +115,30 @@ class SpotifyHandler:
             playlists = self.sp.current_user_playlists()
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
-            self.init_token_sp()
-            playlists = self.sp.current_user_playlists()
 
         #hack
-        playlists = playlists['items']
-        for pl in range(len(playlists)):
-            if playlists[pl]['name']=='Trash':
-                playlists.remove(playlists[pl])
-                break
+        print(f"Lenght playlists {len(playlists)}")
+        if len(playlists)>0:
+            playlists = playlists['items']
+            for pl in range(len(playlists)):
+                if playlists[pl]['name']=='Trash':
+                    playlists.remove(playlists[pl])
+                    break
 
-        if playlists:
-            for i in range(limit):
-                playlist = random.choice(playlists)
-                size = int(len(playlist)*discover_level/10)
-                #We take some of the latests tracks added in the playlist
-                tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]
-                track = random.choice(tracks)
-                t_list.append(track['track']['uri'])
-                #for j in range(unit):
-                    #track = tracks['items'][-unit:]
-                    #track = random.choice(tracks['items'])
-                    #track = tracks[0:1]
-                    #t_list.append(track['uri'])
+            if len(playlists)>0:
+                for i in range(limit):
+                    playlist = random.choice(playlists)
+                    size = int(len(playlist)*discover_level/10)
+                    #We take some of the latests tracks added in the playlist
+                    tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]
+                    track = random.choice(tracks)
+                    t_list.append(track['track']['uri'])
+                    #for j in range(unit):
+                        #track = tracks['items'][-unit:]
+                        #track = random.choice(tracks['items'])
+                        #track = tracks[0:1]
+                        #t_list.append(track['uri'])
         return t_list
-
 
 ################### ALBUMS  #############################
 
