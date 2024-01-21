@@ -237,6 +237,10 @@ class O2mToMopidy:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
         self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results)
+        #INFOS
+        box.option_type == 'info'
+        box.option_sort == 'desc'
+        self.add_tracks(box, self.lastinfos(box,max_results), 1)
         self.play_or_resume()
 
 
@@ -433,11 +437,6 @@ class O2mToMopidy:
                 if box1:
                     self.add_tracks(box, self.tracklistappend_box(box1,max_result1), max_result1)
                 #tracklist_uris.append(self.tracklistappend_box(box,max_result1))
-
-            #INFOS
-            #box.option_type == 'podcast'
-            #box.option_sort == 'desc'
-            #self.add_tracks(box, self.lastinfos(box,max_results), 1)
 
             #APPEND
             #Common tracks n=(-0.3*d+8)/30
