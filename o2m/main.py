@@ -250,7 +250,7 @@ if __name__ == "__main__":
                 o2mHandler.mopidyHandler.mixer.set_volume(int(volume))
 
             # Podcast : seek previous position
-            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri) or ("yt:" in track.uri):
+            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
                 if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
                     o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
                 #skip advertising on sismique
@@ -315,7 +315,7 @@ if __name__ == "__main__":
                         o2mHandler.update_stat_raw(track.uri)
 
             # Podcast
-            if "podcast+" in track.uri:
+            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
 
                 #URI harmonization if max_results used : pb to update track.uri
                 '''if "?max_results=" in track.uri: 
@@ -341,7 +341,7 @@ if __name__ == "__main__":
             print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
 
             # Update stats 
-            if (event.event == "track_playback_ended") or ("podcast+" in track.uri):
+            if (event.event == "track_playback_ended") or ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
                 try: 
                     o2mHandler.update_stat_track(track,position,option_type,library_link)
                 except Exception as val_e: 
