@@ -404,7 +404,7 @@ class O2mToMopidy:
             #box = self.dbHandler.get_box_by_option_type('new_mopidy')
             #box.option_type = 'normal'
             tracklist_uris= []
-            ''''
+
             #ADD_TRACKS
             #News n=(0.5*d)/30
             max_result1 = int(round((0.7*discover_level)/30*max_results))
@@ -457,7 +457,7 @@ class O2mToMopidy:
             print(f"\nAUTO : Albums {max_result1} tracks\n")
             #tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level))
             self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1)
-            '''
+
             #Playlists n=(-0.2*d+7)/30
             max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
             print(f"\nAUTO : Playlist {max_result1} tracks\n")
