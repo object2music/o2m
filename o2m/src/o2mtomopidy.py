@@ -243,17 +243,17 @@ class O2mToMopidy:
 
 #TRACKLIST FILL / ADD
     #Flatten
-    def flatten0(self,xs):
+    def flatten(self,xs):
         for x in xs:
             if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
-                yield from flatten(x)
+                yield from self.flatten(x)
             else:
                 yield x
                 
-    def flatten(self,L):
+    def flatten0(self,L):
         for item in L:
             try:
-                yield from flatten(item)
+                yield from self.flatten(item)
             except TypeError:
                 yield item
 
@@ -266,8 +266,8 @@ class O2mToMopidy:
         length = 0
         
         if len(uris) > 0:
-            #uris = util.flatten_list(uris)
-            uris = self.flatten(uris)
+            uris = util.flatten_list(uris)
+            #uris = self.flatten(uris)
             if None in uris:
                 uris.remove(None)
             if "None" in uris:
