@@ -3,20 +3,22 @@
 	import { faPlay, faPause } from '@fortawesome/free-solid-svg-icons';
 
 	import {
-		getPlaylistsImage,
 		player,
 		tracklist,
 		currentPlaylistsImages,
-		getPlayerTimePosition,
-		getPlayerState,
-		setPlayerState
-	} from '$lib/stores/store';
+	} from '$lib/store';
+	import {
+		setPlayerState,
+		getPlaylistImage
+	} from '$lib/utils/mopidy/requests';
 	import { onMount } from 'svelte';
 	import SnapStream from '$lib/utils/snapstream';
 
 	let audio;
 	let snapStream;
-	let playerIcon = $player.state === 'playing' ? faPause : faPlay;
+	let playerIcon = $player.state === 'playing' ? faPlay : faPause;
+
+	$: console.log("### Player ###", $player);
 
 	onMount(() => {
 		console.log('mounted');
@@ -32,9 +34,9 @@
 	});
 
 	$: {
-		if ($tracklist[0]) {
+		if ($tracklist[0]?.track?.name) {
 			console.log($tracklist[0].track.name);
-			getPlaylistsImage($tracklist[0].track.uri);
+			getPlaylistImage($tracklist[0].track.uri);
 		}
 	}
 
@@ -48,7 +50,6 @@
 				snapStream.play();
 				setPlayerState('playing');
 			}
-			$player.state = 'playing';
 			playerIcon = faPlay;
 		}
 		if (state === 'paused') {
@@ -58,12 +59,10 @@
 				snapStream.play();
 				setPlayerState('playing');
 			}
-			$player.state = 'playing';
 			playerIcon = faPlay;
 		}
 		if (state === 'playing') {
 			console.log('will pause');
-			$player.state = 'paused';
 			playerIcon = faPause;
 			setPlayerState('paused');
 		}
@@ -94,14 +93,14 @@
 
 			<div>
 				<div class="text-sm">
-					{#if $tracklist[0]?.track.name}
+					{#if $tracklist[0]?.track?.name}
 						{$tracklist[0]?.track.name}
 					{:else}
 						Unknown Album
 					{/if}
 				</div>
 				<div class="text-sm">
-					{#if $tracklist[0]?.track.artists}
+					{#if $tracklist[0]?.track?.artists}
 						{#each $tracklist[0]?.track.artists as artist}
 							{artist.name}
 						{/each}
