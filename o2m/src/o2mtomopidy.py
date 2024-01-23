@@ -4,7 +4,6 @@ from mopidy_podcast import Extension, feeds
 from urllib import parse
 
 import src.util as util
-from collections.abc import Iterable
 from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Box
 from src.spotifyhandler import SpotifyHandler
 
@@ -237,26 +236,12 @@ class O2mToMopidy:
         if box == None:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
-        self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results)
-        
-        self.play_or_resume()
+        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results)
+        go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info")
+        if go > 0:
+            self.play_or_resume()
 
 #TRACKLIST FILL / ADD
-    #Flatten
-    def flatten(self,xs):
-        for x in xs:
-            if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
-                yield from self.flatten(x)
-            else:
-                yield x
-                
-    def flatten0(self,L):
-        for item in L:
-            try:
-                yield from self.flatten(item)
-            except TypeError:
-                yield item
-
     # Adding tracks to tracklist and associate them to tracks table
     def add_tracks(self, box1, uris, max_results=15, force_option_type=None):
         #Set variables
@@ -413,8 +398,10 @@ class O2mToMopidy:
         #box is the common and box1,2.. the specific emulation for each activation
         try:
             print (f"DL AUTO : {discover_level}")
+            
             #GO QUICKLY
             self.quicklaunch_auto(1,discover_level,box)
+
 
             #Variables
             window = int(round(discover_level / 2))
@@ -481,10 +468,6 @@ class O2mToMopidy:
             #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
             self.add_tracks(box, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1)
             
-            #INFOS
-            print(f"\nAUTO : INFOS \n")
-            self.add_tracks(box, self.lastinfos(box,max_results), 1, "info")
-
             #return tracklist_uris
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
@@ -935,7 +918,6 @@ class O2mToMopidy:
             #self.play_or_resume()
 
 #  TRACKS AND STATS MANAGEMENT
-
     def get_spotify_reco(self, track_seed, limit):
         uris = self.spotifyHandler.get_recommendations(
             seed_genres=None, seed_artists=None, seed_tracks=track_seed, limit=limit)
