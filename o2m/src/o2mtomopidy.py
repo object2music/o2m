@@ -241,6 +241,14 @@ class O2mToMopidy:
         self.play_or_resume()
 
 #TRACKLIST FILL / ADD
+    #Flatten
+    def flatten(L):
+        for item in L:
+            try:
+                yield from flatten(item)
+            except TypeError:
+                yield item
+
     # Adding tracks to tracklist and associate them to tracks table
     def add_tracks(self, box1, uris, max_results=15, force_option_type=None):
         #Set variables
@@ -250,7 +258,8 @@ class O2mToMopidy:
         length = 0
         
         if len(uris) > 0:
-            uris = util.flatten_list(uris)
+            #uris = util.flatten_list(uris)
+            uris = flatten(uris)
             if None in uris:
                 uris.remove(None)
             if "None" in uris:
@@ -648,6 +657,7 @@ class O2mToMopidy:
         hour = datetime.datetime.now().hour
         minute = datetime.datetime.now().minute
         day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
+        info_url = ""
         print (f"infos:library {day} {hour} {minute}")
         #Week
         if day < 5:
