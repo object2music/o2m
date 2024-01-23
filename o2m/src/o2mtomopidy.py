@@ -4,6 +4,7 @@ from mopidy_podcast import Extension, feeds
 from urllib import parse
 
 import src.util as util
+from collections.abc import Iterable
 from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Box
 from src.spotifyhandler import SpotifyHandler
 
@@ -242,12 +243,12 @@ class O2mToMopidy:
 
 #TRACKLIST FILL / ADD
     #Flatten
-    def flatten(L):
-        for item in L:
-            try:
-                yield from flatten(item)
-            except TypeError:
-                yield item
+    def flatten(xs):
+        for x in xs:
+            if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
+                yield from flatten(x)
+            else:
+                yield x
 
     # Adding tracks to tracklist and associate them to tracks table
     def add_tracks(self, box1, uris, max_results=15, force_option_type=None):
