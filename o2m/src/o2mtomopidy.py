@@ -249,12 +249,14 @@ class O2mToMopidy:
                 yield from flatten(x)
             else:
                 yield x
+                
     def flatten(self,L):
         for item in L:
             try:
                 yield from flatten(item)
             except TypeError:
                 yield item
+
     # Adding tracks to tracklist and associate them to tracks table
     def add_tracks(self, box1, uris, max_results=15, force_option_type=None):
         #Set variables
