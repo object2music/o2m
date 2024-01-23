@@ -259,7 +259,7 @@ class O2mToMopidy:
         
         if len(uris) > 0:
             #uris = util.flatten_list(uris)
-            uris = flatten(uris)
+            uris = self.flatten(uris)
             if None in uris:
                 uris.remove(None)
             if "None" in uris:
