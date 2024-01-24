@@ -1,5 +1,5 @@
 import type { Box } from "$lib/models";
-import { currentUser, pb } from "$lib/stores/store";
+import { currentUser, pb } from "$lib/store";
 import { get } from "svelte/store";
 
 export async function createBox(box: Box) {

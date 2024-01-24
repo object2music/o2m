@@ -4,10 +4,8 @@
 		currentPlaylists,
 		currentPlaylistsImages,
 		currentUser,
-
-		getPlaylistsImage
-
-	} from '$lib/stores/store';
+	} from '$lib/store';
+	import { getPlaylistImage } from '$lib/utils/mopidy/requests';
 	import { createBox } from '$lib/utils/box';
 	import { faBox, faL, faMusic, faPlus, faSearch } from '@fortawesome/free-solid-svg-icons';
 	import Fa from 'svelte-fa';
@@ -43,8 +41,8 @@
 
 	$: {
 		$currentPlaylists.forEach((playlist) => {
-                getPlaylistsImage(playlist.uri);
-            });
+			getPlaylistImage(playlist.uri);
+		});
 	}
 </script>
 
