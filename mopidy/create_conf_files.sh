@@ -24,7 +24,8 @@ client_secret = $SPOTIFY_CLIENT_SECRET
 enabled = $HTTP_ENABLED
 hostname = $HTTP_HOSTNAME
 port = $HTTP_PORT
-
+allowed_origins = $ALLOWED_ORIGINS
+csrf_protection = $CSRF_PROTECTION
 [mpd]
 hostname = $MPD_HOSTNAME
 
