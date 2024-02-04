@@ -56,29 +56,35 @@ class O2mToMopidy:
             self.option_sort = self.configO2M["option_sort"] 
 
         if "option_autofill_playlists" in self.configO2M:
-            self.option_autofill_playlists = bool(self.configO2M["option_autofill_playlists"])
+            self.option_autofill_playlists = self.clean_bool(self.configO2M["option_autofill_playlists"])
         else: self.option_autofill_playlists = False
 
         if "option_add_reco_after_track" in self.configO2M:
-            self.option_add_reco_after_track = bool(self.configO2M["option_add_reco_after_track"])
+            self.option_add_reco_after_track = self.clean_bool(self.configO2M["option_add_reco_after_track"])
         else: self.option_add_reco_after_track = False
 
         if "shuffle" in self.configO2M:
-            self.shuffle = bool(self.configO2M["shuffle"]) 
+            self.shuffle = self.clean_bool(self.configO2M["shuffle"])
 
         if "username" in configO2m["spotify"]:
             self.username = configO2m["spotify"]["username"] 
 
         if "enabled" in configO2m["local"]:
-            self.local = bool(configO2m["local"]["enabled"])
+            self.local = self.clean_bool(configO2m["local"]["enabled"])
 
         if "default_box" in self.configO2M:
             self.default_box = self.configO2M["default_box"]
 
         if "fix_stats" in self.configO2M:
-            self.fix_stats = bool(self.configO2M["fix_stats"])
-
+            self.fix_stats = self.clean_bool(self.configO2M["fix_stats"])
         self.starting_mode(clear=True)
+
+#MISC
+    def clean_bool(self,str1):
+        try:
+            return bool(eval(str(str1).lower().capitalize()))
+        except Exception as val_e: 
+            return False
 
 #TAG MANAGEMENT
 

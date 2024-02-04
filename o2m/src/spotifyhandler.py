@@ -111,6 +111,7 @@ class SpotifyHandler:
         #Get last tracks from each playlist
         #To be upgraded : remove trash playlist, enlarge the window
         t_list=[]
+        total=0
         try: 
             playlists = self.sp.current_user_playlists()
         except Exception as val_e: 
@@ -151,6 +152,7 @@ class SpotifyHandler:
 
     def get_my_albums_tracks(self,limit=1,unit=1):
         t_list=[]
+        total=0
         try: 
             total = self.sp.current_user_saved_albums()['total']
         except Exception as val_e: 
