@@ -76,7 +76,7 @@ class O2mToMopidy:
             self.default_box = self.configO2M["default_box"]
 
         if "fix_stats" in self.configO2M:
-            self.fix_stats = self.configO2M["fix_stats"]
+            self.fix_stats = bool(self.configO2M["fix_stats"])
 
         self.starting_mode(clear=True)
 
@@ -290,7 +290,8 @@ class O2mToMopidy:
                         #Removing trash and hidden : too long
                         for t in tltracks_added:
                             #Option_type fixing (to be improved)
-                            if self.fix_stats==True: self.update_stat_track(t.track,0,option_type,'',True)
+                            if self.fix_stats==True: 
+                                self.update_stat_track(t.track,0,option_type,'',True)
                             
                             '''if self.dbHandler.stat_exists(t.track.uri):
                                 stat = self.dbHandler.get_stat_by_uri(t.track.uri)
