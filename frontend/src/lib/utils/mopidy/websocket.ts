@@ -1,6 +1,6 @@
 
 import {PUBLIC_MOPIDY_WS_PORT} from '$env/static/public'
-import { currentPlaylist, currentPlaylistId, tracklist, currentPlaylists, currentPlaylistsImages, player } from '$lib/store';
+import { socketOpen, currentPlaylist, currentPlaylistId, tracklist, currentPlaylists, currentPlaylistsImages, player } from '$lib/store';
 import { requestIds } from './requestId';
 import { getPlaybackState, getPlaylist, getPlaylists, getTracklist } from './requests';
 
@@ -8,6 +8,8 @@ import { getPlaybackState, getPlaylist, getPlaylists, getTracklist } from './req
 export const socket = new WebSocket(`ws://localhost:${PUBLIC_MOPIDY_WS_PORT}/mopidy/ws/`);
 
 socket.addEventListener("open", () => {
+    console.log("WebSocket connected");
+    socketOpen.set(true);
     // get playlists
     getPlaylists();
 

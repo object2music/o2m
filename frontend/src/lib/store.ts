@@ -8,6 +8,7 @@ import type { Player, Playlist,Tracklist, User } from './models/index';
 
 export const pb = new PocketBase(PUBLIC_POCKETBASE_URL);
 
+export let socketOpen = writable(false);
 export const currentUser = writable(pb.authStore.model as User);
 export const currentPlaylists = writable(<Playlist[]>[]);
 export const currentPlaylistsImages = writable(<Record<string,string>>{});
