@@ -4,6 +4,6 @@ export interface Player {
     volume?: number;
     mute?: boolean;
     time_position?: number;
-    track?: Track;
+    tracklist: Track[];
     state?: "playing" | "paused" | "stopped";
 }

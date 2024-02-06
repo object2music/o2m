@@ -36,6 +36,7 @@ export async function setPlayerState(state: string) {
     console.log("setPlayerState", state);
     const request = {"jsonrpc": "2.0", "id": requestIds.setPlayerState, "method": `core.playback.${state}`};
     socket.send(JSON.stringify(request));
+    getPlayerState();
 }
 
 export async function getPlayerTimePosition() {
@@ -64,12 +65,13 @@ export function  setCurrentTrack(trackUri: string) {
     clearTracklist();
     addTrackToTracklist(trackUri);
     setPlayerState("play");
-    getPlaybackState();
+    getPlayerState();
 }
 
 export function getPlayerState() {
+    console.log("----------------getPlayerState-----------------");
     getPlaybackState();
-    getCurrentTrack();
+    getTracklist();
     getVolume();
     getPlayerTimePosition();
 }

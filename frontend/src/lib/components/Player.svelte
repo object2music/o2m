@@ -4,12 +4,14 @@
 
 	import {
 		player,
-		tracklist,
 		currentPlaylistsImages,
 	} from '$lib/store';
 	import {
 		setPlayerState,
-		getPlaylistImage
+		getPlaylistImage,
+
+		getPlayerState
+
 	} from '$lib/utils/mopidy/requests';
 	import { onMount } from 'svelte';
 	import SnapStream from '$lib/utils/snapstream';
@@ -34,43 +36,53 @@
 	});
 
 	$: {
-		if ($tracklist[0]?.track?.name) {
-			console.log($tracklist[0].track.name);
-			getPlaylistImage($tracklist[0].track.uri);
+		if ($player?.tracklist[0]?.track?.name) {
+			console.log($player?.tracklist[0].track.name);
+			getPlaylistImage($player?.tracklist[0].track.uri);
+			switch ($player?.state) {
+				case 'stopped':
+					playerIcon = faPlay;
+					break;
+				case 'paused':
+					playerIcon = faPlay;
+					break;
+				case 'playing':
+					playerIcon = faPause;
+					break;
+			}
+		}
+
+	}
+
+	function switchPlayerState(state){
+		if(!snapStream) {
+			snapStream = new SnapStream('ws://localhost:1780')
+
+			audio.play().then(() => {
+				snapStream.play();
+			});
+		}
+		switch (state) {
+			case 'stopped':
+				$player.state = 'playing';
+				playerIcon = faPause;
+				break;
+			case 'paused':
+				$player.state = 'playing';
+				playerIcon = faPause;
+				break;
+			case 'playing':
+				$player.state = 'paused';
+				playerIcon = faPlay;
+				break;
 		}
 	}
 
-	function returnPlayerState(state) {
-		console.log('returnPlayerState', state);
-		// if state stopped, play if paused play if playing pause
-		if (state === 'stopped') {
-			console.log('will play');
-			if (!snapStream) {
-				snapStream = new SnapStream('ws://localhost:1780');
-				snapStream.play();
-				setPlayerState('playing');
-			}
-			playerIcon = faPlay;
-		}
-		if (state === 'paused') {
-			console.log('paused before will play');
-			if (!snapStream) {
-				snapStream = new SnapStream('ws://localhost:1780');
-				snapStream.play();
-				setPlayerState('playing');
-			}
-			playerIcon = faPlay;
-		}
-		if (state === 'playing') {
-			console.log('will pause');
-			playerIcon = faPause;
-			setPlayerState('paused');
-		}
-	}
+
 </script>
 
 <section class="fixed bottom-10 bg-neutral-content text-neutral w-full h-15">
-	<audio class="hidden" controls bind:this={audio}>
+	<audio class="hidden" controls loop bind:this={audio}>
 		<source
 			src="https://raw.githubusercontent.com/anars/blank-audio/master/10-seconds-of-silence.mp3"
 			type="audio/mpeg"
@@ -79,10 +91,10 @@
 	</audio>
 	<div class="flex items-center h-12 justify-between">
 		<div class="flex items-center">
-			{#if $tracklist[0]?.track?.uri}
+			{#if $player?.tracklist[0]?.track?.uri}
 				<div
 					class="bg-contain bg-center bg-no-repeat w-10 h-8"
-					style="background-image: url('{$currentPlaylistsImages[$tracklist[0].track.uri]}')"
+					style="background-image: url('{$currentPlaylistsImages[$player?.tracklist[0].track.uri]}')"
 				/>
 			{:else}
 				<div
@@ -93,15 +105,15 @@
 
 			<div>
 				<div class="text-sm">
-					{#if $tracklist[0]?.track?.name}
-						{$tracklist[0]?.track.name}
+					{#if $player?.tracklist[0]?.track?.name}
+						{$player?.tracklist[0]?.track.name}
 					{:else}
 						Unknown Album
 					{/if}
 				</div>
 				<div class="text-sm">
-					{#if $tracklist[0]?.track?.artists}
-						{#each $tracklist[0]?.track.artists as artist}
+					{#if $player?.tracklist[0]?.track?.artists}
+						{#each $player?.tracklist[0]?.track.artists as artist}
 							{artist.name}
 						{/each}
 					{:else}
@@ -111,7 +123,7 @@
 			</div>
 		</div>
 
-		<div class="mr-6" on:click={returnPlayerState($player.state)}>
+		<div class="mr-6" on:click={switchPlayerState($player?.state)}>
 			<Fa icon={playerIcon} />
 		</div>
 	</div>

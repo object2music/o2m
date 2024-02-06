@@ -2,12 +2,17 @@
 import {PUBLIC_MOPIDY_WS_PORT} from '$env/static/public'
 import { currentPlaylist, currentPlaylistId, tracklist, currentPlaylists, currentPlaylistsImages, player } from '$lib/store';
 import { requestIds } from './requestId';
-import { getPlaybackState, getPlaylist, getPlaylists, getTracklist } from './requests';
+import { getPlaybackState, getPlayerState, getPlaylist, getPlaylists } from './requests';
 
 
 export const socket = new WebSocket(`ws://localhost:${PUBLIC_MOPIDY_WS_PORT}/mopidy/ws/`);
 
 socket.addEventListener("open", () => {
+
+    // get player state
+    getPlayerState()
+
+
     // get playlists
     getPlaylists();
 
@@ -18,9 +23,6 @@ socket.addEventListener("open", () => {
         }
     });
 
-    // get playback state
-    getPlaybackState();
-   
 
     // subscribe to tracklist and set the tracklist
     tracklist.subscribe((tracklist) => {
@@ -46,7 +48,7 @@ socket.addEventListener("message", (event) => {
                 break;
 
             case requestIds.getPlaybackState:
-                console.log("#####################", response.result);
+                console.log("getPlaybackState", response.result);
                 if (typeof response.result === "string") {
                     console.log("player.state", response.result);
                     player.set({state: response.result});
@@ -57,7 +59,10 @@ socket.addEventListener("message", (event) => {
                 break;
             case requestIds.getTracklist:
                 console.log("tracklist", response.result);
-                tracklist.set(response.result);
+                player.update((player) => {
+                    player.tracklist = response.result;
+                    return player;
+                });
                 // get player state
                 const request = {"jsonrpc": "2.0", "id": 3, "method": "core.playback.get_state"};
                 break;
@@ -70,6 +75,7 @@ socket.addEventListener("message", (event) => {
                     return currentPlaylistsImages;
                 });
                 break;
+
 
             default:
                 console.log("Unknown response id", response);
@@ -84,6 +90,4 @@ socket.addEventListener("message", (event) => {
 
 export function startWebsocket(){
     console.log("startWebsocket");
-    getPlaybackState();
-    getTracklist();
 }
