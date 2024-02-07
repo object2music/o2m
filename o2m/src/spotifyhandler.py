@@ -111,10 +111,11 @@ class SpotifyHandler:
         #Get last tracks from each playlist
         #To be upgraded : remove trash playlist, enlarge the window
         t_list=[]
+        total=0
         try: 
             playlists = self.sp.current_user_playlists()
         except Exception as val_e: 
-            print(f"Erreur : {val_e}")
+            print(f"Erreur playlist : {val_e}")
 
         #hack
         print(f"Lenght playlists {len(playlists)}")
@@ -151,13 +152,25 @@ class SpotifyHandler:
 
     def get_my_albums_tracks(self,limit=1,unit=1):
         t_list=[]
-        total = self.sp.current_user_saved_albums()['total']
+        total=0
+        try: 
+            total = self.sp.current_user_saved_albums()['total']
+        except Exception as val_e: 
+            print(f"Erreur albums : {val_e}")
 
         if total>0:
+            #Extract one album n=limit times
             for i in range(limit):
-                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
+                try: 
+                    album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
+                except Exception as val_e: 
+                    print(f"Erreur albums2 : {val_e}")
                 #album = random.choice(albums['items'])
-                tracks = self.sp.album_tracks(album['items'][i]['album']['id'])
+                try: 
+                    tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
+                except Exception as val_e: 
+                    print(f"Erreur albums3 : {val_e}")
+                #Extract n=unit tracks from the album
                 if unit != 0:
                     for j in range(unit):
                         track = random.choice(tracks['items'])
@@ -207,16 +220,18 @@ class SpotifyHandler:
 
     def get_my_artists_tracks(self,limit=1,unit=1):
         t_list=[]
-        total = self.sp.current_user_followed_artists()['artists']['total']
+        try:
+            total = self.sp.current_user_followed_artists()['artists']['total']
+        except Exception as val_e: 
+            print(f"Erreur artist : {val_e}")        
         if total>0:
-            print ("1")
             for i in range(limit):
-                print ("2")
                 artists = self.sp.current_user_followed_artists(limit=1,after=random.randint(0,total-1))
 
-                #album = random.choice(albums['items'])
-                print (artists)
-                tracks = self.get_artist_top_tracks(artists['artists']['items'][i]['id'])
+                try: 
+                    tracks = self.get_artist_top_tracks(artists['artists']['items'][0]['id'])
+                except Exception as val_e: 
+                    print(f"Erreur artist : {val_e}")
                 if unit != 0:
                     for j in range(unit):
                         track = random.choice(tracks['items'])
