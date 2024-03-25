@@ -59,6 +59,7 @@ RUN chmod +x ./create_conf_files.sh
 # put in iris folder
 COPY  ./o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
 COPY  ./o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
+COPY  ./app.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/app.js
 COPY ./index.html /app/index.html
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
