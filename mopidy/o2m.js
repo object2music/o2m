@@ -9,8 +9,8 @@ window.onload = function() {
   //------------------INIT--------------------- 
   
   list = document.getElementsByClassName('sidebar__menu')[0];
-  base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
   //host = window.location.host;
+  base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
   base_url += ':6681/api/'
   backoffice_uri = 'http://51.15.205.150:5001'
   //backoffice_uri += 'sql.php?table=box&sql_query=SELECT+%2A+FROM+%60box%60++%0AORDER+BY+%60box%60.%60favorite%60++DESC&session_max_rows=100&is_browse_distinct=0'
@@ -22,7 +22,7 @@ window.onload = function() {
 
     // Options for the observer (which mutations to observe)
     const config = {childList: true};
-    const flag_o2m_status = 0;
+    flag_o2m_status = 0;
 
     // Callback function to execute when mutations are observed
     const callback = (mutationList, observer) => {
@@ -31,7 +31,6 @@ window.onload = function() {
           if (flag_o2m_status == 0)
             {
               flag_o2m_status = 1;
-              o2m_status = document.getElementsByClassName("o2m_status");
               for (update of o2m_status) {
                   try { 
                     uri1 = update.innerHTML;
@@ -43,7 +42,7 @@ window.onload = function() {
               }
               flag_o2m_status = 0;
             }
-        },60000);       
+        },60000);
 
       /*try { 
             if (mutation.target.getElementsByClassName("o2m_status")[0] !== undefined){ 
@@ -74,7 +73,8 @@ window.onload = function() {
   //----------------FUNCTIONS-------------
 
     function update_o2m_status(update,uri){
-      var xhr10 = new XMLHttpRequest();
+      if (uri != 'library' && uri != 'favorites' && uri != 'incoming' && uri != 'incoming' && uri != 'new' && uri != 'trash' && uri != 'hidden' && uri != 'normal') {
+        var xhr10 = new XMLHttpRequest();
         xhr10.onreadystatechange = function() {
         if (xhr10.readyState == xhr10.DONE) {
             if (xhr10.status === 200) {
@@ -119,6 +119,7 @@ window.onload = function() {
           xhr10.open("GET",base_url+"track_status?uri="+uri);
           xhr10.send();
         }
+    }
     }
 
     function update_style_all_button() {
@@ -218,7 +219,7 @@ window.onload = function() {
   xhr5.send();
 
   // O2M STATUS : STATUS DISPLAY Injection in IRIS (from API)
-  o2m_status = document.getElementsByClassName("o2m_status");
+  const o2m_status = document.getElementsByClassName("o2m_status");
   for (update of o2m_status) {
       try { 
         uri1 = update.innerHTML;
