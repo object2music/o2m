@@ -105,7 +105,10 @@ window.onload = function() {
                 break;
               }
               update.innerHTML = update_text;
-
+              if ( update.classList.contains('hide') ) {
+                update.classList.remove('hide');
+                update.classList.add('show');
+              }
             } 
             catch (error) {
               console.error(error);

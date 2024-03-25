@@ -28,6 +28,15 @@ input[type="number"] {
   border-radius: 3px;
 }
 
+.hide {
+  display: none;
+}
+
+.show {
+  display: block;
+}
+
+
 /* input[type="range"]:focus,
 input[type="number"]:focus {
   box-shadow: 0 0 3px 1px #08d58f;
