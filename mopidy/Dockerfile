@@ -59,7 +59,7 @@ RUN chmod +x ./create_conf_files.sh
 # put in iris folder
 COPY  ./o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
 COPY  ./o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
-COPY  ./app.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/app.js
+COPY  ./app.js /app/app.js
 COPY ./index.html /app/index.html
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
@@ -72,6 +72,7 @@ COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/lib
 RUN cp /app/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
 
 # install mopidy-spotify
-RUN python3 -m pip install https://github.com/mopidy/mopidy-spotify/archive/master.zip
+#RUN python3 -m pip install https://github.com/mopidy/mopidy-spotify/archive/master.zip
+RUN python3 -m pip install Mopidy-Spotify==5.0.0a1
 
 ENTRYPOINT ["./entrypoint.sh"]

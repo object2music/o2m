@@ -17,7 +17,7 @@ window.onload = function() {
   //alert(base_url)
   
   //Listeners for DOM change in IRIS (o2m_status)
-    //Select the node that will be observed for mutations
+    //Node of lists tracks changing 
     const targetNode = document.querySelectorAll("section.list-wrapper")[0];
 
     // Options for the observer (which mutations to observe)
@@ -43,32 +43,39 @@ window.onload = function() {
               flag_o2m_status = 0;
             }
         },60000);
-
-      /*try { 
-            if (mutation.target.getElementsByClassName("o2m_status")[0] !== undefined){ 
-              uri = mutation.target.getElementsByClassName("o2m_status")[0].innerHTML;
-              update = mutation.target.getElementsByClassName("o2m_status")[0];
-            }
-          } 
-          catch (error) {
-            console.error(error);
-          }
-          if (uri) {
-            update_o2m_status(update,uri);
-          }
-      */
         }
     };
 
     // Create an observer instance linked to the callback function
     const observer = new MutationObserver(callback);
-
-    // Start observing the target node for configured mutations
     observer.observe(targetNode, config);
 
-    // Later, you can stop observing
-    //observer.disconnect();
+  //Listeners for DOM change in IRIS (current-track__title)
+    //Node of lists tracks changing 
+    const targetNode1 = document.getElementById("o2m_status_current");
 
+    // Options for the observer (which mutations to observe)
+    const config1 = {attributes: true, childList: true, subtree: true };
+
+    // Callback function to execute when mutations are observed
+    const callback1 = (mutationList1, observer1) => {
+      alert ('title');
+      for (const mutation1 of mutationList1) {
+            for (update1 of o2m_status1) {
+                  try { 
+                    uri1 = update1.innerHTML;
+                    update_o2m_status(update1,uri1);
+                  } 
+                  catch (error) {
+                    console.error(error);
+                  }
+              }
+            }
+        };
+
+    // Create an observer instance linked to the callback function
+    const observer1 = new MutationObserver(callback1);
+    observer1.observe(targetNode1, config1);
 
   //----------------FUNCTIONS-------------
 
