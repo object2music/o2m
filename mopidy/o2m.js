@@ -32,15 +32,17 @@ window.onload = function() {
             {
               flag_o2m_status = 1;
               for (update of o2m_status) {
-                  try { 
-                    uri1 = update.innerHTML;
-                    update_o2m_status(update,uri1);
+
+              try { 
+                    uri1 = mutation.target.innerHTML;
+                    update_o2m_status(mutation.target,uri1);
                   } 
                   catch (error) {
                     console.error(error);
                   }
               }
               flag_o2m_status = 0;
+                
             }
         },60000);
         }
@@ -59,16 +61,17 @@ window.onload = function() {
 
     // Callback function to execute when mutations are observed
     const callback1 = (mutationList1, observer1) => {
-      alert ('title');
       for (const mutation1 of mutationList1) {
-            for (update1 of o2m_status1) {
-                  try { 
-                    uri1 = update1.innerHTML;
-                    update_o2m_status(update1,uri1);
-                  } 
-                  catch (error) {
-                    console.error(error);
-                  }
+              try { 
+                if ( mutation1.target.classList.contains('show') ) {
+                  mutation1.target.classList.remove('show');
+                  mutation1.target.classList.add('hide');
+                }
+                uri1 = mutation1.target.innerHTML;
+                update_o2m_status(mutation1.target,uri1);
+              } 
+              catch (error) {
+                console.error(error);
               }
             }
         };
@@ -235,7 +238,16 @@ window.onload = function() {
       catch (error) {
         console.error(error);
       }
-    }
+  }
+
+  const o2m_status1 = document.getElementById("o2m_status_current");
+  try { 
+    uri1 = o2m_status1.innerHTML;
+    update_o2m_status(o2m_status1,uri1);
+  } 
+  catch (error) {
+    console.error(error);
+  }
 
 //OpenLevel Input and value
   var xhr0 = new XMLHttpRequest();
