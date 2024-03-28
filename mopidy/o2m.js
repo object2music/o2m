@@ -34,8 +34,8 @@ window.onload = function() {
               for (update of o2m_status) {
 
               try { 
-                    uri1 = mutation.target.innerHTML;
-                    update_o2m_status(mutation.target,uri1);
+                    uri1 = update.innerHTML;
+                    update_o2m_status(update,uri1);
                   } 
                   catch (error) {
                     console.error(error);
@@ -63,10 +63,6 @@ window.onload = function() {
     const callback1 = (mutationList1, observer1) => {
       for (const mutation1 of mutationList1) {
               try { 
-                if ( mutation1.target.classList.contains('show') ) {
-                  mutation1.target.classList.remove('show');
-                  mutation1.target.classList.add('hide');
-                }
                 uri1 = mutation1.target.innerHTML;
                 update_o2m_status(mutation1.target,uri1);
               } 
@@ -83,7 +79,7 @@ window.onload = function() {
   //----------------FUNCTIONS-------------
 
     function update_o2m_status(update,uri){
-      if (uri != 'library' && uri != 'favorites' && uri != 'incoming' && uri != 'incoming' && uri != 'new' && uri != 'trash' && uri != 'hidden' && uri != 'normal') {
+      if (uri != 'library' && uri != 'favorites' && uri != 'incoming' && uri != 'podcast' && uri != 'info' && uri != 'new' && uri != 'trash' && uri != 'hidden' && uri != 'normal') {
         var xhr10 = new XMLHttpRequest();
         xhr10.onreadystatechange = function() {
         if (xhr10.readyState == xhr10.DONE) {
@@ -110,16 +106,22 @@ window.onload = function() {
                 case 'hidden':
                   update.style.backgroundColor = "IndianRed";
                 break;
-                default:
-                  update_text="new";
+                case 'info':
+                  update.style.backgroundColor = "Gainsboro";
+                break;
+                case 'podcast':
+                  update.style.backgroundColor = "DarkGray";
                 break;
               }
               update.innerHTML = update_text;
-              if ( update.classList.contains('hide') ) {
-                update.classList.remove('hide');
+
+            if ( !update.classList.contains('show') ) {
                 update.classList.add('show');
-              }
             } 
+            if ( update.classList.contains('hide') ) {
+              update.classList.remove('hide');
+            } 
+          }            
             catch (error) {
               console.error(error);
             }
