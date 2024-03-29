@@ -34,9 +34,11 @@ input[type="number"] {
 
 .show {
   display:initial;
-  opacity: 1;
 }
 
+ul.details li.show{
+  opacity: 1;
+}
 
 /* input[type="range"]:focus,
 input[type="number"]:focus {

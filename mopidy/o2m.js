@@ -128,7 +128,7 @@ window.onload = function() {
           }}};
         if (uri)
         {
-          xhr10.open("GET",base_url+"track_status?uri="+uri);
+          xhr10.open("GET",base_url+"track_status?uri="+encodeURI(uri));
           xhr10.send();
         }
     }
