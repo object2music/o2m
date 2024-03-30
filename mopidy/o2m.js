@@ -114,7 +114,7 @@ window.onload = function() {
 
               if (show == "min")
               {
-                update_text = update_text.split(' - ')[0];
+                //update_text = update_text.split(' - ')[0];
               }
               update.innerHTML = update_text;
 
@@ -131,7 +131,7 @@ window.onload = function() {
           }}};
         if (uri)
         {
-          xhr10.open("GET",base_url+"track_status?uri="+encodeURI(uri));
+          xhr10.open("GET",base_url+"track_status?uri="+uri);
           xhr10.send();
         }
     }
