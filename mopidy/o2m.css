@@ -45,9 +45,11 @@ ul.details li.show {
 
 .show {
   display:initial;
-  opacity: 1;
 }
 
+ul.details li.show{
+  opacity: 1;
+}
 
 
 
