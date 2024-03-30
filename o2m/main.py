@@ -183,7 +183,10 @@ if __name__ == "__main__":
     def api_track_status():
         uri = request.args.get('uri')
         try: 
-            status = o2mHandler.dbHandler.get_stat_by_uri(uri).option_type
+            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+            option_type = str(stat.option_type)
+            read_end = float(stat.read_end)
+            status = option_type + " - " + str(round(read_end,1))
         except Exception as val_e:
             status = 'new'
         return status

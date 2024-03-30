@@ -64,7 +64,7 @@ window.onload = function() {
       for (const mutation1 of mutationList1) {
               try { 
                 uri1 = mutation1.target.innerHTML;
-                update_o2m_status(mutation1.target,uri1);
+                update_o2m_status(mutation1.target,uri1,"all");
               } 
               catch (error) {
                 console.error(error);
@@ -78,40 +78,43 @@ window.onload = function() {
 
   //----------------FUNCTIONS-------------
 
-    function update_o2m_status(update,uri){
-      if (uri != 'library' && uri != 'favorites' && uri != 'incoming' && uri != 'podcast' && uri != 'info' && uri != 'new' && uri != 'trash' && uri != 'hidden' && uri != 'normal') {
+    function update_o2m_status(update,uri,show = "min"){
+      if (!uri.includes('library - ') && !uri.includes('favorites - ') && !uri.includes('incoming - ') && !uri.includes('podcast - ') && !uri.includes('info - ') && !uri.includes('new') && !uri.includes('trash - ') && !uri.includes('hidden - ') && !uri.includes('normal - ')) {
         var xhr10 = new XMLHttpRequest();
         xhr10.onreadystatechange = function() {
         if (xhr10.readyState == xhr10.DONE) {
             if (xhr10.status === 200) {
             update_text = xhr10.responseText;
             try {
-              switch (update_text) {
-                case 'normal':
-                  update_text="library";
+                if (update_text.includes('normal')){
+                  update_text=update_text.replace("normal", "library");
                   update.style.backgroundColor = "DarkCyan";
-                  break;
-                case 'favorites':
+                }
+                else if (update_text.includes('favorites')){
                   update.style.backgroundColor = "YellowGreen";
-                  break;
-                case 'incoming':
+                }
+                else if (update_text.includes('incoming')){
                   update.style.backgroundColor = "GoldenRod";
-                  break;
-                case 'new':
+                  }
+                else if (update_text.includes('new')){
                   update.style.backgroundColor = "orange";
-                break;
-                case 'trash':
+                }
+                else if (update_text.includes('trash')){
                   update.style.backgroundColor = "FireBrick";
-                break;
-                case 'hidden':
+                }
+                else if (update_text.includes('hidden')){
                   update.style.backgroundColor = "IndianRed";
-                break;
-                case 'info':
+                }
+                else if (update_text.includes('info')){
                   update.style.backgroundColor = "Gainsboro";
-                break;
-                case 'podcast':
+                }
+                else if (update_text.includes('podcast')){
                   update.style.backgroundColor = "DarkGray";
-                break;
+                }
+
+              if (show == "min")
+              {
+                update_text = update_text.split(' - ')[0];
               }
               update.innerHTML = update_text;
 
@@ -245,7 +248,7 @@ window.onload = function() {
   const o2m_status1 = document.getElementById("o2m_status_current");
   try { 
     uri1 = o2m_status1.innerHTML;
-    update_o2m_status(o2m_status1,uri1);
+    update_o2m_status(o2m_status1,uri1,"all");
   } 
   catch (error) {
     console.error(error);
