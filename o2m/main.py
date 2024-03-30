@@ -176,6 +176,31 @@ if __name__ == "__main__":
             return "New dl"
         else:
             return "No new dl"
+    
+    #API TRACK STATUS
+    #Get the value from tlid or uri in list
+    @api.route('/api/track_status')
+    def api_track_status():
+        uri = request.args.get('uri')
+        try: 
+            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+            option_type = str(stat.option_type)
+            read_end = float(stat.read_end)
+            status = option_type + " - " + str(int(round(read_end,1)*10))
+        except Exception as val_e:
+            status = 'new'
+        return status
+
+        #tlid = int(request.args.get('tlid'))
+        #tracks = o2mHandler.mopidyHandler.tracklist.filter({'tlid':[tlid]})
+        #tracks = o2mHandler.mopidyHandler.tracklist.slice(tlid,tlid+1)
+        '''if tracks != None:
+            print (tracks)
+            uri = tracks[0].track['uri']
+            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+            return stat['option_type']
+        else:
+            return "no track"'''
 
     #RESTART
     @api.route('/api/reset_o2m')
@@ -250,7 +275,7 @@ if __name__ == "__main__":
                 o2mHandler.mopidyHandler.mixer.set_volume(int(volume))
 
             # Podcast : seek previous position
-            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtbe:video:" in track.uri) or ("yt:" in track.uri):
+            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
                 if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
                     o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
                 #skip advertising on sismique
@@ -270,6 +295,7 @@ if __name__ == "__main__":
             library_link = ''
             data = ''
             position = event.time_position
+            
             #Update Dynamic datas linked to Box object and stats
             if box:
                 if box.data != '': data = box.data
@@ -277,7 +303,7 @@ if __name__ == "__main__":
                 if box.option_type != 'new':
                     if hasattr(box, "option_types") and hasattr(box, "tlids"):
                         try: option_type = box.option_types[box.tlids.index(event.tl_track.tlid)]
-                        except Exception as val_e: print(f"Erreur : {val_e}")
+                        except Exception as val_e: print(f"Error end_track : {val_e}")
                     if hasattr(box, "library_link") and hasattr(box, "tlids"):
                         try: library_link = box.library_link[box.tlids.index(event.tl_track.tlid)]
                         except Exception as val_e: print(f"Erreur : {val_e}")
@@ -303,6 +329,7 @@ if __name__ == "__main__":
 
                 # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
                 if "track" in track.uri and event.time_position / track.length > 0.9:
+                    print (f"Ending with option_type {option_type}")
                     if option_type != 'new': 
                         #int(round(discover_level * 0.25))
                         try: o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
@@ -315,7 +342,7 @@ if __name__ == "__main__":
                         o2mHandler.update_stat_raw(track.uri)
 
             # Podcast
-            if "podcast+" in track.uri:
+            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
 
                 #URI harmonization if max_results used : pb to update track.uri
                 '''if "?max_results=" in track.uri: 
@@ -341,7 +368,7 @@ if __name__ == "__main__":
             print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
 
             # Update stats 
-            if (event.event == "track_playback_ended") or ("podcast+" in track.uri):
+            if (event.event == "track_playback_ended") or ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
                 try: 
                     o2mHandler.update_stat_track(track,position,option_type,library_link)
                 except Exception as val_e: 

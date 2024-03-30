@@ -4,6 +4,7 @@ bash create_conf_files.sh
 
 # replace index.html with our own > to move in create_conf ?
 cp index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
+cp app.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/app.js
 
 # Get env vars
 O2M_API_PORT=${PORT_O2M_API:-5000}

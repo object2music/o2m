@@ -7,7 +7,7 @@ class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("o2m.conf")["spotipy"]
         self.cache_path = ".cache_spotipy" 
-        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read"
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
@@ -111,35 +111,35 @@ class SpotifyHandler:
         #Get last tracks from each playlist
         #To be upgraded : remove trash playlist, enlarge the window
         t_list=[]
+        total=0
         try: 
             playlists = self.sp.current_user_playlists()
         except Exception as val_e: 
-            print(f"Erreur : {val_e}")
-            self.init_token_sp()
-            playlists = self.sp.current_user_playlists()
+            print(f"Erreur playlist : {val_e}")
 
         #hack
-        playlists = playlists['items']
-        for pl in range(len(playlists)):
-            if playlists[pl]['name']=='Trash':
-                playlists.remove(playlists[pl])
-                break
+        print(f"Lenght playlists {len(playlists)}")
+        if len(playlists)>0:
+            playlists = playlists['items']
+            for pl in range(len(playlists)):
+                if playlists[pl]['name']=='Trash':
+                    playlists.remove(playlists[pl])
+                    break
 
-        if playlists:
-            for i in range(limit):
-                playlist = random.choice(playlists)
-                size = int(len(playlist)*discover_level/10)
-                #We take some of the latests tracks added in the playlist
-                tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]
-                track = random.choice(tracks)
-                t_list.append(track['track']['uri'])
-                #for j in range(unit):
-                    #track = tracks['items'][-unit:]
-                    #track = random.choice(tracks['items'])
-                    #track = tracks[0:1]
-                    #t_list.append(track['uri'])
+            if len(playlists)>0:
+                for i in range(limit):
+                    playlist = random.choice(playlists)
+                    size = int(len(playlist)*discover_level/10)
+                    #We take some of the latests tracks added in the playlist
+                    tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]
+                    track = random.choice(tracks)
+                    t_list.append(track['track']['uri'])
+                    #for j in range(unit):
+                        #track = tracks['items'][-unit:]
+                        #track = random.choice(tracks['items'])
+                        #track = tracks[0:1]
+                        #t_list.append(track['uri'])
         return t_list
-
 
 ################### ALBUMS  #############################
 
@@ -152,13 +152,25 @@ class SpotifyHandler:
 
     def get_my_albums_tracks(self,limit=1,unit=1):
         t_list=[]
-        total = self.sp.current_user_saved_albums()['total']
+        total=0
+        try: 
+            total = self.sp.current_user_saved_albums()['total']
+        except Exception as val_e: 
+            print(f"Erreur albums : {val_e}")
 
         if total>0:
+            #Extract one album n=limit times
             for i in range(limit):
-                album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
+                try: 
+                    album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
+                except Exception as val_e: 
+                    print(f"Erreur albums2 : {val_e}")
                 #album = random.choice(albums['items'])
-                tracks = self.sp.album_tracks(album['items'][i]['album']['id'])
+                try: 
+                    tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
+                except Exception as val_e: 
+                    print(f"Erreur albums3 : {val_e}")
+                #Extract n=unit tracks from the album
                 if unit != 0:
                     for j in range(unit):
                         track = random.choice(tracks['items'])
@@ -208,16 +220,18 @@ class SpotifyHandler:
 
     def get_my_artists_tracks(self,limit=1,unit=1):
         t_list=[]
-        total = self.sp.current_user_followed_artists()['artists']['total']
+        try:
+            total = self.sp.current_user_followed_artists()['artists']['total']
+        except Exception as val_e: 
+            print(f"Erreur artist : {val_e}")        
         if total>0:
-            print ("1")
             for i in range(limit):
-                print ("2")
                 artists = self.sp.current_user_followed_artists(limit=1,after=random.randint(0,total-1))
 
-                #album = random.choice(albums['items'])
-                print (artists)
-                tracks = self.get_artist_top_tracks(artists['artists']['items'][i]['id'])
+                try: 
+                    tracks = self.get_artist_top_tracks(artists['artists']['items'][0]['id'])
+                except Exception as val_e: 
+                    print(f"Erreur artist : {val_e}")
                 if unit != 0:
                     for j in range(unit):
                         track = random.choice(tracks['items'])

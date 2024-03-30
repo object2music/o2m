@@ -146,8 +146,15 @@ dump.sql
 !o2m/samples/mysql/dump.sql
 
 #Docker
-#docker-compose.yml
 o2m/.flask_session/
 o2m/o2m.conf
 o2m/.cache_spotipy
 data/
+
+
+#Front
+frontend/.svelte-kit/
+frontend/node_modules/
+
+#Backend
+backend/pb_data/
