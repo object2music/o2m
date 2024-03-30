@@ -947,9 +947,8 @@ class O2mToMopidy:
 
     def get_common_tracks(self,read_hour,window,limit):
         pattern = "track:"
-        print (self.local)
-        if not self.local and self.username != None: pattern = "track:spotify"
-        if self.local and self.username == None : pattern = "track:local"
+        if not self.local and self.username != None: pattern = "spotify:track"
+        if self.local and self.username == None : pattern = "local:local"
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)
 
     def get_new_tracks_notread(self,limit):

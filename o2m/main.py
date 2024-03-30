@@ -186,7 +186,7 @@ if __name__ == "__main__":
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
             option_type = str(stat.option_type)
             read_end = float(stat.read_end)
-            status = option_type + " - " + str(round(read_end,1))
+            status = option_type + " - " + str(int(round(read_end,1)*10))
         except Exception as val_e:
             status = 'new'
         return status
