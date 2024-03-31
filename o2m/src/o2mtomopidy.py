@@ -1051,7 +1051,21 @@ class O2mToMopidy:
             if pos / track.length > 0.9: track_finished = True
             #if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
-        stat.read_end = ((stat.read_end * stat.read_count_end) + rate) / (stat.read_count_end + 1)
+
+        #Check if there is a stat pb to fix 
+        if (stat.read_end == 0): stat.read_end = 0.01
+        if (stat.read_count == 0): stat.read_count = 0.01
+        gap = stat.read_count_end / stat.read_count / stat.read_end
+
+        if (fix == False):
+            if (gap > 1.5 ) or (gap < 0.6): 
+                stat.read_end = ((stat.read_end * (stat.read_count - stat.read_count_end))+ stat.read_count_end + rate) / (stat.read_count + 1)
+            else:
+                stat.read_end = ((stat.read_end * stat.read_count) + rate) / (stat.read_count + 1)
+        else:
+            if (gap > 1.5 ) or (gap < 0.6): 
+                stat.read_end = ((stat.read_end * (stat.read_count - stat.read_count_end))+ stat.read_count_end) / (stat.read_count)
+        #stat.read_end = ((stat.read_end * stat.read_count_end) + rate) / (stat.read_count_end + 1)
 
         #Update stats
         if track_finished:
