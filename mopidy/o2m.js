@@ -88,7 +88,7 @@ window.onload = function() {
             try {
                 if (update_text.includes('normal')){
                   update_text=update_text.replace("normal", "library");
-                  update.style.backgroundColor = "DarkCyan";
+                  update.style.backgroundColor = "LightSkyBlue";
                 }
                 else if (update_text.includes('favorites')){
                   update.style.backgroundColor = "YellowGreen";
