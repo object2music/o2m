@@ -32,17 +32,15 @@ window.onload = function() {
             {
               flag_o2m_status = 1;
               for (update of o2m_status) {
-
-              try { 
-                    uri1 = update.innerHTML;
-                    update_o2m_status(update,uri1);
-                  } 
-                  catch (error) {
-                    console.error(error);
-                  }
+                try { 
+                      uri1 = update.innerHTML;
+                      update_o2m_status(update,uri1);
+                    } 
+                    catch (error) {
+                      console.error(error);
+                    }
               }
               flag_o2m_status = 0;
-                
             }
         },60000);
         }
@@ -237,8 +235,8 @@ window.onload = function() {
   xhr5.send();
 
   // O2M STATUS : STATUS DISPLAY Injection in IRIS (from API)
-  const o2m_status = document.getElementsByClassName("o2m_status");
-  for (update of o2m_status) {
+  function o2m_status_update(){
+    const o2m_status = document.querySelectorAll(".o2m_status.hide").forEach(function(update) {
       try { 
         uri1 = update.innerHTML;
         update_o2m_status(update,uri1);
@@ -246,7 +244,21 @@ window.onload = function() {
       catch (error) {
         console.error(error);
       }
+  });
   }
+  o2m_status_update();
+  {setTimeout(() => {
+    o2m_status_update();
+  }, "10000");}
+
+  /*
+  for (let i = 0; i < 3; i++) {
+  if (document.querySelectorAll(".o2m_status.hide").length>0)
+  {setTimeout(() => {
+    o2m_status_update();
+  }, "10000");}
+  }*/
+  
 
   const o2m_status1 = document.getElementById("o2m_status_current");
   try { 
