@@ -176,6 +176,31 @@ if __name__ == "__main__":
             return "New dl"
         else:
             return "No new dl"
+    
+    #API TRACK STATUS
+    #Get the value from tlid or uri in list
+    @api.route('/api/track_status')
+    def api_track_status():
+        uri = request.args.get('uri')
+        try: 
+            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+            option_type = str(stat.option_type)
+            read_end = float(stat.read_end)
+            status = option_type + " - " + str(int(round(read_end,1)*10))
+        except Exception as val_e:
+            status = 'new'
+        return status
+
+        #tlid = int(request.args.get('tlid'))
+        #tracks = o2mHandler.mopidyHandler.tracklist.filter({'tlid':[tlid]})
+        #tracks = o2mHandler.mopidyHandler.tracklist.slice(tlid,tlid+1)
+        '''if tracks != None:
+            print (tracks)
+            uri = tracks[0].track['uri']
+            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+            return stat['option_type']
+        else:
+            return "no track"'''
 
     #RESTART
     @api.route('/api/reset_o2m')
