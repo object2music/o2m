@@ -86,7 +86,12 @@ window.onload = function() {
             if (xhr10.status === 200) {
             update_text = xhr10.responseText;
             try {
-                if (update_text.includes('normal')){
+                if ((update_text.includes('podcast')) || (uri.includes('podcast+'))){
+                  update.style.backgroundColor = "Gainsboro";
+                  //reg = /podcast+.* -/
+                  update_text = update_text.replace("normal","podcast");
+                }
+                else if (update_text.includes('normal')){
                   update_text=update_text.replace("normal", "library");
                   update.style.backgroundColor = "LightSkyBlue";
                 }
@@ -108,9 +113,7 @@ window.onload = function() {
                 else if (update_text.includes('info')){
                   update.style.backgroundColor = "Gainsboro";
                 }
-                else if (update_text.includes('podcast')){
-                  update.style.backgroundColor = "DarkGray";
-                }
+                
 
               if (show == "min")
               {
@@ -131,7 +134,7 @@ window.onload = function() {
           }}};
         if (uri)
         {
-          xhr10.open("GET",base_url+"track_status?uri="+uri);
+          xhr10.open("GET",base_url+"track_status?uri="+encodeURIComponent(uri));
           xhr10.send();
         }
     }
