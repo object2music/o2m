@@ -55,25 +55,26 @@ window.onload = function() {
     const targetNode1 = document.getElementById("o2m_status_current");
 
     // Options for the observer (which mutations to observe)
-    const config1 = {attributes: true, childList: true, subtree: true };
+    try { 
+      const config1 = {attributes: true, childList: true, subtree: true };
 
     // Callback function to execute when mutations are observed
-    const callback1 = (mutationList1, observer1) => {
+      const callback1 = (mutationList1, observer1) => {
       for (const mutation1 of mutationList1) {
-              try { 
                 uri1 = mutation1.target.innerHTML;
                 update_o2m_status(mutation1.target,uri1,"all");
               } 
-              catch (error) {
-                console.error(error);
-              }
-            }
         };
+      
 
     // Create an observer instance linked to the callback function
     const observer1 = new MutationObserver(callback1);
     observer1.observe(targetNode1, config1);
-
+     }
+     catch (error) {
+      console.error(error);
+    }
+    
   //----------------FUNCTIONS-------------
 
     function update_o2m_status(update,uri,show = "min"){

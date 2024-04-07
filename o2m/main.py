@@ -269,18 +269,20 @@ if __name__ == "__main__":
             print (event)
 
             #Quick and dirty volume Management
-            if "radiofrance-podcast.net" in track.uri :
-                volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
-                if volume > 100: volume = 100
-                o2mHandler.mopidyHandler.mixer.set_volume(int(volume))
-
             # Podcast : seek previous position
-            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+            if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+                print ("podcast ok")
                 if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
+                    print ("seek")
                     o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
                 #skip advertising on sismique
                 elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
                     o2mHandler.mopidyHandler.playback.seek(63000)
+            
+            if "radiofrance-podcast.net" in track.uri :
+                volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
+                if volume > 100: volume = 100
+                o2mHandler.mopidyHandler.mixer.set_volume(int(volume))
 
         # Fonction called when tracked skipped OR completly finished
         #@mopidy.audio.AudioListener.state_changed("PLAYING","PAUSED",None)
@@ -342,7 +344,7 @@ if __name__ == "__main__":
                         o2mHandler.update_stat_raw(track.uri)
 
             # Podcast
-            if ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+            if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
 
                 #URI harmonization if max_results used : pb to update track.uri
                 '''if "?max_results=" in track.uri: 
@@ -354,7 +356,7 @@ if __name__ == "__main__":
                 if o2mHandler.dbHandler.stat_exists(track.uri):
                     stat = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
                     #If last stat read position is greater than actual: do not update
-                    if position < stat.read_position: position = stat.read_position
+                    #if position < stat.read_position: position = stat.read_position
                     print(f"Event : {position} / stat : {stat.read_position}")
                 # If directly in box data (not m3u) : behaviour to ckeck
                 if (position / track.length > 0.7): 

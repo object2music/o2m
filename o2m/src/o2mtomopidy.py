@@ -610,8 +610,8 @@ class O2mToMopidy:
                     tracklist_uris.append(uris)
 
             # Podcast channel
-            elif "podcast" in content and "#" not in content:
-                print(f"Podcast : {content}")
+            elif "podcast+" in content and "#" not in content:
+                print(f"Podcast channel : {content}")
                 self.update_stat_raw(content)
                 #self.add_podcast_from_channel(box,content,max_results)
                 tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
@@ -619,7 +619,7 @@ class O2mToMopidy:
                 # tracklist_uris += self.get_unread_podcasts(shows)
 
             # Podcast episode
-            elif "podcast" in content and "#" in content:
+            elif "podcast+" in content and "#" in content:
                 feedurl = content.split("+")[1]
                 tracklist_uris.append(self.get_podcast_from_url(feedurl))
 
@@ -688,7 +688,10 @@ class O2mToMopidy:
 
     def add_podcast_from_channel(self,box,uri, max_results):
         feedurl = uri.split("+")[1]
+        #parsing url ?
         par = parse.parse_qs(parse.urlparse(feedurl).query)
+        print (par)
+        print (uri)
         if 'max_results' in par : max_results_pod = int(par['max_results'][0])
         else : max_results_pod = max_results
         #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
@@ -716,15 +719,16 @@ class O2mToMopidy:
         feedurl = data.split("+")[1]
 
         shows = self.get_podcast_from_url(feedurl)
-        unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
+        #unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
         unread_shows = shows[:max_results]  # Cut to max results (to be suppressed if grabbing later than first tracks)
         for item in unread_shows:
-            #print (f"get_end_stat {self.dbHandler.get_end_stat(item.uri)} and item.uri {item.uri}")
-            if (
-                self.dbHandler.get_end_stat(item.uri) < 0.9
-                and "app_rf_promotion" not in item.uri
-            ):
-                uris.append(item.uri)
+            stat_pod = self.dbHandler.get_stat_by_uri(item.uri)
+            if (stat_pod):
+                #Keep podcasts when 
+                #THis is a podcast and read_end proportion < 0.9 and not a promotion podcast
+                if (stat_pod.option_type == "podcast" and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
+                #THis is an info and podcast and read_end proportion < 0.9 and not a promotion podcast
+                if (stat_pod.option_type == "info" and stat_pod.read_count_end == 0 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
         #print(f"Show {shows}")
         #print(f"Unread Show {unread_shows}")
         return uris
@@ -1013,7 +1017,7 @@ class O2mToMopidy:
     def update_stat_raw(self, uri):
         self.dbHandler.create_stat_raw(
             uri,
-            datetime.datetime.utcnow(),
+            datetime.datetime.now(datetime.timezone.utc),
             datetime.datetime.now().hour,
             self.username
         )
@@ -1030,7 +1034,7 @@ class O2mToMopidy:
             stat = self.dbHandler.create_stat(track.uri)
 
         if fix==False:
-            stat.last_read_date = datetime.datetime.utcnow()
+            stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
             stat.read_count += 1
             stat.read_position = pos
             stat.username = self.username
@@ -1048,7 +1052,7 @@ class O2mToMopidy:
         rate = 0.5
         if hasattr(track, "length"):
             rate = pos / track.length
-            if pos / track.length > 0.9: track_finished = True
+            if rate > 0.9: track_finished = True
             #if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
 
 
