@@ -271,14 +271,14 @@ if __name__ == "__main__":
             #Quick and dirty volume Management
             # Podcast : seek previous position
             if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
-                print ("podcast ok")
-                if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
-                    print ("seek")
-                    o2mHandler.mopidyHandler.playback.seek(max(o2mHandler.dbHandler.get_pos_stat(track.uri) - 10, 0))
-                #skip advertising on sismique
-                elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
-                    o2mHandler.mopidyHandler.playback.seek(63000)
-            
+                stat_uri = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
+                if (stat_uri):
+                    #if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
+                    if (stat_uri.read_position > 0) and (stat_uri.read_end < 0.9) :
+                        o2mHandler.mopidyHandler.playback.seek(max(stat_uri.read_position - 10, 0))
+                    #skip advertising on sismique
+                    elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri: o2mHandler.mopidyHandler.playback.seek(63000)
+                elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri:  o2mHandler.mopidyHandler.playback.seek(63000)
             if "radiofrance-podcast.net" in track.uri :
                 volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
                 if volume > 100: volume = 100

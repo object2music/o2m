@@ -728,7 +728,8 @@ class O2mToMopidy:
                 #THis is a podcast and read_end proportion < 0.9 and not a promotion podcast
                 if (stat_pod.option_type == "podcast" and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
                 #THis is an info and podcast and read_end proportion < 0.9 and not a promotion podcast
-                if (stat_pod.option_type == "info" and stat_pod.read_count_end == 0 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
+                elif (not stat_pod.read_count_end > 0 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
+            elif ("app_rf_promotion" not in item.uri): uris.append(item.uri)
         #print(f"Show {shows}")
         #print(f"Unread Show {unread_shows}")
         return uris
