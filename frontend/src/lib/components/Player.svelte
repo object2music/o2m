@@ -36,7 +36,7 @@
 	});
 
 	$: {
-		if ($player?.tracklist[0]?.track?.name) {
+		if ($player?.tracklist?.[0]?.track?.name) {
 			console.log($player?.tracklist[0].track.name);
 			getPlaylistImage($player?.tracklist[0].track.uri);
 			switch ($player?.state) {
@@ -64,18 +64,31 @@
 		}
 		switch (state) {
 			case 'stopped':
-				$player.state = 'playing';
+				$player = {
+					...$player,
+					state: "playing"
+				}
 				playerIcon = faPause;
 				break;
 			case 'paused':
-				$player.state = 'playing';
+				$player = {
+					...$player,
+					state: "playing"
+				}
 				playerIcon = faPause;
 				break;
 			case 'playing':
-				$player.state = 'paused';
+				$player = {
+					...$player,
+					state: "paused"
+				}
 				playerIcon = faPlay;
 				break;
 		}
+		// Refresh deep state of player store
+		$player = $player
+		console.log("HOHOHOHHO",$player)
+		setPlayerState($player.state)
 	}
 
 
@@ -91,7 +104,7 @@
 	</audio>
 	<div class="flex items-center h-12 justify-between">
 		<div class="flex items-center">
-			{#if $player?.tracklist[0]?.track?.uri}
+			{#if $player?.tracklist?.[0]?.track?.uri}
 				<div
 					class="bg-contain bg-center bg-no-repeat w-10 h-8"
 					style="background-image: url('{$currentPlaylistsImages[$player?.tracklist[0].track.uri]}')"
@@ -105,14 +118,14 @@
 
 			<div>
 				<div class="text-sm">
-					{#if $player?.tracklist[0]?.track?.name}
+					{#if $player?.tracklist?.[0]?.track?.name}
 						{$player?.tracklist[0]?.track.name}
 					{:else}
 						Unknown Album
 					{/if}
 				</div>
 				<div class="text-sm">
-					{#if $player?.tracklist[0]?.track?.artists}
+					{#if $player?.tracklist?.[0]?.track?.artists}
 						{#each $player?.tracklist[0]?.track.artists as artist}
 							{artist.name}
 						{/each}

@@ -31,13 +31,16 @@ RUN apt install -y wget
 # Install Python
 RUN apt install -y python3 python3-pip git
 
+# Upgrade setuptools
+RUN python3 -m pip install --upgrade pip setuptools setuptools_scm>=8
+
 # Mopidy
 RUN mkdir -p /etc/apt/keyrings
 RUN wget -q -O /etc/apt/keyrings/mopidy-archive-keyring.gpg \
     https://apt.mopidy.com/mopidy.gpg
-RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bullseye.list
+RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bookworm.list
 RUN apt-get update
-RUN apt-get -y install mopidy libspotify-dev
+RUN apt-get -y install mopidy 
 #RUN  apt-get install -y swig python-spotify libpcsclite-dev libcairo2-dev
 
 # Install libspotify
@@ -52,25 +55,10 @@ COPY ./create_conf_files.sh ./create_conf_files.sh
 RUN chmod +x ./entrypoint.sh
 RUN chmod +x ./create_conf_files.sh
 
-# copies from local (to solve with a backoffice later)
-#COPY ./samples/m3u /root/.local/share/mopidy/m3u
-#COPY ./samples/podcasts/Podcasts.opml /etc/mopidy/podcasts.opml
-
-# put in iris folder
-COPY  ./o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.css
-COPY  ./o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
-COPY ./index.html /app/index.html
-#COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
-
-# Install Python dependencies with caching
-RUN --mount=type=cache,target=/root/.cache \
-python3 -m pip install -r requirements.txt
-
 # Install Rust gstreamer
 COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/libgstspotify.so
 RUN cp /app/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
 
 # install mopidy-spotify
-RUN python3 -m pip install https://github.com/mopidy/mopidy-spotify/archive/master.zip
-
+RUN python3 -m pip install --break-system-packages Mopidy-Spotify==5.0.0a2
 ENTRYPOINT ["./entrypoint.sh"]

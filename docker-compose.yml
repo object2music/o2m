@@ -20,25 +20,6 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
 
-  o2m:
-    profiles:
-    # - dev
-      - prod
-    image: pvincent4/o2m:latest
-    build:
-      context: ./o2m
-      dockerfile: Dockerfile
-    ports:
-      - ${PORT_O2M_API}:6681
-    depends_on: 
-      - mopidy
-      - mysql
-    volumes:
-      - ./o2m:/app
-    restart: always
-    env_file:
-      - .env
-
   snapserver:
     profiles:
       - dev
@@ -75,34 +56,3 @@ services:
     network_mode: host
     env_file:
       - .env
-
-  mysql:
-    profiles:
-    #  - dev
-      - prod
-    image: mysql:5.7
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USERNAME}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "${PORT_MYSQL}:3306"
-    volumes:
-      - ./data/db:/var/lib/mysql
-      - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
-
-  phpmyadmin:
-    profiles:
-    #  - dev
-      - prod
-    image: phpmyadmin/phpmyadmin
-    environment:
-      PMA_HOST: mysql
-      PMA_PORT: 3306
-      #PMA_USER: xxx
-      #PMA_PASSWORD: xxx
-    ports:
-      - "${PORT_PHPMYADMIN}:80"
-    depends_on:
-      - mysql
