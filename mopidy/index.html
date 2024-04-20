@@ -132,7 +132,8 @@
         js.src = 'app.js?v='+build;
     } else { // Production-grade, minified app
         css.href = 'app.min.css?v='+build;
-        js.src = 'app.min.js?v='+build;
+        //js.src = 'app.min.js?v='+build;
+        js.src = 'app.js?v='+build;
     }
 
     setMessage('js', 'Loading core... ');
