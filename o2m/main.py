@@ -329,13 +329,13 @@ if __name__ == "__main__":
                     #o2mHandler.mopidyHandler.mixer.set_volume(o2mHandler.current_volume)
                     o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
 
-                # Recommandations added at each ended and nottrack an (pour l'instant seulement spotify:track)
-                if "track" in track.uri and event.time_position / track.length > 0.9:
+                # Recommandations added at each ended and nottrack (only spotify:track now)
+                if "track" in track.uri and position / track.length > 0.9:
                     print (f"Ending with option_type {option_type}")
                     if option_type != 'new': 
                         #int(round(discover_level * 0.25))
                         try: o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
-                        except Exception as val_e: 
+                        except Exception as val_e:
                             print(f"Erreur : {val_e}")
                             o2mHandler.spotifyHandler.init_token_sp()
                             o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
@@ -344,15 +344,15 @@ if __name__ == "__main__":
                         o2mHandler.update_stat_raw(track.uri)
 
             # Podcast
-            if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+            '''if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
 
                 #URI harmonization if max_results used : pb to update track.uri
-                '''if "?max_results=" in track.uri: 
+                if "?max_results=" in track.uri: 
                     uri1 = track.uri.split("?max_results=")
                     if "#" in uri1[1]: 
                         uri2 = uri1[1].split("#")
                         track_uri = str(uri1[0]) + "#" + str(uri2[1])
-                    else : track_uri = str(uri1[0])'''
+                    else : track_uri = str(uri1[0])
                 if o2mHandler.dbHandler.stat_exists(track.uri):
                     stat = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
                     #If last stat read position is greater than actual: do not update
@@ -366,11 +366,13 @@ if __name__ == "__main__":
                             box.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
                             box.update()
                             box.save()
-
+            '''
+                            
             print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
 
             # Update stats 
             if (event.event == "track_playback_ended") or ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+                
                 try: 
                     o2mHandler.update_stat_track(track,position,option_type,library_link)
                 except Exception as val_e: 
@@ -380,6 +382,7 @@ if __name__ == "__main__":
                 
             if "tunein" in track.uri:
                 if option_type != 'hidden': o2mHandler.update_stat_raw(track.uri)
+
             # Tracklist filling when empty
             tracklist_length = mopidy.tracklist.get_length()
             tracklist_index = mopidy.tracklist.index()
