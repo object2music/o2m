@@ -605,7 +605,7 @@ class O2mToMopidy:
 
             # Unfinished podcasts
             elif "podcasts:unfinished" in content:
-                uris = self.dbHandler.get_uris_podcasts_notread(max_results)
+                uris = self.dbHandler.get_uris_podcasts_notread(max_results,discover_level)
                 if uris is not None:
                     tracklist_uris.append(uris)
 

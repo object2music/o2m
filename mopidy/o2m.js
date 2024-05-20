@@ -12,7 +12,7 @@ window.onload = function() {
   //host = window.location.host;
   base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
   base_url += ':6681/api/'
-  backoffice_uri = 'http://51.15.205.150:5001'
+  backoffice_uri = 'http://localhost:5011'
   //backoffice_uri += 'sql.php?table=box&sql_query=SELECT+%2A+FROM+%60box%60++%0AORDER+BY+%60box%60.%60favorite%60++DESC&session_max_rows=100&is_browse_distinct=0'
   //alert(base_url)
   
