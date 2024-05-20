@@ -29,7 +29,7 @@ if test -f "$FILE"; then
     rm tmp_o2m1.js
 fi
 O2M_BACKOFFICE_URI=${O2M_BACKOFFICE_URI:-'http://localhost:5011'}
-sed "s/http:\/\/localhost:5011/$O2M_BACKOFFICE_URI/g" /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js > tmp_o2m1.js
+sed "s/http:\/\/localhost:5001/$O2M_BACKOFFICE_URI/g" /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js > tmp_o2m1.js
 cp tmp_o2m1.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
 rm tmp_o2m1.js
 com
