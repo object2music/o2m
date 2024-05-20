@@ -8,7 +8,7 @@ cp app.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/app.js
 
 # Get env vars
 O2M_API_PORT=${PORT_O2M_API:-5000}
-O2M_BACKOFFICE_URI=${O2M_BACKOFFICE_URI:-'http://localhost:5011'}
+O2M_BACKOFFICE_URI=${O2M_BACKOFFICE_URI:-'http://localhost:5001'}
 
 sed -i "s/:6681\/api\//:$O2M_API_PORT\/api\//g" /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
 sed -i "s/http:\/\/localhost:5011/$O2M_BACKOFFICE_URI/g" /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
