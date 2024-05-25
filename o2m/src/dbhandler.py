@@ -201,11 +201,13 @@ class DatabaseHandler():
             print (f"Adding : news_notcompleted:library {len(uris)}")
             return uris
 
-    def get_uris_podcasts_notread(self, limit=15):
+    def get_uris_podcasts_notread(self, limit=15, discover_level=5):
         #Track unfinished
         #pattern="%podcast+%"
         date_now = datetime.datetime.utcnow().timestamp()
-        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
+        #query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
+        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")
+                                     & (Stats.read_count_end < discover_level)).order_by(Stats.last_read_date.desc()).limit(limit)
         results = self.transform_query_to_list(query)
         print (results)
         if len(results) > 0:
