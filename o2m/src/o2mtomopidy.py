@@ -242,7 +242,7 @@ class O2mToMopidy:
         if box == None:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
-        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results)
+        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results, "normal")
         go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info")
         if go > 0:
             self.play_or_resume()
@@ -442,7 +442,7 @@ class O2mToMopidy:
                 fav= self.tracklistappend_box(box1,max_result1)
             else:
                 fav = self.spotifyHandler.get_library_favorite_tracks(max_result1)
-            self.add_tracks(box, fav, max_result1)
+            self.add_tracks(box, fav, max_result1, "favorites")
             #tracklist_uris.append(self.tracklistappend_box(box,max_result1))
 
             if mode=='podcast':
@@ -460,20 +460,20 @@ class O2mToMopidy:
             max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
             print(f"\nAUTO : Common {max_result1} tracks\n")
             #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-            self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
+            self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1, "normal")
             #self.add_tracks(box, tracklist_uris, max_results)
 
             #Albums n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
             print(f"\nAUTO : Albums {max_result1} tracks\n")
             #tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level))
-            self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1)
+            self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1, "normal")
 
             #Playlists n=(-0.2*d+7)/30
             max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
             print(f"\nAUTO : Playlist {max_result1} tracks\n")
             #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
-            self.add_tracks(box, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1)
+            self.add_tracks(box, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1, "normal")
             
             #return tracklist_uris
         except Exception as val_e: 
