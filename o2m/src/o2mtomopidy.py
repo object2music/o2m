@@ -1034,34 +1034,35 @@ class O2mToMopidy:
         else:
             stat = self.dbHandler.create_stat(track.uri)
 
-        if fix==False:
-            stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
-            stat.read_count += 1
-            stat.read_position = pos
-            stat.username = self.username
-        else:
-            stat.skipped_count = stat.read_count - stat.read_count_end
-
-        #Avoid downgrade of option types in DB
-        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
-            #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
-            if not(option_type == 'normal' and stat.option_type == 'favorites'):
-                stat.option_type = option_type
-
         #Using rate reading average instead of bool
         track_finished = False
         rate = 0.5
         if hasattr(track, "length"):
             rate = pos / track.length
             if rate > 0.9: track_finished = True
-            #if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
+            #Probably an artefact of auto adding track : so no adding stat needed
+            if rate < 0.1: fix=True
 
+        if fix==False:
+            stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
+            stat.read_count += 1
+            stat.read_position = pos
+            stat.username = self.username
+        else:
+            stat.skipped_count = stat.read_count - stat.read_count_end #Fix
+
+        #Avoid downgrade of option types in DB
+        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
+            #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+            if not(option_type == 'incoming' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
+                stat.option_type = option_type
 
         #Check if there is a stat pb to fix 
         if (stat.read_end == 0): stat.read_end = 0.01
         if (stat.read_count == 0): stat.read_count = 0.01
-        gap = stat.read_count_end / stat.read_count / stat.read_end
+        gap = stat.read_count_end / stat.read_count / stat.read_end #Gap evaluates integrity of data to check if fix is needed
 
+        #If meta fix activated do not include actual rate
         if (fix == False):
             if (gap > 1.5 ) or (gap < 0.6): 
                 stat.read_end = ((stat.read_end * (stat.read_count - stat.read_count_end))+ stat.read_count_end + rate) / (stat.read_count + 1)
@@ -1238,8 +1239,7 @@ class O2mToMopidy:
         else: 
             return False
 
-#   WIP
-
+#   MISC FUNCTIONS
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
     def update_tracks(self):
         print("should update tracks")
