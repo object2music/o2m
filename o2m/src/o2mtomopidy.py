@@ -402,7 +402,7 @@ class O2mToMopidy:
 
         #return tracklist_uris
 
-   def tracklistfill_auto(self,box,max_results=20,discover_level=5,mode='normal'):
+    def tracklistfill_auto(self,box,max_results=20,discover_level=5,mode='normal'):
         #box is the common and box1,2.. the specific emulation for each activation
         try:
             print (f"DL AUTO : {discover_level}")
