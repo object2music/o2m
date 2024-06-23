@@ -242,7 +242,7 @@ class O2mToMopidy:
         if box == None:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
-        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results)
+        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results, "normal")
         go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info")
         if go > 0:
             self.play_or_resume()
@@ -442,7 +442,7 @@ class O2mToMopidy:
                 fav= self.tracklistappend_box(box1,max_result1)
             else:
                 fav = self.spotifyHandler.get_library_favorite_tracks(max_result1)
-            self.add_tracks(box, fav, max_result1)
+            self.add_tracks(box, fav, max_result1, "favorites")
             #tracklist_uris.append(self.tracklistappend_box(box,max_result1))
 
             if mode=='podcast':
@@ -460,20 +460,20 @@ class O2mToMopidy:
             max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
             print(f"\nAUTO : Common {max_result1} tracks\n")
             #tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-            self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1)
+            self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1, "normal")
             #self.add_tracks(box, tracklist_uris, max_results)
 
             #Albums n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
             print(f"\nAUTO : Albums {max_result1} tracks\n")
             #tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level))
-            self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1)
+            self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1, "normal")
 
             #Playlists n=(-0.2*d+7)/30
             max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
             print(f"\nAUTO : Playlist {max_result1} tracks\n")
             #tracklist_uris.append(self.spotifyHandler.get_playlists_tracks(max_result1,discover_level))
-            self.add_tracks(box, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1)
+            self.add_tracks(box, self.spotifyHandler.get_playlists_tracks(max_result1,discover_level), max_result1, "normal")
             
             #return tracklist_uris
         except Exception as val_e: 
@@ -610,8 +610,8 @@ class O2mToMopidy:
                     tracklist_uris.append(uris)
 
             # Podcast channel
-            elif "podcast" in content and "#" not in content:
-                print(f"Podcast : {content}")
+            elif "podcast+" in content and "#" not in content:
+                print(f"Podcast channel : {content}")
                 self.update_stat_raw(content)
                 #self.add_podcast_from_channel(box,content,max_results)
                 tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
@@ -619,7 +619,7 @@ class O2mToMopidy:
                 # tracklist_uris += self.get_unread_podcasts(shows)
 
             # Podcast episode
-            elif "podcast" in content and "#" in content:
+            elif "podcast+" in content and "#" in content:
                 feedurl = content.split("+")[1]
                 tracklist_uris.append(self.get_podcast_from_url(feedurl))
 
@@ -688,7 +688,10 @@ class O2mToMopidy:
 
     def add_podcast_from_channel(self,box,uri, max_results):
         feedurl = uri.split("+")[1]
+        #parsing url ?
         par = parse.parse_qs(parse.urlparse(feedurl).query)
+        print (par)
+        print (uri)
         if 'max_results' in par : max_results_pod = int(par['max_results'][0])
         else : max_results_pod = max_results
         #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
@@ -716,15 +719,17 @@ class O2mToMopidy:
         feedurl = data.split("+")[1]
 
         shows = self.get_podcast_from_url(feedurl)
-        unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
+        #unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
         unread_shows = shows[:max_results]  # Cut to max results (to be suppressed if grabbing later than first tracks)
         for item in unread_shows:
-            #print (f"get_end_stat {self.dbHandler.get_end_stat(item.uri)} and item.uri {item.uri}")
-            if (
-                self.dbHandler.get_end_stat(item.uri) < 0.9
-                and "app_rf_promotion" not in item.uri
-            ):
-                uris.append(item.uri)
+            stat_pod = self.dbHandler.get_stat_by_uri(item.uri)
+            if (stat_pod):
+                #Keep podcasts when 
+                #THis is a podcast and read_end proportion < 0.9 and not a promotion podcast
+                if (stat_pod.option_type == "podcast" and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
+                #THis is an info and podcast and read_end proportion < 0.9 and not a promotion podcast
+                elif (not stat_pod.read_count_end > 0 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
+            elif ("app_rf_promotion" not in item.uri): uris.append(item.uri)
         #print(f"Show {shows}")
         #print(f"Unread Show {unread_shows}")
         return uris
@@ -1013,7 +1018,7 @@ class O2mToMopidy:
     def update_stat_raw(self, uri):
         self.dbHandler.create_stat_raw(
             uri,
-            datetime.datetime.utcnow(),
+            datetime.datetime.now(datetime.timezone.utc),
             datetime.datetime.now().hour,
             self.username
         )
@@ -1029,34 +1034,35 @@ class O2mToMopidy:
         else:
             stat = self.dbHandler.create_stat(track.uri)
 
-        if fix==False:
-            stat.last_read_date = datetime.datetime.utcnow()
-            stat.read_count += 1
-            stat.read_position = pos
-            stat.username = self.username
-        else:
-            stat.skipped_count = stat.read_count - stat.read_count_end
-
-        #Avoid downgrade of option types in DB
-        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
-            #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
-            if not(option_type == 'normal' and stat.option_type == 'favorites'):
-                stat.option_type = option_type
-
         #Using rate reading average instead of bool
         track_finished = False
         rate = 0.5
         if hasattr(track, "length"):
             rate = pos / track.length
-            if pos / track.length > 0.9: track_finished = True
-            #if "podcast+" in track.uri and pos / track.length > 0.7: track_finished = True
+            if rate > 0.9: track_finished = True
+            #Probably an artefact of auto adding track : so no adding stat needed
+            if rate < 0.1: fix=True
 
+        if fix==False:
+            stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
+            stat.read_count += 1
+            stat.read_position = pos
+            stat.username = self.username
+        else:
+            stat.skipped_count = stat.read_count - stat.read_count_end #Fix
+
+        #Avoid downgrade of option types in DB
+        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
+            #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+            if not(option_type == 'incoming' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
+                stat.option_type = option_type
 
         #Check if there is a stat pb to fix 
         if (stat.read_end == 0): stat.read_end = 0.01
         if (stat.read_count == 0): stat.read_count = 0.01
-        gap = stat.read_count_end / stat.read_count / stat.read_end
+        gap = stat.read_count_end / stat.read_count / stat.read_end #Gap evaluates integrity of data to check if fix is needed
 
+        #If meta fix activated do not include actual rate
         if (fix == False):
             if (gap > 1.5 ) or (gap < 0.6): 
                 stat.read_end = ((stat.read_end * (stat.read_count - stat.read_count_end))+ stat.read_count_end + rate) / (stat.read_count + 1)
@@ -1233,8 +1239,7 @@ class O2mToMopidy:
         else: 
             return False
 
-#   WIP
-
+#   MISC FUNCTIONS
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
     def update_tracks(self):
         print("should update tracks")

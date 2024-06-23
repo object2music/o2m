@@ -26,7 +26,22 @@ class DatabaseHandler():
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
         self.boxs = self.get_all_boxs()
-    
+
+    #MISC Functions
+
+    #Manage Podcasts url
+    def podcast_uri_remove_max_results(self,uri):
+        if "http://" in uri:
+            uri = uri.replace("http://", "https://")
+        if "?max_results=" in uri : 
+            uri1 = uri.split("?max_results=")
+            if "#" in uri1[1]: 
+                uri2 = uri1[1].split("#")
+                track_uri = str(uri1[0]) + "#" + str(uri2[1])
+            else : track_uri = str(uri1[0])
+            return track_uri
+        else: return uri
+
     #BOX
     def create_box(self, uid, media_url):
         try:
@@ -186,15 +201,21 @@ class DatabaseHandler():
             print (f"Adding : news_notcompleted:library {len(uris)}")
             return uris
 
-    def get_uris_podcasts_notread(self, limit=15):
+    def get_uris_podcasts_notread(self, limit=15, discover_level=5):
         #Track unfinished
         #pattern="%podcast+%"
         date_now = datetime.datetime.utcnow().timestamp()
-        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
+        #query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
+        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")
+                                     & (Stats.read_count_end < discover_level)).order_by(Stats.last_read_date.desc()).limit(limit)
         results = self.transform_query_to_list(query)
         print (results)
         if len(results) > 0:
-            uris = [o.uri for o in results]
+            #uris = [o.uri for o in results]
+            uris = []
+            for o in results:
+                #uris.append(self.podcast_uri_remove_max_results(o.uri))
+                uris.append(o.uri)
             return uris
 
 if __name__ == "__main__":

@@ -73,6 +73,6 @@ RUN cp /app/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
 
 # install mopidy-spotify
 #RUN python3 -m pip install https://github.com/mopidy/mopidy-spotify/archive/master.zip
-RUN python3 -m pip install Mopidy-Spotify==5.0.0a1
+RUN python3 -m pip install Mopidy-Spotify==5.0.0a2
 
 ENTRYPOINT ["./entrypoint.sh"]
