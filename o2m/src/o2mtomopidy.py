@@ -470,7 +470,7 @@ class O2mToMopidy:
             if (random.choice([1,2])) == 1:
                 self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1, "normal")
             else:
-                self.add_tracks(box, self.spotifyHandler.get_my_artists(max_result1,discover_level), max_result1, "normal")
+                self.add_tracks(box, self.spotifyHandler.get_my_artists_tracks(max_result1,discover_level), max_result1, "normal")
 
             #Playlists n=(-0.2*d+7)/30
             max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
