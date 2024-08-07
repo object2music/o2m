@@ -465,9 +465,12 @@ class O2mToMopidy:
 
             #Albums n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
-            print(f"\nAUTO : Albums {max_result1} tracks\n")
+            print(f"\nAUTO : Albums or artists {max_result1} tracks\n")
             #tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level))
-            self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1, "normal")
+            if (random.choice([1,2])) == 1:
+                self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1, "normal")
+            else:
+                self.add_tracks(box, self.spotifyHandler.get_my_artists_tracks(max_result1,discover_level), max_result1, "normal")
 
             #Playlists n=(-0.2*d+7)/30
             max_result1 = int(round((-0.2*discover_level+7)/30*max_results))
@@ -669,13 +672,14 @@ class O2mToMopidy:
             if hour < 8 and day == 0: info_url = "rss_18911.xml" #FI Week end 19h
         #Week-end
         else:
+            if (hour >= 8 and hour < 10) : info_url = "rss_18835.xml" #FI Week end 7h
             if (hour >= 10 and hour < 14) or (hour == 9 and minute >= 25): info_url= "rss_12735.xml" #FI 9h
             if hour >= 14 and hour <= 19: info_url = "rss_18909.xml" #FI Week end 13h
             #if hour >= 14 and hour <= 19: info_url = "rss_12735.xml" #FI Week end 13h
             if ((hour == 18 and minute > 20) and hour < 20) or (hour <= 9 and day == 6) : info_url = "rss_18910.xml" #FI Week end 18h
             if (hour == 19 and minute > 20)  or (hour <= 9 and minute < 25) or hour > 19: info_url = "rss_18911.xml" #FI Week end 19h
             if  day == 5 and ((hour < 9) or (hour == 9 and minute < 25)) : info_url = "rss_11736.xml" #FI 19h
-
+        
         try:
             if info_url != "":
                 info_url = "podcast+https://radiofrance-podcast.net/podcast09/" + info_url + "?max_results=1"
@@ -725,9 +729,9 @@ class O2mToMopidy:
             stat_pod = self.dbHandler.get_stat_by_uri(item.uri)
             if (stat_pod):
                 #Keep podcasts when 
-                #THis is a podcast and read_end proportion < 0.9 and not a promotion podcast
+                #This is a podcast and read_end proportion < 0.9 and not a promotion podcast
                 if (stat_pod.option_type == "podcast" and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
-                #THis is an info and podcast and read_end proportion < 0.9 and not a promotion podcast
+                #This is an info and podcast and read_end proportion < 0.9 and not a promotion podcast
                 elif (not stat_pod.read_count_end > 0 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
             elif ("app_rf_promotion" not in item.uri): uris.append(item.uri)
         #print(f"Show {shows}")
