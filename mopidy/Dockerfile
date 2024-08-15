@@ -12,10 +12,11 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN rustup toolchain install nightly
 RUN rustup default nightly
-RUN apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git
+RUN apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git 
+RUN apt install -y libasound2 libasound2-dev 
 RUN git clone --depth 1 https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs
 WORKDIR /app/gst-plugins-rs
-RUN cargo build --package gst-plugin-spotify -Z sparse-registry  --release 
+RUN cargo build --package gst-plugin-spotify -Z sparse-registry --release 
 
 FROM ubuntu:22.04
 
@@ -37,7 +38,7 @@ RUN wget -q -O /etc/apt/keyrings/mopidy-archive-keyring.gpg \
     https://apt.mopidy.com/mopidy.gpg
 RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bullseye.list
 RUN apt-get update
-RUN apt-get -y install mopidy libspotify-dev
+RUN apt-get -y install mopidy
 #RUN  apt-get install -y swig python-spotify libpcsclite-dev libcairo2-dev
 
 # Install libspotify
@@ -61,6 +62,8 @@ COPY  ./o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.c
 COPY  ./o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
 COPY  ./app.js /app/app.js
 COPY ./index.html /app/index.html
+#See https://github.com/mopidy/mopidy-spotify/issues/394 for how to get credentials.json
+COPY ./credentials.json /app/credentials.json
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 
 # Install Python dependencies with caching

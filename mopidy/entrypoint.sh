@@ -5,6 +5,7 @@ bash create_conf_files.sh
 # replace index.html with our own > to move in create_conf ?
 cp index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
 cp app.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/app.js
+cp -f credentials.json /root/.local/share/mopidy/spotify/credentials-cache/credentials.json
 
 # Get env vars
 O2M_API_PORT=${PORT_O2M_API:-5000}
@@ -38,6 +39,7 @@ com
 
 # Launch processes
 #mopidy --config /etc/mopidy/mopidy.conf -vvv &
+export GST_DEBUG=3
 mopidy --config /etc/mopidy/mopidy.conf &
 
 tail -f /dev/null
