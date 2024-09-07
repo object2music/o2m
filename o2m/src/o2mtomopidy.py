@@ -426,7 +426,7 @@ class O2mToMopidy:
             #tracklist_uris.append(self.tracklistappend_box(box,max_result1))        
             
             #Incoming n=(0.5*d)/30
-            max_result1 = int(round((0.7*discover_level)/30*max_results))
+            max_result1 = int(round((0.2*discover_level)/30*max_results))
             print(f"\nAUTO : Incoming {max_result1} tracks\n")
             box1 = self.dbHandler.get_box_by_option_type('incoming')
             #self.one_box_changed(box, max_result1)
