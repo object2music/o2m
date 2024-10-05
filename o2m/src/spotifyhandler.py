@@ -220,6 +220,7 @@ class SpotifyHandler:
 
     def get_my_artists_tracks(self,limit=1,unit=1):
         t_list=[]
+        total=0
         try:
             total = self.sp.current_user_followed_artists()['artists']['total']
         except Exception as val_e: 
