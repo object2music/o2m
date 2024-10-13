@@ -466,11 +466,12 @@ class O2mToMopidy:
 
             #Albums n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
-            print(f"\nAUTO : Albums or artists {max_result1} tracks\n")
             #tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level))
             if (random.choice([1,2])) == 1:
+                print(f"\nAUTO : Albums {max_result1} tracks\n")
                 self.add_tracks(box, self.spotifyHandler.get_my_albums_tracks(max_result1,discover_level), max_result1, "normal")
             else:
+                print(f"\nAUTO : Artists {max_result1} tracks\n")
                 self.add_tracks(box, self.spotifyHandler.get_my_artists_tracks(max_result1,discover_level), max_result1, "normal")
 
             #Playlists n=(-0.2*d+7)/30
@@ -1161,6 +1162,10 @@ class O2mToMopidy:
                             if 'spotify:playlist' in playlist.tracks[0].uri :
                                 result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
                                 if result: stat.option_type = 'favorites'
+                    else:
+                        self.spotifyHandler.current_user_saved_tracks_add(tracks=uri)
+
+
 
             else:
                 #Remove track from playlist if skipped many times
