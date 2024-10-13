@@ -1,5 +1,6 @@
 import datetime, sys, contextlib, random
-import numpy as np
+#import numpy as np
+import random 
 from mopidy_podcast import Extension, feeds
 from urllib import parse
 
@@ -850,7 +851,9 @@ class O2mToMopidy:
 
                 #Randomly ponderated type of track added
                 for i in range(0, limit): 
-                    c=np.random.choice(choices,1,replace=False,p=p)
+                    c = random.choices(choices, weights=p, k=3)
+                    print (c)
+                    #c=np.random.choice(choices,1,replace=False,p=p)
                     new_uri = track_uri
 
                     #1 : Same Album
