@@ -125,6 +125,10 @@ class SpotifyHandler:
                 if playlists[pl]['name']=='Trash':
                     playlists.remove(playlists[pl])
                     break
+            
+            if len(playlists) < limit: limit = len(playlists)
+            print (limit)
+            print (len(playlists))
 
             if len(playlists)>0:
                 for i in range(limit):
@@ -157,6 +161,10 @@ class SpotifyHandler:
             total = self.sp.current_user_saved_albums()['total']
         except Exception as val_e: 
             print(f"Erreur albums : {val_e}")
+
+        if int(total) < limit: limit = int(total)
+        print (limit)
+        print (int(total))
 
         if total>0:
             #Extract one album n=limit times
@@ -223,20 +231,29 @@ class SpotifyHandler:
         total=0
         try:
             total = self.sp.current_user_followed_artists()['artists']['total']
-        except Exception as val_e: 
-            print(f"Erreur artist : {val_e}")        
+        except Exception as val_e:
+            print(f"Erreur artist : {val_e}")
+
+        if int(total) < limit: limit = int(total)
+        print (limit)
+        print (int(total))
+     
         if total>0:
             for i in range(limit):
-                artists = self.sp.current_user_followed_artists(limit=1,after=random.randint(0,total-1))
-
+                artists = self.sp.current_user_followed_artists(limit=1,after=random.randint(0,int(total-1)))
+                print ("1")
                 try: 
                     tracks = self.get_artist_top_tracks(artists['artists']['items'][0]['id'])
                 except Exception as val_e: 
                     print(f"Erreur artist : {val_e}")
                 if unit != 0:
+                    print ("2")                   
                     for j in range(unit):
+                        print (unit)
                         track = random.choice(tracks['items'])
+                        print (unit)
                         t_list.append(track['uri'])
+                        print (track['uri'])
                 else:
                     t_list.append('spotify:artist:'+artists['artists']['items'][i]['id'])
                     #for j in range(len(tracks['items'])):
