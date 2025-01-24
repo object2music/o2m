@@ -1075,7 +1075,8 @@ class O2mToMopidy:
             #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
             if not(option_type == 'incoming' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
                 stat.option_type = option_type'''
-
+        stat.option_type = option_type
+        
         #Check if there is a stat pb to fix 
         if (stat.read_end == 0): stat.read_end = 0.01
         if (stat.read_count == 0): stat.read_count = 0.01
