@@ -264,7 +264,7 @@ class O2mToMopidy:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
         go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results, "normal","o2m:history")
-        go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info","o2m:info")
+        #go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info","o2m:info")
         if go > 0:
             self.play_or_resume()
 
@@ -277,7 +277,7 @@ class O2mToMopidy:
             option_type=force_option_type
         length = 0
 
-        if isinstance(uris, list):
+        if isinstance(uris, list) and max_results > 0:
             if len(uris) > 0:
                 #Inits
                 uris = util.flatten_list(uris)
@@ -393,7 +393,8 @@ class O2mToMopidy:
                     
                     # Shuffle complete computed tracklist if more than two boxs
                     #self.shuffle_tracklist(current_index + 1, new_length)
-                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle") and not((option_type == "info") and (new_length - prev_length==1)) and (current_index > 1):
+                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle") and not((option_type == "info") and (new_length - prev_length==1)) and (current_index <= 1):
+                        print ("shuffling")
                         self.shuffle_tracklist(current_index + 1, new_length)
                    
                     #Move at next place the lastinfo content
@@ -416,13 +417,12 @@ class O2mToMopidy:
             window = int(round(discover_level / 2))
             tracklist_uris= []
 
-            #ADD_TRACKS
-            #News n=(0.5*d)/30
-            max_result1 = int(round((0.7*discover_level)/30*max_results))
-            print(f"\nAUTO : News {max_result1} tracks\n")
-            box1 = self.dbHandler.get_box_by_option_type('new')
-            self.add_tracks(active_box, self.tracklistappend_box(box1,max_result1), max_result1, "new","o2m:new")
-            
+            #ADD_TRACKS        
+            #Common tracks n=(-0.3*d+8)/30
+            max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
+            print(f"\nAUTO : Common {max_result1} tracks\n")
+            self.add_tracks(active_box, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1, "normal","o2m:history")
+
             #Incoming n=(0.5*d)/30
             max_result1 = int(round((0.2*discover_level)/30*max_results))
             print(f"\nAUTO : Incoming {max_result1} tracks\n")
@@ -451,12 +451,6 @@ class O2mToMopidy:
                 print(f"\nAUTO : Podcasts {max_result1} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('podcast')
                 if box1:self.add_tracks(active_box, self.tracklistappend_box(box1,max_result1), max_result1, "podcast","o2m:podcast")
-
-            #APPEND
-            #Common tracks n=(-0.3*d+8)/30
-            max_result1 = int(round((-0.3*discover_level+8)/30*max_results))
-            print(f"\nAUTO : Common {max_result1} tracks\n")
-            self.add_tracks(active_box, self.get_common_tracks(datetime.datetime.now().hour,window,max_result1), max_result1, "normal","o2m:history")
             
             #Albums n=5/30
             max_result1 = int(round(discover_level*2/30*max_results))
@@ -475,6 +469,13 @@ class O2mToMopidy:
             for i in range(len(pl_tracks)):
                 uris = [pl_tracks[i]]
                 self.add_tracks(active_box, uris=uris, max_results=1, force_option_type="normal", library_link=lib_link[i])
+
+            #News n=(0.5*d)/30
+            max_result1 = int(round((0.7*discover_level)/30*max_results))
+            print(f"\nAUTO : News {max_result1} tracks\n")
+            box1 = self.dbHandler.get_box_by_option_type('new')
+            self.add_tracks(active_box, self.tracklistappend_box(box1,max_result1), max_result1, "new","o2m:new")
+    
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
 
@@ -484,171 +485,172 @@ class O2mToMopidy:
     def tracklistappend_box(self,box,max_results):
         #Variables
         tracklist_uris = []
-        
-        #If discover level has been pushed by api since the begining of session, we priorise it
-        discover_level = self.discover_level
-        if not(self.discover_level_on) and (self.get_option_for_box(box, "option_discover_level")!=None) :
-            discover_level = self.get_option_for_box(box, "option_discover_level")
-        
-        '''
-        #Temporary hack because of spotify pb
-        if "spotify" in box.data:
-            media_parts = box.data.split(":")  #on découpe le champs média du box en utilisant le séparateur :
-            data = box.data
-        else:
-            media_parts = box.data.split(":")  #on découpe le champs média du box en utilisant le séparateur :
-            data = box.data
-        #print (media_parts)
-        '''
-
-        #DB Regulation (tmp)
-        #self.reg_box_db(box)
-        content = 0
-
-        # Looping on hybrid playlist (delimited by \n)
-        data = box.data.split("\n")
-        data = [x for x in data if not x.startswith('#')]
-        data = [x for x in data if not x.startswith('\r')]
-        data = [x.replace('\r', '') for x in data]
-
-        for content in data:
-            # Recommandation
-            if "recommendation" in content:
-                media_parts = content.split(":")
-                if media_parts[3] == "genres":  # si les seeds sont des genres
-                    genres = media_parts[4].split(",")  # on sépare les genres et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
-                    #self.add_tracks(box, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
-                    tracklist_uris.append(tracks_uris)
-                elif media_parts[3] == "artists":  # si les seeds sont des artistes
-                    artists = media_parts[4].split(",")  # on sépare les artistes et on les ajoute un par un dans une liste
-                    tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
-                    #self.add_tracks(box, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
-                    tracklist_uris.append(tracks_uris)
-
-            # here&now:library (daily habits + library auto extract)
-            elif "herenow:library" in content :
-                window = int(round(discover_level / 2))
-                max_result1 = int(round(max_results/2))
-                tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
-                tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
-                #tracklist_uris.append(self.get_spotify_library(max_result1))
-                #print(f"Adding herenow : {tracklist_uris} tracks")
-
-            # auto:library testing (daily habits + library auto extract)
-            elif "auto:library" in content :
-                tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level))
-
-            # auto:library testing (daily habits + library auto extract)
-            elif "auto_podcast:library" in content :
-                tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level,'podcast'))
-
-            # spotify:library (library random extract)
-            elif "spotify:library" in content :
-                print ("spotify:library")
-                max_result1 = int(round(max_results/3))
-                tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(2*max_result1,1))
-                #tracklist_uris.append(self.get_spotify_library(2*max_results1))
-                tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_result1))
-                #tracklist_uris.append(self.spotifyHandler.get_library_recent_tracks(max_results))
-
-            # now:library (daily habits)
-            elif "now:library" in content :
-                print ("now:library")
-                window = int(round(discover_level / 2))
-                tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
-
-            # infos:library (more recent news podcasts (to be updated))
-            elif "infos:library" in content :
-                tracklist_uris.append(self.lastinfos(box,max_results))
-
-            # newnotcompleted:library (adding new tracks only played once)
-            elif "newnotcompleted:library" in content :
-                uri_new = self.get_new_tracks_notread(max_results)
-                if len(uri_new)>0:
-                    #tracklist_uris.append(uri_new)
-                    tracklist_uris.append(uri_new)
-                    #print(f"Adding : {uri_new} tracks")
+        if max_results>0:
             
-            # album:local 
-            elif "albums:local" in content :
-                #list_album = self.mopidyHandler.library.search({'album': ['a']})
-                list_album = self.mopidyHandler.library.get_distinct("albumartist")
-                print(f"List albums{list_album}")
-                random.shuffle(list_album)
-                list_album = list_album[0]['id']
-                print(f"List albums{list_album}")
-                #list_album = list_album[0]['id']
-                if len(list_album)>0:
-                    tracklist_uris.append(uri_new)
-                    #self.add_tracks(box, uri_new, max_results) # Envoie les uris en lecture
-                    print(f"Adding : {uri_new} tracks")
-                    content += 1
+            #If discover level has been pushed by api since the begining of session, we priorise it
+            discover_level = self.discover_level
+            if not(self.discover_level_on) and (self.get_option_for_box(box, "option_discover_level")!=None) :
+                discover_level = self.get_option_for_box(box, "option_discover_level")
+            
+            '''
+            #Temporary hack because of spotify pb
+            if "spotify" in box.data:
+                media_parts = box.data.split(":")  #on découpe le champs média du box en utilisant le séparateur :
+                data = box.data
+            else:
+                media_parts = box.data.split(":")  #on découpe le champs média du box en utilisant le séparateur :
+                data = box.data
+            #print (media_parts)
+            '''
 
-            # album:spotify 
-            elif "albums:spotify" in content :
-                if (random.choice([1,2])) == 1:
-                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(1,0))
-                else:
-                    tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(1,0))
+            #DB Regulation (tmp)
+            #self.reg_box_db(box)
+            content = 0
 
-            # Autos mode (to be optimized with the above code)
-            elif "auto:library" in content:
-                tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level))
+            # Looping on hybrid playlist (delimited by \n)
+            data = box.data.split("\n")
+            data = [x for x in data if not x.startswith('#')]
+            data = [x for x in data if not x.startswith('\r')]
+            data = [x.replace('\r', '') for x in data]
 
-            elif "auto_simple:library" in content:
-                tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level,'simple'))
+            for content in data:
+                # Recommandation
+                if "recommendation" in content:
+                    media_parts = content.split(":")
+                    if media_parts[3] == "genres":  # si les seeds sont des genres
+                        genres = media_parts[4].split(",")  # on sépare les genres et on les ajoute un par un dans une liste
+                        tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                        #self.add_tracks(box, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
+                        tracklist_uris.append(tracks_uris)
+                    elif media_parts[3] == "artists":  # si les seeds sont des artistes
+                        artists = media_parts[4].split(",")  # on sépare les artistes et on les ajoute un par un dans une liste
+                        tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                        #self.add_tracks(box, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
+                        tracklist_uris.append(tracks_uris)
 
-            elif "infos:library" in content:
-                tracklist_uris.append(self.lastinfos(box,max_results))
+                # here&now:library (daily habits + library auto extract)
+                elif "herenow:library" in content :
+                    window = int(round(discover_level / 2))
+                    max_result1 = int(round(max_results/2))
+                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
+                    #tracklist_uris.append(self.get_spotify_library(max_result1))
+                    #print(f"Adding herenow : {tracklist_uris} tracks")
 
-            # Unfinished podcasts
-            elif "podcasts:unfinished" in content:
-                uris = self.dbHandler.get_uris_podcasts_notread(max_results)
-                if uris is not None:
-                    tracklist_uris.append(uris)
+                # auto:library testing (daily habits + library auto extract)
+                elif "auto:library" in content :
+                    tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level))
 
-            # Podcast channel
-            elif "podcast+" in content and "#" not in content:
-                print(f"Podcast channel : {content}")
-                self.update_stat_raw(content)
-                #self.add_podcast_from_channel(box,content,max_results)
-                tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
-                # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
-                # tracklist_uris += self.get_unread_podcasts(shows)
+                # auto:library testing (daily habits + library auto extract)
+                elif "auto_podcast:library" in content :
+                    tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level,'podcast'))
 
-            # Podcast episode
-            elif "podcast+" in content and "#" in content:
-                feedurl = content.split("+")[1]
-                tracklist_uris.append(self.get_podcast_from_url(feedurl))
+                # spotify:library (library random extract)
+                elif "spotify:library" in content :
+                    print ("spotify:library")
+                    max_result1 = int(round(max_results/3))
+                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(2*max_result1,1))
+                    #tracklist_uris.append(self.get_spotify_library(2*max_results1))
+                    tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_result1))
+                    #tracklist_uris.append(self.spotifyHandler.get_library_recent_tracks(max_results))
 
-            # Podcast:channel
-            elif "podcasts:channel" in box.data:
-                self.update_stat_raw(box.data)
-                #self.add_podcast_from_channel(box,content,max_results)
-                tracklist_uris.append(self.add_podcast_from_channel(box,box.data,max_results))    
+                # now:library (daily habits)
+                elif "now:library" in content :
+                    print ("now:library")
+                    window = int(round(discover_level / 2))
+                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
 
-            # Spotify
-            elif "spotify" in content:
-                #print ([data])
-                #self.update_stat_raw([data])
-                media_parts = content.split(":")
-                if media_parts[1] == "artist":
-                    tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
-                    #self.add_tracks(box, tracks_uris, max_results)
-                    tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
-                elif media_parts[1] == "playlist":
-                    tracklist_uris.append(content)
-                else:
-                    tracklist_uris.append(content)
+                # infos:library (more recent news podcasts (to be updated))
+                elif "infos:library" in content :
+                    tracklist_uris.append(self.lastinfos(box,max_results))
 
-            # Other contents in the playlist
-            else : 
-                if "playlist" in content: self.update_stat_raw(content)
-                tracklist_uris.append(content)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
+                # newnotcompleted:library (adding new tracks only played once)
+                elif "newnotcompleted:library" in content :
+                    uri_new = self.get_new_tracks_notread(max_results)
+                    if len(uri_new)>0:
+                        #tracklist_uris.append(uri_new)
+                        tracklist_uris.append(uri_new)
+                        #print(f"Adding : {uri_new} tracks")
+                
+                # album:local 
+                elif "albums:local" in content :
+                    #list_album = self.mopidyHandler.library.search({'album': ['a']})
+                    list_album = self.mopidyHandler.library.get_distinct("albumartist")
+                    print(f"List albums{list_album}")
+                    random.shuffle(list_album)
+                    list_album = list_album[0]['id']
+                    print(f"List albums{list_album}")
+                    #list_album = list_album[0]['id']
+                    if len(list_album)>0:
+                        tracklist_uris.append(uri_new)
+                        #self.add_tracks(box, uri_new, max_results) # Envoie les uris en lecture
+                        print(f"Adding : {uri_new} tracks")
+                        content += 1
 
-        #print (f"AUTO : Box : {tracklist_uris}")
-        #tracklist_uris = util.flatten_list(tracklist_uris)
+                # album:spotify 
+                elif "albums:spotify" in content :
+                    if (random.choice([1,2])) == 1:
+                        tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(1,0))
+                    else:
+                        tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(1,0))
+
+                # Autos mode (to be optimized with the above code)
+                elif "auto:library" in content:
+                    tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level))
+
+                elif "auto_simple:library" in content:
+                    tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level,'simple'))
+
+                elif "infos:library" in content:
+                    tracklist_uris.append(self.lastinfos(box,max_results))
+
+                # Unfinished podcasts
+                elif "podcasts:unfinished" in content:
+                    uris = self.dbHandler.get_uris_podcasts_notread(max_results)
+                    if uris is not None:
+                        tracklist_uris.append(uris)
+
+                # Podcast channel
+                elif "podcast+" in content and "#" not in content:
+                    print(f"Podcast channel : {content}")
+                    self.update_stat_raw(content)
+                    #self.add_podcast_from_channel(box,content,max_results)
+                    tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
+                    # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
+                    # tracklist_uris += self.get_unread_podcasts(shows)
+
+                # Podcast episode
+                elif "podcast+" in content and "#" in content:
+                    feedurl = content.split("+")[1]
+                    tracklist_uris.append(self.get_podcast_from_url(feedurl))
+
+                # Podcast:channel
+                elif "podcasts:channel" in box.data:
+                    self.update_stat_raw(box.data)
+                    #self.add_podcast_from_channel(box,content,max_results)
+                    tracklist_uris.append(self.add_podcast_from_channel(box,box.data,max_results))    
+
+                # Spotify
+                elif "spotify" in content:
+                    #print ([data])
+                    #self.update_stat_raw([data])
+                    media_parts = content.split(":")
+                    if media_parts[1] == "artist":
+                        tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
+                        #self.add_tracks(box, tracks_uris, max_results)
+                        tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
+                    elif media_parts[1] == "playlist":
+                        tracklist_uris.append(content)
+                    else:
+                        tracklist_uris.append(content)
+
+                # Other contents in the playlist
+                else : 
+                    if "playlist" in content: self.update_stat_raw(content)
+                    tracklist_uris.append(content)  # Recupère l'uri de chaque track pour l'ajouter dans une liste
+
+            #print (f"AUTO : Box : {tracklist_uris}")
+            #tracklist_uris = util.flatten_list(tracklist_uris)
 
         return tracklist_uris  
 
@@ -1087,10 +1089,13 @@ class O2mToMopidy:
             stat.read_end = rate
         else:            
             if (fix == False):
-                if (gap > 1.5 ) or (gap < 0.6): 
+                '''if (gap > 1.5 ) or (gap < 0.6): 
+                    print ("Fix forced due to high gap")
                     stat.read_end = ((stat.read_end * (stat.read_count - stat.read_count_end))+ stat.read_count_end + rate) / (stat.read_count + 1)
-                else:
-                    stat.read_end = ((stat.read_end * stat.read_count) + rate) / (stat.read_count + 1)
+                else:'''
+                #old_stat_read_end = stat.read_end
+                stat.read_end = ((stat.read_end * stat.read_count) + rate) / (stat.read_count + 1)
+                #print (f"Rate {rate}, Read_count {stat.read_count}, , Read_end {old_stat_read_end}  New stat Read_end : {stat.read_end}")
             else:
                 if (gap > 1.5 ) or (gap < 0.6): 
                     stat.read_end = ((stat.read_end * (stat.read_count - stat.read_count_end))+ stat.read_count_end) / (stat.read_count)
@@ -1107,12 +1112,12 @@ class O2mToMopidy:
                 ) / (stat.read_count_end)
             else:
                 stat.day_time_average = datetime.datetime.now().hour
-        elif not fix:
+        elif (fix == False):
             #if stat.read_end != True: stat.read_end = False
             stat.skipped_count += 1
 
         #Add / remove the track to playlist(s) if played above/below discover level
-        if self.option_autofill_playlists and not fix:
+        if self.option_autofill_playlists and (fix == False):
             uri = []
             uri.append(track.uri)
 
@@ -1200,8 +1205,9 @@ class O2mToMopidy:
                                 print (f"2. Putting in Trash track {stat.uri}")
                                 #self.spotifyHandler.remove_tracks_playlist(library_link, uri)
                                 result2 = self.remove_spotify_playlist(library_link,uri)
-                                if result2: stat.option_type = 'new'
-                                if result2:  print (f"3. Track trashed {stat.uri} from {library_link}")
+                                if result2: 
+                                    stat.option_type = 'new'
+                                    print (f"3. Track trashed {stat.uri} from {library_link}")
                                 #stat.option_type = 'trash'
 
                         '''
@@ -1249,9 +1255,10 @@ class O2mToMopidy:
         try:
             #https://github.com/spotipy-dev/spotipy/issues/763
             result = self.spotifyHandler.sp.playlist_remove_all_occurrences_of_items(playlist_id, uri)
+            print (f"Result removing from playlist : {result}")
             return (result)
         except Exception as val_e: 
-            print(f"Erreur : {val_e}")        
+            print(f"Erreur removing from playlist: {val_e}")        
 
     # Auto Filling playlist 
     def autofill_spotify_playlist(self, playlist_uri,uri):
@@ -1283,8 +1290,13 @@ class O2mToMopidy:
     def threshold_adding_favorites(self,stat,discover_level):
         result = False
         ratio = 1+(1-discover_level/20)
+        print (f"Favorite test Ratio:{ratio}")
         #if stat.option_type=="normal" and (stat.read_end > self.avg_stats['favorites']['read_end']) and (stat.read_count >= self.avg_stats['favorites']['read_count']): 
-        if stat.option_type=="normal" and (stat.read_end*stat.read_count > ratio*float(self.avg_stats['favorites']['read_end'])*float(self.avg_stats['favorites']['read_count'])) and (stat.read_count >= self.avg_stats['favorites']['read_count']): 
+        if (stat.option_type=="normal" 
+            and (stat.read_end*stat.read_count > ratio*float(self.avg_stats['favorites']['read_end'])*float(self.avg_stats['favorites']['read_count'])) 
+            and (stat.read_end > ratio*float(self.avg_stats['favorites']['read_end'])) 
+            and (stat.read_count > ratio*float(self.avg_stats['favorites']['read_count'])) 
+            and (stat.read_count >= self.avg_stats['favorites']['read_count'])) : 
             result=True
         return result
     
