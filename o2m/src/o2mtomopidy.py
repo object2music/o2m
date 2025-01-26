@@ -1059,6 +1059,8 @@ class O2mToMopidy:
         #Using rate reading average instead of bool
         track_finished = False
         rate = 0.5
+        stat.username = self.username
+
         if hasattr(track, "length"):
             rate = pos / track.length
             if rate > 0.9: track_finished = True
@@ -1069,7 +1071,6 @@ class O2mToMopidy:
             stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
             stat.read_count += 1
             stat.read_position = pos
-            stat.username = self.username
         else:
             stat.skipped_count = stat.read_count - stat.read_count_end #Fix
 

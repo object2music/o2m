@@ -97,7 +97,7 @@ CREATE TABLE `box` (
   `description` varchar(53) DEFAULT NULL,
   `favorite` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Bool (is the box pinned or not)',
   `public` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Bool (is the content shared or not)',
-  `data` text COMMENT 'Concatenation of : spotify:playlist,artist,album,genre / podcast: or tunein:station or local:artist,album\r\nExamples : local:album:md5:e431c158da4fbb855da74cc68e2c845\r\nspotify:album:3gPOWmWT0q7Ygp95Xiuw1v\r\nm3u:iris.m3u8\r\npodcast+https://feed.pippa.io/public/shows/5b0030a',
+  `data` text DEFAULT '' COMMENT 'Concatenation of : spotify:playlist,artist,album,genre / podcast: or tunein:station or local:artist,album\r\nExamples : local:album:md5:e431c158da4fbb855da74cc68e2c845\r\nspotify:album:3gPOWmWT0q7Ygp95Xiuw1v\r\nm3u:iris.m3u8\r\npodcast+https://feed.pippa.io/public/shows/5b0030a',
   `data_alt` text DEFAULT NULL,
   `read_count` smallint(6) DEFAULT NULL,
   `last_read_date` bigint(20) DEFAULT NULL,
@@ -131,6 +131,7 @@ INSERT INTO `box` (`uid`, `description`, `favorite`, `public`, `data`, `data_alt
 ('last_info', 'Radio Infos last', 1, 1, 'infos:library', ' ', 17, 1686826163, 'info', 'desc', NULL, 15, 3, '1181464119'),
 ('recommandation_genre_demo', 'Radio genre jazz', 1, 0, 'spotify:recommendation:seeds:genres:jazz', '', 64, 1606308740, 'normal', '', 0, NULL, 5, '1181464119'),
 ('recommandation_artist_demo', 'Radio artist Massive attack', 1, 0, 'spotify:recommendation:seeds:artists:6FXMGgJwohJLUSr5nVlf9X', ' 63MQldklfxkjYDoUE4T', 82, 1606577090, 'normal', '', 0, NULL, 5, '1181464119');
+('mopidy_box', 'mopidy_box', 0, 1, ' mopidy_box', NULL, 0, 1621086457, 'new_mopidy', NULL, NULL, 30, 3, '1181464119'),
 
 --
 -- Indexes for dumped tables
