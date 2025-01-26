@@ -826,10 +826,11 @@ class O2mToMopidy:
             #self.mopidyHandler.playback.pause()
             if "spotify:track" in track_uri:
                 # Calculate the discover_level : box associated or updated discover_level via api
-                if self.discover_level_on:
+                if self.discover_level_on :
                     discover_level = self.discover_level
                 else:
                     discover_level = self.get_option_for_box_uri(track_uri,"option_discover_level")
+                    if not discover_level: discover_level = self.discover_level
                 if discover_level < 10: new_type ='new'
                 else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
 

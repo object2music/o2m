@@ -30,16 +30,16 @@ SET time_zone = "+00:00";
 CREATE TABLE `stats` (
   `uri` varchar(255) NOT NULL,
   `last_read_date` bigint(20) NOT NULL,
-  `read_position` int(11) NOT NULL DEFAULT 0 COMMENT 'Last read position',
-  `read_end` decimal(10,0) NOT NULL DEFAULT 0 COMMENT 'Is last read gone to end ? (Boolean)',
-  `read_count` tinyint(11) NOT NULL DEFAULT 0 COMMENT 'Count total read',
-  `read_count_end` tinyint(11) NOT NULL DEFAULT 0 COMMENT 'Count total read to end',
-  `skipped_count` tinyint(11) NOT NULL DEFAULT 0 COMMENT 'Count total skipped actions',
+  `read_position` int(11) NOT NULL DEFAULT '0' COMMENT 'Last read position',
+  `read_end` float NOT NULL DEFAULT '0.5' COMMENT 'Is last read gone to end ? (Boolean)',
+  `read_count` tinyint(11) NOT NULL DEFAULT '0' COMMENT 'Count total read',
+  `read_count_end` tinyint(11) NOT NULL DEFAULT '0' COMMENT 'Count total read to end',
+  `skipped_count` tinyint(11) NOT NULL DEFAULT '0' COMMENT 'Count total skipped actions',
   `in_library` varchar(16) DEFAULT NULL COMMENT 'Is track in library ? If yes : uri cntainer value',
   `day_time_average` tinyint(2) DEFAULT NULL COMMENT 'Compute each read end day time average (1-24)',
   `option_type` varchar(16) NOT NULL,
   `username` varchar(255) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
 -- Dumping data for table `stats`
