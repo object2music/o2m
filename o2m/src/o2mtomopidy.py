@@ -98,6 +98,7 @@ class O2mToMopidy:
             stats2 = {}
             for j in {'read_end','read_count','read_count_end'}:
                 stats2[j]=self.dbHandler.get_avg_stat(option_type=i,column=j)
+                if stats2[j] == None: stats2[j]=0
             stats[i]=stats2
         print("\n\nSTATS")
         print("\n".join("{} {}".format(k, v) for k, v in stats.items()))
