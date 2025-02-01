@@ -179,11 +179,13 @@ class DatabaseHandler():
         return stat_raw
 
     def get_stat_raw_by_hour(self, read_hour, window=0, limit=1, uri_pattern='track:'):
+        print (f"Get stat raw by hour {read_hour} {window} {limit} {uri_pattern}")
         if window > 0:
             query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
         else:
             query = Stats_Raw.select().where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
+        #print (results)
         if len(results) > 0:
             uris = [o.uri for o in results]
             return uris

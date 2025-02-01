@@ -231,11 +231,15 @@ class O2mToMopidy:
                 #print (f"Max results : {max_results}")
             
             tracklist_uris = self.tracklistappend_box(box,max_results)
+            #Flatten
             tracklist_uris = list(util.flatten_list(tracklist_uris))
-            #print('\n'.join(tracklist_uris))
+            #Remove '' items
+            tracklist_uris = list(filter(('').__ne__, tracklist_uris))
+            #Shorten following lenght0
             lenght0 = len(tracklist_uris)
             tracklist_uris = tracklist_uris[:lenght0]
-            #print(f"\ntracklist_uris: {tracklist_uris}")
+            #print(f"\nLenght {len(tracklist_uris)} & tracklist_uris: {tracklist_uris}")
+
 
             #Let's go to play
             if len(tracklist_uris)>0:
@@ -299,6 +303,8 @@ class O2mToMopidy:
 
                 if len(tltracks_added)>0:
                     uris_rem = []
+                    
+                    #****REMOVE***
                     # Exclude tracks already read when option is new
                     #Too long > to be replaced by a trashing action along playing
                     if option_type == 'new':
@@ -335,17 +341,7 @@ class O2mToMopidy:
                     if len(uris_rem)>0:
                         self.mopidyHandler.tracklist.remove({"uri": uris_rem})
 
-                    #Adding common and library tracks
-                    '''discover_level = self.get_option_for_box(active_box, "option_discover_level")
-                    limit = int(round(len(tltracks_added) * discover_level / 100))
-                    window = int(round(discover_level / 2))
-                    print(f"discover_level {discover_level} limit {limit} window {window}")
-                    if limit > 0: 
-                        uris2 = self.get_common_tracks(datetime.datetime.now().hour,window,limit)
-                        tltracks_added2 = self.mopidyHandler.tracklist.add(uris=uris2)
-                        tltracks_added.append(tltracks_added2)
-                        print (f"Adding common tracks : {uris2}")'''
-
+                    #***SLICE***
                     new_length = self.mopidyHandler.tracklist.get_length()
                     #print(f"Length {new_length}")
 
@@ -364,6 +360,34 @@ class O2mToMopidy:
                     slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
                     #print(f"Adding {new_length - prev_length} tracks")
 
+                    #***REPLACE***
+                    #Calculate init values
+                    discover_level = int(self.calculate_discover_level())
+                    if discover_level < 10: new_type ='new' 
+                    else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
+                        
+                    if discover_level > 0 and self.option_add_reco_after_track: 
+                        window_replace = (10 - discover_level)+1
+
+                        for i in range(1, len(slice2), window_replace):
+                            print(f"{i}")
+                            print(slice2[i])
+                            #uris = self.get_track_recommandation(slice2[i].uri,discover_level,1)
+                            #print (uris)
+                            '''# Calculate insertion index depending of discover_level
+                            tl_length = self.mopidyHandler.tracklist.get_length()
+                            if self.mopidyHandler.tracklist.index():
+                                current_index = self.mopidyHandler.tracklist.index()
+                            else:
+                                current_index = tl_length'''
+                            '''new_index = slice2[i].tlindex
+                            slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
+                            if slice:
+                                print(f"\nReplace tracks at index {str(new_index)} with uris {uris} & tlid {slice2[i].tlid}\n")
+                                self.mopidyHandler.tracklist.remove(uris=slice2[i].track_uri, at_position=new_index+1)'''
+
+
+                    #***UPDATE VALUES***
                     # TLIDs : Mopidy Tracks's IDs in tracklist associated to added Box
                     if hasattr(active_box, "tlids"):
                         active_box.tlids += [x.tlid for x in slice2]
@@ -492,17 +516,6 @@ class O2mToMopidy:
             discover_level = self.discover_level
             if not(self.discover_level_on) and (self.get_option_for_box(box, "option_discover_level")!=None) :
                 discover_level = self.get_option_for_box(box, "option_discover_level")
-            
-            '''
-            #Temporary hack because of spotify pb
-            if "spotify" in box.data:
-                media_parts = box.data.split(":")  #on découpe le champs média du box en utilisant le séparateur :
-                data = box.data
-            else:
-                media_parts = box.data.split(":")  #on découpe le champs média du box en utilisant le séparateur :
-                data = box.data
-            #print (media_parts)
-            '''
 
             #DB Regulation (tmp)
             #self.reg_box_db(box)
@@ -821,56 +834,18 @@ class O2mToMopidy:
                 self.mopidyHandler.tracklist.remove({"tlid": [tlid]})
 
 #   SONGS RECOMMANDATION MANAGEMENT
-    def add_reco_after_track_read(self, track_uri, library_link='', data=''):
+    def add_reco_after_track_read(self, track_uri, library_link='', data='', mode='add'):
         if self.option_add_reco_after_track: 
             #self.mopidyHandler.playback.pause()
             if "spotify:track" in track_uri:
-                # Calculate the discover_level : box associated or updated discover_level via api
-                if self.discover_level_on :
-                    discover_level = self.discover_level
-                else:
-                    discover_level = self.get_option_for_box_uri(track_uri,"option_discover_level")
-                    if not discover_level: discover_level = self.discover_level
+                
+                #Calculate init values
+                discover_level = self.calculate_discover_level
                 if discover_level < 10: new_type ='new'
                 else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
-
-                # Get tracks recommandations
-                track_data = track_uri.split(":")  # on découpe l'uri' :
-                track_seed = [track_data[2]]  # track id
                 limit = int(round(discover_level * 0.25)) #Fixing number of new tracks
 
-                choices = ['album','artist','reco']
-                uris = []
-                #Ponderation Album / Artist / Reco
-                if 'album' in data:
-                    p = [0, 0.8, 0.2]
-                else:
-                    p = [0.5, 0.3, 0.2]
-
-                #Randomly ponderated type of track added
-                for i in range(0, limit): 
-                    c = random.choices(choices, weights=p, k=3)
-                    print (c)
-                    #c=np.random.choice(choices,1,replace=False,p=p)
-                    new_uri = track_uri
-
-                    #1 : Same Album
-                    if c[0]=='album':
-                        while new_uri == track_uri:
-                            new_uri = self.get_same_album_tracks(track_uri, 1)
-                        uris += new_uri
-                    
-                    #2 : Same Artist
-                    if c[0]=='artist':
-                        while new_uri == track_uri:
-                            new_uri = self.get_same_artist_tracks(track_uri, 1)
-                        uris += new_uri
-
-                    #3 : Spotify Reco
-                    if c[0]=='reco':
-                        while new_uri == track_uri:
-                            new_uri = self.get_spotify_reco(track_seed, 1)
-                        uris += new_uri
+                uris = self.get_track_recommandation(track_uri,discover_level,limit)
 
                 # Calculate insertion index depending of discover_level
                 tl_length = self.mopidyHandler.tracklist.get_length()
@@ -935,6 +910,56 @@ class O2mToMopidy:
                             self.mopidyHandler.playback.play(None)
 
             #self.play_or_resume()
+
+    def calculate_discover_level(self,track_uri=''):
+        # Calculate the discover_level : box associated or updated discover_level via api
+        if self.discover_level_on :
+            discover_level = self.discover_level
+        else:
+            discover_level = self.get_option_for_box_uri(track_uri,"option_discover_level")
+            if not discover_level: discover_level = self.discover_level
+        return int(discover_level)
+
+    def get_track_recommandation(self,track_uri,discover_level=5, limit=1):
+        # Get tracks recommandations
+        track_data = track_uri.split(":")  # on découpe l'uri' :
+        track_seed = [track_data[2]]  # track id
+
+        choices = ['album','artist','reco']
+        uris = []
+        #Ponderation Album / Artist / Reco
+        if 'album' in data:
+            p = [0, 0.8, 0.2]
+        else:
+            p = [0.5, 0.3, 0.2]
+
+        #Randomly ponderated type of track added
+        for i in range(0, limit): 
+            c = random.choices(choices, weights=p, k=3)
+            print (c)
+            #c=np.random.choice(choices,1,replace=False,p=p)
+            new_uri = track_uri
+
+            #1 : Same Album
+            if c[0]=='album':
+                while new_uri == track_uri:
+                    new_uri = self.get_same_album_tracks(track_uri, 1)
+                uris += new_uri
+            
+            #2 : Same Artist
+            if c[0]=='artist':
+                while new_uri == track_uri:
+                    new_uri = self.get_same_artist_tracks(track_uri, 1)
+                uris += new_uri
+
+            #3 : Spotify Reco
+            if c[0]=='reco':
+                while new_uri == track_uri:
+                    new_uri = self.get_spotify_reco(track_seed, 1)
+                uris += new_uri
+        
+        return uris
+
 
 #  TRACKS AND STATS MANAGEMENT
 
