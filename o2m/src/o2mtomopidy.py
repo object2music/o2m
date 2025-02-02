@@ -360,13 +360,13 @@ class O2mToMopidy:
                     slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
                     #print(f"Adding {new_length - prev_length} tracks")
 
-                    #***REPLACE***
+                    #***REPLACE AND DISCOVER IF OPTION ON***
                     #Calculate init values
                     discover_level = self.calculate_discover_level(track_uri='',push_discover_level=None)
                     #if discover_level < 10: new_type ='new' else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
                     window_replace = (10 - discover_level)+1
 
-                    if discover_level > 0 and self.option_add_reco_after_track and window_replace > len(slice2): 
+                    if discover_level > 0 and self.option_add_reco_after_track and window_replace < len(slice2): 
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
@@ -431,12 +431,6 @@ class O2mToMopidy:
                     
                     #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
-
-    def get_index_from_tlid(self,tl_tracks, tlid):
-        for index, tl_track in enumerate(tl_tracks):
-            if tl_track.tlid == tlid:
-                return index
-        return None  # Return None if not found
 
     def tracklistfill_auto(self,active_box,max_results=20,discover_level=5,mode='normal'):
         #box is the active box in memory and box1,2.. the database contents of boxes
@@ -1110,11 +1104,11 @@ class O2mToMopidy:
 
         #Avoid downgrade of option types in DB
         #Due to many possibilities of change, we remove it and follow the flow !
-        '''if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
+        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
             #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
             if not(option_type == 'incoming' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
-                stat.option_type = option_type'''
-        stat.option_type = option_type
+                stat.option_type = option_type
+        #stat.option_type = option_type
         
         #Check if there is a stat pb to fix 
         if (stat.read_end == 0): stat.read_end = 0.01
