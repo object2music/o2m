@@ -363,12 +363,10 @@ class O2mToMopidy:
                     #***REPLACE***
                     #Calculate init values
                     discover_level = self.calculate_discover_level(track_uri='',push_discover_level=None)
-                    if discover_level < 10: new_type ='new' 
-                    else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
-                        
-                    if discover_level > 0 and self.option_add_reco_after_track: 
-                        window_replace = (10 - discover_level)+1
+                    #if discover_level < 10: new_type ='new' else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
+                    window_replace = (10 - discover_level)+1
 
+                    if discover_level > 0 and self.option_add_reco_after_track and window_replace > len(slice2): 
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
