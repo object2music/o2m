@@ -305,6 +305,7 @@ if __name__ == "__main__":
             position = event.time_position
             
             #Update Dynamic datas linked to Box object and stats (LIBRARY_LINK, etc)
+            #TODO : create a function to calculate data and libreary link from track.uri
             if active_box:
                 if active_box.data != '': data = active_box.data
 

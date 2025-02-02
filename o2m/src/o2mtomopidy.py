@@ -133,6 +133,7 @@ class O2mToMopidy:
             #Compute NewTlid (after track removing)
             current_tlid = self.mopidyHandler.playback.get_current_tlid()
             last_tlindex = self.mopidyHandler.tracklist.index()
+            next_tlid = current_tlid
 
             if current_tlid in removedBox.tlids:
                 self.update_stat_track(
@@ -149,8 +150,6 @@ class O2mToMopidy:
                     if i not in removedBox.tlids:
                         next_tlid = i
                         break
-            else:
-                next_tlid = current_tlid
                             
             #Removing tracks from playslist
             self.mopidyHandler.tracklist.remove({"tlid": removedBox.tlids})
@@ -355,6 +354,7 @@ class O2mToMopidy:
                         self.mopidyHandler.tracklist.remove(
                             {"tlid": [x.tlid for x in slice1]}
                         )  # to be optimized ?
+
                     # Update Box Values : Tldis and Uris
                     new_length = self.mopidyHandler.tracklist.get_length()
                     slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
@@ -362,30 +362,34 @@ class O2mToMopidy:
 
                     #***REPLACE***
                     #Calculate init values
-                    discover_level = int(self.calculate_discover_level())
+                    discover_level = self.calculate_discover_level(track_uri='',push_discover_level=None)
                     if discover_level < 10: new_type ='new' 
                     else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
                         
                     if discover_level > 0 and self.option_add_reco_after_track: 
                         window_replace = (10 - discover_level)+1
 
-                        for i in range(1, len(slice2), window_replace):
-                            print(f"{i}")
-                            print(slice2[i])
-                            #uris = self.get_track_recommandation(slice2[i].uri,discover_level,1)
-                            #print (uris)
-                            '''# Calculate insertion index depending of discover_level
-                            tl_length = self.mopidyHandler.tracklist.get_length()
-                            if self.mopidyHandler.tracklist.index():
-                                current_index = self.mopidyHandler.tracklist.index()
-                            else:
-                                current_index = tl_length'''
-                            '''new_index = slice2[i].tlindex
-                            slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
-                            if slice:
-                                print(f"\nReplace tracks at index {str(new_index)} with uris {uris} & tlid {slice2[i].tlid}\n")
-                                self.mopidyHandler.tracklist.remove(uris=slice2[i].track_uri, at_position=new_index+1)'''
+                        try:
+                            #TODO check library_link
+                            for i in range(1, len(slice2), window_replace):
+                                uri= slice2[i][1][0] #tl_track < track < uri
+                                tlid= slice2[i][0] #tl_track < tlid
+                                uris = self.get_track_recommandation(uri,discover_level,1,library_link)
+                                index = self.mopidyHandler.tracklist.index(tl_track=None, tlid=tlid)
 
+                                slice3 = self.mopidyHandler.tracklist.add(uris=uris, at_position=index)
+                                if slice3:
+                                    slice4 = self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
+                                    if slice4: 
+                                        print (f"Replacing at index {index} uri {uri} by uri {uris[0]}")
+                                    else: 
+                                        print (f"Error when Replacing at index {index} uri {uri} by uri {uris[0]}")
+                            
+                            #update values if replacements
+                            new_length = self.mopidyHandler.tracklist.get_length()
+                            slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
+                        except Exception as val_e: 
+                            print(f"Erreur : {val_e}")
 
                     #***UPDATE VALUES***
                     # TLIDs : Mopidy Tracks's IDs in tracklist associated to added Box
@@ -430,6 +434,11 @@ class O2mToMopidy:
                     #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
 
+    def get_index_from_tlid(self,tl_tracks, tlid):
+        for index, tl_track in enumerate(tl_tracks):
+            if tl_track.tlid == tlid:
+                return index
+        return None  # Return None if not found
 
     def tracklistfill_auto(self,active_box,max_results=20,discover_level=5,mode='normal'):
         #box is the active box in memory and box1,2.. the database contents of boxes
@@ -840,12 +849,12 @@ class O2mToMopidy:
             if "spotify:track" in track_uri:
                 
                 #Calculate init values
-                discover_level = self.calculate_discover_level
+                discover_level = self.calculate_discover_level(track_uri)
                 if discover_level < 10: new_type ='new'
                 else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
                 limit = int(round(discover_level * 0.25)) #Fixing number of new tracks
 
-                uris = self.get_track_recommandation(track_uri,discover_level,limit)
+                uris = self.get_track_recommandation(track_uri,discover_level,limit,data)
 
                 # Calculate insertion index depending of discover_level
                 tl_length = self.mopidyHandler.tracklist.get_length()
@@ -911,27 +920,29 @@ class O2mToMopidy:
 
             #self.play_or_resume()
 
-    def calculate_discover_level(self,track_uri=''):
+    def calculate_discover_level(self,track_uri='',push_discover_level=None):
         # Calculate the discover_level : box associated or updated discover_level via api
-        if self.discover_level_on :
-            discover_level = self.discover_level
-        else:
-            discover_level = self.get_option_for_box_uri(track_uri,"option_discover_level")
-            if not discover_level: discover_level = self.discover_level
+        discover_level = self.discover_level
+        if not self.discover_level_on :
+            if push_discover_level != None:
+                discover_level = push_discover_level
+            if track_uri != '':
+                discover_level = self.get_option_for_box_uri(track_uri,"option_discover_level")
         return int(discover_level)
 
-    def get_track_recommandation(self,track_uri,discover_level=5, limit=1):
+    def get_track_recommandation(self,track_uri, discover_level=5, limit=1, data=''):
         # Get tracks recommandations
         track_data = track_uri.split(":")  # on découpe l'uri' :
         track_seed = [track_data[2]]  # track id
 
         choices = ['album','artist','reco']
         uris = []
-        #Ponderation Album / Artist / Reco
+        #Ponderation Album / Artist / Reco depending the context data
         if 'album' in data:
             p = [0, 0.8, 0.2]
         else:
-            p = [0.5, 0.3, 0.2]
+            p = [0.4, 0.3, 0.3]
+            #p = [0.5, 0.3, 0.2]
 
         #Randomly ponderated type of track added
         for i in range(0, limit): 
