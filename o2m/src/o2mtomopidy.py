@@ -338,6 +338,7 @@ class O2mToMopidy:
                             #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
 
                     if len(uris_rem)>0:
+                        print ("Removing old new tracks")
                         self.mopidyHandler.tracklist.remove({"uri": uris_rem})
 
                     #***SLICE***
@@ -346,6 +347,7 @@ class O2mToMopidy:
 
                     # Shuffle new tracks if necessary : global shuffle or box option : now in card 
                     if (self.shuffle == "true" and active_box.option_sort != "desc" and active_box.option_sort != "asc") or active_box.option_sort == "shuffle":
+                        print(f"Shuffling")
                         self.shuffle_tracklist(prev_length, new_length)
 
                     # Slice added tracks to max_results
@@ -370,19 +372,22 @@ class O2mToMopidy:
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
+                                #print (f"i : {i}")
                                 uri= slice2[i][1][0] #tl_track < track < uri
                                 tlid= slice2[i][0] #tl_track < tlid
-                                uris = self.get_track_recommandation(uri,discover_level,1,library_link)
-                                index = self.mopidyHandler.tracklist.index(tl_track=None, tlid=tlid)
+                                if "spotify:track" in uri:
+                                    uris = self.get_track_recommandation(uri,discover_level,1,library_link)
+                                    index = self.mopidyHandler.tracklist.index(tl_track=None, tlid=tlid)
 
-                                slice3 = self.mopidyHandler.tracklist.add(uris=uris, at_position=index)
-                                if slice3:
-                                    slice4 = self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
-                                    if slice4: 
-                                        print (f"Replacing at index {index} uri {uri} by uri {uris[0]}")
-                                    else: 
-                                        print (f"Error when Replacing at index {index} uri {uri} by uri {uris[0]}")
-                            
+                                    if len(uris) > 0 :
+                                        slice3 = self.mopidyHandler.tracklist.add(uris=uris, at_position=index)
+                                        if slice3:
+                                            slice4 = self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
+                                            if slice4: 
+                                                print (f"Replacing at index {index} uri {uri} by uri {uris[0]}")
+                                            else: 
+                                                print (f"Error when Replacing at index {index} uri {uri} by uri {uris[0]}")
+
                             #update values if replacements
                             new_length = self.mopidyHandler.tracklist.get_length()
                             slice2 = self.mopidyHandler.tracklist.slice(prev_length, new_length)
@@ -924,44 +929,45 @@ class O2mToMopidy:
 
     def get_track_recommandation(self,track_uri, discover_level=5, limit=1, data=''):
         # Get tracks recommandations
-        track_data = track_uri.split(":")  # on découpe l'uri' :
-        track_seed = [track_data[2]]  # track id
+        if "spotify:track" in track_uri:
+            track_data = track_uri.split(":")  # on découpe l'uri' :
+            track_seed = [track_data[2]]  # track id
 
-        choices = ['album','artist','reco']
-        uris = []
-        #Ponderation Album / Artist / Reco depending the context data
-        if 'album' in data:
-            p = [0, 0.8, 0.2]
-        else:
-            p = [0.4, 0.3, 0.3]
-            #p = [0.5, 0.3, 0.2]
+            choices = ['album','artist','reco']
+            uris = []
+            #Ponderation Album / Artist / Reco depending the context data
+            if 'album' in data:
+                p = [0, 0.8, 0.2]
+            else:
+                p = [0.4, 0.3, 0.3]
+                #p = [0.5, 0.3, 0.2]
 
-        #Randomly ponderated type of track added
-        for i in range(0, limit): 
-            c = random.choices(choices, weights=p, k=3)
-            print (c)
-            #c=np.random.choice(choices,1,replace=False,p=p)
-            new_uri = track_uri
+            #Randomly ponderated type of track added
+            for i in range(0, limit): 
+                c = random.choices(choices, weights=p, k=3)
+                print (c)
+                #c=np.random.choice(choices,1,replace=False,p=p)
+                new_uri = track_uri
 
-            #1 : Same Album
-            if c[0]=='album':
-                while new_uri == track_uri:
-                    new_uri = self.get_same_album_tracks(track_uri, 1)
-                uris += new_uri
+                #1 : Same Album
+                if c[0]=='album':
+                    while new_uri == track_uri:
+                        new_uri = self.get_same_album_tracks(track_uri, 1)
+                    uris += new_uri
+                
+                #2 : Same Artist
+                if c[0]=='artist':
+                    while new_uri == track_uri:
+                        new_uri = self.get_same_artist_tracks(track_uri, 1)
+                    uris += new_uri
+
+                #3 : Spotify Reco
+                if c[0]=='reco':
+                    while new_uri == track_uri:
+                        new_uri = self.get_spotify_reco(track_seed, 1)
+                    uris += new_uri
             
-            #2 : Same Artist
-            if c[0]=='artist':
-                while new_uri == track_uri:
-                    new_uri = self.get_same_artist_tracks(track_uri, 1)
-                uris += new_uri
-
-            #3 : Spotify Reco
-            if c[0]=='reco':
-                while new_uri == track_uri:
-                    new_uri = self.get_spotify_reco(track_seed, 1)
-                uris += new_uri
-        
-        return uris
+            return uris
 
 
 #  TRACKS AND STATS MANAGEMENT
