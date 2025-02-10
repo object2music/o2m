@@ -425,7 +425,7 @@ class O2mToMopidy:
                     
                     # Shuffle complete computed tracklist if more than two boxs
                     #self.shuffle_tracklist(current_index + 1, new_length)
-                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle") and not((option_type == "info") and (new_length - prev_length==1)) and (current_index <= 1):
+                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle") and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1)):
                         print ("shuffling")
                         self.shuffle_tracklist(current_index + 1, new_length)
                    
