@@ -28,7 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update 
 
 # Install dependencies
-RUN apt install -y wget 
+RUN apt install -y wget curl
 
 # Install Python
 RUN apt install -y python3 python3-pip git

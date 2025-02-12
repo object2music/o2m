@@ -16,8 +16,15 @@ services:
       - ./data/music:/app/Music
       - ./tmp/snapserver:/tmp
     restart: always
+    healthcheck:
+      test: "curl -f http://localhost:6680"
+      interval: 120s
+      timeout: 10s
+      retries: 1
+      start_period: 40s
     environment:
-      - PYTHONUNBUFFERED=1
+      - PYTHONUNBUFFERED= 1
+
 
   o2m:
     profiles:
@@ -35,6 +42,12 @@ services:
     volumes:
       - ./o2m:/app
     restart: always
+    healthcheck:
+      test: "curl -f http://localhost/api/dl:6681"
+      interval: 120s
+      timeout: 10s
+      retries: 1
+      start_period: 40s
     env_file:
       - .env
 
@@ -51,8 +64,60 @@ services:
       - ./tmp/snapserver:/tmp
       - ./snapserver/snapserver.conf:/etc/snapserver.conf
       #- ./docker/snapserver/snapserver.json:/root/.config/snapserver/server.json
+    restart: always
+    #healthcheck:
+    #  test: "curl -f http://localhost:1780"
+    #  interval: 120s
+    #  timeout: 10s
+    #  retries: 1
+    #  start_period: 40s
     depends_on: 
       - mopidy
+
+  mysql:
+    profiles:
+    #  - dev
+      - prod
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${PORT_MYSQL}:3306"
+    volumes:
+      - ./data/db:/var/lib/mysql
+      - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3306"]
+      interval: 120s
+      timeout: 10s
+      retries: 1
+      start_period: 40s
+
+  phpmyadmin:
+    profiles:
+    #  - dev
+      - prod
+    image: phpmyadmin/phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      #PMA_USER: xxx
+      #PMA_PASSWORD: xxx
+    ports:
+      - "${PORT_PHPMYADMIN}:80"
+    depends_on:
+      - mysql
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 120s
+      timeout: 10s
+      retries: 1
+      start_period: 40s
 
   back:
     profiles:
@@ -72,36 +137,6 @@ services:
     volumes:
       - ./frontend/src/:/app/src
     network_mode: host
+    restart: always
     env_file:
       - .env
-
-  mysql:
-    profiles:
-    #  - dev
-      - prod
-    image: mysql:5.7
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USERNAME}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "${PORT_MYSQL}:3306"
-    volumes:
-      - ./data/db:/var/lib/mysql
-      - ./o2m/samples/mysql:/docker-entrypoint-initdb.d
-
-  phpmyadmin:
-    profiles:
-    #  - dev
-      - prod
-    image: phpmyadmin/phpmyadmin
-    environment:
-      PMA_HOST: mysql
-      PMA_PORT: 3306
-      #PMA_USER: xxx
-      #PMA_PASSWORD: xxx
-    ports:
-      - "${PORT_PHPMYADMIN}:80"
-    depends_on:
-      - mysql
