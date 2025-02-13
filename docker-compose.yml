@@ -42,12 +42,7 @@ services:
     volumes:
       - ./o2m:/app
     restart: always
-    healthcheck:
-      test: "curl -f http://localhost/api/dl:6681"
-      interval: 120s
-      timeout: 10s
-      retries: 1
-      start_period: 40s
+
     env_file:
       - .env
 
