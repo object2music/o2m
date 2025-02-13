@@ -42,7 +42,12 @@ services:
     volumes:
       - ./o2m:/app
     restart: always
-
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6681/health')"]
+      interval: 120s
+      timeout: 10s
+      retries: 1
+      start_period: 40s
     env_file:
       - .env
 

@@ -203,6 +203,10 @@ if __name__ == "__main__":
             return "no track"'''
 
     #RESTART
+    @api.route('/health')
+    def health_check():
+        return "OK", 200
+
     @api.route('/api/toogle_play')
     def api_toogle_play():
         o2mHandler.play_or_resume()

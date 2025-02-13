@@ -38,7 +38,6 @@ RUN mkdir -p /etc/apt/keyrings
 RUN wget -q -O /etc/apt/keyrings/mopidy-archive-keyring.gpg \
     https://apt.mopidy.com/mopidy.gpg
 RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bullseye.list
-RUN apt-get update
 RUN apt-get -y install mopidy
 #RUN  apt-get install -y swig python-spotify libpcsclite-dev libcairo2-dev
 
