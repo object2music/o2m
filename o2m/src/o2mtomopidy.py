@@ -368,7 +368,7 @@ class O2mToMopidy:
                     #if discover_level < 10: new_type ='new' else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
                     window_replace = (10 - discover_level)+1
 
-                    if discover_level > 0 and self.option_add_reco_after_track and window_replace < len(slice2): 
+                    if discover_level > 0 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash']: 
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
@@ -569,10 +569,14 @@ class O2mToMopidy:
                 elif "spotify:library" in content :
                     print ("spotify:library")
                     max_result1 = int(round(max_results/3))
-                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(2*max_result1,1))
-                    #tracklist_uris.append(self.get_spotify_library(2*max_results1))
+                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
+                    tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(max_result1,1))
                     tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_result1))
-                    #tracklist_uris.append(self.spotifyHandler.get_library_recent_tracks(max_results))
+
+                # spotify:favorites (favorites only)
+                elif "spotify:favorites" in content :
+                    print ("spotify:favorites")
+                    tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results))
 
                 # now:library (daily habits)
                 elif "now:library" in content :
