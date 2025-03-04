@@ -925,10 +925,11 @@ class O2mToMopidy:
         # Calculate the discover_level : box associated or updated discover_level via api
         discover_level = self.discover_level
         if not self.discover_level_on :
-            if push_discover_level != None:
+            if push_discover_level != None and push_discover_level:
                 discover_level = push_discover_level
             if track_uri != '':
-                discover_level = self.get_option_for_box_uri(track_uri,"option_discover_level")
+                dl = self.get_option_for_box_uri(track_uri,"option_discover_level")
+                if dl and dl != None: discover_level = dl
         return int(discover_level)
 
     def get_track_recommandation(self,track_uri, discover_level=5, limit=1, data=''):
