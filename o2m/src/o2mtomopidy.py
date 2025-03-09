@@ -568,6 +568,13 @@ class O2mToMopidy:
                 # spotify:library (library random extract)
                 elif "spotify:library" in content :
                     print ("spotify:library")
+                    max_result1 = int(round(max_results/2))
+                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
+                    tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(max_result1,1))
+
+                # spotify:library (library random extract)
+                elif "spotify:library2" in content :
+                    print ("spotify:library2")
                     max_result1 = int(round(max_results/3))
                     tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
                     tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(max_result1,1))
@@ -930,6 +937,7 @@ class O2mToMopidy:
             if track_uri != '':
                 dl = self.get_option_for_box_uri(track_uri,"option_discover_level")
                 if dl and dl != None: discover_level = dl
+        print (int(discover_level))
         return int(discover_level)
 
     def get_track_recommandation(self,track_uri, discover_level=5, limit=1, data=''):
@@ -944,8 +952,8 @@ class O2mToMopidy:
             if 'album' in data:
                 p = [0, 0.8, 0.2]
             else:
-                p = [0.4, 0.3, 0.3]
-                #p = [0.5, 0.3, 0.2]
+                #p = [0.4, 0.3, 0.3]
+                p = [0.5, 0.3, 0.2]
 
             #Randomly ponderated type of track added
             for i in range(0, limit): 
