@@ -31,6 +31,7 @@ option_autofill_playlists = $O2M_OPTION_AUTOFILL_PLAYLISTS
 option_add_reco_after_track = $O2M_OPTION_ADD_RECO_AFTER_TRACK
 port_mopidy = $PORT_MOPIDY
 host_mopidy = $HOST_MOPIDY
+fix_stats = $O2M_FIX_STATS
 
 # mysql or sqlite
 db_type = $DB_TYPE

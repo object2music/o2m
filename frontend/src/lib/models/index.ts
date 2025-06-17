@@ -6,6 +6,6 @@ import type { Box } from './Box';
 import type { Content } from './Content';
 import type { Stat } from './Stat';
 import type { Flow } from './Flow';
+import type { Playlist } from './Playlist';
 
-
-export type { Track, Tracklist, Player, User, Box, Content, Stat, Flow };
+export type { Track, Tracklist, Player, User, Box, Content, Stat, Flow, Playlist };
