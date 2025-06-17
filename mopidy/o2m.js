@@ -12,7 +12,7 @@ window.onload = function() {
   //host = window.location.host;
   base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
   base_url += ':6681/api/'
-  backoffice_uri = 'http://51.15.205.150:5001'
+  backoffice_uri = 'http://localhost:5011'
   //backoffice_uri += 'sql.php?table=box&sql_query=SELECT+%2A+FROM+%60box%60++%0AORDER+BY+%60box%60.%60favorite%60++DESC&session_max_rows=100&is_browse_distinct=0'
   //alert(base_url)
   
@@ -32,17 +32,15 @@ window.onload = function() {
             {
               flag_o2m_status = 1;
               for (update of o2m_status) {
-
-              try { 
-                    uri1 = update.innerHTML;
-                    update_o2m_status(update,uri1);
-                  } 
-                  catch (error) {
-                    console.error(error);
-                  }
+                try { 
+                      uri1 = update.innerHTML;
+                      update_o2m_status(update,uri1);
+                    } 
+                    catch (error) {
+                      console.error(error);
+                    }
               }
               flag_o2m_status = 0;
-                
             }
         },60000);
         }
@@ -57,25 +55,26 @@ window.onload = function() {
     const targetNode1 = document.getElementById("o2m_status_current");
 
     // Options for the observer (which mutations to observe)
-    const config1 = {attributes: true, childList: true, subtree: true };
+    try { 
+      const config1 = {attributes: true, childList: true, subtree: true };
 
     // Callback function to execute when mutations are observed
-    const callback1 = (mutationList1, observer1) => {
+      const callback1 = (mutationList1, observer1) => {
       for (const mutation1 of mutationList1) {
-              try { 
                 uri1 = mutation1.target.innerHTML;
                 update_o2m_status(mutation1.target,uri1,"all");
               } 
-              catch (error) {
-                console.error(error);
-              }
-            }
         };
+      
 
     // Create an observer instance linked to the callback function
     const observer1 = new MutationObserver(callback1);
     observer1.observe(targetNode1, config1);
-
+     }
+     catch (error) {
+      console.error(error);
+    }
+    
   //----------------FUNCTIONS-------------
 
     function update_o2m_status(update,uri,show = "min"){
@@ -237,8 +236,8 @@ window.onload = function() {
   xhr5.send();
 
   // O2M STATUS : STATUS DISPLAY Injection in IRIS (from API)
-  const o2m_status = document.getElementsByClassName("o2m_status");
-  for (update of o2m_status) {
+  function o2m_status_update(){
+    const o2m_status = document.querySelectorAll(".o2m_status.hide").forEach(function(update) {
       try { 
         uri1 = update.innerHTML;
         update_o2m_status(update,uri1);
@@ -246,7 +245,21 @@ window.onload = function() {
       catch (error) {
         console.error(error);
       }
+  });
   }
+  o2m_status_update();
+  {setTimeout(() => {
+    o2m_status_update();
+  }, "10000");}
+
+  /*
+  for (let i = 0; i < 3; i++) {
+  if (document.querySelectorAll(".o2m_status.hide").length>0)
+  {setTimeout(() => {
+    o2m_status_update();
+  }, "10000");}
+  }*/
+  
 
   const o2m_status1 = document.getElementById("o2m_status_current");
   try { 

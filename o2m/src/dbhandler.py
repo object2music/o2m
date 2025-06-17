@@ -26,7 +26,22 @@ class DatabaseHandler():
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
         self.boxs = self.get_all_boxs()
-    
+
+    #MISC Functions
+
+    #Manage Podcasts url
+    def podcast_uri_remove_max_results(self,uri):
+        if "http://" in uri:
+            uri = uri.replace("http://", "https://")
+        if "?max_results=" in uri : 
+            uri1 = uri.split("?max_results=")
+            if "#" in uri1[1]: 
+                uri2 = uri1[1].split("#")
+                track_uri = str(uri1[0]) + "#" + str(uri2[1])
+            else : track_uri = str(uri1[0])
+            return track_uri
+        else: return uri
+
     #BOX
     def create_box(self, uid, media_url):
         try:
@@ -150,17 +165,27 @@ class DatabaseHandler():
         else:
             return False
 
+    def get_avg_stat(self, option_type='', column='read_end'):
+        if option_type != '':
+            query = Stats.select(fn.AVG(getattr(Stats, column))).where(Stats.option_type == option_type).scalar()
+        else:
+            query = Stats.select(fn.AVG(getattr(Stats, column))).scalar()
+        #results = self.transform_query_to_list(query)
+        return query
+
     #STATS_RAW
     def create_stat_raw(self, uri, read_time, read_hour, username):
         stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
         return stat_raw
 
     def get_stat_raw_by_hour(self, read_hour, window=0, limit=1, uri_pattern='track:'):
+        print (f"Get stat raw by hour {read_hour} {window} {limit} {uri_pattern}")
         if window > 0:
             query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
         else:
             query = Stats_Raw.select().where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
+        #print (results)
         if len(results) > 0:
             uris = [o.uri for o in results]
             return uris
@@ -186,15 +211,21 @@ class DatabaseHandler():
             print (f"Adding : news_notcompleted:library {len(uris)}")
             return uris
 
-    def get_uris_podcasts_notread(self, limit=15):
+    def get_uris_podcasts_notread(self, limit=15, discover_level=5):
         #Track unfinished
         #pattern="%podcast+%"
         date_now = datetime.datetime.utcnow().timestamp()
-        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
+        #query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
+        query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")
+                                     & (Stats.read_count_end < discover_level)).order_by(Stats.last_read_date.desc()).limit(limit)
         results = self.transform_query_to_list(query)
         print (results)
         if len(results) > 0:
-            uris = [o.uri for o in results]
+            #uris = [o.uri for o in results]
+            uris = []
+            for o in results:
+                #uris.append(self.podcast_uri_remove_max_results(o.uri))
+                uris.append(o.uri)
             return uris
 
 if __name__ == "__main__":

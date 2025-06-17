@@ -7,7 +7,7 @@ class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("o2m.conf")["spotipy"]
         self.cache_path = ".cache_spotipy" 
-        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative"
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
@@ -111,35 +111,45 @@ class SpotifyHandler:
         #Get last tracks from each playlist
         #To be upgraded : remove trash playlist, enlarge the window
         t_list=[]
+        lib_link=[]
         total=0
         try: 
             playlists = self.sp.current_user_playlists()
         except Exception as val_e: 
             print(f"Erreur playlist : {val_e}")
 
-        #hack
+        #Remove unwanted playlists
         print(f"Lenght playlists {len(playlists)}")
         if len(playlists)>0:
             playlists = playlists['items']
             for pl in range(len(playlists)):
+                #TODO : Remove also option_type='Hidden' 
                 if playlists[pl]['name']=='Trash':
                     playlists.remove(playlists[pl])
                     break
+            
+            if len(playlists) < limit: limit = len(playlists)
 
             if len(playlists)>0:
                 for i in range(limit):
                     playlist = random.choice(playlists)
-                    size = int(len(playlist)*discover_level/10)
+                    
+                    tracks = self.sp.playlist_tracks(playlist['id'])['items']
                     #We take some of the latests tracks added in the playlist
-                    tracks = self.sp.playlist_tracks(playlist['id'])['items'][-size:]
-                    track = random.choice(tracks)
-                    t_list.append(track['track']['uri'])
-                    #for j in range(unit):
-                        #track = tracks['items'][-unit:]
-                        #track = random.choice(tracks['items'])
-                        #track = tracks[0:1]
-                        #t_list.append(track['uri'])
-        return t_list
+                    #size = int(len(playlist)*discover_level/10)
+                    #if size < len(tracks): tracks = tracks[-size:]
+                    #print(f"Tracks {len(tracks)} - Size {size}")
+
+                    if len(tracks)>0:
+                        track = random.choice(tracks)
+                        t_list.append(track['track']['uri'])
+                        lib_link.append("spotify:playlist:"+playlist['id'])
+                        #for j in range(unit):
+                            #track = tracks['items'][-unit:]
+                            #track = random.choice(tracks['items'])
+                            #track = tracks[0:1]
+                            #t_list.append(track['uri'])
+        return (t_list,lib_link)
 
 ################### ALBUMS  #############################
 
@@ -157,6 +167,10 @@ class SpotifyHandler:
             total = self.sp.current_user_saved_albums()['total']
         except Exception as val_e: 
             print(f"Erreur albums : {val_e}")
+
+        if int(total) < limit: limit = int(total)
+        print (limit)
+        print (int(total))
 
         if total>0:
             #Extract one album n=limit times
@@ -217,29 +231,53 @@ class SpotifyHandler:
 
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
-
+    
+    def get_all_followed_artists(self):
+        all_followed = []
+        for offset in range(0, 1000, 50):
+            response = self.sp.current_user_followed_artists(limit=50,after=offset)
+            for artist in response['artists']['items']:
+                name = artist['name']
+                id = artist['id']
+                #all_followed.update({name: id})
+                all_followed.append(id)
+        return all_followed
+    
     def get_my_artists_tracks(self,limit=1,unit=1):
         t_list=[]
+        total=0
         try:
-            total = self.sp.current_user_followed_artists()['artists']['total']
-        except Exception as val_e: 
-            print(f"Erreur artist : {val_e}")        
-        if total>0:
-            for i in range(limit):
-                artists = self.sp.current_user_followed_artists(limit=1,after=random.randint(0,total-1))
-
-                try: 
-                    tracks = self.get_artist_top_tracks(artists['artists']['items'][0]['id'])
-                except Exception as val_e: 
-                    print(f"Erreur artist : {val_e}")
-                if unit != 0:
-                    for j in range(unit):
-                        track = random.choice(tracks['items'])
-                        t_list.append(track['uri'])
-                else:
-                    t_list.append('spotify:artist:'+artists['artists']['items'][i]['id'])
-                    #for j in range(len(tracks['items'])):
-                    #    t_list.append(tracks['items'][j]['uri'])
+            artists = self.get_all_followed_artists()
+            if len(artists)>0:
+                for i in range(limit):
+                    artist = random.choice(artists)
+                    tracks = self.get_artist_top_tracks(artist)
+                    if tracks and unit != 0:
+                        for j in range(unit):
+                            track = random.choice(tracks)
+                            t_list.append(track)
+                    else:
+                        t_list.append('spotify:artist:'+artist)
+            '''total = self.sp.current_user_followed_artists()['artists']['total']
+            if int(total) < limit: limit = int(total)
+            if total>0:
+                for i in range(limit):
+                    artist = self.sp.current_user_followed_artists(limit=1,after=random.randint(0,total-1))['artists']['items'][0]['id']
+                    if artist: 
+                        tracks = self.get_artist_top_tracks(artist)
+                        print (tracks)
+                        if tracks and unit != 0:
+                            for j in range(unit):
+                                track = random.choice(tracks)
+                                t_list.append(track)
+                        else:
+                            t_list.append('spotify:artist:'+artist)
+                            #for j in range(len(tracks['items'])):
+                            #    t_list.append(tracks['items'][j]['uri'])'''
+            
+        except Exception as val_e:
+            print(f"Erreur artist : {val_e}")
+        
         return t_list
 
 ################### FAVORITES AND MISC #############################
@@ -247,19 +285,17 @@ class SpotifyHandler:
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
         #Warning : may probably be the last 20 only
         t_list=[]
-        try: 
-            tracks = self.sp.current_user_saved_tracks()
-        except Exception as val_e: 
-            print(f"Erreur : {val_e}")
-            tracks = self.sp.current_user_saved_tracks()        
-        if tracks:
-            tracks=tracks['items']
-            random.shuffle(tracks)
+        total=0
+        total = self.sp.current_user_saved_tracks()['total']
+        print (total)
+        if (total>0):
             for i in range(limit):
-                print (tracks[i]['track']['uri'])
-                t_list.append(tracks[i]['track']['uri'])
-
+                #print (tracks[i]['track']['uri'])
+                rand = random.randint(0,total)
+                tracks = self.sp.current_user_saved_tracks(limit=1,offset=rand)
+                t_list.append(tracks['items'][0]['track']['uri'])
         return t_list
+
     def get_library_recent_tracks(self, limit):
         #Warning : may probably be the last 20 only
         t_list=[]
