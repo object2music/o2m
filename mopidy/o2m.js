@@ -19,60 +19,62 @@ window.onload = function() {
   //Listeners for DOM change in IRIS (o2m_status)
     //Node of lists tracks changing 
     const targetNode = document.querySelectorAll("section.list-wrapper")[0];
+    if (targetNode && targetNode.nodeType){
 
-    // Options for the observer (which mutations to observe)
-    const config = {childList: true};
-    flag_o2m_status = 0;
+      // Options for the observer (which mutations to observe)
+      const config = {childList: true};
+      flag_o2m_status = 0;
 
-    // Callback function to execute when mutations are observed
-    const callback = (mutationList, observer) => {
-      for (const mutation of mutationList) {
-        setTimeout(() => {
-          if (flag_o2m_status == 0)
-            {
-              flag_o2m_status = 1;
-              for (update of o2m_status) {
-                try { 
-                      uri1 = update.innerHTML;
-                      update_o2m_status(update,uri1);
-                    } 
-                    catch (error) {
-                      console.error(error);
-                    }
+      // Callback function to execute when mutations are observed
+      const callback = (mutationList, observer) => {
+        for (const mutation of mutationList) {
+          setTimeout(() => {
+            if (flag_o2m_status == 0)
+              {
+                flag_o2m_status = 1;
+                for (update of o2m_status) {
+                  try { 
+                        uri1 = update.innerHTML;
+                        update_o2m_status(update,uri1);
+                      } 
+                      catch (error) {
+                        console.error(error);
+                      }
+                }
+                flag_o2m_status = 0;
               }
-              flag_o2m_status = 0;
-            }
-        },60000);
-        }
-    };
+          },60000);
+          }
+      };
 
-    // Create an observer instance linked to the callback function
-    const observer = new MutationObserver(callback);
-    observer.observe(targetNode, config);
+      // Create an observer instance linked to the callback function
+      const observer = new MutationObserver(callback);
+      observer.observe(targetNode, config);
 
-  //Listeners for DOM change in IRIS (current-track__title)
-    //Node of lists tracks changing 
-    const targetNode1 = document.getElementById("o2m_status_current");
+    //Listeners for DOM change in IRIS (current-track__title)
+      //Node of lists tracks changing 
+      const targetNode1 = document.getElementById("o2m_status_current");
 
-    // Options for the observer (which mutations to observe)
-    try { 
-      const config1 = {attributes: true, childList: true, subtree: true };
+      // Options for the observer (which mutations to observe)
+      try { 
+        const config1 = {attributes: true, childList: true, subtree: true };
 
-    // Callback function to execute when mutations are observed
-      const callback1 = (mutationList1, observer1) => {
-      for (const mutation1 of mutationList1) {
-                uri1 = mutation1.target.innerHTML;
-                update_o2m_status(mutation1.target,uri1,"all");
-              } 
-        };
-      
+      // Callback function to execute when mutations are observed
+        const callback1 = (mutationList1, observer1) => {
+        for (const mutation1 of mutationList1) {
+                  uri1 = mutation1.target.innerHTML;
+                  update_o2m_status(mutation1.target,uri1,"all");
+                } 
+          };
+        
 
-    // Create an observer instance linked to the callback function
-    const observer1 = new MutationObserver(callback1);
-    observer1.observe(targetNode1, config1);
-     }
-     catch (error) {
-      console.error(error);
+      // Create an observer instance linked to the callback function
+      const observer1 = new MutationObserver(callback1);
+      observer1.observe(targetNode1, config1);
+      }
+      catch (error) {
+        console.error(error);
+      }
     }
     
   //----------------FUNCTIONS-------------
