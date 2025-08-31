@@ -1,4 +1,4 @@
-import datetime, sys, contextlib, random
+import datetime, time, sys, contextlib, random
 #import numpy as np
 import random 
 from mopidy_podcast import Extension, feeds
@@ -23,6 +23,7 @@ class O2mToMopidy:
     activecards = {}
     activeboxs = []
     last_box_uid = None
+    queue = True
 
     suffle = False
     max_results = 50
@@ -218,40 +219,46 @@ class O2mToMopidy:
 
 #O2M CORE / TRACKLIST INIT 
     def one_box_changed(self, box, max_results=15):
+        
         #print(f"\nNew box added: {box}")
         if (box.uid != self.last_box_uid):  # If different from last box added - for NFC mode only
-            uri = "box:"+box.uid
-            self.update_stat_raw(uri)
+            while self.queue==False:
+                print('Running')
+                time.sleep(1)
+            else:
+                self.queue=False
+                uri = "box:"+box.uid
+                self.update_stat_raw(uri)
 
-            # Variables
-            if max_results==15:
-                max_results = self.max_results
-                if box.option_max_results: max_results = box.option_max_results
-                #print (f"Max results : {max_results}")
-            
-            tracklist_uris = self.tracklistappend_box(box,max_results)
-            #Flatten
-            tracklist_uris = list(util.flatten_list(tracklist_uris))
-            #Remove '' items
-            tracklist_uris = list(filter(('').__ne__, tracklist_uris))
-            #Shorten following lenght0
-            lenght0 = len(tracklist_uris)
-            tracklist_uris = tracklist_uris[:lenght0]
-            #print(f"\nLenght {len(tracklist_uris)} & tracklist_uris: {tracklist_uris}")
+                # Variables
+                if max_results==15:
+                    max_results = self.max_results
+                    if box.option_max_results: max_results = box.option_max_results
+                    #print (f"Max results : {max_results}")
+                
+                tracklist_uris = self.tracklistappend_box(box,max_results)
+                #Flatten
+                tracklist_uris = list(util.flatten_list(tracklist_uris))
+                #Remove '' items
+                tracklist_uris = list(filter(('').__ne__, tracklist_uris))
+                #Shorten following lenght0
+                lenght0 = len(tracklist_uris)
+                tracklist_uris = tracklist_uris[:lenght0]
+                #print(f"\nLenght {len(tracklist_uris)} & tracklist_uris: {tracklist_uris}")
 
+                #Let's go to play
+                if len(tracklist_uris)>0:
+                    #max_results to be recalculated function of subadding already done (content var)
+                    #TODO : library_link
+                    length = self.add_tracks(box, tracklist_uris, max_results) # Envoie les uris en lecture
 
-            #Let's go to play
-            if len(tracklist_uris)>0:
-                #max_results to be recalculated function of subadding already done (content var)
-                #TODO : library_link
-                length = self.add_tracks(box, tracklist_uris, max_results) # Envoie les uris en lecture
-
-                #Shuffle if several entries in this action
-                if ((self.shuffle == "true" and box.option_sort != "desc" and box.option_sort != "asc") or box.option_sort == "shuffle") and (length>0):
-                    index = 0
-                    if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
-                    length = self.mopidyHandler.tracklist.get_length()
-                    self.shuffle_tracklist(index+1,length)
+                    #Shuffle if several entries in this action
+                    if ((self.shuffle == "true" and box.option_sort != "desc" and box.option_sort != "asc") or box.option_sort == "shuffle") and (length>0):
+                        index = 0
+                        if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
+                        length = self.mopidyHandler.tracklist.get_length()
+                        self.shuffle_tracklist(index+1,length)
+                self.queue = True
 
         # Next option
         else:
@@ -349,6 +356,9 @@ class O2mToMopidy:
                     if (self.shuffle == "true" and active_box.option_sort != "desc" and active_box.option_sort != "asc") or active_box.option_sort == "shuffle":
                         print(f"Shuffling")
                         self.shuffle_tracklist(prev_length, new_length)
+                    
+                    #if (active_box.option_sort == "asc") :
+                    #    self.mopidyHandler.tracklist.slice
 
                     # Slice added tracks to max_results
                     if (new_length - prev_length) > max_results:
@@ -535,8 +545,17 @@ class O2mToMopidy:
             data = [x.replace('\r', '') for x in data]
 
             for content in data:
+                #Other box called
+                if "box:" in content :
+                    box_uid = content.split(":")[1]
+                    self.queue = True
+                    box = self.dbHandler.get_box_by_uid(box_uid)
+                    self.activeboxs.append(box)  #adding box to list
+                    print(f"added box {box}") 
+                    self.box_action(box)
+                
                 # Recommandation
-                if "recommendation" in content:
+                elif "recommendation" in content:
                     media_parts = content.split(":")
                     if media_parts[3] == "genres":  # si les seeds sont des genres
                         genres = media_parts[4].split(",")  # on sépare les genres et on les ajoute un par un dans une liste
@@ -619,7 +638,7 @@ class O2mToMopidy:
                         print(f"Adding : {uri_new} tracks")
                         content += 1
 
-                # album:spotify 
+                # albums:spotify 
                 elif "albums:spotify" in content :
                     if (random.choice([1,2])) == 1:
                         tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(1,0))
@@ -859,9 +878,12 @@ class O2mToMopidy:
                 
                 #Calculate init values
                 discover_level = self.calculate_discover_level(track_uri)
-                if discover_level < 10: new_type ='new'
-                else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
-                limit = int(round(discover_level * 0.25)) #Fixing number of new tracks
+                if discover_level < 10: 
+                    new_type ='new'
+                    limit = int(round(discover_level * 0.25)) #Fixing number of new tracks
+                else: 
+                    new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
+                    limit = 1 #Extreme mode : continusly autofill until next song is launched
 
                 uris = self.get_track_recommandation(track_uri,discover_level,limit,data)
 
@@ -1112,8 +1134,10 @@ class O2mToMopidy:
         if hasattr(track, "length"):
             rate = pos / track.length
             if rate > 0.9: track_finished = True
-            #Probably an artefact of auto adding track : so no adding stat needed
-            if rate < 0.1: fix=True
+            #Probably an artefact of auto adding track : so no adding stat needed and exit function
+            if rate < 0.05: 
+                print ("No Stat : skip artefact")
+                return None
 
         if fix==False:
             stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
