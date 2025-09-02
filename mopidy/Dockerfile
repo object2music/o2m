@@ -71,8 +71,8 @@ RUN --mount=type=cache,target=/root/.cache \
 python3 -m pip install -r requirements.txt
 
 # Install Rust gstreamer
-ARG URL=https://github.com/kingosticks/gst-plugins-rs-build/releases/download/gst-plugin-spotify_0.14.0-alpha.1-1
-ARG FILE=gst-plugin-spotify_0.14.0.alpha.1-1_amd64.deb
+ARG URL=https://github.com/kingosticks/gst-plugins-rs-build/releases/download/gst-plugin-spotify_0.15.0-alpha.1-2
+ARG FILE=gst-plugin-spotify_0.15.0.alpha.1-2_amd64.deb
 ARG FILE2=libgstspotify.so
 RUN wget $URL/$FILE && dpkg --install $FILE && rm $FILE
 #COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/libgstspotify.so
