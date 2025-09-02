@@ -169,8 +169,8 @@ class SpotifyHandler:
             print(f"Erreur albums : {val_e}")
 
         if int(total) < limit: limit = int(total)
-        print (limit)
-        print (int(total))
+        #print (limit)
+        #print (int(total))
 
         if total>0:
             #Extract one album n=limit times

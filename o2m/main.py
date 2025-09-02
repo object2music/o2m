@@ -285,9 +285,9 @@ if __name__ == "__main__":
                     #if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
                     if (stat_uri.read_position > 0) and (stat_uri.read_end < 0.9) :
                         o2mHandler.mopidyHandler.playback.seek(max(stat_uri.read_position - 10, 0))
-                    #skip advertising on sismique
-                    elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri: o2mHandler.mopidyHandler.playback.seek(63000)
-                elif "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri:  o2mHandler.mopidyHandler.playback.seek(63000)
+                    #skip advertising 
+                    #elif "radiofrance-podcast.net" in track.uri: o2mHandler.mopidyHandler.playback.seek(15000)
+                #elif "radiofrance-podcast.net" in track.uri:  o2mHandler.mopidyHandler.playback.seek(15000)
             if "radiofrance-podcast.net" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
                 volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
                 if volume > 100: volume = 100
