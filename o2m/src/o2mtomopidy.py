@@ -469,69 +469,75 @@ class O2mToMopidy:
             # news: 0 → 10 (linear: 1.0*dl + 0)
             # Total: 30 → 30 (always 30)
             
-            base_counts = {
-                'favorites': max(0, int(round((-0.8 * discover_level + 10) * max_results / 30))),
-                'common': max(0, int(round((-0.3 * discover_level + 8) * max_results / 30))),
-                'playlists': max(0, int(round((-0.3 * discover_level + 8) * max_results / 30))),
-                'albums_artists': max(0, int(round((0.1 * discover_level + 4) * max_results / 30))),
-                'incoming': max(0, int(round((0.3 * discover_level + 0) * max_results / 30))),
-                'news': max(0, int(round((1.0 * discover_level + 0) * max_results / 30)))
+            base_proportions = {
+                'favorites': -0.8 * discover_level + 10,
+                'common': -0.3 * discover_level + 8,
+                'playlists': -0.3 * discover_level + 8,
+                'albums_artists': 0.1 * discover_level + 4,
+                'incoming': 0.3 * discover_level,
+                'news': 1.0 * discover_level
             }
             
-            # Add podcast count if in podcast mode (replaces part of news)
+            # Add podcast proportion if in podcast mode
             if mode == 'podcast':
-                podcast_count = max(0, int(round((0.9 * discover_level) * max_results / 30)))
-                base_counts['podcasts'] = podcast_count
-                # Reduce news proportionally to maintain total
-                base_counts['news'] = max(0, base_counts['news'] - podcast_count)
+                base_proportions['podcasts'] = 0.9 * discover_level
             
-            # Ensure total equals max_results by adjusting the largest category
-            total_calculated = sum(base_counts.values())
-            difference = max_results - total_calculated
+            # Normalize proportions to sum to 1
+            total_proportion = sum(base_proportions.values())
+            if total_proportion > 0:
+                for key in base_proportions:
+                    base_proportions[key] /= total_proportion
             
-            if difference != 0:
-                # Find the category with the highest count to adjust
-                max_category = max(base_counts.keys(), key=lambda k: base_counts[k])
-                base_counts[max_category] = max(0, base_counts[max_category] + difference)
+            # Distribute max_results among categories, ensuring the sum is correct
+            base_counts = {}
+            remaining = max_results
+            for key, proportion in list(base_proportions.items())[:-1]:
+                count = int(round(proportion * max_results))
+                base_counts[key] = count
+                remaining -= count
+            
+            base_counts[list(base_proportions.keys())[-1]] = remaining
             
             print(f"Track distribution: {base_counts} (total: {sum(base_counts.values())})")
 
             #ADD_TRACKS        
             #Common tracks
-            if base_counts['common'] > 0:
+            if base_counts.get('common', 0) > 0:
                 print(f"\nAUTO : Common {base_counts['common']} tracks\n")
-                self.add_tracks(active_box, self.get_common_tracks(datetime.datetime.now().hour,window,base_counts['common']), base_counts['common'], "normal","o2m:history")
+                #self.add_tracks(active_box, self.get_common_tracks(datetime.datetime.now().hour,window,base_counts['common']), base_counts['common'], "normal","o2m:history")
 
             #Incoming
-            if base_counts['incoming'] > 0:
+            if base_counts.get('incoming', 0) > 0:
                 print(f"\nAUTO : Incoming {base_counts['incoming']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('incoming')
                 library_link = self.get_spotify_playlist_from_box(box1)
                 self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['incoming']), base_counts['incoming'], "incoming",library_link)
 
             #Favorites
-            if base_counts['favorites'] > 0:
+            if base_counts.get('favorites', 0) > 0:
                 print(f"\nAUTO : Fav {base_counts['favorites']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('favorites')
                 #Using spotify favs
                 if self.username !=None:
                     fav = self.spotifyHandler.get_library_favorite_tracks(base_counts['favorites'])
                     library_link = 'spotify:favorites'
-                #Using specific playlist
-                elif box1 != None:
-                    #box=box1
+                    self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
+                #Using specific playlist (normaly elif)
+                if box1 != None:
                     fav= self.tracklistappend_box(box1,base_counts['favorites'])
                     library_link = self.get_spotify_playlist_from_box(box1)
-                if fav != None: self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
+                    self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
+                #if fav != None: self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
 
             #Podcasts (only in podcast mode)
-            if mode=='podcast' and 'podcasts' in base_counts and base_counts['podcasts'] > 0:
-                print(f"\nAUTO : Podcasts {base_counts['podcasts']} tracks\n")
+            if mode=='podcast' and base_counts.get('podcasts', 0) > 0:
                 box1 = self.dbHandler.get_box_by_option_type('podcast')
-                if box1:self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['podcasts']), base_counts['podcasts'], "podcast","o2m:podcast")
+                if box1:
+                    print(f"\nAUTO : Podcasts {base_counts['podcasts']} tracks\n")                
+                    self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['podcasts']), base_counts['podcasts'], "podcast","o2m:podcast")
             
             #Albums/Artists
-            if base_counts['albums_artists'] > 0:
+            if base_counts.get('albums_artists', 0) > 0:
                 if (random.choice([1,2])) == 1:
                     print(f"\nAUTO : Albums {base_counts['albums_artists']} tracks\n")
                     self.add_tracks(active_box, self.spotifyHandler.get_my_albums_tracks(base_counts['albums_artists'],discover_level), base_counts['albums_artists'], "normal","spotify:album")
@@ -540,16 +546,16 @@ class O2mToMopidy:
                     self.add_tracks(active_box, self.spotifyHandler.get_my_artists_tracks(base_counts['albums_artists'],discover_level), base_counts['albums_artists'], "normal","spotify:artist")
 
             #Playlists
-            if base_counts['playlists'] > 0:
-                print(f"\nAUTO : Playlist {base_counts['playlists']} tracks\n")
-                #Iterate on tracks to add_track with uri and library_link
+            if base_counts.get('playlists', 0) > 0:
                 pl_tracks,lib_link = self.spotifyHandler.get_playlists_tracks(base_counts['playlists'],discover_level)
+                print(f"\nAUTO : Playlist {base_counts['playlists']} tracks and {len(pl_tracks)} size \n")
                 for i in range(len(pl_tracks)):
+                    print(f"\nAUTO : Playlist {base_counts['playlists']} tracks and {len(pl_tracks[i])} size \n")
                     uris = [pl_tracks[i]]
                     self.add_tracks(active_box, uris=uris, max_results=1, force_option_type="normal", library_link=lib_link[i])
 
             #News
-            if base_counts['news'] > 0:
+            if base_counts.get('news', 0) > 0:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('new')
                 self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['news']), base_counts['news'], "new","o2m:new")

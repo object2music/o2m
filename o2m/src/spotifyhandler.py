@@ -107,48 +107,90 @@ class SpotifyHandler:
             if track["track"]["id"]==track_id: return True
         return False
     
+    # Original get_playlists_tracks function (archived)
+    # def get_playlists_tracks_original(self,limit=1,discover_level=5):
+    #     #Get last tracks from each playlist
+    #     #To be upgraded : remove trash playlist, enlarge the window
+    #     t_list=[]
+    #     lib_link=[]
+    #     total=0
+    #     try: 
+    #         playlists = self.sp.current_user_playlists()
+    #     except Exception as val_e: 
+    #         print(f"Erreur playlist : {val_e}")
+
+    #     #Remove unwanted playlists
+    #     print(f"Lenght playlists {len(playlists)}")
+    #     if len(playlists)>0:
+    #         playlists = playlists['items']
+    #         for pl in range(len(playlists)):
+    #             #TODO : Remove also option_type='Hidden' 
+    #             if playlists[pl]['name']=='Trash':
+    #                 playlists.remove(playlists[pl])
+    #                 break
+            
+    #         if len(playlists) < limit: limit = len(playlists)
+
+    #         if len(playlists)>0:
+    #             for i in range(limit):
+    #                 playlist = random.choice(playlists)
+                    
+    #                 tracks = self.sp.playlist_tracks(playlist['id'])['items']
+    #                 #We take some of the latests tracks added in the playlist
+    #                 #size = int(len(playlist)*discover_level/10)
+    #                 #if size < len(tracks): tracks = tracks[-size:]
+    #                 #print(f"Tracks {len(tracks)} - Size {size}")
+
+    #                 if len(tracks)>0:
+    #                     track = random.choice(tracks)
+    #                     t_list.append(track['track']['uri'])
+    #                     lib_link.append("spotify:playlist:"+playlist['id'])
+    #                     #for j in range(unit):
+    #                         #track = tracks['items'][-unit:]
+    #                         #track = random.choice(tracks['items'])
+    #                         #track = tracks[0:1]
+    #                         #t_list.append(track['uri'])
+    #     return (t_list,lib_link)
+
     def get_playlists_tracks(self,limit=1,discover_level=5):
-        #Get last tracks from each playlist
-        #To be upgraded : remove trash playlist, enlarge the window
+        #Get random tracks from a selection of user's playlists
         t_list=[]
         lib_link=[]
-        total=0
+        
         try: 
-            playlists = self.sp.current_user_playlists()
+            playlists_response = self.sp.current_user_playlists()
         except Exception as val_e: 
             print(f"Erreur playlist : {val_e}")
+            return ([], [])
 
-        #Remove unwanted playlists
-        print(f"Lenght playlists {len(playlists)}")
-        if len(playlists)>0:
-            playlists = playlists['items']
-            for pl in range(len(playlists)):
-                #TODO : Remove also option_type='Hidden' 
-                if playlists[pl]['name']=='Trash':
-                    playlists.remove(playlists[pl])
-                    break
-            
-            if len(playlists) < limit: limit = len(playlists)
+        if not playlists_response or not playlists_response['items']:
+            return ([], [])
 
-            if len(playlists)>0:
-                for i in range(limit):
-                    playlist = random.choice(playlists)
-                    
-                    tracks = self.sp.playlist_tracks(playlist['id'])['items']
-                    #We take some of the latests tracks added in the playlist
-                    #size = int(len(playlist)*discover_level/10)
-                    #if size < len(tracks): tracks = tracks[-size:]
-                    #print(f"Tracks {len(tracks)} - Size {size}")
+        playlists = playlists_response['items']
+        
+        # Filter out unwanted playlists (e.g., 'Trash')
+        playlists = [pl for pl in playlists if pl['name'] != 'Trash'] # and pl['name'] != 'Hidden' (if implemented)
 
-                    if len(tracks)>0:
-                        track = random.choice(tracks)
-                        t_list.append(track['track']['uri'])
-                        lib_link.append("spotify:playlist:"+playlist['id'])
-                        #for j in range(unit):
-                            #track = tracks['items'][-unit:]
-                            #track = random.choice(tracks['items'])
-                            #track = tracks[0:1]
-                            #t_list.append(track['uri'])
+        if not playlists:
+            return ([], [])
+
+        # Select 'limit' unique playlists randomly
+        selected_playlists = random.sample(playlists, min(limit, len(playlists)))
+        
+        for playlist in selected_playlists:
+            try:
+                tracks_response = self.sp.playlist_tracks(playlist['id'])
+                tracks = [item['track']['uri'] for item in tracks_response['items'] if item and item['track'] and item['track']['uri']]
+                
+                if tracks:
+                    # Select one random track from the current playlist
+                    track_uri = random.choice(tracks)
+                    t_list.append(track_uri)
+                    lib_link.append("spotify:playlist:"+playlist['id'])
+            except Exception as val_e:
+                print(f"Erreur lors de la récupération des pistes de la playlist {playlist['name']}: {val_e}")
+                continue
+        
         return (t_list,lib_link)
 
 ################### ALBUMS  #############################
@@ -312,5 +354,3 @@ class SpotifyHandler:
                 t_list.append(tracks[i]['track']['uri'])
 
         return t_list
-
-        
