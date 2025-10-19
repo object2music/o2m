@@ -23,7 +23,7 @@ class O2mToMopidy:
     activecards = {}
     activeboxs = []
     last_box_uid = None
-    queue = True
+    queue = 0 #queue empty
 
     suffle = False
     max_results = 50
@@ -123,43 +123,52 @@ class O2mToMopidy:
                 #self.one_box_changed(box)
 
     def box_action_remove(self,box,removedBox):
-        if len(self.activeboxs) == 0:
-                self.starting_mode(True)
-                # print('Stopping music')
-                '''self.update_stat_track(
-                    self.mopidyHandler.playback.get_current_track(),
-                    self.mopidyHandler.playback.get_time_position()
-                )'''
-        elif removedBox.tlids != None:
-            #Compute NewTlid (after track removing)
-            current_tlid = self.mopidyHandler.playback.get_current_tlid()
-            last_tlindex = self.mopidyHandler.tracklist.index()
-            next_tlid = current_tlid
-
-            if current_tlid in removedBox.tlids:
-                self.update_stat_track(
-                    self.mopidyHandler.playback.get_current_track(),
-                    self.mopidyHandler.playback.get_time_position()
-                )
-                self.mopidyHandler.playback.stop()
-
-                current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
-                current_tlids = [ sub.tlid for sub in current_tracks ]
-
-                #Looping on active tracks
-                for i in current_tlids[last_tlindex:]:
-                    if i not in removedBox.tlids:
-                        next_tlid = i
-                        break
-                            
-            #Removing tracks from playslist
-            self.mopidyHandler.tracklist.remove({"tlid": removedBox.tlids})
-
-            if current_tlid in removedBox.tlids and next_tlid!=None:
-                self.mopidyHandler.playback.play(tlid=next_tlid)
-
+        qi = 0
+        while self.queue>0 and qi<120:
+            print(f"\nRunning: {qi}")
+            time.sleep(1)
+            if (self.queue>0): qi+=1
         else:
-            print("no uris with removed box")
+            self.queue=1
+            if len(self.activeboxs) == 0:
+                    self.starting_mode(True)
+                    # print('Stopping music')
+                    '''self.update_stat_track(
+                        self.mopidyHandler.playback.get_current_track(),
+                        self.mopidyHandler.playback.get_time_position()
+                    )'''
+            elif removedBox.tlids != None:
+                #Compute NewTlid (after track removing)
+                current_tlid = self.mopidyHandler.playback.get_current_tlid()
+                last_tlindex = self.mopidyHandler.tracklist.index()
+                next_tlid = current_tlid
+
+                if current_tlid in removedBox.tlids:
+                    self.update_stat_track(
+                        self.mopidyHandler.playback.get_current_track(),
+                        self.mopidyHandler.playback.get_time_position()
+                    )
+                    self.mopidyHandler.playback.stop()
+
+                    current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+                    current_tlids = [ sub.tlid for sub in current_tracks ]
+
+                    #Looping on active tracks
+                    for i in current_tlids[last_tlindex:]:
+                        if i not in removedBox.tlids:
+                            next_tlid = i
+                            break
+                                
+                #Removing tracks from playslist
+                self.mopidyHandler.tracklist.remove({"tlid": removedBox.tlids})
+
+                if current_tlid in removedBox.tlids and next_tlid!=None:
+                    self.mopidyHandler.playback.play(tlid=next_tlid)
+
+            else:
+                print("no uris with removed box")
+            self.queue=0
+                
 
     """
     Daemon function called when change in active boxes
@@ -222,11 +231,13 @@ class O2mToMopidy:
         
         #print(f"\nNew box added: {box}")
         if (box.uid != self.last_box_uid):  # If different from last box added - for NFC mode only
-            while self.queue==False:
-                print('Running')
+            qi = 0
+            while self.queue>0 and qi<120:
+                print(f"\nRunning: {qi}")
                 time.sleep(1)
+                if (self.queue>0): qi+=1
             else:
-                self.queue=False
+                self.queue=1
                 uri = "box:"+box.uid
                 self.update_stat_raw(uri)
 
@@ -258,7 +269,7 @@ class O2mToMopidy:
                         if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
                         length = self.mopidyHandler.tracklist.get_length()
                         self.shuffle_tracklist(index+1,length)
-                self.queue = True
+                self.queue = 0
 
         # Next option
         else:
@@ -590,7 +601,7 @@ class O2mToMopidy:
                 #Other box called
                 if "box:" in content :
                     box_uid = content.split(":")[1]
-                    self.queue = True
+                    self.queue = 0
                     box = self.dbHandler.get_box_by_uid(box_uid)
                     self.activeboxs.append(box)  #adding box to list
                     print(f"added box {box}") 
