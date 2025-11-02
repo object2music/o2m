@@ -12,7 +12,7 @@ RUN apt update
 #ENV PATH="/root/.cargo/bin:${PATH}"
 #RUN rustup toolchain install nightly
 #RUN rustup default nightly
-RUN apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git wget
+RUN apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git wget gstreamer1.0-plugins-bad
 RUN apt install -y libasound2 libasound2-dev 
 #RUN git clone --depth 1 https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs
 #WORKDIR /app/gst-plugins-rs
