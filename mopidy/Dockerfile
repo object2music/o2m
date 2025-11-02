@@ -68,7 +68,7 @@ COPY ./index.html /app/index.html
 
 # Install Python dependencies with caching
 RUN --mount=type=cache,target=/root/.cache \
-python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements.txt --upgrade
 
 # Install Rust gstreamer
 ARG URL=https://github.com/kingosticks/gst-plugins-rs-build/releases/download/gst-plugin-spotify_0.15.0-alpha.1-2
