@@ -1172,11 +1172,13 @@ class O2mToMopidy:
     def update_stat_track(self, track, pos=0, option_type='', library_link='', fix=False):
         #Harmonize option_type if new 
         if 'new' in option_type: option_type='new'
+        new_stat = False
 
         #Get stats
         if self.dbHandler.stat_exists(track.uri):
             stat = self.dbHandler.get_stat_by_uri(track.uri)
         else:
+            new_stat = True
             stat = self.dbHandler.create_stat(track.uri)
 
         #Using rate reading average instead of bool
@@ -1188,8 +1190,8 @@ class O2mToMopidy:
             rate = pos / track.length
             if rate > 0.9: track_finished = True
             #Probably an artefact of auto adding track : so no adding stat needed and exit function
-            if rate < 0.05: 
-                print ("No Stat : skip artefact")
+            if (rate < 0.05) & (new_stat==False): 
+                print (f"No Stat : skip artefact {rate}")
                 return None
 
         if fix==False:
