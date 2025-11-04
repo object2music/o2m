@@ -283,8 +283,10 @@ if __name__ == "__main__":
                 stat_uri = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
                 if (stat_uri):
                     #if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
-                    if (stat_uri.read_position > 0) and (stat_uri.read_end < 0.9) :
+                    if (stat_uri.read_position > 10) and (stat_uri.read_position <= track.length):
                         o2mHandler.mopidyHandler.playback.seek(max(stat_uri.read_position - 10, 0))
+                    if stat_uri.read_position > track.length :
+                        o2mHandler.mopidyHandler.playback.seek(track.length - 10)
                     #skip advertising 
                     #elif "radiofrance-podcast.net" in track.uri: o2mHandler.mopidyHandler.playback.seek(15000)
                 #elif "radiofrance-podcast.net" in track.uri:  o2mHandler.mopidyHandler.playback.seek(15000)
