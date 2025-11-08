@@ -1,4 +1,4 @@
-FROM ubuntu:22.04 as builder
+FROM ubuntu:22.04 AS builder
 
 # interactive mode
 ENV DEBIAN_FRONTEND=noninteractive
@@ -7,17 +7,18 @@ WORKDIR /app
 
 # Install Env Rust gstreamer
 RUN apt update
-#RUN apt install -y curl
-#RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
-#ENV PATH="/root/.cargo/bin:${PATH}"
-#RUN rustup toolchain install nightly
-#RUN rustup default nightly
 RUN apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git wget gstreamer1.0-plugins-bad
 RUN apt install -y libasound2 libasound2-dev 
-#RUN git clone --depth 1 https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs
-#WORKDIR /app/gst-plugins-rs
-#RUN cargo build --package gst-plugin-spotify -Z sparse-registry --release 
-#RUN cp ./gst-plugin-spotify_0.13.0-1_amd64.deb /app/gst-plugin-spotify_0.13.0-1_amd64.deb && dpkg --install gst-plugin-spotify_0.13.0-1_amd64.deb
+
+RUN apt install -y curl
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup toolchain install nightly
+RUN rustup default nightly
+RUN git clone --depth 1 https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs
+WORKDIR /app/gst-plugins-rs
+RUN cargo build --package gst-plugin-spotify -Z sparse-registry --release 
+RUN cp ./gst-plugin-spotify_0.14.2-1_amd64.deb /app/gst-plugin-spotify_0.14.2-1_amd64.deb && dpkg --install gst-plugin-spotify_0.14.2-1_amd64.deb
 
 FROM ubuntu:22.04
 
@@ -74,7 +75,8 @@ python3 -m pip install -r requirements.txt --upgrade
 ARG URL=https://github.com/kingosticks/gst-plugins-rs-build/releases/download/gst-plugin-spotify_0.15.0-alpha.1-2
 ARG FILE=gst-plugin-spotify_0.15.0.alpha.1-2_amd64.deb
 ARG FILE2=libgstspotify.so
-RUN wget $URL/$FILE && dpkg --install $FILE && rm $FILE
+#RUN wget $URL/$FILE && dpkg --install $FILE && rm $FILE
+
 #COPY --from=builder /app/gst-plugins-rs/target/release/libgstspotify.so /app/libgstspotify.so
 #RUN cp /app/libgstspotify.so /usr/lib/x86_64-linux-gnu/gstreamer-1.0/
 
