@@ -1190,7 +1190,8 @@ class O2mToMopidy:
             rate = pos / track.length
             if rate > 0.9: track_finished = True
             #Probably an artefact of auto adding track : so no adding stat needed and exit function
-            if (rate < 0.05) & (new_stat==False): 
+            #if (rate < 0.05) & (new_stat==False): 
+            if (rate < 0.05) & (rate > 0): 
                 print (f"No Stat : skip artefact {rate}")
                 return None
 
