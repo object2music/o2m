@@ -76,8 +76,39 @@ class SpotifyHandler:
         return results
 
     def remove_tracks_playlist(self, playlist_uri, track_uris):
-        results = self.sp.playlist_remove_all_occurrences_of_items(playlist_uri, track_uris, snapshot_id=None)
-        print(f"Removing track succesful from playlist  {results}")
+        # normalize playlist id (accept spotify:playlist:ID, open.spotify.com urls or plain id)
+        from urllib.parse import urlparse
+        playlist_id = playlist_uri
+        try:
+            if playlist_uri.startswith("spotify:playlist:"):
+                playlist_id = playlist_uri.split(":")[2]
+            elif "open.spotify.com" in playlist_uri:
+                path = urlparse(playlist_uri).path
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 2:
+                    playlist_id = parts[1]
+        except Exception:
+            playlist_id = playlist_uri
+
+        # normalize tracks to spotify:track:ID or IDs
+        tracks = []
+        for t in track_uris:
+            if t is None:
+                continue
+            if isinstance(t, dict):
+                # if code ever passed {"uri": "..."}
+                t = t.get("uri") or t.get("id") or str(t)
+            if t.startswith("spotify:track:") or len(t) == 22:
+                tracks.append(t)
+            elif t.startswith("spotify:"):
+                tracks.append(t)  # other spotify uri types — let API validate
+            else:
+                # assume plain id -> build full uri
+                tracks.append(f"spotify:track:{t}")
+
+        print(f"Removing from playlist_id={playlist_id} tracks={tracks}")
+        results = self.sp.playlist_remove_all_occurrences_of_items(playlist_id, tracks, snapshot_id=None)
+        print(f"Removing track successful from playlist: {results}")
         return results
 
     def get_playlist_id_by_name(self,username, playlist_name):

@@ -1381,15 +1381,36 @@ class O2mToMopidy:
 
     # Auto Filling playlist 
     def remove_spotify_playlist(self, playlist_uri,uri):
-        playlist_id = playlist_uri.split(":")[2]
-        track_id = uri[0].split(":")[2]
+        # Defensive: strip control chars and whitespace, then delegate to SpotifyHandler normalizer
         try:
-            #https://github.com/spotipy-dev/spotipy/issues/763
-            result = self.spotifyHandler.sp.playlist_remove_all_occurrences_of_items(playlist_id, uri)
-            print (f"Result removing from playlist : {result}")
-            return (result)
-        except Exception as val_e: 
+            if isinstance(playlist_uri, str):
+                playlist_uri = playlist_uri.replace("\r", "").replace("\n", "").strip()
+                # remove stray '#015' artifacts if present
+                playlist_uri = playlist_uri.replace("#015", "").strip()
+
+            # delegate to SpotifyHandler which already normalizes playlist id and tracks
+            print(f"Trying remove from playlist uri {playlist_uri} - tracks {uri}")
+            return self.spotifyHandler.remove_tracks_playlist(playlist_uri, uri)
+        except Exception as val_e:
             print(f"Erreur removing from playlist: {val_e}")        
+
+
+
+    # Auto Filling playlist 
+    def autofill_spotify_playlist0(self, playlist_uri,uri):
+        try: 
+            #Toadd : test if writable
+            print(f"Autofill, playlist_uri : {playlist_uri} uri : {uri}")
+            if 'spotify:playlist' in playlist_uri and ('spotify:track' in uri[0]) :
+                playlist_id = playlist_uri.split(":")[2]
+                track_id = uri[0].split(":")[2]
+                if self.spotifyHandler.is_track_in_playlist(self.username,track_id,playlist_id) == False:
+                    print (f"Auto Filling playlist with self.username: {self.username}, playlist: {playlist_uri}, track.uri: {uri}")
+                    result = self.spotifyHandler.sp.user_playlist_add_tracks(self.username, playlist_id, uri)
+                else: result = 'already in'
+                return (result)
+        except Exception as val_e: 
+            print(f"Erreur : {val_e}")
 
     # Auto Filling playlist 
     def autofill_spotify_playlist(self, playlist_uri,uri):
