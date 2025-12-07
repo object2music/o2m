@@ -211,6 +211,22 @@ if __name__ == "__main__":
     def api_toogle_play():
         o2mHandler.play_or_resume()
         return ("play !")
+
+    @api.route('/api/initialize_playback')
+    def api_initialize_playback():
+        """Trigger initialize_playback on the o2m handler.
+
+        The server determines the current time; the client should not supply the time.
+        An optional `window` query param is ignored for time-of-day — server-side clock is used.
+        """
+        try:
+            result = o2mHandler.initialize_playback()
+            if result:
+                return ("initialized")
+            else:
+                return ("no_action")
+        except Exception as e:
+            return (str(e)), 500
     
     @api.route('/api/reset_o2m')
     def api_reset_o2m():
