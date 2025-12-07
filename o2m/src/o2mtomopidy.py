@@ -907,6 +907,85 @@ class O2mToMopidy:
         """else:
             self.mopidyHandler.playback.next()"""
 
+    def initialize_playback(self, window=1):
+        """
+        Initialize playback according to rules:
+        1) If there is a track in the tracklist and playback is paused, resume playback.
+        2) If there is no track in the tracklist, look into the `stats_raw` table for a
+           'box:' URI usually played at this hour and launch that box.
+        In all cases, ensure audio is not muted and unmute the mixer.
+
+        Parameters:
+            window (int): hour window around the current hour used when querying stats_raw
+        """
+        # Only allow initialize_playback to run if option_add_reco_after_track is enabled
+        if not getattr(self, 'option_add_reco_after_track', False):
+            return False
+
+        try:
+            # 1) Always unmute first
+            try:
+                self.mopidyHandler.mixer.set_mute(False)
+            except Exception as e:
+                print(f"Error while unmuting mixer: {e}")
+
+            # Check if there are tracks in the tracklist
+            try:
+                tl_length = self.mopidyHandler.tracklist.get_length()
+            except Exception as e:
+                print(f"Error getting tracklist length: {e}")
+                tl_length = 0
+
+            # If there are tracks and state is paused -> resume/play
+            try:
+                state = self.mopidyHandler.playback.get_state()
+            except Exception as e:
+                print(f"Error getting playback state: {e}")
+                state = None
+
+            if tl_length and tl_length > 0 and state == 'paused':
+                try:
+                    self.mopidyHandler.playback.play()
+                    return True
+                except Exception as e:
+                    print(f"Error starting existing playback: {e}")
+
+            # 2) If no tracks in the tracklist -> search for a box in stats_raw
+            if not tl_length or tl_length == 0:
+                hour = datetime.datetime.now().hour
+                # Use dbHandler.get_stat_raw_by_hour searching for URIs containing 'box:'
+                try:
+                    uris = self.dbHandler.get_stat_raw_by_hour(hour, window, 1, 'box:')
+                except Exception as e:
+                    print(f"Error querying stats_raw: {e}")
+                    uris = None
+
+                if uris and len(uris) > 0:
+                    uri = uris[0]
+                    # Expected format 'box:UID'
+                    try:
+                        if uri.startswith('box:'):
+                            uid = uri.split(':', 1)[1]
+                            box = self.dbHandler.get_box_by_uid(uid)
+                            if box is not None:
+                                # Launch the box (will add tracks and start playing)
+                                try:
+                                    self.one_box_changed(box)
+                                    # Ensure playback starts if tracks were added
+                                    if self.mopidyHandler.tracklist.get_length() > 0:
+                                        self.play_or_resume()
+                                    return True
+                                except Exception as e:
+                                    print(f"Error launching box from history: {e}")
+                    except Exception as e:
+                        print(f"Error parsing box uri from stats_raw: {e}")
+
+            # Nothing to do
+            return False
+        except Exception as e:
+            print(f"Error in initialize_playback: {e}")
+            return False
+
     # Vide la tracklist sauf la chanson en cours de lecture puis ajoute des uris à la suite
     @util.RateLimited(
         1
@@ -1190,7 +1269,7 @@ class O2mToMopidy:
             rate = pos / track.length
             if rate > 0.9: track_finished = True
             #Probably an artefact of auto adding track : so no adding stat needed and exit function
-            if (rate < 0.05) & (new_stat==False): 
+            if (rate < 0.05) and (new_stat==False): 
                 print (f"No Stat : skip artefact {rate}")
                 return None
 
