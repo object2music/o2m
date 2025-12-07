@@ -320,3 +320,19 @@ window.onload = function() {
 
 }, 2000);
 }
+
+// Initialize playback on smartphone devices (one-time on load)
+try {
+  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+  if (isSmartphone) {
+    fetch(base_url + "initialize_playback")
+      .then(response => {
+        if (!response.ok) throw new Error('initialize_playback failed: ' + response.status);
+        return response.text();
+      })
+      .then(text => console.log('initialize_playback:', text))
+      .catch(err => console.error('initialize_playback error:', err));
+  }
+} catch (err) {
+  console.error(err);
+}
