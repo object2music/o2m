@@ -318,9 +318,6 @@ window.onload = function() {
   })
 */
 
-}, 2000);
-}
-
 // Initialize playback on smartphone devices (one-time on load)
 try {
   const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -335,4 +332,40 @@ try {
   }
 } catch (err) {
   console.error(err);
+}
+
+// Try to simulate clicking the Iris OutputControl "speakers" button
+function clickOutputControl(retries = 20, delay = 500) {
+  const selector = 'button.control.speakers[data-qa-file="OutputControl"]';
+  let attempts = 0;
+  const tryClick = () => {
+    attempts++;
+    const btn = document.querySelector(selector) || document.querySelector('button.control.speakers');
+    
+    if (btn) {
+      try {
+        btn.focus();
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        console.log('mopidy/o2m: clicked OutputControl speakers button');
+      } catch (e) {
+        console.error('mopidy/o2m: error clicking OutputControl', e);
+      }
+    } else if (attempts < retries) {
+      setTimeout(tryClick, delay);
+    } else {
+      console.warn('mopidy/o2m: OutputControl speakers button not found');
+    }
+  };
+  tryClick();
+}
+
+try {
+  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+  if (isSmartphone) clickOutputControl();
+} catch (e) {
+  console.error(e);
+}
+
+
+}, 2000);
 }
