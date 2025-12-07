@@ -970,7 +970,8 @@ class O2mToMopidy:
                             if box is not None:
                                 # Launch the box (will add tracks and start playing)
                                 try:
-                                    self.one_box_changed(box)
+                                    self.box_action(box)
+                                    self.activeboxs.append(box)
                                     # Ensure playback starts if tracks were added
                                     if self.mopidyHandler.tracklist.get_length() > 0:
                                         self.play_or_resume()
