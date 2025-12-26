@@ -66,6 +66,7 @@ if __name__ == "__main__":
 #API DEF AND LISTENER (to be move in a dedicated part)
     #API BOX ACTION (mode : toogle, add, remove) AND SHOW
     def api_box_action(uid='',option_type='',mode='toogle'):
+        box = None
         if uid!='':
             box = o2mHandler.dbHandler.get_box_by_uid(uid)
         if option_type!='':

@@ -100,7 +100,7 @@ class Stats(BaseModel):
     uri = CharField(unique=True, index=True, primary_key=True)  # Unique uri
     last_read_date = TimestampField(null=True, utc=True)  # date
     read_position = IntegerField(default=0)  # description text
-    read_end = FloatField(default=0)  # Rate average
+    read_end = FloatField(default=0.5)  # Rate average
     read_count = IntegerField(default=0)  # int
     read_count_end = IntegerField(default=0)  # int
     skipped_count = IntegerField(default=0)  # int

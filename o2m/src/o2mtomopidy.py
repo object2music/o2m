@@ -1,4 +1,4 @@
-import datetime, time, sys, contextlib, random
+import datetime, time, sys, contextlib, random, subprocess, os
 #import numpy as np
 import random 
 from mopidy_podcast import Extension, feeds
@@ -131,7 +131,7 @@ class O2mToMopidy:
         else:
             self.queue=1
             if len(self.activeboxs) == 0:
-                    self.starting_mode(True)
+                    self.starting_mode(clear=True)
                     # print('Stopping music')
                     '''self.update_stat_track(
                         self.mopidyHandler.playback.get_current_track(),
@@ -854,6 +854,7 @@ class O2mToMopidy:
     def starting_mode(self,clear=False,start=False,uid=None):
         #Cleaning 
         if clear == True: 
+            print("Clearing tracklist and active boxs")
             self.mopidyHandler.tracklist.clear()
             self.mopidyHandler.playback.stop()
             for box in self.activeboxs:
@@ -974,6 +975,20 @@ class O2mToMopidy:
                                     # Ensure playback starts if tracks were added
                                     if self.mopidyHandler.tracklist.get_length() > 0:
                                         self.play_or_resume()
+                                        # Simulate the UI action that enables Snapcast by running
+                                        # the helper script that starts the snapserver and restarts
+                                        # Mopidy with the snapcast configuration. This mirrors
+                                        # the user opening the OutputControl "speakers" button
+                                        # which in the UI enables snapcast output.
+                                        try:
+                                            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+                                            script_path = os.path.join(repo_root, 'start_mopidy_snapcast.sh')
+                                            if os.path.exists(script_path):
+                                                subprocess.run([script_path], shell=True, check=False)
+                                            else:
+                                                print(f"Snapcast start script not found at {script_path}")
+                                        except Exception as e:
+                                            print(f"Error enabling snapcast: {e}")
                                     return True
                                 except Exception as e:
                                     print(f"Error launching box from history: {e}")
@@ -1017,6 +1032,15 @@ class O2mToMopidy:
                     new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
                     limit = 1 #Extreme mode : continusly autofill until next song is launched
 
+                # Identify the box tied to the currently playing track using tlid first, then uri
+                current_tlid = None
+                try:
+                    current_tlid = self.mopidyHandler.playback.get_current_tlid()
+                except Exception as e:
+                    print(f"Error getting current tlid: {e}")
+
+                target_box = self.get_active_box_for_playback(track_uri, current_tlid)
+
                 uris = self.get_track_recommandation(track_uri,discover_level,limit,data)
 
                 # Calculate insertion index depending of discover_level
@@ -1041,33 +1065,39 @@ class O2mToMopidy:
                     # if 'box' in locals():
                     if slice:
                         try:
-                            box = self.get_active_box_by_uri(track_uri)
-                            #print (f"Box : {box}")
-                            if hasattr(box, "tlids"):
-                                box.tlids += [x.tlid for x in slice]
-                            else:
-                                box.tlids = [x.tlid for x in slice]
-                            #print("Box.tlids : ",box.tlids)
+                            box = target_box or self.get_active_box_by_uri(track_uri)
 
-                            if hasattr(box, "uris"):
-                                box.uris += uris
-                            else:
-                                box.uris = uris
-                            #print("Box.uris : ",box.uris)
+                            # Ensure tracking lists exist
+                            if not hasattr(box, "tlids") or box.tlids is None:
+                                box.tlids = []
+                            if not hasattr(box, "uris") or box.uris is None:
+                                box.uris = []
+                            if not hasattr(box, "option_types") or box.option_types is None:
+                                box.option_types = []
+                            if not hasattr(box, "library_link") or box.library_link is None:
+                                box.library_link = []
 
-                            #print("Box : ",box)
-                            if hasattr(box, "option_types"):
-                                box.option_types += [new_type for x in slice]
-                            else:
-                                box.option_types = [new_type for x in slice]
-                            #print("Option_types : ",box.option_types)
+                            new_tlids = [x.tlid for x in slice if hasattr(x, "tlid")]
+                            new_uris = []
+                            for x in slice:
+                                try:
+                                    if hasattr(x, "track") and x.track and hasattr(x.track, "uri"):
+                                        new_uris.append(x.track.uri)
+                                except Exception as e:
+                                    print(f"Error reading track uri from tltrack: {e}")
 
-                            #library_link
-                            if hasattr(box, "library_link"):
-                                box.library_link += [library_link for x in slice]
-                            else:
-                                box.library_link = [library_link for x in slice]
-                            #print("library_link",box.library_link)
+                            # Fallback to provided URIs if Mopidy track objects are missing
+                            if len(new_uris) == 0:
+                                new_uris = uris
+
+                            box.tlids += new_tlids
+                            box.uris += new_uris
+                            box.option_types += [new_type for _ in slice]
+                            box.library_link += [library_link for _ in slice]
+
+                            # Keep tlids/uris unique to avoid removal mismatches
+                            box.tlids = list(dict.fromkeys(box.tlids))
+                            box.uris = list(dict.fromkeys(box.uris))
                             #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} box.option_types {box.option_types} box.library_link {box.library_link} and tlid {slice[0].tlid}\n")
 
                         except Exception as e:
@@ -1195,6 +1225,22 @@ class O2mToMopidy:
         self.activeboxs.append(mopidy_box)
         return mopidy_box
 
+    def get_active_box_by_tlid(self, tlid):
+        if tlid is None:
+            return None
+        for box in self.activeboxs:
+            if hasattr(box, "tlids") and box.tlids and tlid in box.tlids:
+                return box
+        return None
+
+    def get_active_box_for_playback(self, track_uri=None, tlid=None):
+        box = self.get_active_box_by_tlid(tlid)
+        if box:
+            return box
+        if track_uri:
+            return self.get_active_box_by_uri(track_uri)
+        return None
+
     def get_option_for_box_uri(self, uri, optionName):
         box = self.get_active_box_by_uri(uri)
         if box is not None:
@@ -1269,7 +1315,8 @@ class O2mToMopidy:
             rate = pos / track.length
             if rate > 0.9: track_finished = True
             #Probably an artefact of auto adding track : so no adding stat needed and exit function
-            if (rate < 0.05) and (new_stat==False): 
+            #if (rate < 0.05) and (new_stat==False): 
+            if (rate < 0.05) : 
                 print (f"No Stat : skip artefact {rate}")
                 return None
 
