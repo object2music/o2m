@@ -318,21 +318,73 @@ window.onload = function() {
   })
 */
 
-}, 2000);
-}
-
 // Initialize playback on smartphone devices (one-time on load)
 try {
   const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
   if (isSmartphone) {
-    fetch(base_url + "initialize_playback")
+    
+    setTimeout(() => {
+      fetch(base_url + "initialize_playback")
       .then(response => {
         if (!response.ok) throw new Error('initialize_playback failed: ' + response.status);
         return response.text();
       })
       .then(text => console.log('initialize_playback:', text))
       .catch(err => console.error('initialize_playback error:', err));
-  }
+    },5000);
+
+    };
 } catch (err) {
   console.error(err);
+}
+
+// Try to simulate clicking the Iris OutputControl "speakers" button
+function clickOutputControl(retries = 20, delay = 500) {
+  const expandSelector = 'button.control.expanded-controls[data-qa-file="PlaybackControls"]';
+  const checkboxSelector = 'input[type="checkbox"][name="streaming_enabled"][data-qa-file="OutputControl"]';
+  let attempts = 0;
+  const tryClick = () => {
+    attempts++;
+    const expandBtn = document.querySelector(expandSelector);
+    
+    if (expandBtn) {
+      try {
+        expandBtn.focus();
+        expandBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        console.log('mopidy/o2m: clicked expand controls button');
+        setTimeout(() => {
+          const checkbox = document.querySelector(checkboxSelector);
+          if (checkbox) {
+            checkbox.focus();
+            checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+            console.log('mopidy/o2m: clicked OutputControl checkbox to deactivate');
+            setTimeout(() => {
+              checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+              console.log('mopidy/o2m: clicked OutputControl checkbox to reactivate');
+            }, 1000);
+          } else {
+            console.warn('mopidy/o2m: OutputControl checkbox not found after expand');
+          }
+        }, 1000);
+      } catch (e) {
+        console.error('mopidy/o2m: error clicking expand button', e);
+      }
+    } else if (attempts < retries) {
+      setTimeout(tryClick, delay);
+    } else {
+      console.warn('mopidy/o2m: expand controls button not found');
+    }
+  };
+  tryClick();
+}
+
+try {
+  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+  //if (isSmartphone) clickOutputControl();
+} catch (e) {
+  console.error(e);
+}
+
+
+}, 2000);
 }
