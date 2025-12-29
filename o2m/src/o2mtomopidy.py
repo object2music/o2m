@@ -78,6 +78,8 @@ class O2mToMopidy:
 
         if "default_box" in self.configO2M:
             self.default_box = self.configO2M["default_box"]
+        else:
+            self.default_box = None
 
         if "fix_stats" in self.configO2M:
             self.fix_stats = self.clean_bool(self.configO2M["fix_stats"])
@@ -137,7 +139,7 @@ class O2mToMopidy:
                         self.mopidyHandler.playback.get_current_track(),
                         self.mopidyHandler.playback.get_time_position()
                     )'''
-            elif removedBox.tlids != None:
+            elif hasattr(removedBox, 'tlids') and removedBox.tlids != None:
                 #Compute NewTlid (after track removing)
                 current_tlid = self.mopidyHandler.playback.get_current_tlid()
                 last_tlindex = self.mopidyHandler.tracklist.index()
@@ -268,7 +270,8 @@ class O2mToMopidy:
                         index = 0
                         if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
                         length = self.mopidyHandler.tracklist.get_length()
-                        self.shuffle_tracklist(index+1,length)
+                        if length > index + 1:
+                            self.shuffle_tracklist(index+1,length)
                 self.queue = 0
 
         # Next option
@@ -306,6 +309,19 @@ class O2mToMopidy:
                 #uris = self.flatten(uris)
                 if None in uris: uris.remove(None)
                 if "None" in uris: uris.remove("None")
+                # Ensure URIs is a list of non-empty strings; filter out blanks
+                if isinstance(uris, str):
+                    uris = [uris]
+                try:
+                    uris = [u for u in uris if isinstance(u, str) and u.strip() != ""]
+                except Exception:
+                    pass
+                if not isinstance(uris, list):
+                    print("Warning: URIs is not a list after normalization; skipping add_tracks")
+                    return 0
+                if len(uris) == 0:
+                    print("Warning: No valid URIs to add (after filtering); skipping add_tracks")
+                    return 0
 
                 prev_length = self.mopidyHandler.tracklist.get_length()
                 if self.mopidyHandler.tracklist.index():
@@ -365,8 +381,9 @@ class O2mToMopidy:
 
                     # Shuffle new tracks if necessary : global shuffle or box option : now in card 
                     if (self.shuffle == "true" and active_box.option_sort != "desc" and active_box.option_sort != "asc") or active_box.option_sort == "shuffle":
-                        print(f"Shuffling")
-                        self.shuffle_tracklist(prev_length, new_length)
+                        if new_length > prev_length:
+                            print(f"Shuffling")
+                            self.shuffle_tracklist(prev_length, new_length)
                     
                     #if (active_box.option_sort == "asc") :
                     #    self.mopidyHandler.tracklist.slice
@@ -388,18 +405,19 @@ class O2mToMopidy:
                     discover_level = self.calculate_discover_level(track_uri='',push_discover_level=None)
                     #if discover_level < 10: new_type ='new' else: new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
                     window_replace = (10 - discover_level)+1
+                    replaced_tlids = set()  # Track which tlids were replaced
 
                     #Exclude if DL is on extreme values which has special behaviours and other cases
-                    if discover_level > 0 and discover_level < 0 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash']: 
+                    if discover_level > 0 and discover_level < 10 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash']: 
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
                                 #print (f"i : {i}")
-                                uri= slice2[i][1][0] #tl_track < track < uri
-                                tlid= slice2[i][0] #tl_track < tlid
+                                tlid = slice2[i].tlid
+                                uri = slice2[i].track.uri
                                 if "spotify:track" in uri:
                                     uris = self.get_track_recommandation(uri,discover_level,1,library_link)
-                                    index = self.mopidyHandler.tracklist.index(tl_track=None, tlid=tlid)
+                                    index = self.mopidyHandler.tracklist.index(tlid=tlid)
 
                                     if len(uris) > 0 :
                                         slice3 = self.mopidyHandler.tracklist.add(uris=uris, at_position=index)
@@ -407,6 +425,7 @@ class O2mToMopidy:
                                             slice4 = self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
                                             if slice4: 
                                                 print (f"Replacing at index {index} uri {uri} by uri {uris[0]}")
+                                                replaced_tlids.add(slice3[0].tlid)  # Track the new tlid
                                             else: 
                                                 print (f"Error when Replacing at index {index} uri {uri} by uri {uris[0]}")
 
@@ -431,11 +450,12 @@ class O2mToMopidy:
                         active_box.uris = [x.track.uri for x in slice2]
                     #print("box.uris",box.uris)
 
-                    # Option types
+                    # Option types: 'new' for replaced tracks, original option_type for others
+                    option_types_list = ['new' if x.tlid in replaced_tlids else option_type for x in slice2]
                     if hasattr(active_box, "option_types"):
-                        active_box.option_types += [option_type for x in slice2]
+                        active_box.option_types += option_types_list
                     else:
-                        active_box.option_types = [option_type for x in slice2]
+                        active_box.option_types = option_types_list
                     #print("Option_types",box.option_types)
 
                     #library_link
@@ -448,8 +468,9 @@ class O2mToMopidy:
                     # Shuffle complete computed tracklist if more than two boxs
                     #self.shuffle_tracklist(current_index + 1, new_length)
                     if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle") and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1)):
-                        print ("shuffling")
-                        self.shuffle_tracklist(current_index + 1, new_length)
+                        if new_length > current_index + 1:
+                            print ("shuffling")
+                            self.shuffle_tracklist(current_index + 1, new_length)
                    
                     #Move at next place the lastinfo content
                     if ((option_type == "info") and (new_length - prev_length==1)):
@@ -531,7 +552,7 @@ class O2mToMopidy:
                 #Using spotify favs
                 if self.username !=None:
                     fav = self.spotifyHandler.get_library_favorite_tracks(base_counts['favorites'])
-                    library_link = 'spotify:favorites'
+                    library_link = 'o2m:favorites'
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #Using specific playlist (normaly elif)
                 if box1 != None:
@@ -653,9 +674,9 @@ class O2mToMopidy:
                     tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(max_result1,1))
                     tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_result1))
 
-                # spotify:favorites (favorites only)
-                elif "spotify:favorites" in content :
-                    print ("spotify:favorites")
+                # o2m:favorites (favorites only)
+                elif "o2m:favorites" in content :
+                    print ("o2m:favorites")
                     tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results))
 
                 # now:library (daily habits)
@@ -858,10 +879,10 @@ class O2mToMopidy:
             self.mopidyHandler.tracklist.clear()
             self.mopidyHandler.playback.stop()
             for box in self.activeboxs:
-                box.tlids.clear()
-                box.uris.clear()
-                box.option_types.clear()
-                box.library_link.clear()
+                if hasattr(box, 'tlids') and box.tlids: box.tlids.clear()
+                if hasattr(box, 'uris') and box.uris: box.uris.clear()
+                if hasattr(box, 'option_types') and box.option_types: box.option_types.clear()
+                if hasattr(box, 'library_link') and box.library_link: box.library_link.clear()
 
         # Default volume setting at beginning (or in main ?)
         self.mopidyHandler.tracklist.set_random(False)
@@ -973,24 +994,6 @@ class O2mToMopidy:
                                 try:
                                     self.box_action(box)
                                     self.activeboxs.append(box)
-                                    # Ensure playback starts if tracks were added
-                                    if self.mopidyHandler.tracklist.get_length() > 0:
-                                        self.play_or_resume()
-                                        # Simulate the UI action that enables Snapcast by running
-                                        # the helper script that starts the snapserver and restarts
-                                        # Mopidy with the snapcast configuration. This mirrors
-                                        # the user opening the OutputControl "speakers" button
-                                        # which in the UI enables snapcast output.
-                                        try:
-                                            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-                                            script_path = os.path.join(repo_root, 'start_mopidy_snapcast.sh')
-                                            if os.path.exists(script_path):
-                                                subprocess.run([script_path], shell=True, check=False)
-                                            else:
-                                                print(f"Snapcast start script not found at {script_path}")
-                                        except Exception as e:
-                                            print(f"Error enabling snapcast: {e}")
-                                    return True
                                 except Exception as e:
                                     print(f"Error launching box from history: {e}")
                     except Exception as e:
@@ -1067,39 +1070,43 @@ class O2mToMopidy:
                     if slice:
                         try:
                             box = target_box or self.get_active_box_by_uri(track_uri)
+                            
+                            # Only update box tracking if we successfully identified the box
+                            if box is not None:
+                                # Ensure tracking lists exist
+                                if not hasattr(box, "tlids") or box.tlids is None:
+                                    box.tlids = []
+                                if not hasattr(box, "uris") or box.uris is None:
+                                    box.uris = []
+                                if not hasattr(box, "option_types") or box.option_types is None:
+                                    box.option_types = []
+                                if not hasattr(box, "library_link") or box.library_link is None:
+                                    box.library_link = []
 
-                            # Ensure tracking lists exist
-                            if not hasattr(box, "tlids") or box.tlids is None:
-                                box.tlids = []
-                            if not hasattr(box, "uris") or box.uris is None:
-                                box.uris = []
-                            if not hasattr(box, "option_types") or box.option_types is None:
-                                box.option_types = []
-                            if not hasattr(box, "library_link") or box.library_link is None:
-                                box.library_link = []
+                                new_tlids = [x.tlid for x in slice if hasattr(x, "tlid")]
+                                new_uris = []
+                                for x in slice:
+                                    try:
+                                        if hasattr(x, "track") and x.track and hasattr(x.track, "uri"):
+                                            new_uris.append(x.track.uri)
+                                    except Exception as e:
+                                        print(f"Error reading track uri from tltrack: {e}")
 
-                            new_tlids = [x.tlid for x in slice if hasattr(x, "tlid")]
-                            new_uris = []
-                            for x in slice:
-                                try:
-                                    if hasattr(x, "track") and x.track and hasattr(x.track, "uri"):
-                                        new_uris.append(x.track.uri)
-                                except Exception as e:
-                                    print(f"Error reading track uri from tltrack: {e}")
+                                # Fallback to provided URIs if Mopidy track objects are missing
+                                if len(new_uris) == 0:
+                                    new_uris = uris
 
-                            # Fallback to provided URIs if Mopidy track objects are missing
-                            if len(new_uris) == 0:
-                                new_uris = uris
+                                box.tlids += new_tlids
+                                box.uris += new_uris
+                                box.option_types += [new_type for _ in slice]
+                                box.library_link += [library_link for _ in slice]
 
-                            box.tlids += new_tlids
-                            box.uris += new_uris
-                            box.option_types += [new_type for _ in slice]
-                            box.library_link += [library_link for _ in slice]
-
-                            # Keep tlids/uris unique to avoid removal mismatches
-                            box.tlids = list(dict.fromkeys(box.tlids))
-                            box.uris = list(dict.fromkeys(box.uris))
-                            #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} box.option_types {box.option_types} box.library_link {box.library_link} and tlid {slice[0].tlid}\n")
+                                # Keep tlids/uris unique to avoid removal mismatches
+                                box.tlids = list(dict.fromkeys(box.tlids))
+                                box.uris = list(dict.fromkeys(box.uris))
+                                #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} box.option_types {box.option_types} box.library_link {box.library_link} and tlid {slice[0].tlid}\n")
+                            else:
+                                print(f"Warning: Could not identify box for reco tracks from uri {track_uri} - tracks will be orphaned")
 
                         except Exception as e:
                             print(f"Erreur : {e}")
@@ -1217,14 +1224,33 @@ class O2mToMopidy:
     def get_active_box_by_uri(self, uri):
         for box in self.activeboxs:
             #print (box)
-            if hasattr(box, "uris"):
+            if hasattr(box, "uris") and box.uris:
                 if uri in box.uris:
                     return box
-        #No box so we attribute the default one : mopidy        
-        mopidy_box = self.dbHandler.get_box_by_uid('mopidy_box')
-        mopidy_box.uris = [uri]
-        self.activeboxs.append(mopidy_box)
-        return mopidy_box
+        #No box found - create mopidy_box for tracks added via Iris without box association
+        try:
+            mopidy_box = self.dbHandler.get_box_by_uid('mopidy_box')
+            if mopidy_box:
+                # Ensure mopidy_box has tracking attributes
+                if not hasattr(mopidy_box, "tlids") or mopidy_box.tlids is None:
+                    mopidy_box.tlids = []
+                if not hasattr(mopidy_box, "uris") or mopidy_box.uris is None:
+                    mopidy_box.uris = [uri]
+                else:
+                    if uri not in mopidy_box.uris:
+                        mopidy_box.uris.append(uri)
+                if not hasattr(mopidy_box, "option_types") or mopidy_box.option_types is None:
+                    mopidy_box.option_types = []
+                if not hasattr(mopidy_box, "library_link") or mopidy_box.library_link is None:
+                    mopidy_box.library_link = []
+                
+                # Only add to activeboxs if not already there
+                if mopidy_box not in self.activeboxs:
+                    self.activeboxs.append(mopidy_box)
+                return mopidy_box
+        except Exception as e:
+            print(f"Error getting/creating mopidy_box: {e}")
+        return None
 
     def get_active_box_by_tlid(self, tlid):
         if tlid is None:
@@ -1560,7 +1586,8 @@ class O2mToMopidy:
     #discover_level = 5 : read_count_end>=3
     def threshold_playing_count_new(self,read_count_end,discover_level):
         #print (f"read_count_end : {read_count_end} discover_level : {discover_level}")
-        if float(read_count_end) >= ((11-discover_level)/2): return True
+        threshold = ((11-discover_level)/2) + (1 if discover_level == 10 else 0)
+        if float(read_count_end) >= threshold: return True
         else: return False
 
     #Threshold FAVORITES : for adding or removing tracks to favorites (autofill)

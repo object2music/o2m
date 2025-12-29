@@ -32,6 +32,7 @@ window.onload = function() {
             if (flag_o2m_status == 0)
               {
                 flag_o2m_status = 1;
+                const o2m_status = document.querySelectorAll(".o2m_status.hide");
                 for (update of o2m_status) {
                   try { 
                         uri1 = update.innerHTML;
