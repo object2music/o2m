@@ -35,9 +35,9 @@ CREATE TABLE `stats` (
   `read_count` tinyint(11) NOT NULL DEFAULT '0' COMMENT 'Count total read',
   `read_count_end` tinyint(11) NOT NULL DEFAULT '0' COMMENT 'Count total read to end',
   `skipped_count` tinyint(11) NOT NULL DEFAULT '0' COMMENT 'Count total skipped actions',
-  `in_library` varchar(16) DEFAULT NULL COMMENT 'Is track in library ? If yes : uri cntainer value',
+  `in_library` text DEFAULT NULL COMMENT 'Is track in library ? If yes : uri cntainer value',
   `day_time_average` tinyint(2) DEFAULT NULL COMMENT 'Compute each read end day time average (1-24)',
-  `option_type` varchar(16) NOT NULL,
+  `option_type` varchar(16) NOT NULL DEFAULT 'new',
   `username` varchar(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 

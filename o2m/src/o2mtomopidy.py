@@ -40,6 +40,8 @@ class O2mToMopidy:
         self.dbHandler = DatabaseHandler()  # Database management
         self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
         self.spotifyHandler = SpotifyHandler() # Spotify API 
+        self.library_name_cache = {}  # Cache to avoid repeated Spotify lookups for names
+        self.library_link_from_track_cache = {}  # Cache: (track_uri, hint) -> full library uri
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -302,6 +304,38 @@ class O2mToMopidy:
             option_type=force_option_type
         length = 0
 
+        # Compute a default library_link when not provided to ensure robust tracking
+        try:
+            if (not library_link or library_link == '') and active_box is not None:
+                # If favorites box and user has Spotify, mark favorites
+                if getattr(active_box, 'option_type', '') == 'favorites' and getattr(self, 'username', None) is not None:
+                    library_link = 'o2m:favorites'
+                else:
+                    # Try to extract a playlist URI from the box data (first spotify:playlist found)
+                    lib_box = self.get_spotify_playlist_from_box(active_box)
+                    if lib_box:
+                        library_link = lib_box
+
+                # If still empty, try to derive a meaningful link from box data
+                if (not library_link or library_link == '') and getattr(active_box, 'data', None):
+                    try:
+                        for line in str(active_box.data).split("\n"):
+                            line = line.replace("\r", "").strip()
+                            if not line or line.startswith('#'):
+                                continue
+                            # Prefer concrete spotify:* identifiers when present
+                            if line.startswith('spotify:playlist:') or line.startswith('spotify:album:') or line.startswith('spotify:artist:'):
+                                library_link = line
+                                break
+                            # Fallback to any spotify:/o2m: link-like value
+                            if line.startswith('spotify:') or line.startswith('o2m:'):
+                                library_link = line
+                                break
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"Error computing default library_link: {e}")
+
         if isinstance(uris, list) and max_results > 0:
             if len(uris) > 0:
                 #Inits
@@ -464,6 +498,31 @@ class O2mToMopidy:
                     else:
                         active_box.library_link = [library_link for x in slice2]
                     #print("library_link",box.library_link)
+                    
+                    # Store library_link in database for each added track
+                    for tl_track, track_option_type in zip(slice2, option_types_list):
+                        track_uri = tl_track.track.uri
+                        try:
+                            # Resolve per-track library link when the hint is generic (spotify:album / spotify:artist)
+                            effective_link = self.get_library_link_for_track(track_uri, library_link)
+                            library_display = self.get_library_display(effective_link) if effective_link else ''
+
+                            if self.dbHandler.stat_exists(track_uri):
+                                stat = self.dbHandler.get_stat_by_uri(track_uri)
+                            else:
+                                stat = self.dbHandler.create_stat(track_uri)
+
+                            # Ensure option_type is set (avoid NULLs for newly added tracks)
+                            if (not getattr(stat, 'option_type', None)) and track_option_type:
+                                stat.option_type = track_option_type
+
+                            # Persist library display if available
+                            if library_display:
+                                stat.in_library = library_display
+
+                            stat.save()
+                        except Exception as e:
+                            print(f"Error saving stats for {track_uri}: {e}")
                     
                     # Shuffle complete computed tracklist if more than two boxs
                     #self.shuffle_tracklist(current_index + 1, new_length)
@@ -677,6 +736,11 @@ class O2mToMopidy:
                 # o2m:favorites (favorites only)
                 elif "o2m:favorites" in content :
                     print ("o2m:favorites")
+                    tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results))
+
+                # Backward compatibility: legacy spotify:favorites
+                elif "spotify:favorites" in content:
+                    print ("spotify:favorites (legacy) -> o2m:favorites")
                     tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results))
 
                 # now:library (daily habits)
@@ -1181,8 +1245,8 @@ class O2mToMopidy:
     def get_spotify_playlist_from_box(self,box):
         library_link = ''
 
-        #Playlist exctraction : search correspondancy Playlists between my Mopidy Playlists X Active_Box Data 
-        playlist = self.mopidyHandler.playlists.lookup(box.data)
+        # Playlist extraction: do NOT lookup arbitrary box.data in Mopidy.
+        # Some legacy values (e.g. 'spotify:favorites') are not valid Spotify URIs for Mopidy.
         data = box.data.split("\n")
         data = [x for x in data if not x.startswith('#')]
         data = [x for x in data if not x.startswith('\r')]
@@ -1193,6 +1257,90 @@ class O2mToMopidy:
                 library_link = content
                 break
         return library_link
+
+    def get_library_link_for_track(self, track_uri, library_link_hint):
+        """Derive a full library URI for a specific track when the hint is generic.
+
+        Examples:
+        - hint 'spotify:album'  -> 'spotify:album:<id>' based on the track
+        - hint 'spotify:artist' -> 'spotify:artist:<id>' based on the track
+        Otherwise returns the hint as-is.
+        """
+        try:
+            if not library_link_hint:
+                return ''
+            if not track_uri or not isinstance(track_uri, str):
+                return library_link_hint
+
+            cache_key = (track_uri, library_link_hint)
+            if cache_key in self.library_link_from_track_cache:
+                return self.library_link_from_track_cache[cache_key]
+
+            # Only possible for Spotify tracks
+            if not track_uri.startswith('spotify:track:'):
+                self.library_link_from_track_cache[cache_key] = library_link_hint
+                return library_link_hint
+
+            track_id = track_uri.split(':', 2)[2]
+
+            resolved = library_link_hint
+            if library_link_hint == 'spotify:album':
+                resolved = self.spotifyHandler.get_track_album(track_id)
+            elif library_link_hint == 'spotify:artist':
+                artist_id = self.spotifyHandler.get_track_artist(track_id)
+                if artist_id:
+                    resolved = f'spotify:artist:{artist_id}'
+
+            self.library_link_from_track_cache[cache_key] = resolved
+            return resolved
+        except Exception as e:
+            print(f"Error deriving library_link from track {track_uri} hint {library_link_hint}: {e}")
+            return library_link_hint
+
+    def get_library_display(self, library_link):
+        """Return human-readable name for a library link with simple caching."""
+        try:
+            if not library_link:
+                return ''
+            if library_link in self.library_name_cache:
+                return self.library_name_cache[library_link]
+
+            display = library_link
+            prefix = ''
+
+            # If this is a Spotify URI, prefix with its type for readability
+            if isinstance(library_link, str) and library_link.startswith('spotify:'):
+                parts = library_link.split(':')
+                if len(parts) >= 2:
+                    resource_type = parts[1]
+                    if resource_type in {'playlist', 'album', 'artist'}:
+                        prefix = f"{resource_type}:"
+
+            try:
+                display = self.spotifyHandler.get_resource_name(library_link)
+            except Exception as e:
+                print(f"Error resolving library display for {library_link}: {e}")
+
+            # If resolution failed and we still have a Spotify URI, shorten it to the ID
+            # so we store 'playlist:<id>' instead of 'playlist:spotify:playlist:<id>'.
+            if isinstance(display, str) and display.startswith('spotify:'):
+                try:
+                    dparts = display.split(':')
+                    if len(dparts) >= 3:
+                        display = dparts[2]
+                except Exception:
+                    pass
+
+            # Avoid double-prefixing if the resolved name already contains a prefix
+            if prefix and isinstance(display, str):
+                if not (display.startswith('playlist:') or display.startswith('album:') or display.startswith('artist:')):
+                    display = prefix + display
+
+            self.library_name_cache[library_link] = display
+            return display
+        except Exception as e:
+            print(f"Error in get_library_display: {e}")
+            return library_link
 
     def get_spotify_reco(self, track_seed, limit):
         uris = self.spotifyHandler.get_recommendations(
@@ -1361,6 +1509,14 @@ class O2mToMopidy:
             if not(option_type == 'incoming' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
                 stat.option_type = option_type
         #stat.option_type = option_type
+        
+        # Store library_link in the in_library field (repurposed from obsolete boolean)
+        if library_link and library_link != '':
+            try:
+                effective_link = self.get_library_link_for_track(track.uri, library_link)
+            except Exception:
+                effective_link = library_link
+            stat.in_library = self.get_library_display(effective_link)
         
         #Check if there is a stat pb to fix 
         if (stat.read_end == 0): stat.read_end = 0.01

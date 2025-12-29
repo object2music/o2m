@@ -187,7 +187,80 @@ if __name__ == "__main__":
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
             option_type = str(stat.option_type)
             read_end = float(stat.read_end)
-            status = option_type + " - " + str(int(round(read_end,1)*10))
+            stored = str(stat.in_library) if stat.in_library else ''
+
+            # Make in_library intelligible:
+            # - If stored is already 'type:Name' keep it.
+            # - If stored is 'type:<spotifyId>' resolve to 'type:<Name>' at request time.
+            # - If stored is a raw spotify URI, resolve it.
+            library_name = ''
+            if stored:
+                try:
+                    resolved = stored
+
+                    def _looks_like_spotify_id(s):
+                        try:
+                            s = str(s)
+                            return len(s) == 22 and s.isalnum()
+                        except Exception:
+                            return False
+
+                    # Handle prefixed format type:value
+                    if ':' in stored:
+                        prefix, value = stored.split(':', 1)
+                        if prefix in {'playlist', 'album', 'artist'}:
+                            # sanitize legacy/control-char artifacts like '#015'
+                            try:
+                                value = str(value).replace('#015', '').replace('\r', '').replace('\n', '').strip()
+                            except Exception:
+                                pass
+
+                            # If we already stored a display name like "playlist:Calm",
+                            # do not hit Spotify again (would try /v1/playlists/Calm).
+                            if not value.startswith('spotify:'):
+                                normalized_id = o2mHandler.spotifyHandler.normalize_spotify_id(value)
+                                if not _looks_like_spotify_id(normalized_id):
+                                    resolved = f"{prefix}:{value}"
+                                    library_name = resolved
+                                    status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name
+                                    return status
+                                value = normalized_id
+
+                            if value.startswith('spotify:'):
+                                resolved_uri = o2mHandler.spotifyHandler.normalize_spotify_uri(value)
+                            else:
+                                resolved_uri = o2mHandler.spotifyHandler.normalize_spotify_uri(f"spotify:{prefix}:{value}")
+
+                            # Resolve via Spotify (retry token once on failure)
+                            try:
+                                name_only = o2mHandler.spotifyHandler.get_resource_name(resolved_uri)
+                            except Exception:
+                                o2mHandler.spotifyHandler.init_token_sp()
+                                name_only = o2mHandler.spotifyHandler.get_resource_name(resolved_uri)
+
+                            # get_resource_name can fallback to returning the URI; keep it stable
+                            if isinstance(name_only, str) and name_only.startswith('spotify:'):
+                                # last resort: keep original value (id or name)
+                                name_only = value
+
+                            resolved = f"{prefix}:{name_only}"
+                        else:
+                            # Unknown prefix, leave as-is
+                            resolved = stored
+                    elif stored.startswith('spotify:'):
+                        # Raw spotify URI
+                        try:
+                            resolved = o2mHandler.spotifyHandler.get_resource_name(stored)
+                        except Exception:
+                            o2mHandler.spotifyHandler.init_token_sp()
+                            resolved = o2mHandler.spotifyHandler.get_resource_name(stored)
+
+                    library_name = resolved
+                except Exception as e:
+                    print(f"Error getting library name: {e}")
+                    library_name = stored
+
+            status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name
         except Exception as val_e:
             status = 'new'
         return status
@@ -346,7 +419,16 @@ if __name__ == "__main__":
                         if library_link == '': 
                             #library_link = active_box.data
                             #Playlist exctraction : search correspondancy Playlists between my Mopidy Playlists X Active_Box Data 
-                            playlist = o2mHandler.mopidyHandler.playlists.lookup(active_box.data)
+                            # Avoid passing legacy/non-playlist URIs to Mopidy playlists.lookup
+                            if active_box.data == 'spotify:favorites':
+                                library_link = 'o2m:favorites'
+                            else:
+                                playlist = None
+                                try:
+                                    if isinstance(active_box.data, str) and (active_box.data.startswith('spotify:playlist:') or 'm3u' in active_box.data):
+                                        playlist = o2mHandler.mopidyHandler.playlists.lookup(active_box.data)
+                                except Exception as e:
+                                    print(f"Error looking up playlist {active_box.data}: {e}")
                             data = active_box.data.split("\n")
                             data = [x for x in data if not x.startswith('#')]
                             data = [x for x in data if not x.startswith('\r')]

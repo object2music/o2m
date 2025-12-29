@@ -1,4 +1,4 @@
-import configparser, os, json, sys, random
+import configparser, os, json, sys, random, re
 from pathlib import Path
 import spotipy as spotipy
 import src.util as util
@@ -67,6 +67,95 @@ class SpotifyHandler:
             for item in tracks_json["items"]:
                 uris.append(item["uri"])
         return uris
+
+    def normalize_spotify_id(self, value):
+        """Extract a clean Spotify base62 ID (usually 22 chars) from a noisy string."""
+        try:
+            if value is None:
+                return None
+            s = str(value)
+            # strip common control artifacts seen in logs / m3u parsing
+            s = s.replace("\r", "").replace("\n", "").replace("\t", "").strip()
+            s = s.replace("#015", "").strip()
+            # remove fragments like ...#something
+            if "#" in s:
+                s = s.split("#", 1)[0]
+            # find first base62-ish token, prefer 22-char IDs
+            m22 = re.search(r"[A-Za-z0-9]{22}", s)
+            if m22:
+                return m22.group(0)
+            m = re.search(r"[A-Za-z0-9]{10,}", s)
+            return m.group(0) if m else s
+        except Exception:
+            return value
+
+    def normalize_spotify_uri(self, uri):
+        """Normalize spotify:* URIs by stripping control chars and normalizing the resource id."""
+        try:
+            if not uri:
+                return uri
+            s = str(uri)
+            s = s.replace("\r", "").replace("\n", "").replace("\t", "").strip()
+            s = s.replace("#015", "").strip()
+            if not s.startswith("spotify:"):
+                return s
+            parts = s.split(":")
+            if len(parts) < 3:
+                return s
+            resource_type = parts[1]
+            resource_id = self.normalize_spotify_id(parts[2])
+            return f"spotify:{resource_type}:{resource_id}"
+        except Exception:
+            return uri
+    
+    def get_resource_name(self, uri):
+        """Get human-readable name from Spotify URI (playlist, album, artist)"""
+        try:
+            if not uri or uri == '':
+                return ''
+
+            uri = self.normalize_spotify_uri(uri)
+            
+            # Handle o2m: custom URIs
+            if uri.startswith('o2m:'):
+                return uri.replace('o2m:', '').replace('_', ' ').title()
+            
+            # Handle Spotify URIs
+            if uri.startswith('spotify:'):
+                parts = uri.split(':')
+                if len(parts) >= 3:
+                    resource_type = parts[1]
+                    resource_id = self.normalize_spotify_id(parts[2])
+
+                    # Defensive: only call Spotify APIs with a real base62 id.
+                    # Spotify IDs are 22 chars; values like "Calm" must be treated as display names.
+                    if not re.fullmatch(r"[A-Za-z0-9]{22}", str(resource_id or "")):
+                        return uri
+                    
+                    try:
+                        if resource_type == 'playlist':
+                            playlist = self.sp.playlist(resource_id, fields='name')
+                            name = playlist.get('name', uri)
+                            return name if name else uri
+                        elif resource_type == 'album':
+                            album = self.sp.album(resource_id)
+                            album_name = album.get('name', '')
+                            artist_name = album.get('artists', [{}])[0].get('name', '')
+                            return f"{album_name} - {artist_name}".strip(' -') if album_name else uri
+                        elif resource_type == 'artist':
+                            artist = self.sp.artist(resource_id)
+                            name = artist.get('name', uri)
+                            return name if name else uri
+                    except Exception as api_e:
+                        print(f"Spotify API error for {resource_type} {resource_id}: {api_e}")
+                        return uri
+            
+            return uri
+        except Exception as e:
+            print(f"Error getting resource name for {uri}: {e}")
+            import traceback
+            traceback.print_exc()
+            return uri
 
 ################### PLAYLISTS #############################
 

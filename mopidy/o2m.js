@@ -22,7 +22,7 @@ window.onload = function() {
     if (targetNode && targetNode.nodeType){
 
       // Options for the observer (which mutations to observe)
-      const config = {childList: true};
+      const config = {childList: true, subtree: true};
       flag_o2m_status = 0;
 
       // Callback function to execute when mutations are observed
@@ -33,9 +33,9 @@ window.onload = function() {
               {
                 flag_o2m_status = 1;
                 const o2m_status = document.querySelectorAll(".o2m_status.hide");
-                for (update of o2m_status) {
+                for (const update of o2m_status) {
                   try { 
-                        uri1 = update.innerHTML;
+                        const uri1 = update.innerHTML;
                         update_o2m_status(update,uri1);
                       } 
                       catch (error) {
@@ -44,7 +44,7 @@ window.onload = function() {
                 }
                 flag_o2m_status = 0;
               }
-          },60000);
+          },600);
           }
       };
 

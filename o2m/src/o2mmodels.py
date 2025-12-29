@@ -106,7 +106,7 @@ class Stats(BaseModel):
     skipped_count = IntegerField(default=0)  # int
     in_library = TextField(default='')  # Uri track if exist
     day_time_average = IntegerField(default=0)  # int
-    option_type = CharField(null=True)  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
+    option_type = CharField(default='new')  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
     username = TextField(null=True)  # user text
 
     def __str__(self):

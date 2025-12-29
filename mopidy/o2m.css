@@ -47,6 +47,15 @@ ul.details li.show {
   display:initial;
 }
 
+/* Keep Iris track rows a constant height: prevent long status from wrapping */
+.o2m_status.show {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18em;
+}
+
 ul.details li.show{
   opacity: 1;
 }
