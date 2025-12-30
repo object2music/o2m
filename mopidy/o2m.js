@@ -15,6 +15,100 @@ window.onload = function() {
   backoffice_uri = 'http://localhost:5011'
   //backoffice_uri += 'sql.php?table=box&sql_query=SELECT+%2A+FROM+%60box%60++%0AORDER+BY+%60box%60.%60favorite%60++DESC&session_max_rows=100&is_browse_distinct=0'
   //alert(base_url)
+
+  // --- O2M status request scheduler (prevents browser resource exhaustion) ---
+  // NOTE: Must live in the function scope (not inside a block), because update_o2m_status()
+  // is called from multiple places and needs access to these.
+  const O2M_STATUS_MAX_CONCURRENT = 4;
+  const O2M_STATUS_CACHE_TTL_MS = 5 * 60 * 1000;
+  const o2mStatusCache = new Map(); // uri -> { text, ts }
+  const o2mStatusPending = new Set(); // uri currently queued/in-flight
+  const o2mStatusQueue = []; // { el, uri, show }
+  let o2mStatusInFlight = 0;
+
+  function o2mStatusGetCached(uri) {
+    const entry = o2mStatusCache.get(uri);
+    if (!entry) return null;
+    if ((Date.now() - entry.ts) > O2M_STATUS_CACHE_TTL_MS) {
+      o2mStatusCache.delete(uri);
+      return null;
+    }
+    return entry.text;
+  }
+
+  function o2mStatusApply(el, update_text, show) {
+    try {
+      if ((update_text.includes('podcast')) || (el.innerHTML.includes('podcast+'))){
+        el.style.backgroundColor = "Gainsboro";
+        update_text = update_text.replace("normal","podcast");
+      }
+      else if (update_text.includes('normal')){
+        update_text=update_text.replace("normal", "library");
+        el.style.backgroundColor = "LightSkyBlue";
+      }
+      else if (update_text.includes('favorites')){
+        el.style.backgroundColor = "YellowGreen";
+      }
+      else if (update_text.includes('incoming')){
+        el.style.backgroundColor = "GoldenRod";
+      }
+      else if (update_text.includes('new')){
+        el.style.backgroundColor = "orange";
+      }
+      else if (update_text.includes('trash')){
+        el.style.backgroundColor = "FireBrick";
+      }
+      else if (update_text.includes('hidden')){
+        el.style.backgroundColor = "IndianRed";
+      }
+      else if (update_text.includes('info')){
+        el.style.backgroundColor = "Gainsboro";
+      }
+
+      el.innerHTML = update_text;
+      if (!el.classList.contains('show')) el.classList.add('show');
+      if (el.classList.contains('hide')) el.classList.remove('hide');
+    } catch (e) {
+      console.error('o2m_status apply error', e);
+    }
+  }
+
+  function o2mStatusPump() {
+    while (o2mStatusInFlight < O2M_STATUS_MAX_CONCURRENT && o2mStatusQueue.length > 0) {
+      const job = o2mStatusQueue.shift();
+      const uri = job && job.uri;
+      const el = job && job.el;
+      if (!uri || !el) {
+        continue;
+      }
+
+      const cached = o2mStatusGetCached(uri);
+      if (cached) {
+        o2mStatusPending.delete(uri);
+        o2mStatusApply(el, cached, job.show);
+        continue;
+      }
+
+      o2mStatusInFlight += 1;
+      const xhr10 = new XMLHttpRequest();
+      xhr10.onreadystatechange = function() {
+        if (xhr10.readyState === xhr10.DONE) {
+          o2mStatusInFlight -= 1;
+          o2mStatusPending.delete(uri);
+
+          if (xhr10.status === 200) {
+            const text = xhr10.responseText;
+            o2mStatusCache.set(uri, { text, ts: Date.now() });
+            o2mStatusApply(el, text, job.show);
+          }
+
+          o2mStatusPump();
+        }
+      };
+      xhr10.open("GET", base_url + "track_status?uri=" + encodeURIComponent(uri));
+      xhr10.send();
+    }
+  }
   
   //Listeners for DOM change in IRIS (o2m_status)
     //Node of lists tracks changing 
@@ -26,26 +120,25 @@ window.onload = function() {
       flag_o2m_status = 0;
 
       // Callback function to execute when mutations are observed
+      let o2mStatusDebounceTimer = null;
       const callback = (mutationList, observer) => {
-        for (const mutation of mutationList) {
-          setTimeout(() => {
-            if (flag_o2m_status == 0)
-              {
-                flag_o2m_status = 1;
-                const o2m_status = document.querySelectorAll(".o2m_status.hide");
-                for (const update of o2m_status) {
-                  try { 
-                        const uri1 = update.innerHTML;
-                        update_o2m_status(update,uri1);
-                      } 
-                      catch (error) {
-                        console.error(error);
-                      }
-                }
-                flag_o2m_status = 0;
-              }
-          },600);
+        if (o2mStatusDebounceTimer) {
+          clearTimeout(o2mStatusDebounceTimer);
+        }
+        o2mStatusDebounceTimer = setTimeout(() => {
+          if (flag_o2m_status !== 0) return;
+          flag_o2m_status = 1;
+          try {
+            const nodes = document.querySelectorAll(".o2m_status.hide");
+            for (const el of nodes) {
+              const uri1 = el.innerHTML;
+              update_o2m_status(el, uri1);
+            }
+          } catch (e) {
+            console.error(e);
           }
+          flag_o2m_status = 0;
+        }, 250);
       };
 
       // Create an observer instance linked to the callback function
@@ -81,65 +174,36 @@ window.onload = function() {
   //----------------FUNCTIONS-------------
 
     function update_o2m_status(update,uri,show = "min"){
-      if (!uri.includes('library - ') && !uri.includes('favorites - ') && !uri.includes('incoming - ') && !uri.includes('podcast - ') && !uri.includes('info - ') && !uri.includes('new') && !uri.includes('trash - ') && !uri.includes('hidden - ') && !uri.includes('normal - ')) {
-        var xhr10 = new XMLHttpRequest();
-        xhr10.onreadystatechange = function() {
-        if (xhr10.readyState == xhr10.DONE) {
-            if (xhr10.status === 200) {
-            update_text = xhr10.responseText;
-            try {
-                if ((update_text.includes('podcast')) || (uri.includes('podcast+'))){
-                  update.style.backgroundColor = "Gainsboro";
-                  //reg = /podcast+.* -/
-                  update_text = update_text.replace("normal","podcast");
-                }
-                else if (update_text.includes('normal')){
-                  update_text=update_text.replace("normal", "library");
-                  update.style.backgroundColor = "LightSkyBlue";
-                }
-                else if (update_text.includes('favorites')){
-                  update.style.backgroundColor = "YellowGreen";
-                }
-                else if (update_text.includes('incoming')){
-                  update.style.backgroundColor = "GoldenRod";
-                  }
-                else if (update_text.includes('new')){
-                  update.style.backgroundColor = "orange";
-                }
-                else if (update_text.includes('trash')){
-                  update.style.backgroundColor = "FireBrick";
-                }
-                else if (update_text.includes('hidden')){
-                  update.style.backgroundColor = "IndianRed";
-                }
-                else if (update_text.includes('info')){
-                  update.style.backgroundColor = "Gainsboro";
-                }
-                
+      if (!uri) return;
 
-              if (show == "min")
-              {
-                //update_text = update_text.split(' - ')[0];
-              }
-              update.innerHTML = update_text;
+      // If the element already contains a rendered status, do nothing.
+      const current = String(update.innerHTML || '');
+      if (
+        current.includes('library - ') ||
+        current.includes('favorites - ') ||
+        current.includes('incoming - ') ||
+        current.includes('podcast - ') ||
+        current.includes('info - ') ||
+        current.includes('trash - ') ||
+        current.includes('hidden - ') ||
+        current.includes('normal - ') ||
+        current.includes('new')
+      ) {
+        return;
+      }
 
-            if ( !update.classList.contains('show') ) {
-                update.classList.add('show');
-            } 
-            if ( update.classList.contains('hide') ) {
-              update.classList.remove('hide');
-            } 
-          }            
-            catch (error) {
-              console.error(error);
-            }
-          }}};
-        if (uri)
-        {
-          xhr10.open("GET",base_url+"track_status?uri="+encodeURIComponent(uri));
-          xhr10.send();
-        }
-    }
+      // Avoid scheduling duplicate work for the same URI
+      const cached = o2mStatusGetCached(uri);
+      if (cached) {
+        o2mStatusApply(update, cached, show);
+        return;
+      }
+      if (o2mStatusPending.has(uri)) {
+        return;
+      }
+      o2mStatusPending.add(uri);
+      o2mStatusQueue.push({ el: update, uri: uri, show: show });
+      o2mStatusPump();
     }
 
     function update_style_all_button() {
@@ -251,9 +315,10 @@ window.onload = function() {
   });
   }
   o2m_status_update();
+  // One follow-up pass shortly after initial paint
   {setTimeout(() => {
     o2m_status_update();
-  }, "10000");}
+  }, 1500);}
 
   /*
   for (let i = 0; i < 3; i++) {
