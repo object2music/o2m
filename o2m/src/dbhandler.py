@@ -217,7 +217,7 @@ class DatabaseHandler():
         date_now = datetime.datetime.utcnow().timestamp()
         #query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
         #query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))
-        query = Stats.select().where( ((Stats.uri % '%podcast+%')| (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end < 0.9)& (Stats.read_position > 30000)
+        query = Stats.select().where( ((Stats.uri % '%podcast+%')| (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end < 0.9)& (Stats.read_position > 0)& (Stats.read_count_end == 0)
             & (
             #((Stats.option_type != "info")& (Stats.option_type != "normal")& (Stats.read_count_end <= discover_level/2) & (Stats.skipped_count <= discover_level))
             ((Stats.option_type != "normal")& (Stats.read_count_end <= discover_level/2) & (Stats.skipped_count <= discover_level))
