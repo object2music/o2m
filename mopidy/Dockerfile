@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Install Env Rust gstreamer
 RUN apt update
-RUN apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git wget gstreamer1.0-plugins-bad
+RUN apt install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git wget 
 RUN apt install -y libasound2 libasound2-dev 
 
 #RUN apt install -y curl
@@ -39,7 +39,7 @@ RUN mkdir -p /etc/apt/keyrings
 RUN wget -q -O /etc/apt/keyrings/mopidy-archive-keyring.gpg \
     https://apt.mopidy.com/mopidy.gpg
 RUN  wget -q -O /etc/apt/sources.list.d/mopidy.list https://apt.mopidy.com/bullseye.list
-RUN apt-get -y install mopidy
+RUN apt-get -y install mopidy gstreamer1.0-plugins-bad gstreamer1.0-libav
 #RUN  apt-get install -y swig python-spotify libpcsclite-dev libcairo2-dev
 
 # Install libspotify
