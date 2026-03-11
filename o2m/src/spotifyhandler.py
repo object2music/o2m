@@ -46,16 +46,21 @@ class SpotifyHandler:
     def get_recommendations(
         self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, **kwargs
     ):
-        # print ('tr : '+seed_tracks)
-        reco = self.sp.recommendations(
-            seed_genres=seed_genres,
-            seed_artists=seed_artists,
-            seed_tracks=seed_tracks,
-            country="FR",
-            limit=limit,
-            **kwargs
-        )
-        return self.parse_tracks(reco)
+        # Note: Spotify restricted the recommendations endpoint in late 2024.
+        # It may return 404 for most apps — handle gracefully.
+        try:
+            reco = self.sp.recommendations(
+                seed_genres=seed_genres,
+                seed_artists=seed_artists,
+                seed_tracks=seed_tracks,
+                market="FR",
+                limit=limit,
+                **kwargs
+            )
+            return self.parse_tracks(reco)
+        except Exception as e:
+            print(f"Spotify recommendations unavailable (endpoint may be restricted): {e}")
+            return []
 
     def parse_tracks(self, tracks_json):
         uris = []
@@ -216,15 +221,15 @@ class SpotifyHandler:
                 playlist_id = playlist['id']
         return playlist_id
 
-    def is_track_in_playlist(self,username,track_id,playlist_id):
-        results =  self.sp.user_playlist_tracks(username,playlist_id)
+    def is_track_in_playlist(self, username, track_id, playlist_id):
+        results = self.sp.playlist_items(playlist_id, additional_types=())
         tracks = results['items']
         while results['next']:
             results = self.sp.next(results)
             tracks.extend(results['items'])
-        #print(tracks)
         for track in tracks:
-            if track["track"]["id"]==track_id: return True
+            if track.get("track") and track["track"].get("id") == track_id:
+                return True
         return False
     
     # Original get_playlists_tracks function (archived)
@@ -299,8 +304,8 @@ class SpotifyHandler:
         
         for playlist in selected_playlists:
             try:
-                tracks_response = self.sp.playlist_tracks(playlist['id'])
-                tracks = [item['track']['uri'] for item in tracks_response['items'] if item and item['track'] and item['track']['uri']]
+                tracks_response = self.sp.playlist_items(playlist['id'], additional_types=())
+                tracks = [item['track']['uri'] for item in tracks_response['items'] if item and item.get('track') and item['track'].get('uri')]
                 
                 if tracks:
                     # Select one random track from the current playlist
@@ -368,9 +373,9 @@ class SpotifyHandler:
 ################### ARTIST #############################
 
     def get_artist_top_tracks(self, artist_id):
-        try: 
+        try:
             tracks = self.sp.artist_top_tracks(artist_id, country="FR")
-        except Exception as val_e: 
+        except Exception as val_e:
             print(f"Erreur : {val_e}")
             self.init_token_sp()
             tracks = self.sp.artist_top_tracks(artist_id, country="FR")
@@ -384,7 +389,7 @@ class SpotifyHandler:
         return artist_id
 
     def get_artist_all_tracks(self, artist_id, limit=10):
-        albums = self.sp.artist_albums(artist_id, country="FR")
+        albums = self.sp.artist_albums(artist_id, include_groups="album,single")
         tracks_uris = []
 
         for album in albums["items"]:
