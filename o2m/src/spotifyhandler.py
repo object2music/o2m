@@ -404,13 +404,14 @@ class SpotifyHandler:
     
     def get_all_followed_artists(self):
         all_followed = []
-        for offset in range(0, 1000, 50):
-            response = self.sp.current_user_followed_artists(limit=50,after=offset)
+        response = self.sp.current_user_followed_artists(limit=50)
+        while response and response['artists']['items']:
             for artist in response['artists']['items']:
-                name = artist['name']
-                id = artist['id']
-                #all_followed.update({name: id})
-                all_followed.append(id)
+                all_followed.append(artist['id'])
+            if response['artists']['next']:
+                response = self.sp.next(response['artists'])
+            else:
+                break
         return all_followed
     
     def get_my_artists_tracks(self,limit=1,unit=1):
@@ -421,7 +422,8 @@ class SpotifyHandler:
             if len(artists)>0:
                 for i in range(limit):
                     artist = random.choice(artists)
-                    tracks = self.get_artist_top_tracks(artist)
+                    # top-tracks endpoint restricted since Nov 2024 — use albums instead
+                    tracks = self.get_artist_all_tracks(artist, limit=unit if unit > 0 else 10)
                     if tracks and unit != 0:
                         for j in range(unit):
                             track = random.choice(tracks)
