@@ -373,17 +373,14 @@ class SpotifyHandler:
 ################### ARTIST #############################
 
     def get_artist_top_tracks(self, artist_id):
-        # spotipy 2.25.2 hardcodes `country=` but Spotify API now requires `market=`
-        # Bypass the wrapper and call _get directly with market
+        # artist top-tracks endpoint restricted by Spotify since Nov 2024 (requires Extended quota)
         try:
             trid = self.sp._get_id("artist", artist_id)
             tracks = self.sp._get(f"artists/{trid}/top-tracks", market="FR")
+            return self.parse_tracks(tracks)
         except Exception as val_e:
-            print(f"Erreur : {val_e}")
-            self.init_token_sp()
-            trid = self.sp._get_id("artist", artist_id)
-            tracks = self.sp._get(f"artists/{trid}/top-tracks", market="FR")
-        return self.parse_tracks(tracks)
+            print(f"Erreur artist top tracks (endpoint may be restricted): {val_e}")
+            return []
 
     def get_track_artist(self, track_id):
         artists=self.sp.track(track_id)['artists']
