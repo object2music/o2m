@@ -44,22 +44,97 @@ class SpotifyHandler:
             return access_token
 
     def get_recommendations(
-        self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, **kwargs
+        self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10
     ):
-        # Note: Spotify restricted the recommendations endpoint in late 2024.
-        # It may return 404 for most apps — handle gracefully.
+        """
+        Replacement for Spotify's removed /recommendations endpoint.
+        Phase 1 — style: scores user's followed artists by genre overlap with seeds.
+        Phase 2 — rhythm: refines track selection via audio features (tempo/energy/danceability)
+                          if the endpoint is still accessible.
+        """
         try:
-            reco = self.sp.recommendations(
-                seed_genres=seed_genres,
-                seed_artists=seed_artists,
-                seed_tracks=seed_tracks,
-                market="FR",
-                limit=limit,
-                **kwargs
-            )
-            return self.parse_tracks(reco)
+            target_genres = set(seed_genres or [])
+            seed_artist_ids = set()
+            target_features = None
+
+            # Resolve seed tracks → artist ids
+            if seed_tracks:
+                track_ids = seed_tracks if isinstance(seed_tracks, list) else [seed_tracks]
+                track_ids = [self.normalize_spotify_id(t) for t in track_ids if t][:3]
+                for track_id in track_ids:
+                    info = self.sp.track(track_id)
+                    seed_artist_ids.update(a['id'] for a in info.get('artists', []))
+                # Try audio features for rhythm/energy matching (may be restricted)
+                try:
+                    feats = [f for f in (self.sp.audio_features(track_ids) or []) if f]
+                    if feats:
+                        target_features = {k: sum(f[k] for f in feats) / len(feats)
+                                           for k in ('tempo', 'energy', 'danceability', 'valence')}
+                except Exception:
+                    pass  # audio_features may also be restricted
+
+            if seed_artists:
+                ids = seed_artists if isinstance(seed_artists, list) else [seed_artists]
+                seed_artist_ids.update(self.normalize_spotify_id(i) for i in ids if i)
+
+            # Batch-fetch genres for seed artists
+            if seed_artist_ids:
+                data = self.sp.artists(list(seed_artist_ids)[:50])
+                for a in (data or {}).get('artists', []) or []:
+                    if a:
+                        target_genres.update(a.get('genres', []))
+
+            # Score user's followed artists by genre overlap (batched, max 200)
+            followed = self.get_all_followed_artists()
+            candidates = [i for i in followed if i not in seed_artist_ids]
+            random.shuffle(candidates)
+
+            scored = []
+            for i in range(0, min(len(candidates), 200), 50):
+                batch_data = self.sp.artists(candidates[i:i+50])
+                for a in (batch_data or {}).get('artists', []) or []:
+                    if a:
+                        overlap = len(set(a.get('genres', [])) & target_genres)
+                        if overlap > 0:
+                            scored.append((overlap, a['id']))
+                if len(scored) >= 15:
+                    break
+
+            scored.sort(reverse=True)
+            artist_pool = [aid for _, aid in scored[:8]] or candidates[:5]
+            if not artist_pool:
+                return []
+
+            # Collect tracks from matching artists
+            per_artist = max(2, (limit * 2) // min(len(artist_pool), 5))
+            result = []
+            for artist_id in artist_pool[:5]:
+                tracks = self.get_artist_all_tracks(artist_id, limit=per_artist)
+                # Refine by audio proximity if features available
+                if target_features and tracks:
+                    try:
+                        tids = [self.normalize_spotify_id(t) for t in tracks]
+                        feats = self.sp.audio_features(tids)
+                        scored_t = []
+                        for uri, feat in zip(tracks, feats or []):
+                            if feat:
+                                score = (1
+                                         - abs(feat['tempo'] - target_features['tempo']) / 200 * 0.4
+                                         - abs(feat['energy'] - target_features['energy']) * 0.3
+                                         - abs(feat['danceability'] - target_features['danceability']) * 0.3)
+                                scored_t.append((score, uri))
+                        if scored_t:
+                            scored_t.sort(reverse=True)
+                            tracks = [u for _, u in scored_t[:per_artist]]
+                    except Exception:
+                        pass
+                result.extend(tracks)
+
+            random.shuffle(result)
+            return result[:limit]
+
         except Exception as e:
-            print(f"Spotify recommendations unavailable (endpoint may be restricted): {e}")
+            print(f"Recommendation fallback error: {e}")
             return []
 
     def parse_tracks(self, tracks_json):
