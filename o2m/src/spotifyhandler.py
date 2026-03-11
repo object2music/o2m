@@ -373,12 +373,16 @@ class SpotifyHandler:
 ################### ARTIST #############################
 
     def get_artist_top_tracks(self, artist_id):
+        # spotipy 2.25.2 hardcodes `country=` but Spotify API now requires `market=`
+        # Bypass the wrapper and call _get directly with market
         try:
-            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
+            trid = self.sp._get_id("artist", artist_id)
+            tracks = self.sp._get(f"artists/{trid}/top-tracks", market="FR")
         except Exception as val_e:
             print(f"Erreur : {val_e}")
             self.init_token_sp()
-            tracks = self.sp.artist_top_tracks(artist_id, country="FR")
+            trid = self.sp._get_id("artist", artist_id)
+            tracks = self.sp._get(f"artists/{trid}/top-tracks", market="FR")
         return self.parse_tracks(tracks)
 
     def get_track_artist(self, track_id):
@@ -389,7 +393,9 @@ class SpotifyHandler:
         return artist_id
 
     def get_artist_all_tracks(self, artist_id, limit=10):
-        albums = self.sp.artist_albums(artist_id, include_groups="album,single")
+        # spotipy 2.25.2 always sends country=None; Spotify API now requires market=
+        trid = self.sp._get_id("artist", artist_id)
+        albums = self.sp._get(f"artists/{trid}/albums", include_groups="album,single", market="FR")
         tracks_uris = []
 
         for album in albums["items"]:
