@@ -197,7 +197,7 @@ class O2mToMopidy:
 
         if len(seeds_artists) > 0 or len(seeds_genres) > 0 or len(seeds_tracks) > 0:
             tracks_uris = self.spotifyHandler.get_recommendations(
-                seeds_genres, seeds_artists, limit=self.max_results
+                seeds_genres, seeds_artists, limit=self.max_results, discover_level=self.discover_level
             )
             self.add_tracks_after(
                 tracks_uris
@@ -692,12 +692,12 @@ class O2mToMopidy:
                     media_parts = content.split(":")
                     if media_parts[3] == "genres":  # si les seeds sont des genres
                         genres = media_parts[4].split(",")  # on sépare les genres et on les ajoute un par un dans une liste
-                        tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                        tracks_uris = self.spotifyHandler.get_recommendations(seed_genres=genres, limit=max_results, discover_level=self.discover_level)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                         #self.add_tracks(box, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
                         tracklist_uris.append(tracks_uris)
                     elif media_parts[3] == "artists":  # si les seeds sont des artistes
                         artists = media_parts[4].split(",")  # on sépare les artistes et on les ajoute un par un dans une liste
-                        tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=max_results)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
+                        tracks_uris = self.spotifyHandler.get_recommendations(seed_artists=artists, limit=max_results, discover_level=self.discover_level)  # Envoie les paramètres au recoHandler pour récupérer les uris recommandées
                         #self.add_tracks(box, tracks_uris, max_results)  # Envoie les uris au mopidy Handler pour modifier la tracklist
                         tracklist_uris.append(tracks_uris)
 
@@ -1344,7 +1344,7 @@ class O2mToMopidy:
 
     def get_spotify_reco(self, track_seed, limit):
         uris = self.spotifyHandler.get_recommendations(
-            seed_genres=None, seed_artists=None, seed_tracks=track_seed, limit=limit)
+            seed_genres=None, seed_artists=None, seed_tracks=track_seed, limit=limit, discover_level=self.discover_level)
         return uris
 
     def get_same_artist_tracks(self, track_uri, limit):

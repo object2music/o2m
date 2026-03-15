@@ -1,4 +1,4 @@
-import configparser, os, json, sys, random, re
+import configparser, os, json, sys, random, re, time
 from pathlib import Path
 import spotipy as spotipy
 import src.util as util
@@ -6,12 +6,29 @@ import src.util as util
 class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("o2m.conf")["spotipy"]
-        self.cache_path = ".cache_spotipy" 
+        self.cache_path = ".cache_spotipy"
         self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
+        self._rate_limited_until = 0  # unix timestamp until which API calls should be skipped
         self.init_token_sp()
+
+    def _is_rate_limited(self):
+        return time.time() < self._rate_limited_until
+
+    def _on_rate_limit(self, e):
+        """Parse a 429 SpotifyException, set the cooldown, and log it."""
+        retry_after = 60  # default
+        try:
+            # Spotipy includes "Retry will occur after: N s" in the message
+            m = re.search(r'Retry will occur after:\s*(\d+)', str(e))
+            if m:
+                retry_after = int(m.group(1))
+        except Exception:
+            pass
+        self._rate_limited_until = time.time() + retry_after
+        print(f"Rate limited by Spotify — skipping API calls for {retry_after}s")
 
     def init_token_sp(self):
         cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
@@ -44,7 +61,7 @@ class SpotifyHandler:
             return access_token
 
     def get_recommendations(
-        self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10
+        self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, discover_level=5
     ):
         """
         Replacement for Spotify's removed /recommendations endpoint.
@@ -55,7 +72,6 @@ class SpotifyHandler:
         try:
             target_genres = set(seed_genres or [])
             seed_artist_ids = set()
-            target_features = None
 
             # Resolve seed tracks → artist ids
             if seed_tracks:
@@ -64,41 +80,75 @@ class SpotifyHandler:
                 for track_id in track_ids:
                     info = self.sp.track(track_id)
                     seed_artist_ids.update(a['id'] for a in info.get('artists', []))
-                # Try audio features for rhythm/energy matching (may be restricted)
-                try:
-                    feats = [f for f in (self.sp.audio_features(track_ids) or []) if f]
-                    if feats:
-                        target_features = {k: sum(f[k] for f in feats) / len(feats)
-                                           for k in ('tempo', 'energy', 'danceability', 'valence')}
-                except Exception:
-                    pass  # audio_features may also be restricted
 
             if seed_artists:
                 ids = seed_artists if isinstance(seed_artists, list) else [seed_artists]
                 seed_artist_ids.update(self.normalize_spotify_id(i) for i in ids if i)
 
-            # Batch-fetch genres for seed artists
-            if seed_artist_ids:
-                data = self.sp.artists(list(seed_artist_ids)[:50])
-                for a in (data or {}).get('artists', []) or []:
+            # Fetch genres for seed artists (singular endpoint, batch /artists?ids= is restricted)
+            for artist_id in list(seed_artist_ids)[:50]:
+                if self._is_rate_limited():
+                    break
+                try:
+                    a = self.sp.artist(artist_id)
                     if a:
                         target_genres.update(a.get('genres', []))
+                except spotipy.SpotifyException as e:
+                    if e.http_status == 429:
+                        self._on_rate_limit(e)
+                        break
+                except Exception:
+                    pass
 
             # Score user's followed artists by genre overlap (batched, max 200)
             followed = self.get_all_followed_artists()
+            followed_set = set(followed)
             candidates = [i for i in followed if i not in seed_artist_ids]
             random.shuffle(candidates)
 
+            # Augment candidates with external artists proportional to discover_level
+            # Level 0 → 0 external, level 10 → up to 100 external (from genre search)
+            n_external = discover_level * 10
+            if n_external > 0 and target_genres and not self._is_rate_limited():
+                external_ids = []
+                for genre in list(target_genres)[:3]:
+                    if len(external_ids) >= n_external or self._is_rate_limited():
+                        break
+                    try:
+                        results = self.sp.search(
+                            q=f'genre:"{genre}"', type='artist', limit=20,
+                            offset=random.randint(0, 50)
+                        )
+                        for artist in results.get('artists', {}).get('items', []):
+                            aid = artist['id']
+                            if aid not in followed_set and aid not in seed_artist_ids:
+                                external_ids.append(aid)
+                    except spotipy.SpotifyException as e:
+                        if e.http_status == 429:
+                            self._on_rate_limit(e)
+                        break
+                    except Exception:
+                        pass
+                random.shuffle(external_ids)
+                candidates.extend(external_ids[:n_external])
+                random.shuffle(candidates)
+
             scored = []
-            for i in range(0, min(len(candidates), 200), 50):
-                batch_data = self.sp.artists(candidates[i:i+50])
-                for a in (batch_data or {}).get('artists', []) or []:
+            for artist_id in candidates[:10]:
+                if self._is_rate_limited():
+                    break
+                try:
+                    a = self.sp.artist(artist_id)
                     if a:
                         overlap = len(set(a.get('genres', [])) & target_genres)
                         if overlap > 0:
-                            scored.append((overlap, a['id']))
-                if len(scored) >= 15:
-                    break
+                            scored.append((overlap, artist_id))
+                except spotipy.SpotifyException as e:
+                    if e.http_status == 429:
+                        self._on_rate_limit(e)
+                        break
+                except Exception:
+                    pass
 
             scored.sort(reverse=True)
             artist_pool = [aid for _, aid in scored[:8]] or candidates[:5]
@@ -110,24 +160,6 @@ class SpotifyHandler:
             result = []
             for artist_id in artist_pool[:5]:
                 tracks = self.get_artist_all_tracks(artist_id, limit=per_artist)
-                # Refine by audio proximity if features available
-                if target_features and tracks:
-                    try:
-                        tids = [self.normalize_spotify_id(t) for t in tracks]
-                        feats = self.sp.audio_features(tids)
-                        scored_t = []
-                        for uri, feat in zip(tracks, feats or []):
-                            if feat:
-                                score = (1
-                                         - abs(feat['tempo'] - target_features['tempo']) / 200 * 0.4
-                                         - abs(feat['energy'] - target_features['energy']) * 0.3
-                                         - abs(feat['danceability'] - target_features['danceability']) * 0.3)
-                                scored_t.append((score, uri))
-                        if scored_t:
-                            scored_t.sort(reverse=True)
-                            tracks = [u for _, u in scored_t[:per_artist]]
-                    except Exception:
-                        pass
                 result.extend(tracks)
 
             random.shuffle(result)
@@ -240,7 +272,7 @@ class SpotifyHandler:
 ################### PLAYLISTS #############################
 
     def add_tracks_playlist(self, username, playlist_uri, track_uris):
-        results = self.sp.user_playlist_add_tracks(username, playlist_uri, track_uris)
+        results = self.sp.playlist_add_items(playlist_uri, track_uris)
         print(f"Adding track succesful from playlist {results}")
         return results
 
@@ -297,7 +329,7 @@ class SpotifyHandler:
         return playlist_id
 
     def is_track_in_playlist(self, username, track_id, playlist_id):
-        results = self.sp.playlist_items(playlist_id, additional_types=())
+        results = self.sp.playlist_items(playlist_id, additional_types=('track',))
         tracks = results['items']
         while results['next']:
             results = self.sp.next(results)
@@ -379,7 +411,7 @@ class SpotifyHandler:
         
         for playlist in selected_playlists:
             try:
-                tracks_response = self.sp.playlist_items(playlist['id'], additional_types=())
+                tracks_response = self.sp.playlist_items(playlist['id'], additional_types=('track',))
                 tracks = [item['track']['uri'] for item in tracks_response['items'] if item and item.get('track') and item['track'].get('uri')]
                 
                 if tracks:
