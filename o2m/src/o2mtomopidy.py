@@ -5,7 +5,7 @@ from mopidy_podcast import Extension, feeds
 from urllib import parse
 
 import src.util as util
-from src.dbhandler import DatabaseHandler, Stats, Stats_Raw, Box
+from src.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
 from src.spotifyhandler import SpotifyHandler
 
 '''
@@ -39,7 +39,8 @@ class O2mToMopidy:
         #self.configMopidy = configMopidy
         self.dbHandler = DatabaseHandler()  # Database management
         self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
-        self.spotifyHandler = SpotifyHandler() # Spotify API 
+        self.spotifyHandler = SpotifyHandler() # Spotify API
+        self.spotifyHandler.set_db_handler(self.dbHandler)  # enable local cache
         self.library_name_cache = {}  # Cache to avoid repeated Spotify lookups for names
         self.library_link_from_track_cache = {}  # Cache: (track_uri, hint) -> full library uri
 
@@ -451,9 +452,9 @@ class O2mToMopidy:
                                 uri = slice2[i].track.uri
                                 if "spotify:track" in uri:
                                     uris = self.get_track_recommandation(uri,discover_level,1,library_link)
-                                    index = self.mopidyHandler.tracklist.index(tlid=tlid)
 
                                     if len(uris) > 0 :
+                                        index = self.mopidyHandler.tracklist.index(tlid=tlid)
                                         slice3 = self.mopidyHandler.tracklist.add(uris=uris, at_position=index)
                                         if slice3:
                                             slice4 = self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
@@ -980,18 +981,23 @@ class O2mToMopidy:
  
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
+        print(f"play_or_resume: state={state}")
         if state == "stopped":
-            if self.mopidyHandler.playback.get_current_tl_track() == None:
-                #print("no current track : Playing first track")
+            current_tl_track = self.mopidyHandler.playback.get_current_tl_track()
+            if current_tl_track is None:
                 current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+                print(f"play_or_resume: no current track, tracklist size={len(current_tracks)}")
                 if len(current_tracks) > 0:
                     self.mopidyHandler.playback.play(tlid=current_tracks[0].tlid)
+                    print(f"play_or_resume: playing tlid={current_tracks[0].tlid}")
             else:
                 self.mopidyHandler.playback.play()
+                print(f"play_or_resume: resuming current track")
         elif state == "paused":
             self.mopidyHandler.playback.resume()
-        """else:
-            self.mopidyHandler.playback.next()"""
+            print(f"play_or_resume: resuming from pause")
+        else:
+            print(f"play_or_resume: already playing or unknown state, no action")
 
     def initialize_playback(self, window=1):
         """
@@ -1213,7 +1219,7 @@ class O2mToMopidy:
                 p = [0.5, 0.3, 0.2]
 
             #Randomly ponderated type of track added
-            for i in range(0, limit): 
+            for i in range(0, limit):
                 c = random.choices(choices, weights=p, k=3)
                 print (c)
                 #c=np.random.choice(choices,1,replace=False,p=p)
@@ -1221,22 +1227,40 @@ class O2mToMopidy:
 
                 #1 : Same Album
                 if c[0]=='album':
-                    while new_uri == track_uri:
-                        new_uri = self.get_same_album_tracks(track_uri, 1)
-                    uris += new_uri
-                
+                    for _attempt in range(5):
+                        candidate = self.get_same_album_tracks(track_uri, 1)
+                        if not candidate:
+                            break
+                        new_uri = candidate
+                        if new_uri != track_uri:
+                            break
+                    if new_uri and new_uri != track_uri:
+                        uris += new_uri
+
                 #2 : Same Artist
-                if c[0]=='artist':
-                    while new_uri == track_uri:
-                        new_uri = self.get_same_artist_tracks(track_uri, 1)
-                    uris += new_uri
+                elif c[0]=='artist':
+                    for _attempt in range(5):
+                        candidate = self.get_same_artist_tracks(track_uri, 1)
+                        if not candidate:
+                            break
+                        new_uri = candidate
+                        if new_uri != track_uri:
+                            break
+                    if new_uri and new_uri != track_uri:
+                        uris += new_uri
 
                 #3 : Spotify Reco
-                if c[0]=='reco':
-                    while new_uri == track_uri:
-                        new_uri = self.get_spotify_reco(track_seed, 1)
-                    uris += new_uri
-            
+                elif c[0]=='reco':
+                    for _attempt in range(5):
+                        candidate = self.get_spotify_reco(track_seed, 1)
+                        if not candidate:
+                            break
+                        new_uri = candidate
+                        if new_uri != track_uri:
+                            break
+                    if new_uri and new_uri != track_uri:
+                        uris += new_uri
+
             return uris
 
 
@@ -1349,11 +1373,15 @@ class O2mToMopidy:
 
     def get_same_artist_tracks(self, track_uri, limit):
         artist_id = self.spotifyHandler.get_track_artist(track_uri)
+        if not artist_id:
+            return []
         uris = self.spotifyHandler.get_artist_all_tracks(artist_id, limit)
         return uris
 
     def get_same_album_tracks(self, track_uri, limit):
         album_uri = self.spotifyHandler.get_track_album(track_uri)
+        if not album_uri:
+            return []
         uris = self.spotifyHandler.get_album_all_tracks(album_uri, limit)
         return uris
 
@@ -1470,7 +1498,10 @@ class O2mToMopidy:
 
     # Update tracks stat when finished, skipped or system stopped (if possible)
     def update_stat_track(self, track, pos=0, option_type='', library_link='', fix=False):
-        #Harmonize option_type if new 
+        # Populate metadata cache from Mopidy track object (no API call)
+        self.spotifyHandler.cache_track_from_mopidy(track)
+
+        #Harmonize option_type if new
         if 'new' in option_type: option_type='new'
         new_stat = False
 

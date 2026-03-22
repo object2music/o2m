@@ -6,25 +6,38 @@ from playhouse.reflection import generate_models, print_model
 from playhouse.shortcuts import model_to_dict, dict_to_model
 
 
-from src.o2mmodels import Box, Stats, Stats_Raw, db
+from src.o2mmodels import (
+    Box, Track, Stats_Raw, db,
+    Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
+    Playlist, PlaylistTrack,
+    setup_database,
+)
+from peewee import IntegrityError as PeeweeIntegrityError
+
 '''
 Database & Tables creation
 Used only one time from the terminal
-Usage : 
+Usage :
 python3
 >>> import dbhandler
 >>> dbhandler.create_tables()
 >>> quit()
 '''
+
+CACHE_TTL = {'track': 30, 'artist': 7, 'album': 30}  # days
+
 def create_tables():
     with db:
-        db.create_tables([Box])
+        db.create_tables([Box, Track, Stats_Raw, Album, Artist, Genre,
+                          TrackArtist, AlbumArtist, ArtistGenre,
+                          Playlist, PlaylistTrack])
 
 class DatabaseHandler():
 
     def __init__(self):
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
+        setup_database()
         self.boxs = self.get_all_boxs()
 
     #MISC Functions
@@ -121,17 +134,17 @@ class DatabaseHandler():
     #STATS
     def create_stat(self, uri):
         try:
-            stat = Stats.create(uri=uri)
+            stat = Track.create(uri=uri)
             return stat
         except IntegrityError as err:
             self.log.error(err)
     
     def get_all_stats(self):
-        query = Stats.select()
+        query = Track.select()
         return self.transform_query_to_list(query)
     
     def get_stat_by_uri(self, uri):
-        query = Stats.select().where(Stats.uri == uri)
+        query = Track.select().where(Track.uri == uri)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             #print (results[0])
@@ -139,7 +152,7 @@ class DatabaseHandler():
     
     '''def get_stat_by_data(self, data):
         self.log.info(f'searching for stat with data: {data}')
-        query = Stats.select().where(Stats.data == data)
+        query = Track.select().where(Track.data == data)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             return results[0] '''
@@ -160,16 +173,16 @@ class DatabaseHandler():
 
     
     def stat_exists(self, uri):
-        if len(Stats.select().where(Stats.uri == uri)) > 0:
+        if len(Track.select().where(Track.uri == uri)) > 0:
             return True
         else:
             return False
 
     def get_avg_stat(self, option_type='', column='read_end'):
         if option_type != '':
-            query = Stats.select(fn.AVG(getattr(Stats, column))).where(Stats.option_type == option_type).scalar()
+            query = Track.select(fn.AVG(getattr(Track, column))).where(Track.option_type == option_type).scalar()
         else:
-            query = Stats.select(fn.AVG(getattr(Stats, column))).scalar()
+            query = Track.select(fn.AVG(getattr(Track, column))).scalar()
         #results = self.transform_query_to_list(query)
         return query
 
@@ -203,8 +216,8 @@ class DatabaseHandler():
     def get_uris_new_notread(self, limit=1, date_now=0):
         #Track boxged new but only read once, probably because of ephemere availability like spotify. Request above two week
         date_now = datetime.datetime.utcnow().timestamp()
-        query = Stats.select().where((Stats.uri % '%spotify:track%') & (Stats.read_count_end  >= 1) & (Stats.skipped_count == 0) & (Stats.option_type == 'new') & (Stats.last_read_date < (date_now-1209600))).order_by(fn.Rand()).limit(limit)
-        #query = Stats.select().where((Stats.read_count_end  >= 1) | (Stats.skipped_count == 0) | (Stats.option_type == 'new') | (date - Stats.last_read_date > 1209600)).order_by(fn.Rand()).limit(limit)
+        query = Track.select().where((Track.uri % '%spotify:track%') & (Track.read_count_end  >= 1) & (Track.skipped_count == 0) & (Track.option_type == 'new') & (Track.last_read_date < (date_now-1209600))).order_by(fn.Rand()).limit(limit)
+        #query = Track.select().where((Track.read_count_end  >= 1) | (Track.skipped_count == 0) | (Track.option_type == 'new') | (date - Track.last_read_date > 1209600)).order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             uris = [o.uri for o in results]
@@ -215,14 +228,14 @@ class DatabaseHandler():
         #Track unfinished
         #pattern="%podcast+%"
         date_now = datetime.datetime.utcnow().timestamp()
-        #query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end <= 0.9)& (Stats.read_position > 30000)& (Stats.option_type != "info")& (Stats.option_type != "normal")).order_by(Stats.last_read_date.desc()).limit(limit)
-        #query = Stats.select().where( ((Stats.uri % '%podcast+%') | (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))
-        query = Stats.select().where( ((Stats.uri % '%podcast+%')| (Stats.uri % '%youtube:video%')| (Stats.uri % '%yt:%'))& (Stats.read_end < 0.9)& (Stats.read_position > 0)& (Stats.read_count_end == 0)
+        #query = Track.select().where( ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))& (Track.read_end <= 0.9)& (Track.read_position > 30000)& (Track.option_type != "info")& (Track.option_type != "normal")).order_by(Track.last_read_date.desc()).limit(limit)
+        #query = Track.select().where( ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))
+        query = Track.select().where( ((Track.uri % '%podcast+%')| (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))& (Track.read_end < 0.9)& (Track.read_position > 0)& (Track.read_count_end == 0)
             & (
-            #((Stats.option_type != "info")& (Stats.option_type != "normal")& (Stats.read_count_end <= discover_level/2) & (Stats.skipped_count <= discover_level))
-            ((Stats.option_type != "normal")& (Stats.read_count_end <= discover_level/2) & (Stats.skipped_count <= discover_level))
-            |((Stats.option_type == "podcast")& (Stats.read_count_end <= discover_level/2) & (Stats.skipped_count <= discover_level*2)) 
-            )).order_by(Stats.last_read_date.desc()).limit(limit)
+            #((Track.option_type != "info")& (Track.option_type != "normal")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
+            ((Track.option_type != "normal")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
+            |((Track.option_type == "podcast")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level*2)) 
+            )).order_by(Track.last_read_date.desc()).limit(limit)
         results = self.transform_query_to_list(query)
         print (results)
         if len(results) > 0:
@@ -232,6 +245,254 @@ class DatabaseHandler():
                 #uris.append(self.podcast_uri_remove_max_results(o.uri))
                 uris.append(o.uri)
             return uris
+
+    # ─── Cache helpers ─────────────────────────────────────────────────────────
+
+    def is_cache_fresh(self, cached_at, entity_type='track'):
+        """Return True if *cached_at* is within the TTL for *entity_type*."""
+        if cached_at is None:
+            return False
+        ttl_days = CACHE_TTL.get(entity_type, 30)
+        if isinstance(cached_at, (int, float)):
+            cached_at = datetime.datetime.utcfromtimestamp(cached_at)
+        return (datetime.datetime.utcnow() - cached_at).days < ttl_days
+
+    # ─── Artist cache ──────────────────────────────────────────────────────────
+
+    def get_artist(self, artist_id):
+        """Return Artist from cache, or None if missing/stale."""
+        try:
+            a = Artist.get_by_id(artist_id)
+            if self.is_cache_fresh(a.cached_at, 'artist'):
+                return a
+        except Artist.DoesNotExist:
+            pass
+        return None
+
+    def save_artist(self, artist_data):
+        """Upsert an artist from a Spotify API artist dict."""
+        if not artist_data or not artist_data.get('id'):
+            return None
+        artist_id = artist_data['id']
+        images = artist_data.get('images') or []
+        followers = artist_data.get('followers') or {}
+        row = {
+            'id':         artist_id,
+            'uri':        artist_data.get('uri', f'spotify:artist:{artist_id}'),
+            'name':       artist_data.get('name'),
+            'popularity': artist_data.get('popularity'),
+            'followers':  followers.get('total'),
+            'image_url':  images[0]['url'] if images else None,
+            'storage':    'sp',
+            'cached_at':  datetime.datetime.utcnow(),
+        }
+        Artist.insert(row).on_conflict_replace().execute()
+        if artist_data.get('genres'):
+            self.save_artist_genres(artist_id, artist_data['genres'])
+        return artist_id
+
+    def save_artist_genres(self, artist_id, genres):
+        """Upsert genre list and link them to *artist_id*."""
+        for genre_name in genres:
+            genre, _ = Genre.get_or_create(name=genre_name)
+            try:
+                ArtistGenre.insert(
+                    {'artist_id': artist_id, 'genre_id': genre.id}
+                ).on_conflict_ignore().execute()
+            except Exception:
+                pass
+
+    def get_artist_genres(self, artist_id):
+        """Return list of genre name strings for *artist_id*."""
+        rows = (Genre
+                .select()
+                .join(ArtistGenre, on=(Genre.id == ArtistGenre.genre_id))
+                .where(ArtistGenre.artist_id == artist_id))
+        return [g.name for g in rows]
+
+    # ─── Album cache ───────────────────────────────────────────────────────────
+
+    def get_album(self, album_id):
+        """Return Album from cache, or None if missing/stale."""
+        try:
+            a = Album.get_by_id(album_id)
+            if self.is_cache_fresh(a.cached_at, 'album'):
+                return a
+        except Album.DoesNotExist:
+            pass
+        return None
+
+    def save_album(self, album_data):
+        """Upsert an album from a Spotify API album dict."""
+        if not album_data or not album_data.get('id'):
+            return None
+        album_id = album_data['id']
+        images = album_data.get('images') or []
+        artists = album_data.get('artists') or []
+        artist_name = artists[0].get('name') if artists else None
+        row = {
+            'id':           album_id,
+            'uri':          album_data.get('uri', f'spotify:album:{album_id}'),
+            'name':         album_data.get('name'),
+            'artist_name':  artist_name,
+            'album_type':   album_data.get('album_type'),
+            'release_date': album_data.get('release_date'),
+            'total_tracks': album_data.get('total_tracks'),
+            'image_url':    images[0]['url'] if images else None,
+            'storage':      'sp',
+            'cached_at':    datetime.datetime.utcnow(),
+        }
+        Album.insert(row).on_conflict_replace().execute()
+        # Link album → artists
+        for pos, artist in enumerate(album_data.get('artists') or []):
+            if artist.get('id'):
+                try:
+                    AlbumArtist.insert(
+                        {'album_id': album_id, 'artist_id': artist['id'], 'position': pos}
+                    ).on_conflict_ignore().execute()
+                except Exception:
+                    pass
+        return album_id
+
+    # ─── Track (stats) cache ───────────────────────────────────────────────────
+
+    def get_track(self, uri):
+        """Return Stats row with fresh cache metadata, or None."""
+        try:
+            t = Track.get_by_id(uri)
+            if self.is_cache_fresh(t.cached_at, 'track'):
+                return t
+        except Track.DoesNotExist:
+            pass
+        return None
+
+    def get_cached_album_id(self, track_uri):
+        """Return album_id for track_uri from DB (any freshness), or None."""
+        try:
+            t = Track.get_by_id(track_uri)
+            if t.album_id:
+                return t.album_id
+        except Exception:
+            pass
+        return None
+
+    def get_cached_artist_id(self, track_uri):
+        """Return a random artist_id for track_uri from TrackArtist table, or None."""
+        try:
+            rows = list(TrackArtist.select().where(TrackArtist.track_uri == track_uri))
+            if rows:
+                return random.choice(rows).artist_id
+        except Exception:
+            pass
+        return None
+
+    def save_track_metadata(self, track_data):
+        """Update (or create) a Stats row with Spotify track metadata.
+
+        *track_data* is the Spotify API track dict (full or simplified).
+        Playback stats (read_count etc.) are never overwritten.
+        """
+        if not track_data or not track_data.get('uri'):
+            return None
+        uri = track_data['uri']
+        album = track_data.get('album') or {}
+        album_id = album.get('id')
+
+        updates = {
+            'name':         track_data.get('name'),
+            'duration_ms':  track_data.get('duration_ms'),
+            'track_number': track_data.get('track_number'),
+            'album_id':     album_id,
+            'preview_url':  track_data.get('preview_url'),
+            'cached_at':    datetime.datetime.utcnow(),
+            'storage':      'local' if uri.startswith('local:') else 'sp',
+        }
+
+        # Upsert: create stat row if not present, update metadata fields otherwise
+        Track.insert({**updates, 'uri': uri}).on_conflict(
+            action='update',
+            update=updates,
+        ).execute()
+
+        # Cache album when present
+        if album and album_id:
+            self.save_album(album)
+
+        # Link track → artists
+        for pos, artist in enumerate(track_data.get('artists') or []):
+            if artist.get('id'):
+                try:
+                    TrackArtist.insert(
+                        {'track_uri': uri, 'artist_id': artist['id'], 'position': pos}
+                    ).on_conflict_ignore().execute()
+                except Exception:
+                    pass
+
+        return uri
+
+    # ─── Playlist cache ────────────────────────────────────────────────────────
+
+    def save_playlist(self, playlist_data):
+        """Upsert a playlist from a Spotify API playlist dict."""
+        if not playlist_data or not playlist_data.get('id'):
+            return None
+        pl_id = playlist_data['id']
+        images = playlist_data.get('images') or []
+        owner = playlist_data.get('owner') or {}
+        row = {
+            'id':           pl_id,
+            'uri':          playlist_data.get('uri', f'spotify:playlist:{pl_id}'),
+            'name':         playlist_data.get('name'),
+            'description':  playlist_data.get('description'),
+            'owner_id':     owner.get('id'),
+            'total_tracks': (playlist_data.get('tracks') or {}).get('total'),
+            'snapshot_id':  playlist_data.get('snapshot_id'),
+            'image_url':    images[0]['url'] if images else None,
+            'storage':      'sp',
+            'cached_at':    datetime.datetime.utcnow(),
+        }
+        Playlist.insert(row).on_conflict_replace().execute()
+        return pl_id
+
+    def save_playlist_track(self, playlist_id, track_uri, position=0, added_at=None):
+        """Link a track to a playlist (upsert)."""
+        try:
+            PlaylistTrack.insert({
+                'playlist_id': playlist_id,
+                'track_uri':   track_uri,
+                'position':    position,
+                'added_at':    added_at,
+            }).on_conflict_ignore().execute()
+        except Exception:
+            pass
+
+    def get_playlist(self, playlist_id):
+        """Return Playlist from cache, or None if missing/stale (TTL 7 days)."""
+        try:
+            p = Playlist.get_by_id(playlist_id)
+            if self.is_cache_fresh(p.cached_at, 'artist'):  # 7-day TTL
+                return p
+        except Playlist.DoesNotExist:
+            pass
+        return None
+
+    # ─── Liked tracks ──────────────────────────────────────────────────────────
+
+    def mark_track_liked(self, uri, liked_at=None):
+        """Set liked=1 on a track row (create it if needed)."""
+        updates = {
+            'liked':    1,
+            'liked_at': liked_at or datetime.datetime.utcnow(),
+        }
+        Track.insert({**updates, 'uri': uri}).on_conflict(
+            action='update',
+            update=updates,
+        ).execute()
+
+    def get_liked_track_uris(self):
+        """Return list of URIs where liked=1."""
+        return [t.uri for t in Track.select(Track.uri).where(Track.liked == 1)]
+
 
 if __name__ == "__main__":
 

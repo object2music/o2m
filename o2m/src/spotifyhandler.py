@@ -11,23 +11,120 @@ class SpotifyHandler:
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
-        self._rate_limited_until = 0  # unix timestamp until which API calls should be skipped
+        self._rate_limit_file = ".spotify_rate_limit"
+        self._rate_limited_until = self._load_rate_limit()
+        self._db = None  # set via set_db_handler() after DatabaseHandler is ready
         self.init_token_sp()
+
+    def set_db_handler(self, db_handler):
+        """Inject the DatabaseHandler to enable local cache read/write."""
+        self._db = db_handler
+
+    def cache_track_from_mopidy(self, mopidy_track):
+        """Populate track cache from a Mopidy track object — zero API calls.
+
+        Mopidy already carries name, length, track_no and the album URI from
+        which we derive the Spotify album ID.  Called on every playback event
+        so metadata is captured even without a full Spotify sync.
+        Only writes if the track has no cached metadata yet.
+        """
+        if not self._db or not mopidy_track:
+            return
+        uri = getattr(mopidy_track, 'uri', None)
+        if not uri or not uri.startswith('spotify:track:'):
+            return
+        # Skip if already cached (fresh)
+        if self._db.get_track(uri):
+            return
+
+        # Extract album_id from Mopidy album URI (spotify:album:ID)
+        album_id = None
+        album_name = None
+        artist_name = None
+        mopidy_album = getattr(mopidy_track, 'album', None)
+        if mopidy_album:
+            album_uri = getattr(mopidy_album, 'uri', '') or ''
+            parts = album_uri.split(':')
+            if len(parts) >= 3 and parts[1] == 'album':
+                album_id = parts[2]
+            album_name = getattr(mopidy_album, 'name', None)
+
+        mopidy_artists = getattr(mopidy_track, 'artists', None) or []
+        if mopidy_artists:
+            artist_name = getattr(next(iter(mopidy_artists)), 'name', None)
+
+        # Build a minimal track dict compatible with save_track_metadata()
+        track_dict = {
+            'uri':          uri,
+            'name':         getattr(mopidy_track, 'name', None),
+            'duration_ms':  getattr(mopidy_track, 'length', None),
+            'track_number': getattr(mopidy_track, 'track_no', None),
+            'preview_url':  None,
+            'album':        {'id': album_id, 'name': album_name,
+                             'artists': [{'id': None, 'name': artist_name}]
+                             } if album_id else {},
+            'artists':      [],  # Spotify artist IDs not available from Mopidy
+        }
+        self._db.save_track_metadata(track_dict)
+
+        # Cache album with artist_name if not already present
+        if album_id and not self._db.get_album(album_id):
+            self._db.save_album({
+                'id':          album_id,
+                'uri':         getattr(mopidy_album, 'uri', None),
+                'name':        album_name,
+                'artists':     [{'id': None, 'name': artist_name}] if artist_name else [],
+            })
+
+    # ── cache write helpers ───────────────────────────────────────────────────
+
+    def _cache_artist(self, artist_data):
+        if self._db and artist_data and artist_data.get('id'):
+            self._db.save_artist(artist_data)
+
+    def _cache_album(self, album_data):
+        if self._db and album_data and album_data.get('id'):
+            self._db.save_album(album_data)
+
+    def _cache_track(self, track_data):
+        if self._db and track_data and track_data.get('uri'):
+            self._db.save_track_metadata(track_data)
+
+    def _load_rate_limit(self):
+        """Read persisted rate-limit timestamp from disk (survives restarts)."""
+        try:
+            with open(self._rate_limit_file) as f:
+                ts = float(f.read().strip())
+                if ts > time.time():
+                    remaining = int(ts - time.time())
+                    print(f"Spotify rate limit still active — {remaining}s remaining")
+                    return ts
+        except Exception:
+            pass
+        return 0
+
+    def _save_rate_limit(self):
+        """Persist rate-limit timestamp so restarts don't retry too early."""
+        try:
+            with open(self._rate_limit_file, 'w') as f:
+                f.write(str(self._rate_limited_until))
+        except Exception:
+            pass
 
     def _is_rate_limited(self):
         return time.time() < self._rate_limited_until
 
     def _on_rate_limit(self, e):
-        """Parse a 429 SpotifyException, set the cooldown, and log it."""
+        """Parse a 429 SpotifyException, set the cooldown, log and persist it."""
         retry_after = 60  # default
         try:
-            # Spotipy includes "Retry will occur after: N s" in the message
             m = re.search(r'Retry will occur after:\s*(\d+)', str(e))
             if m:
                 retry_after = int(m.group(1))
         except Exception:
             pass
         self._rate_limited_until = time.time() + retry_after
+        self._save_rate_limit()
         print(f"Rate limited by Spotify — skipping API calls for {retry_after}s")
 
     def init_token_sp(self):
@@ -89,10 +186,16 @@ class SpotifyHandler:
             for artist_id in list(seed_artist_ids)[:50]:
                 if self._is_rate_limited():
                     break
+                # check local cache first
+                cached = self._db.get_artist(artist_id) if self._db else None
+                if cached:
+                    target_genres.update(self._db.get_artist_genres(artist_id))
+                    continue
                 try:
                     a = self.sp.artist(artist_id)
                     if a:
                         target_genres.update(a.get('genres', []))
+                        self._cache_artist(a)
                 except spotipy.SpotifyException as e:
                     if e.http_status == 429:
                         self._on_rate_limit(e)
@@ -137,12 +240,21 @@ class SpotifyHandler:
             for artist_id in candidates[:10]:
                 if self._is_rate_limited():
                     break
+                # check local cache first
+                cached = self._db.get_artist(artist_id) if self._db else None
+                if cached:
+                    genres = set(self._db.get_artist_genres(artist_id))
+                    overlap = len(genres & target_genres)
+                    if overlap > 0:
+                        scored.append((overlap, artist_id))
+                    continue
                 try:
                     a = self.sp.artist(artist_id)
                     if a:
                         overlap = len(set(a.get('genres', [])) & target_genres)
                         if overlap > 0:
                             scored.append((overlap, artist_id))
+                        self._cache_artist(a)
                 except spotipy.SpotifyException as e:
                     if e.http_status == 429:
                         self._on_rate_limit(e)
@@ -222,6 +334,8 @@ class SpotifyHandler:
     
     def get_resource_name(self, uri):
         """Get human-readable name from Spotify URI (playlist, album, artist)"""
+        if self._is_rate_limited():
+            return uri  # return raw URI rather than blocking
         try:
             if not uri or uri == '':
                 return ''
@@ -250,12 +364,22 @@ class SpotifyHandler:
                             name = playlist.get('name', uri)
                             return name if name else uri
                         elif resource_type == 'album':
+                            # cache-first
+                            cached = self._db.get_album(resource_id) if self._db else None
+                            if cached:
+                                return f"{cached.name}".strip() or uri
                             album = self.sp.album(resource_id)
+                            self._cache_album(album)
                             album_name = album.get('name', '')
                             artist_name = album.get('artists', [{}])[0].get('name', '')
                             return f"{album_name} - {artist_name}".strip(' -') if album_name else uri
                         elif resource_type == 'artist':
+                            # cache-first
+                            cached = self._db.get_artist(resource_id) if self._db else None
+                            if cached:
+                                return cached.name or uri
                             artist = self.sp.artist(resource_id)
+                            self._cache_artist(artist)
                             name = artist.get('name', uri)
                             return name if name else uri
                     except Exception as api_e:
@@ -385,11 +509,13 @@ class SpotifyHandler:
     #     return (t_list,lib_link)
 
     def get_playlists_tracks(self,limit=1,discover_level=5):
+        if self._is_rate_limited():
+            return ([], [])
         #Get random tracks from a selection of user's playlists
         t_list=[]
         lib_link=[]
-        
-        try: 
+
+        try:
             playlists_response = self.sp.current_user_playlists()
         except Exception as val_e: 
             print(f"Erreur playlist : {val_e}")
@@ -425,56 +551,161 @@ class SpotifyHandler:
         
         return (t_list,lib_link)
 
+    def cache_all_playlists(self):
+        """Bulk cache : fetch ALL user playlists and ALL their tracks.
+        Skips silently if rate-limited.  Returns total tracks cached."""
+        if self._is_rate_limited():
+            print("cache_all_playlists: rate-limited, skipping")
+            return 0
+        cached = 0
+        try:
+            response = self.sp.current_user_playlists(limit=50)
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            return 0
+        except Exception as e:
+            print(f"cache_all_playlists error: {e}")
+            return 0
+
+        while response and response.get('items'):
+            for playlist in response['items']:
+                if not playlist or playlist.get('name') == 'Trash':
+                    continue
+                if self._is_rate_limited():
+                    return cached
+                if self._db:
+                    self._db.save_playlist(playlist)
+                try:
+                    items_response = self.sp.playlist_items(
+                        playlist['id'], additional_types=('track',))
+                    position = 0
+                    while items_response:
+                        for item in (items_response.get('items') or []):
+                            if self._is_rate_limited():
+                                return cached
+                            track = item.get('track') if item else None
+                            if track and track.get('uri'):
+                                self._cache_track(track)
+                                if self._db:
+                                    added_at = item.get('added_at')
+                                    self._db.save_playlist_track(
+                                        playlist['id'], track['uri'],
+                                        position=position, added_at=added_at)
+                                cached += 1
+                                position += 1
+                        if items_response.get('next'):
+                            items_response = self.sp.next(items_response)
+                        else:
+                            break
+                except spotipy.SpotifyException as e:
+                    if e.http_status == 429:
+                        self._on_rate_limit(e)
+                        return cached
+                except Exception as e:
+                    print(f"cache_all_playlists playlist error: {e}")
+                    continue
+
+            if response.get('next'):
+                try:
+                    response = self.sp.next(response)
+                except Exception:
+                    break
+            else:
+                break
+
+        print(f"cache_all_playlists: {cached} tracks cached")
+        return cached
+
 ################### ALBUMS  #############################
 
     def get_album_all_tracks(self, album_uri, limit=10):
-        tracks_uris = []
-        tracks_json = self.sp.album_tracks(album_uri)
+        if self._is_rate_limited():
+            return []
+        if not album_uri:
+            return []
+        try:
+            tracks_json = self.sp.album_tracks(album_uri)
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            print(f"get_album_all_tracks error: {e}")
+            return []
+        except Exception as e:
+            print(f"get_album_all_tracks error: {e}")
+            return []
         tracks_uris = self.parse_tracks(tracks_json)
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
 
     def get_my_albums_tracks(self,limit=1,unit=1):
+        if self._is_rate_limited():
+            return []
         t_list=[]
         total=0
-        try: 
+        try:
             total = self.sp.current_user_saved_albums()['total']
-        except Exception as val_e: 
+        except spotipy.SpotifyException as val_e:
+            if val_e.http_status == 429:
+                self._on_rate_limit(val_e)
+            print(f"Erreur albums : {val_e}")
+        except Exception as val_e:
             print(f"Erreur albums : {val_e}")
 
         if int(total) < limit: limit = int(total)
-        #print (limit)
-        #print (int(total))
 
         if total>0:
             #Extract one album n=limit times
             for i in range(limit):
-                try: 
-                    album = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
-                except Exception as val_e: 
+                try:
+                    album_response = self.sp.current_user_saved_albums(limit=1,offset=random.randint(0,total-1))
+                except Exception as val_e:
                     print(f"Erreur albums2 : {val_e}")
-                #album = random.choice(albums['items'])
-                try: 
-                    tracks = self.sp.album_tracks(album['items'][0]['album']['id'])
-                except Exception as val_e: 
+                    continue
+                album_data = album_response['items'][0]['album']
+                self._cache_album(album_data)
+                try:
+                    tracks = self.sp.album_tracks(album_data['id'])
+                except Exception as val_e:
                     print(f"Erreur albums3 : {val_e}")
-                #Extract n=unit tracks from the album
+                    continue
+                # bulk cache all tracks from this album
+                for item in (tracks.get('items') or []):
+                    if item and item.get('uri'):
+                        item.setdefault('album', album_data)
+                        self._cache_track(item)
+                #Extract n=unit tracks for playback
                 if unit != 0:
                     for j in range(unit):
                         track = random.choice(tracks['items'])
                         t_list.append(track['uri'])
                 else:
-                    #t_list.append('spotify:album:'+album['items'][i]['album']['id'])
                     for j in range(len(tracks['items'])):
                         t_list.append(tracks['items'][j]['uri'])
         return t_list
 
 
     def get_track_album(self, track_id):
-        album=self.sp.track(track_id)['album']
-        #print (album)
-        album_uri = album['uri']
-        return album_uri
+        # Cache-first: avoid API call if album_id already stored
+        if self._db:
+            album_id = self._db.get_cached_album_id(track_id)
+            if album_id:
+                return f"spotify:album:{album_id}"
+        if self._is_rate_limited():
+            return None
+        try:
+            album = self.sp.track(track_id)['album']
+            album_uri = album['uri']
+            self._cache_album(album)
+            return album_uri
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            print(f"get_track_album error: {e}")
+            return None
+        except Exception as e:
+            print(f"get_track_album error: {e}")
+            return None
 
 
 ################### ARTIST #############################
@@ -490,26 +721,73 @@ class SpotifyHandler:
             return []
 
     def get_track_artist(self, track_id):
-        artists=self.sp.track(track_id)['artists']
-        #print (artists)
-        random.shuffle(artists)
-        artist_id = artists[0]['id']
-        return artist_id
+        # Cache-first: avoid API call if artist already linked in TrackArtist
+        if self._db:
+            artist_id = self._db.get_cached_artist_id(track_id)
+            if artist_id:
+                return artist_id
+        if self._is_rate_limited():
+            return None
+        try:
+            artists = self.sp.track(track_id)['artists']
+            random.shuffle(artists)
+            artist_id = artists[0]['id']
+            return artist_id
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            print(f"get_track_artist error: {e}")
+            return None
+        except Exception as e:
+            print(f"get_track_artist error: {e}")
+            return None
 
     def get_artist_all_tracks(self, artist_id, limit=10):
+        if self._is_rate_limited():
+            return []
+        if not artist_id:
+            return []
         # spotipy 2.25.2 always sends country=None; Spotify API now requires market=
-        trid = self.sp._get_id("artist", artist_id)
-        albums = self.sp._get(f"artists/{trid}/albums", include_groups="album,single", market="FR")
+        try:
+            trid = self.sp._get_id("artist", artist_id)
+            albums = self.sp._get(f"artists/{trid}/albums", include_groups="album,single", market="FR")
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            print(f"get_artist_all_tracks error: {e}")
+            return []
+        except Exception as e:
+            print(f"get_artist_all_tracks error: {e}")
+            return []
         tracks_uris = []
 
         for album in albums["items"]:
-            tracks_json = self.sp.album_tracks(album["uri"])
-            tracks_uris += self.parse_tracks(tracks_json)
+            if self._is_rate_limited():
+                break
+            self._cache_album(album)
+            try:
+                tracks_json = self.sp.album_tracks(album["uri"])
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                print(f"get_artist_all_tracks album_tracks error: {e}")
+                break
+            except Exception as e:
+                print(f"get_artist_all_tracks album_tracks error: {e}")
+                continue
+            # cache simplified track objects (album reference added manually)
+            for item in (tracks_json.get("items") or []):
+                if item and item.get('uri'):
+                    item.setdefault('album', album)
+                    self._cache_track(item)
+                    tracks_uris.append(item["uri"])
 
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
     
     def get_all_followed_artists(self):
+        if self._is_rate_limited():
+            return []
         all_followed = []
         response = self.sp.current_user_followed_artists(limit=50)
         while response and response['artists']['items']:
@@ -522,6 +800,8 @@ class SpotifyHandler:
         return all_followed
     
     def get_my_artists_tracks(self,limit=1,unit=1):
+        if self._is_rate_limited():
+            return []
         t_list=[]
         total=0
         try:
@@ -562,10 +842,19 @@ class SpotifyHandler:
 ################### FAVORITES AND MISC #############################
 
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
+        if self._is_rate_limited():
+            return []
         #Warning : may probably be the last 20 only
         t_list=[]
         total=0
-        total = self.sp.current_user_saved_tracks()['total']
+        try:
+            total = self.sp.current_user_saved_tracks()['total']
+        except spotipy.SpotifyException as val_e:
+            if val_e.http_status == 429:
+                self._on_rate_limit(val_e)
+            return []
+        except Exception:
+            return []
         print (total)
         if (total>0):
             for i in range(limit):
@@ -576,13 +865,20 @@ class SpotifyHandler:
         return t_list
 
     def get_library_recent_tracks(self, limit):
+        if self._is_rate_limited():
+            return []
         #Warning : may probably be the last 20 only
         t_list=[]
-        try: 
+        try:
             tracks = self.sp.current_user_recently_played()
-        except Exception as val_e: 
+        except spotipy.SpotifyException as val_e:
+            if val_e.http_status == 429:
+                self._on_rate_limit(val_e)
             print(f"Erreur : {val_e}")
-            tracks = self.sp.current_user_recently_played()
+            return []
+        except Exception as val_e:
+            print(f"Erreur : {val_e}")
+            return []
         if tracks:
             tracks=tracks['items']
             random.shuffle(tracks)
@@ -591,3 +887,69 @@ class SpotifyHandler:
                 t_list.append(tracks[i]['track']['uri'])
 
         return t_list
+
+    def cache_all_liked_tracks(self):
+        """Bulk cache : fetch ALL liked/saved tracks (paginated).
+        Liked tracks come with full metadata → album + artists cached too.
+        Skips silently if rate-limited.  Returns total tracks cached."""
+        if self._is_rate_limited():
+            print("cache_all_liked_tracks: rate-limited, skipping")
+            return 0
+        cached = 0
+        try:
+            response = self.sp.current_user_saved_tracks(limit=50)
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            return 0
+        except Exception as e:
+            print(f"cache_all_liked_tracks error: {e}")
+            return 0
+
+        while response and response.get('items'):
+            for item in response['items']:
+                if self._is_rate_limited():
+                    return cached
+                track = item.get('track') if item else None
+                if track and track.get('uri'):
+                    self._cache_track(track)
+                    if self._db:
+                        import datetime as _dt
+                        added_at = item.get('added_at')
+                        self._db.mark_track_liked(track['uri'], liked_at=added_at)
+                    cached += 1
+            if response.get('next'):
+                try:
+                    response = self.sp.next(response)
+                except spotipy.SpotifyException as e:
+                    if e.http_status == 429:
+                        self._on_rate_limit(e)
+                    break
+                except Exception:
+                    break
+            else:
+                break
+
+        print(f"cache_all_liked_tracks: {cached} tracks cached")
+        return cached
+
+    def cache_spotify_library(self):
+        """Convenience method : bulk-cache the full Spotify library.
+        Runs all four sources sequentially, stops early if rate-limited."""
+        print("=== cache_spotify_library start ===")
+        total = 0
+        for method, label in [
+            (self.cache_all_liked_tracks,  "liked tracks"),
+            (self.cache_all_playlists,     "playlists"),
+            (lambda: self.get_my_albums_tracks(limit=500, unit=0),  "albums"),
+            (lambda: self.get_my_artists_tracks(limit=200, unit=0), "artists"),
+        ]:
+            if self._is_rate_limited():
+                print(f"Rate-limited, stopping before '{label}'")
+                break
+            result = method()
+            n = len(result) if isinstance(result, list) else result
+            print(f"  {label}: {n}")
+            if isinstance(n, int):
+                total += n
+        print(f"=== cache_spotify_library done — {total} items processed ===")
