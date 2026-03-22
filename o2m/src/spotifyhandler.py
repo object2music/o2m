@@ -78,6 +78,92 @@ class SpotifyHandler:
 
     # ── cache write helpers ───────────────────────────────────────────────────
 
+    def cache_playlist_by_id(self, playlist_id):
+        """Cache a playlist (metadata + tracks) by its Spotify ID.
+        Cache-first: does nothing if already fresh. Uses sp.playlist() (1 API call)
+        which embeds the first 100 tracks, avoiding a separate playlist_items call."""
+        if not self._db or not playlist_id:
+            return
+        if self._db.get_playlist(playlist_id):
+            return  # already fresh in cache
+        if self._is_rate_limited():
+            return
+        try:
+            pl_data = self.sp.playlist(playlist_id,
+                                       fields='id,uri,name,description,owner,tracks,snapshot_id,images')
+            if not pl_data:
+                return
+            position = 0
+            tracks_page = pl_data.get('tracks')
+            while tracks_page:
+                for item in (tracks_page.get('items') or []):
+                    if self._is_rate_limited():
+                        return  # don't mark as cached — will be retried next time
+                    track = item.get('track') if item else None
+                    if track and track.get('uri'):
+                        self._cache_track(track)
+                        self._db.save_playlist_track(
+                            playlist_id, track['uri'],
+                            position=position, added_at=item.get('added_at'))
+                        position += 1
+                if tracks_page.get('next'):
+                    tracks_page = self.sp.next(tracks_page)
+                else:
+                    break
+            # Only mark as cached once all pages are done
+            self._db.save_playlist(pl_data)
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+        except Exception:
+            pass
+
+    def _fetch_and_cache_playlist_tracks(self, playlist):
+        """Fetch and cache tracks for a playlist.
+        Tries playlist_items first; on 403 falls back to sp.playlist() which
+        embeds the first 100 tracks without requiring elevated quota.
+        Returns list of track URIs (may be empty if truly inaccessible)."""
+        playlist_id = playlist['id']
+
+        def _save_items(items):
+            tracks = []
+            for position, item in enumerate(items or []):
+                track = item.get('track') if item else None
+                if track and track.get('uri'):
+                    tracks.append(track['uri'])
+                    if self._db:
+                        self._cache_track(track)
+                        self._db.save_playlist_track(
+                            playlist_id, track['uri'],
+                            position=position, added_at=item.get('added_at'))
+            return tracks
+
+        # Primary: playlist_items (full pagination)
+        try:
+            response = self.sp.playlist_items(playlist_id, additional_types=('track',))
+            return _save_items(response.get('items') or [])
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+                return []
+            if e.http_status != 403:
+                raise
+
+        # Fallback on 403: sp.playlist() embeds first 100 tracks in metadata
+        print(f"playlist_items 403 for '{playlist['name']}' — trying sp.playlist() fallback")
+        try:
+            pl_data = self.sp.playlist(playlist_id, fields='tracks')
+            return _save_items((pl_data.get('tracks') or {}).get('items') or [])
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            else:
+                print(f"sp.playlist() also failed for '{playlist['name']}': {e}")
+            return []
+        except Exception as e:
+            print(f"sp.playlist() fallback error for '{playlist['name']}': {e}")
+            return []
+
     def _cache_artist(self, artist_data):
         if self._db and artist_data and artist_data.get('id'):
             self._db.save_artist(artist_data)
@@ -539,8 +625,6 @@ class SpotifyHandler:
         selected_playlists = random.sample(playlists, min(limit, len(playlists)))
         
         for playlist in selected_playlists:
-            if self._db:
-                self._db.save_playlist(playlist)
             try:
                 # cache-first: use cached tracks if playlist is fresh
                 tracks = None
@@ -548,21 +632,22 @@ class SpotifyHandler:
                     tracks = self._db.get_playlist_track_uris(playlist['id'])
 
                 if not tracks:
-                    tracks_response = self.sp.playlist_items(playlist['id'], additional_types=('track',))
-                    tracks = []
-                    for position, item in enumerate(tracks_response.get('items') or []):
-                        track = item.get('track') if item else None
-                        if track and track.get('uri'):
-                            tracks.append(track['uri'])
-                            if self._db:
-                                self._cache_track(track)
-                                self._db.save_playlist_track(
-                                    playlist['id'], track['uri'],
-                                    position=position, added_at=item.get('added_at'))
+                    tracks = self._fetch_and_cache_playlist_tracks(playlist)
+                    if tracks and self._db:
+                        self._db.save_playlist(playlist)
+                    elif self._db:
+                        # Truly inaccessible — save metadata only so we don't retry for 7 days
+                        self._db.save_playlist(playlist)
 
                 if tracks:
                     t_list.append(random.choice(tracks))
                     lib_link.append("spotify:playlist:" + playlist['id'])
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                    break
+                print(f"Erreur lors de la récupération des pistes de la playlist {playlist['name']}: {e}")
+                continue
             except Exception as val_e:
                 print(f"Erreur lors de la récupération des pistes de la playlist {playlist['name']}: {val_e}")
                 continue

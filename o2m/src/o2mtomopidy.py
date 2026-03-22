@@ -831,6 +831,8 @@ class O2mToMopidy:
                         tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
                     elif media_parts[1] == "playlist":
                         tracklist_uris.append(content)
+                        # Cache playlist content if not already fresh (cache-first, 1 API call max)
+                        self.spotifyHandler.cache_playlist_by_id(media_parts[2])
                     else:
                         tracklist_uris.append(content)
 
