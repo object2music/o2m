@@ -270,7 +270,8 @@ class DatabaseHandler():
         return None
 
     def save_artist(self, artist_data):
-        """Upsert an artist from a Spotify API artist dict."""
+        """Upsert an artist from a Spotify API artist dict.
+        Never overwrites followed/followed_at flags."""
         if not artist_data or not artist_data.get('id'):
             return None
         artist_id = artist_data['id']
@@ -286,10 +287,25 @@ class DatabaseHandler():
             'storage':    'sp',
             'cached_at':  datetime.datetime.utcnow(),
         }
-        Artist.insert(row).on_conflict_replace().execute()
+        update_fields = {k: v for k, v in row.items() if k != 'id'}
+        Artist.insert(row).on_conflict(action='update', update=update_fields).execute()
         if artist_data.get('genres'):
             self.save_artist_genres(artist_id, artist_data['genres'])
         return artist_id
+
+    def mark_artist_followed(self, artist_id, followed_at=None):
+        """Set followed=1 on an artist row (create it if needed)."""
+        updates = {
+            'followed':    1,
+            'followed_at': followed_at or datetime.datetime.utcnow(),
+        }
+        Artist.insert({**updates, 'id': artist_id}).on_conflict(
+            action='update', update=updates,
+        ).execute()
+
+    def get_followed_artist_ids(self):
+        """Return list of artist IDs where followed=1."""
+        return [a.id for a in Artist.select(Artist.id).where(Artist.followed == 1)]
 
     def save_artist_genres(self, artist_id, genres):
         """Upsert genre list and link them to *artist_id*."""
@@ -323,7 +339,8 @@ class DatabaseHandler():
         return None
 
     def save_album(self, album_data):
-        """Upsert an album from a Spotify API album dict."""
+        """Upsert an album from a Spotify API album dict.
+        Never overwrites saved/saved_at flags."""
         if not album_data or not album_data.get('id'):
             return None
         album_id = album_data['id']
@@ -342,7 +359,8 @@ class DatabaseHandler():
             'storage':      'sp',
             'cached_at':    datetime.datetime.utcnow(),
         }
-        Album.insert(row).on_conflict_replace().execute()
+        update_fields = {k: v for k, v in row.items() if k != 'id'}
+        Album.insert(row).on_conflict(action='update', update=update_fields).execute()
         # Link album → artists
         for pos, artist in enumerate(album_data.get('artists') or []):
             if artist.get('id'):
@@ -353,6 +371,20 @@ class DatabaseHandler():
                 except Exception:
                     pass
         return album_id
+
+    def mark_album_saved(self, album_id, saved_at=None):
+        """Set saved=1 on an album row (create it if needed)."""
+        updates = {
+            'saved':    1,
+            'saved_at': saved_at or datetime.datetime.utcnow(),
+        }
+        Album.insert({**updates, 'id': album_id}).on_conflict(
+            action='update', update=updates,
+        ).execute()
+
+    def get_saved_album_ids(self):
+        """Return list of album IDs where saved=1."""
+        return [a.id for a in Album.select(Album.id).where(Album.saved == 1)]
 
     # ─── Track (stats) cache ───────────────────────────────────────────────────
 
@@ -475,6 +507,12 @@ class DatabaseHandler():
         except Playlist.DoesNotExist:
             pass
         return None
+
+    def get_playlist_track_uris(self, playlist_id):
+        """Return cached track URIs for a playlist, or empty list if none."""
+        rows = list(PlaylistTrack.select(PlaylistTrack.track_uri)
+                    .where(PlaylistTrack.playlist_id == playlist_id))
+        return [r.track_uri for r in rows]
 
     # ─── Liked tracks ──────────────────────────────────────────────────────────
 

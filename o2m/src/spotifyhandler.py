@@ -89,6 +89,9 @@ class SpotifyHandler:
     def _cache_track(self, track_data):
         if self._db and track_data and track_data.get('uri'):
             self._db.save_track_metadata(track_data)
+            # Note: artist genres are NOT fetched here — sp.artist() in a loop would
+            # hammer the API. Genres are populated by get_all_followed_artists() and
+            # get_recommendations() which run infrequently as bulk operations.
 
     def _load_rate_limit(self):
         """Read persisted rate-limit timestamp from disk (survives restarts)."""
@@ -536,15 +539,30 @@ class SpotifyHandler:
         selected_playlists = random.sample(playlists, min(limit, len(playlists)))
         
         for playlist in selected_playlists:
+            if self._db:
+                self._db.save_playlist(playlist)
             try:
-                tracks_response = self.sp.playlist_items(playlist['id'], additional_types=('track',))
-                tracks = [item['track']['uri'] for item in tracks_response['items'] if item and item.get('track') and item['track'].get('uri')]
-                
+                # cache-first: use cached tracks if playlist is fresh
+                tracks = None
+                if self._db and self._db.get_playlist(playlist['id']):
+                    tracks = self._db.get_playlist_track_uris(playlist['id'])
+
+                if not tracks:
+                    tracks_response = self.sp.playlist_items(playlist['id'], additional_types=('track',))
+                    tracks = []
+                    for position, item in enumerate(tracks_response.get('items') or []):
+                        track = item.get('track') if item else None
+                        if track and track.get('uri'):
+                            tracks.append(track['uri'])
+                            if self._db:
+                                self._cache_track(track)
+                                self._db.save_playlist_track(
+                                    playlist['id'], track['uri'],
+                                    position=position, added_at=item.get('added_at'))
+
                 if tracks:
-                    # Select one random track from the current playlist
-                    track_uri = random.choice(tracks)
-                    t_list.append(track_uri)
-                    lib_link.append("spotify:playlist:"+playlist['id'])
+                    t_list.append(random.choice(tracks))
+                    lib_link.append("spotify:playlist:" + playlist['id'])
             except Exception as val_e:
                 print(f"Erreur lors de la récupération des pistes de la playlist {playlist['name']}: {val_e}")
                 continue
@@ -664,6 +682,8 @@ class SpotifyHandler:
                     continue
                 album_data = album_response['items'][0]['album']
                 self._cache_album(album_data)
+                if self._db:
+                    self._db.mark_album_saved(album_data['id'])
                 try:
                     tracks = self.sp.album_tracks(album_data['id'])
                 except Exception as val_e:
@@ -793,6 +813,10 @@ class SpotifyHandler:
         while response and response['artists']['items']:
             for artist in response['artists']['items']:
                 all_followed.append(artist['id'])
+                # Full artist object includes genres — cache + mark followed
+                self._cache_artist(artist)
+                if self._db:
+                    self._db.mark_artist_followed(artist['id'])
             if response['artists']['next']:
                 response = self.sp.next(response['artists'])
             else:

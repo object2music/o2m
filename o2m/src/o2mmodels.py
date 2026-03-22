@@ -168,6 +168,8 @@ class Album(BaseModel):
     image_url = TextField(null=True)
     storage = CharField(default='sp')   # 'sp' or 'local'
     cached_at = TimestampField(null=True, utc=True)
+    saved = IntegerField(default=0)     # 1 = in user's saved albums
+    saved_at = TimestampField(null=True, utc=True)
 
 
 class Artist(BaseModel):
@@ -179,6 +181,8 @@ class Artist(BaseModel):
     image_url = TextField(null=True)
     storage = CharField(default='sp')   # 'sp' or 'local'
     cached_at = TimestampField(null=True, utc=True)
+    followed = IntegerField(default=0)  # 1 = user follows this artist
+    followed_at = TimestampField(null=True, utc=True)
 
 
 class Genre(BaseModel):
@@ -246,7 +250,7 @@ class PlaylistTrack(BaseModel):
 NEW_TABLES = [Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
               Playlist, PlaylistTrack]
 
-# New columns added to the existing track table
+# New columns added to existing tables
 _STATS_NEW_COLUMNS = [
     ('name',         TextField(null=True)),
     ('duration_ms',  IntegerField(null=True)),
@@ -257,6 +261,16 @@ _STATS_NEW_COLUMNS = [
     ('storage',      CharField(default='sp')),
     ('liked',        IntegerField(default=0)),   # 1 = in liked tracks
     ('liked_at',     TimestampField(null=True, utc=True)),
+]
+
+_ARTIST_NEW_COLUMNS = [
+    ('followed',    IntegerField(default=0)),
+    ('followed_at', TimestampField(null=True, utc=True)),
+]
+
+_ALBUM_NEW_COLUMNS = [
+    ('saved',    IntegerField(default=0)),
+    ('saved_at', TimestampField(null=True, utc=True)),
 ]
 
 
@@ -273,7 +287,7 @@ def setup_database():
     # Create new tables (IF NOT EXISTS)
     db.create_tables(NEW_TABLES, safe=True)
 
-    # Migrate track: add new columns when missing
+    # Migrate existing tables: add new columns when missing
     if isinstance(db, SqliteDatabase):
         migrator = SqliteMigrator(db)
     else:
@@ -281,3 +295,7 @@ def setup_database():
 
     for col_name, field in _STATS_NEW_COLUMNS:
         _add_column_safe(migrator, 'track', col_name, field)
+    for col_name, field in _ARTIST_NEW_COLUMNS:
+        _add_column_safe(migrator, 'artist', col_name, field)
+    for col_name, field in _ALBUM_NEW_COLUMNS:
+        _add_column_safe(migrator, 'album', col_name, field)
