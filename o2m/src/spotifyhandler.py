@@ -220,7 +220,9 @@ class SpotifyHandler:
         cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
         auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope,cache_handler=cache_handler,show_dialog=False)
         if auth_manager.validate_token(cache_handler.get_cached_token()):
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
+            # retries=0: disable spotipy's internal blocking retry-on-429.
+            # Our _on_rate_limit() handles 429 immediately without freezing the thread.
+            self.sp = spotipy.Spotify(auth_manager=auth_manager, retries=0)
         else:
             print("Token is not valid")    
 
