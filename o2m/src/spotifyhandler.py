@@ -205,8 +205,11 @@ class SpotifyHandler:
 
     def _on_rate_limit(self, e):
         """Parse a 429 SpotifyException, set the cooldown, log and persist it."""
-        retry_after = 60  # default
+        retry_after = 300  # safe default (5min) when Retry-After header is not parseable
         try:
+            # spotipy with retries=0 raises SpotifyException whose str() contains
+            # "Max Retries, reason: too many 429" — no Retry-After value embedded.
+            # Try to parse it anyway in case the message format changes.
             m = re.search(r'Retry will occur after:\s*(\d+)', str(e))
             if m:
                 retry_after = int(m.group(1))
@@ -220,7 +223,9 @@ class SpotifyHandler:
         cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
         auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope,cache_handler=cache_handler,show_dialog=False)
         if auth_manager.validate_token(cache_handler.get_cached_token()):
-            self.sp = spotipy.Spotify(auth_manager=auth_manager)
+            # retries=0: disable spotipy's internal blocking retry-on-429.
+            # Our _on_rate_limit() handles 429 immediately without freezing the thread.
+            self.sp = spotipy.Spotify(auth_manager=auth_manager, retries=0)
         else:
             print("Token is not valid")    
 
@@ -264,8 +269,19 @@ class SpotifyHandler:
                 track_ids = seed_tracks if isinstance(seed_tracks, list) else [seed_tracks]
                 track_ids = [self.normalize_spotify_id(t) for t in track_ids if t][:3]
                 for track_id in track_ids:
-                    info = self.sp.track(track_id)
-                    seed_artist_ids.update(a['id'] for a in info.get('artists', []))
+                    if self._is_rate_limited():
+                        break
+                    try:
+                        t0 = time.time()
+                        info = self.sp.track(track_id)
+                        print(f"[TIMING] get_recommendations: sp.track() took {time.time()-t0:.2f}s for {track_id}")
+                        seed_artist_ids.update(a['id'] for a in info.get('artists', []))
+                    except spotipy.SpotifyException as e:
+                        if e.http_status == 429:
+                            self._on_rate_limit(e)
+                        break
+                    except Exception:
+                        break
 
             if seed_artists:
                 ids = seed_artists if isinstance(seed_artists, list) else [seed_artists]
@@ -728,7 +744,9 @@ class SpotifyHandler:
         if not album_uri:
             return []
         try:
+            t0 = time.time()
             tracks_json = self.sp.album_tracks(album_uri)
+            print(f"[TIMING] get_album_all_tracks: sp.album_tracks() took {time.time()-t0:.2f}s for {album_uri}")
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -795,11 +813,14 @@ class SpotifyHandler:
         if self._db:
             album_id = self._db.get_cached_album_id(track_id)
             if album_id:
+                print(f"[TIMING] get_track_album: cache hit for {track_id}")
                 return f"spotify:album:{album_id}"
         if self._is_rate_limited():
             return None
         try:
+            t0 = time.time()
             album = self.sp.track(track_id)['album']
+            print(f"[TIMING] get_track_album: sp.track() took {time.time()-t0:.2f}s for {track_id}")
             album_uri = album['uri']
             self._cache_album(album)
             return album_uri
@@ -830,11 +851,14 @@ class SpotifyHandler:
         if self._db:
             artist_id = self._db.get_cached_artist_id(track_id)
             if artist_id:
+                print(f"[TIMING] get_track_artist: cache hit for {track_id}")
                 return artist_id
         if self._is_rate_limited():
             return None
         try:
+            t0 = time.time()
             artists = self.sp.track(track_id)['artists']
+            print(f"[TIMING] get_track_artist: sp.track() took {time.time()-t0:.2f}s for {track_id}")
             random.shuffle(artists)
             artist_id = artists[0]['id']
             return artist_id
@@ -854,8 +878,10 @@ class SpotifyHandler:
             return []
         # spotipy 2.25.2 always sends country=None; Spotify API now requires market=
         try:
+            t0 = time.time()
             trid = self.sp._get_id("artist", artist_id)
             albums = self.sp._get(f"artists/{trid}/albums", include_groups="album,single", market="FR")
+            print(f"[TIMING] get_artist_all_tracks: artists/albums took {time.time()-t0:.2f}s for {artist_id} ({len(albums.get('items',[]))} albums)")
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -871,7 +897,9 @@ class SpotifyHandler:
                 break
             self._cache_album(album)
             try:
+                t1 = time.time()
                 tracks_json = self.sp.album_tracks(album["uri"])
+                print(f"[TIMING] get_artist_all_tracks: album_tracks took {time.time()-t1:.2f}s for {album.get('name','?')}")
             except spotipy.SpotifyException as e:
                 if e.http_status == 429:
                     self._on_rate_limit(e)
