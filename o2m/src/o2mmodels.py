@@ -245,10 +245,20 @@ class PlaylistTrack(BaseModel):
         indexes = ((('playlist_id', 'track_uri'), True),)
 
 
+class AlbumTrack(BaseModel):
+    """N:N  album.id ↔ track.uri — ordered tracklist cache"""
+    album_id = CharField(index=True)   # → Album.id
+    track_uri = CharField(index=True)  # → Track.uri
+    position = IntegerField(default=0)
+
+    class Meta:
+        indexes = ((('album_id', 'track_uri'), True),)
+
+
 # ─── Database setup / migration ────────────────────────────────────────────────
 
 NEW_TABLES = [Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
-              Playlist, PlaylistTrack]
+              Playlist, PlaylistTrack, AlbumTrack]
 
 # New columns added to existing tables
 _STATS_NEW_COLUMNS = [

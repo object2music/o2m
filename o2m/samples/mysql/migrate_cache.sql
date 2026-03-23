@@ -100,8 +100,10 @@ CREATE TABLE IF NOT EXISTS `album` (
   KEY `idx_album_cached_at` (`cached_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- Si la table album existe déjà, ajouter artist_name si absent
+-- Si la table album existe déjà, ajouter les colonnes absentes
 CALL _add_col('album', 'artist_name', '`artist_name` TEXT DEFAULT NULL COMMENT "Artiste principal (dnormalis)"');
+CALL _add_col('album', 'saved',       '`saved`       TINYINT(1) NOT NULL DEFAULT 0 COMMENT "1 = dans les albums sauvegards"');
+CALL _add_col('album', 'saved_at',    '`saved_at`    BIGINT(20) DEFAULT NULL COMMENT "Date de sauvegarde (UTC)"');
 
 -- ============================================================
 --  3. NOUVELLE TABLE `artist`
@@ -118,6 +120,10 @@ CREATE TABLE IF NOT EXISTS `artist` (
   PRIMARY KEY (`id`),
   KEY `idx_artist_cached_at` (`cached_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Si la table artist existe déjà, ajouter les colonnes absentes
+CALL _add_col('artist', 'followed',    '`followed`    TINYINT(1) NOT NULL DEFAULT 0 COMMENT "1 = suivi par lutilisateur"');
+CALL _add_col('artist', 'followed_at', '`followed_at` BIGINT(20) DEFAULT NULL COMMENT "Date du suivi (UTC)"');
 
 -- ============================================================
 --  4. NOUVELLE TABLE `genre`
@@ -189,6 +195,17 @@ CREATE TABLE IF NOT EXISTS `playlisttrack` (
   `added_at`     BIGINT(20)   DEFAULT NULL,
   PRIMARY KEY (`playlist_id`, `track_uri`),
   KEY `idx_pt_track` (`track_uri`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ============================================================
+--  10. JOINTURE `albumtrack`
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `albumtrack` (
+  `album_id`   VARCHAR(255) NOT NULL COMMENT '→ album.id',
+  `track_uri`  VARCHAR(255) NOT NULL COMMENT '→ track.uri',
+  `position`   INT(11)      NOT NULL DEFAULT 0,
+  PRIMARY KEY (`album_id`, `track_uri`),
+  KEY `idx_at_track` (`track_uri`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ============================================================

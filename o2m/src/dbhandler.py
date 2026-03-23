@@ -9,7 +9,7 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 from src.o2mmodels import (
     Box, Track, Stats_Raw, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
-    Playlist, PlaylistTrack,
+    Playlist, PlaylistTrack, AlbumTrack,
     setup_database,
 )
 from peewee import IntegrityError as PeeweeIntegrityError
@@ -386,6 +386,33 @@ class DatabaseHandler():
         """Return list of album IDs where saved=1."""
         return [a.id for a in Album.select(Album.id).where(Album.saved == 1)]
 
+    def save_album_track(self, album_id, track_uri, position=0):
+        """Link a track_uri to an album_id in AlbumTrack cache."""
+        if not album_id or not track_uri:
+            return
+        try:
+            AlbumTrack.insert(
+                {'album_id': album_id, 'track_uri': track_uri, 'position': position}
+            ).on_conflict_ignore().execute()
+        except Exception:
+            pass
+
+    def get_album_tracks(self, album_id):
+        """Return ordered list of track URIs for album_id from AlbumTrack cache, or None."""
+        if not album_id:
+            return None
+        try:
+            rows = list(
+                AlbumTrack.select(AlbumTrack.track_uri)
+                .where(AlbumTrack.album_id == album_id)
+                .order_by(AlbumTrack.position)
+            )
+            if rows:
+                return [r.track_uri for r in rows]
+        except Exception:
+            pass
+        return None
+
     # ─── Track (stats) cache ───────────────────────────────────────────────────
 
     def get_track(self, uri):
@@ -449,6 +476,10 @@ class DatabaseHandler():
         # Cache album when present
         if album and album_id:
             self.save_album(album)
+
+        # Link track → album
+        if album_id:
+            self.save_album_track(album_id, uri, track_data.get('track_number') or 0)
 
         # Link track → artists
         for pos, artist in enumerate(track_data.get('artists') or []):

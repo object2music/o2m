@@ -739,9 +739,20 @@ class SpotifyHandler:
 ################### ALBUMS  #############################
 
     def get_album_all_tracks(self, album_uri, limit=10):
-        if self._is_rate_limited():
-            return []
         if not album_uri:
+            return []
+        # Cache-first: extract album_id from URI and check AlbumTrack table
+        album_id = None
+        parts = str(album_uri).split(':')
+        if len(parts) >= 3 and parts[1] == 'album':
+            album_id = parts[2]
+        if album_id and self._db:
+            cached = self._db.get_album_tracks(album_id)
+            if cached:
+                print(f"[TIMING] get_album_all_tracks: cache hit ({len(cached)} tracks) for {album_id}")
+                random.shuffle(cached)
+                return cached[:limit]
+        if self._is_rate_limited():
             return []
         try:
             t0 = time.time()
@@ -756,6 +767,10 @@ class SpotifyHandler:
             print(f"get_album_all_tracks error: {e}")
             return []
         tracks_uris = self.parse_tracks(tracks_json)
+        # Persist to AlbumTrack cache for future calls
+        if album_id and self._db:
+            for pos, uri in enumerate(tracks_uris):
+                self._db.save_album_track(album_id, uri, pos)
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
 
@@ -872,9 +887,27 @@ class SpotifyHandler:
             return None
 
     def get_artist_all_tracks(self, artist_id, limit=10):
-        if self._is_rate_limited():
-            return []
         if not artist_id:
+            return []
+        # Cache-first: get album IDs from AlbumArtist, then tracks from AlbumTrack
+        if self._db:
+            from src.o2mmodels import AlbumArtist
+            album_ids = [
+                r.album_id for r in
+                AlbumArtist.select(AlbumArtist.album_id).where(AlbumArtist.artist_id == artist_id)
+            ]
+            if album_ids:
+                cached_uris = []
+                for aid in album_ids:
+                    tracks = self._db.get_album_tracks(aid)
+                    if tracks:
+                        cached_uris.extend(tracks)
+                if cached_uris:
+                    print(f"[TIMING] get_artist_all_tracks: cache hit ({len(cached_uris)} tracks across {len(album_ids)} albums) for {artist_id}")
+                    random.shuffle(cached_uris)
+                    return cached_uris[:limit]
+
+        if self._is_rate_limited():
             return []
         # spotipy 2.25.2 always sends country=None; Spotify API now requires market=
         try:
@@ -896,6 +929,13 @@ class SpotifyHandler:
             if self._is_rate_limited():
                 break
             self._cache_album(album)
+            album_id = album.get('id')
+            # Check AlbumTrack cache before calling API for each album
+            if album_id and self._db:
+                cached = self._db.get_album_tracks(album_id)
+                if cached:
+                    tracks_uris.extend(cached)
+                    continue
             try:
                 t1 = time.time()
                 tracks_json = self.sp.album_tracks(album["uri"])
@@ -909,11 +949,13 @@ class SpotifyHandler:
                 print(f"get_artist_all_tracks album_tracks error: {e}")
                 continue
             # cache simplified track objects (album reference added manually)
-            for item in (tracks_json.get("items") or []):
+            for pos, item in enumerate(tracks_json.get("items") or []):
                 if item and item.get('uri'):
                     item.setdefault('album', album)
                     self._cache_track(item)
                     tracks_uris.append(item["uri"])
+                    if album_id and self._db:
+                        self._db.save_album_track(album_id, item["uri"], pos)
 
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
