@@ -13,6 +13,7 @@ class SpotifyHandler:
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
         self._rate_limit_file = ".spotify_rate_limit"
         self._rate_limited_until = self._load_rate_limit()
+        self._last_retry_after = None  # captured from Retry-After response header
         self._db = None  # set via set_db_handler() after DatabaseHandler is ready
         self.init_token_sp()
 
@@ -205,29 +206,41 @@ class SpotifyHandler:
 
     def _on_rate_limit(self, e):
         """Parse a 429 SpotifyException, set the cooldown, log and persist it."""
-        retry_after = 300  # safe default (5min) when Retry-After header is not parseable
+        retry_after = 3600  # safe default (1h) — avoids hammering Spotify on repeated 429s
         try:
-            # spotipy with retries=0 raises SpotifyException whose str() contains
-            # "Max Retries, reason: too many 429" — no Retry-After value embedded.
-            # Try to parse it anyway in case the message format changes.
-            m = re.search(r'Retry will occur after:\s*(\d+)', str(e))
-            if m:
-                retry_after = int(m.group(1))
+            # Priority 1: Retry-After header captured by the requests session hook
+            if self._last_retry_after and self._last_retry_after > 0:
+                retry_after = self._last_retry_after
+                self._last_retry_after = None
+            else:
+                # Priority 2: parse from exception message (older spotipy versions)
+                m = re.search(r'Retry will occur after:\s*(\d+)', str(e))
+                if m:
+                    retry_after = int(m.group(1))
         except Exception:
             pass
         self._rate_limited_until = time.time() + retry_after
         self._save_rate_limit()
-        print(f"Rate limited by Spotify — skipping API calls for {retry_after}s")
+        print(f"Rate limited by Spotify — skipping API calls for {retry_after}s ({retry_after//3600}h {(retry_after%3600)//60}m)")
 
     def init_token_sp(self):
+        import requests
         cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
         auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope,cache_handler=cache_handler,show_dialog=False)
         if auth_manager.validate_token(cache_handler.get_cached_token()):
+            session = requests.Session()
+            def _capture_retry_after(response, *args, **kwargs):
+                if response.status_code == 429:
+                    try:
+                        self._last_retry_after = int(response.headers.get('Retry-After', 0))
+                    except Exception:
+                        pass
+            session.hooks['response'].append(_capture_retry_after)
             # retries=0: disable spotipy's internal blocking retry-on-429.
             # Our _on_rate_limit() handles 429 immediately without freezing the thread.
-            self.sp = spotipy.Spotify(auth_manager=auth_manager, retries=0)
+            self.sp = spotipy.Spotify(auth_manager=auth_manager, retries=0, requests_session=session)
         else:
-            print("Token is not valid")    
+            print("Token is not valid")
 
     def refresh_token0(self):
         cached_token = self.spo.get_cached_token()
