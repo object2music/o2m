@@ -712,6 +712,7 @@ class SpotifyHandler:
                     return cached
                 if self._db:
                     self._db.save_playlist(playlist)
+                print(f"cache_all_playlists: processing '{playlist.get('name')}' ({playlist.get('id')})")
                 try:
                     items_response = self.sp.playlist_items(
                         playlist['id'], additional_types=('track',))
@@ -724,8 +725,9 @@ class SpotifyHandler:
                         try:
                             pl_data = self.sp.playlist(playlist['id'], fields='tracks')
                             items_response = pl_data.get('tracks') if pl_data else None
+                            print(f"cache_all_playlists: sp.playlist() returned {len((items_response or {}).get('items') or [])} items for '{playlist.get('name')}'")
                         except Exception as fe:
-                            print(f"cache_all_playlists sp.playlist() fallback error: {fe}")
+                            print(f"cache_all_playlists sp.playlist() fallback error for '{playlist.get('name')}': {fe}")
                             continue
                     else:
                         print(f"cache_all_playlists playlist error: {e}")
@@ -734,6 +736,7 @@ class SpotifyHandler:
                     print(f"cache_all_playlists playlist error: {e}")
                     continue
 
+                before = cached
                 position = 0
                 while items_response:
                     for item in (items_response.get('items') or []):
@@ -761,6 +764,7 @@ class SpotifyHandler:
                         break
                     except Exception:
                         break
+                print(f"cache_all_playlists: '{playlist.get('name')}' → {cached - before} tracks cached")
 
             if response.get('next'):
                 try:
