@@ -1039,6 +1039,12 @@ class SpotifyHandler:
 
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
         if self._is_rate_limited():
+            if self._db:
+                cached = self._db.get_liked_track_uris()
+                if cached:
+                    print(f"get_library_favorite_tracks: rate-limited, using {len(cached)} cached liked tracks")
+                    random.shuffle(cached)
+                    return cached[:limit]
             return []
         #Warning : may probably be the last 20 only
         t_list=[]
