@@ -716,6 +716,10 @@ class SpotifyHandler:
                 try:
                     pl_data = self.sp.playlist(playlist['id'], fields='id,tracks')
                     items_response = pl_data.get('tracks') if pl_data else None
+                    if pl_data:
+                        total = (items_response or {}).get('total', '?')
+                        n_items = len((items_response or {}).get('items') or [])
+                        print(f"DEBUG sp.playlist() '{playlist.get('name')}': total={total}, items_in_page={n_items}, keys={list(pl_data.keys())}")
                 except spotipy.SpotifyException as e:
                     if e.http_status == 429:
                         self._on_rate_limit(e)
