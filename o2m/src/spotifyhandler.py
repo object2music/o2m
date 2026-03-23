@@ -715,32 +715,52 @@ class SpotifyHandler:
                 try:
                     items_response = self.sp.playlist_items(
                         playlist['id'], additional_types=('track',))
-                    position = 0
-                    while items_response:
-                        for item in (items_response.get('items') or []):
-                            if self._is_rate_limited():
-                                return cached
-                            track = item.get('track') if item else None
-                            if track and track.get('uri'):
-                                self._cache_track(track)
-                                if self._db:
-                                    added_at = item.get('added_at')
-                                    self._db.save_playlist_track(
-                                        playlist['id'], track['uri'],
-                                        position=position, added_at=added_at)
-                                cached += 1
-                                position += 1
-                        if items_response.get('next'):
-                            items_response = self.sp.next(items_response)
-                        else:
-                            break
                 except spotipy.SpotifyException as e:
                     if e.http_status == 429:
                         self._on_rate_limit(e)
                         return cached
+                    if e.http_status == 403:
+                        print(f"cache_all_playlists: 403 on '{playlist.get('name')}' — trying sp.playlist() fallback")
+                        try:
+                            pl_data = self.sp.playlist(playlist['id'], fields='tracks')
+                            items_response = pl_data.get('tracks') if pl_data else None
+                        except Exception as fe:
+                            print(f"cache_all_playlists sp.playlist() fallback error: {fe}")
+                            continue
+                    else:
+                        print(f"cache_all_playlists playlist error: {e}")
+                        continue
                 except Exception as e:
                     print(f"cache_all_playlists playlist error: {e}")
                     continue
+
+                position = 0
+                while items_response:
+                    for item in (items_response.get('items') or []):
+                        if self._is_rate_limited():
+                            return cached
+                        track = item.get('track') if item else None
+                        if track and track.get('uri'):
+                            self._cache_track(track)
+                            if self._db:
+                                added_at = item.get('added_at')
+                                self._db.save_playlist_track(
+                                    playlist['id'], track['uri'],
+                                    position=position, added_at=added_at)
+                            cached += 1
+                            position += 1
+                    try:
+                        if items_response.get('next'):
+                            items_response = self.sp.next(items_response)
+                        else:
+                            break
+                    except spotipy.SpotifyException as e:
+                        if e.http_status == 429:
+                            self._on_rate_limit(e)
+                            return cached
+                        break
+                    except Exception:
+                        break
 
             if response.get('next'):
                 try:
