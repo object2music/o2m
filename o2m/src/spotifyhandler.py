@@ -205,8 +205,11 @@ class SpotifyHandler:
 
     def _on_rate_limit(self, e):
         """Parse a 429 SpotifyException, set the cooldown, log and persist it."""
-        retry_after = 60  # default
+        retry_after = 300  # safe default (5min) when Retry-After header is not parseable
         try:
+            # spotipy with retries=0 raises SpotifyException whose str() contains
+            # "Max Retries, reason: too many 429" — no Retry-After value embedded.
+            # Try to parse it anyway in case the message format changes.
             m = re.search(r'Retry will occur after:\s*(\d+)', str(e))
             if m:
                 retry_after = int(m.group(1))
@@ -266,8 +269,19 @@ class SpotifyHandler:
                 track_ids = seed_tracks if isinstance(seed_tracks, list) else [seed_tracks]
                 track_ids = [self.normalize_spotify_id(t) for t in track_ids if t][:3]
                 for track_id in track_ids:
-                    info = self.sp.track(track_id)
-                    seed_artist_ids.update(a['id'] for a in info.get('artists', []))
+                    if self._is_rate_limited():
+                        break
+                    try:
+                        t0 = time.time()
+                        info = self.sp.track(track_id)
+                        print(f"[TIMING] get_recommendations: sp.track() took {time.time()-t0:.2f}s for {track_id}")
+                        seed_artist_ids.update(a['id'] for a in info.get('artists', []))
+                    except spotipy.SpotifyException as e:
+                        if e.http_status == 429:
+                            self._on_rate_limit(e)
+                        break
+                    except Exception:
+                        break
 
             if seed_artists:
                 ids = seed_artists if isinstance(seed_artists, list) else [seed_artists]
