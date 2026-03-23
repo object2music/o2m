@@ -728,7 +728,9 @@ class SpotifyHandler:
         if not album_uri:
             return []
         try:
+            t0 = time.time()
             tracks_json = self.sp.album_tracks(album_uri)
+            print(f"[TIMING] get_album_all_tracks: sp.album_tracks() took {time.time()-t0:.2f}s for {album_uri}")
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -795,11 +797,14 @@ class SpotifyHandler:
         if self._db:
             album_id = self._db.get_cached_album_id(track_id)
             if album_id:
+                print(f"[TIMING] get_track_album: cache hit for {track_id}")
                 return f"spotify:album:{album_id}"
         if self._is_rate_limited():
             return None
         try:
+            t0 = time.time()
             album = self.sp.track(track_id)['album']
+            print(f"[TIMING] get_track_album: sp.track() took {time.time()-t0:.2f}s for {track_id}")
             album_uri = album['uri']
             self._cache_album(album)
             return album_uri
@@ -830,11 +835,14 @@ class SpotifyHandler:
         if self._db:
             artist_id = self._db.get_cached_artist_id(track_id)
             if artist_id:
+                print(f"[TIMING] get_track_artist: cache hit for {track_id}")
                 return artist_id
         if self._is_rate_limited():
             return None
         try:
+            t0 = time.time()
             artists = self.sp.track(track_id)['artists']
+            print(f"[TIMING] get_track_artist: sp.track() took {time.time()-t0:.2f}s for {track_id}")
             random.shuffle(artists)
             artist_id = artists[0]['id']
             return artist_id
@@ -854,8 +862,10 @@ class SpotifyHandler:
             return []
         # spotipy 2.25.2 always sends country=None; Spotify API now requires market=
         try:
+            t0 = time.time()
             trid = self.sp._get_id("artist", artist_id)
             albums = self.sp._get(f"artists/{trid}/albums", include_groups="album,single", market="FR")
+            print(f"[TIMING] get_artist_all_tracks: artists/albums took {time.time()-t0:.2f}s for {artist_id} ({len(albums.get('items',[]))} albums)")
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -871,7 +881,9 @@ class SpotifyHandler:
                 break
             self._cache_album(album)
             try:
+                t1 = time.time()
                 tracks_json = self.sp.album_tracks(album["uri"])
+                print(f"[TIMING] get_artist_all_tracks: album_tracks took {time.time()-t1:.2f}s for {album.get('name','?')}")
             except spotipy.SpotifyException as e:
                 if e.http_status == 429:
                     self._on_rate_limit(e)
