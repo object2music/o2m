@@ -615,6 +615,18 @@ class SpotifyHandler:
 
     def get_playlists_tracks(self,limit=1,discover_level=5):
         if self._is_rate_limited():
+            if self._db:
+                cached_ids = self._db.get_all_cached_playlist_ids()
+                if cached_ids:
+                    print(f"get_playlists_tracks: rate-limited, using {len(cached_ids)} cached playlists")
+                    t_list, lib_link = [], []
+                    selected = random.sample(cached_ids, min(limit, len(cached_ids)))
+                    for pid in selected:
+                        uris = self._db.get_playlist_track_uris(pid)
+                        if uris:
+                            t_list.append(random.choice(uris))
+                            lib_link.append(f"spotify:playlist:{pid}")
+                    return (t_list, lib_link)
             return ([], [])
         #Get random tracks from a selection of user's playlists
         t_list=[]
@@ -622,7 +634,7 @@ class SpotifyHandler:
 
         try:
             playlists_response = self.sp.current_user_playlists()
-        except Exception as val_e: 
+        except Exception as val_e:
             print(f"Erreur playlist : {val_e}")
             return ([], [])
 
@@ -962,6 +974,11 @@ class SpotifyHandler:
     
     def get_all_followed_artists(self):
         if self._is_rate_limited():
+            if self._db:
+                cached = self._db.get_followed_artist_ids()
+                if cached:
+                    print(f"get_all_followed_artists: rate-limited, using {len(cached)} cached followed artists")
+                    return cached
             return []
         all_followed = []
         response = self.sp.current_user_followed_artists(limit=50)

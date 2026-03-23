@@ -596,7 +596,7 @@ class O2mToMopidy:
             #Common tracks
             if base_counts.get('common', 0) > 0:
                 print(f"\nAUTO : Common {base_counts['common']} tracks\n")
-                #self.add_tracks(active_box, self.get_common_tracks(datetime.datetime.now().hour,window,base_counts['common']), base_counts['common'], "normal","o2m:history")
+                self.add_tracks(active_box, self.get_common_tracks(datetime.datetime.now().hour,window,base_counts['common']), base_counts['common'], "normal","o2m:history")
 
             #Incoming
             if base_counts.get('incoming', 0) > 0:

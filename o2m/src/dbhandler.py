@@ -545,6 +545,12 @@ class DatabaseHandler():
                     .where(PlaylistTrack.playlist_id == playlist_id))
         return [r.track_uri for r in rows]
 
+    def get_all_cached_playlist_ids(self):
+        """Return IDs of all playlists that have at least one cached track."""
+        rows = (PlaylistTrack.select(PlaylistTrack.playlist_id)
+                .group_by(PlaylistTrack.playlist_id))
+        return [r.playlist_id for r in rows]
+
     # ─── Liked tracks ──────────────────────────────────────────────────────────
 
     def mark_track_liked(self, uri, liked_at=None):
