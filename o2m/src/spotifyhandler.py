@@ -626,7 +626,12 @@ class SpotifyHandler:
                         if uris:
                             t_list.append(random.choice(uris))
                             lib_link.append(f"spotify:playlist:{pid}")
-                    return (t_list, lib_link)
+                    if t_list:
+                        return (t_list, lib_link)
+                print(f"get_playlists_tracks: rate-limited, playlist cache empty — falling back to play history")
+                fallback = self._db.get_random_played_track_uris(limit)
+                if fallback:
+                    return (fallback, ['o2m:history'] * len(fallback))
             return ([], [])
         #Get random tracks from a selection of user's playlists
         t_list=[]
@@ -979,6 +984,7 @@ class SpotifyHandler:
                 if cached:
                     print(f"get_all_followed_artists: rate-limited, using {len(cached)} cached followed artists")
                     return cached
+                print("get_all_followed_artists: rate-limited, followed cache empty")
             return []
         all_followed = []
         response = self.sp.current_user_followed_artists(limit=50)
@@ -997,6 +1003,11 @@ class SpotifyHandler:
     
     def get_my_artists_tracks(self,limit=1,unit=1):
         if self._is_rate_limited():
+            if self._db:
+                fallback = self._db.get_random_played_track_uris(limit)
+                if fallback:
+                    print(f"get_my_artists_tracks: rate-limited, using {len(fallback)} tracks from play history")
+                    return fallback
             return []
         t_list=[]
         total=0

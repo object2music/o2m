@@ -551,6 +551,16 @@ class DatabaseHandler():
                 .group_by(PlaylistTrack.playlist_id))
         return [r.playlist_id for r in rows]
 
+    def get_random_played_track_uris(self, limit):
+        """Last-resort fallback: random spotify tracks from play history."""
+        rows = list(Track.select(Track.uri)
+                    .where((Track.read_count > 0) & (Track.storage == 'sp')))
+        uris = [r.uri for r in rows]
+        if not uris:
+            return []
+        random.shuffle(uris)
+        return uris[:limit]
+
     # ─── Liked tracks ──────────────────────────────────────────────────────────
 
     def mark_track_liked(self, uri, liked_at=None):
