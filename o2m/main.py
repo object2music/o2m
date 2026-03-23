@@ -276,6 +276,12 @@ if __name__ == "__main__":
         else:
             return "no track"'''
 
+    @api.route('/api/cache_playlists')
+    def api_cache_playlists():
+        """Trigger bulk cache of all user playlists and their tracks."""
+        count = o2mHandler.spotifyHandler.cache_all_playlists()
+        return f"cached {count} tracks"
+
     #RESTART
     @api.route('/health')
     def health_check():
