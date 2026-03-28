@@ -90,8 +90,7 @@ class SpotifyHandler:
         if self._is_rate_limited():
             return
         try:
-            pl_data = self.sp.playlist(playlist_id,
-                                       fields='id,uri,name,description,owner,tracks,snapshot_id,images')
+            pl_data = self.sp.playlist(playlist_id)
             if not pl_data:
                 return
             position = 0
@@ -153,7 +152,7 @@ class SpotifyHandler:
         # Fallback on 403: sp.playlist() embeds first 100 tracks in metadata
         print(f"playlist_items 403 for '{playlist['name']}' — trying sp.playlist() fallback")
         try:
-            pl_data = self.sp.playlist(playlist_id, fields='tracks')
+            pl_data = self.sp.playlist(playlist_id)
             return _save_items((pl_data.get('tracks') or {}).get('items') or [])
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
@@ -727,12 +726,12 @@ class SpotifyHandler:
                     self._db.save_playlist(playlist)
                 print(f"cache_all_playlists: processing '{playlist.get('name')}' ({playlist.get('id')})")
                 try:
-                    pl_data = self.sp.playlist(playlist['id'], fields='id,tracks')
+                    pl_data = self.sp.playlist(playlist['id'])
                     items_response = pl_data.get('tracks') if pl_data else None
                     if pl_data:
                         total = (items_response or {}).get('total', '?')
                         n_items = len((items_response or {}).get('items') or [])
-                        print(f"DEBUG sp.playlist() '{playlist.get('name')}': total={total}, items_in_page={n_items}, keys={list(pl_data.keys())}")
+                        print(f"cache_all_playlists: '{playlist.get('name')}' total={total}, first_page={n_items}")
                 except spotipy.SpotifyException as e:
                     if e.http_status == 429:
                         self._on_rate_limit(e)
