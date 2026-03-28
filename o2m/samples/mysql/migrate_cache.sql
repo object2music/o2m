@@ -209,6 +209,18 @@ CREATE TABLE IF NOT EXISTS `albumtrack` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ============================================================
+--  11. TABLE `cachemeta`  (métriques santé du cache)
+--  Clés : total_liked, total_artists, total_albums,
+--         warmup_liked_at, warmup_artists_at, warmup_albums_at, warmup_playlists_at
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `cachemeta` (
+  `key`        VARCHAR(255) NOT NULL  COMMENT 'Identifiant de la métrique',
+  `value_int`  INT(11)      DEFAULT NULL COMMENT 'Total Spotify ou comptage local',
+  `updated_at` BIGINT(20)   DEFAULT NULL COMMENT 'Timestamp dernière mise à jour (UTC)',
+  PRIMARY KEY (`key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ============================================================
 --  Nettoyage des procédures temporaires
 -- ============================================================
 DROP PROCEDURE IF EXISTS _add_col;

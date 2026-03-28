@@ -255,10 +255,20 @@ class AlbumTrack(BaseModel):
         indexes = ((('album_id', 'track_uri'), True),)
 
 
+class CacheMeta(BaseModel):
+    """Key/value store for cache health metrics.
+    Keys: total_liked, total_artists, total_albums, total_playlist_tracks
+          warmup_liked_at, warmup_artists_at, warmup_albums_at, warmup_playlists_at
+    """
+    key = CharField(unique=True, index=True, primary_key=True)
+    value_int = IntegerField(null=True)    # Spotify total or cached count
+    updated_at = TimestampField(null=True, utc=True)
+
+
 # ─── Database setup / migration ────────────────────────────────────────────────
 
 NEW_TABLES = [Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
-              Playlist, PlaylistTrack, AlbumTrack]
+              Playlist, PlaylistTrack, AlbumTrack, CacheMeta]
 
 # New columns added to existing tables
 _STATS_NEW_COLUMNS = [

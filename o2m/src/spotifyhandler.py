@@ -277,13 +277,29 @@ class SpotifyHandler:
             target_genres = set(seed_genres or [])
             seed_artist_ids = set()
 
-            # Resolve seed tracks → artist ids
+            # True when the artist cache is rich enough to avoid individual sp.artist() calls
+            use_cache_only = bool(self._db and self._db.is_cache_rich('artists'))
+
+            # Resolve seed tracks → artist ids (DB-first via TrackArtist, API fallback)
             if seed_tracks:
+                from src.o2mmodels import TrackArtist
                 track_ids = seed_tracks if isinstance(seed_tracks, list) else [seed_tracks]
                 track_ids = [self.normalize_spotify_id(t) for t in track_ids if t][:3]
                 for track_id in track_ids:
                     if self._is_rate_limited():
                         break
+                    # DB-first: resolve via TrackArtist table
+                    uri = f"spotify:track:{track_id}"
+                    try:
+                        rows = list(TrackArtist.select(TrackArtist.artist_id)
+                                    .where(TrackArtist.track_uri == uri))
+                        if rows:
+                            seed_artist_ids.update(r.artist_id for r in rows)
+                            continue
+                    except Exception:
+                        pass
+                    if use_cache_only:
+                        continue  # cache rich but track not in TrackArtist — skip API
                     try:
                         t0 = time.time()
                         info = self.sp.track(track_id)
@@ -300,15 +316,16 @@ class SpotifyHandler:
                 ids = seed_artists if isinstance(seed_artists, list) else [seed_artists]
                 seed_artist_ids.update(self.normalize_spotify_id(i) for i in ids if i)
 
-            # Fetch genres for seed artists (singular endpoint, batch /artists?ids= is restricted)
+            # Fetch genres for seed artists — cache-first, API only when cache is sparse
             for artist_id in list(seed_artist_ids)[:50]:
                 if self._is_rate_limited():
                     break
-                # check local cache first
                 cached = self._db.get_artist(artist_id) if self._db else None
                 if cached:
                     target_genres.update(self._db.get_artist_genres(artist_id))
                     continue
+                if use_cache_only:
+                    continue  # skip API when cache is rich enough
                 try:
                     a = self.sp.artist(artist_id)
                     if a:
@@ -327,8 +344,8 @@ class SpotifyHandler:
             candidates = [i for i in followed if i not in seed_artist_ids]
             random.shuffle(candidates)
 
-            # Augment candidates with external artists proportional to discover_level
-            # Level 0 → 0 external, level 10 → up to 100 external (from genre search)
+            # Augment with external artists proportional to discover_level
+            # sp.search is intentionally NOT gated by use_cache_only: it provides novelty at high DL
             n_external = discover_level * 10
             if n_external > 0 and target_genres and not self._is_rate_limited():
                 external_ids = []
@@ -358,7 +375,7 @@ class SpotifyHandler:
             for artist_id in candidates[:10]:
                 if self._is_rate_limited():
                     break
-                # check local cache first
+                # cache-first for scoring — API only when cache is sparse
                 cached = self._db.get_artist(artist_id) if self._db else None
                 if cached:
                     genres = set(self._db.get_artist_genres(artist_id))
@@ -366,6 +383,8 @@ class SpotifyHandler:
                     if overlap > 0:
                         scored.append((overlap, artist_id))
                     continue
+                if use_cache_only:
+                    continue  # skip API when cache is rich enough
                 try:
                     a = self.sp.artist(artist_id)
                     if a:
@@ -780,7 +799,159 @@ class SpotifyHandler:
                 break
 
         print(f"cache_all_playlists: {cached} tracks cached")
+        if self._db:
+            self._db.set_cache_meta('warmup_playlists_at', cached)
         return cached
+
+    # ─── Cache health ──────────────────────────────────────────────────────────
+
+    # TTL (days) between warmup runs per entity type
+    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3}
+
+    def fetch_spotify_totals(self):
+        """Fetch Spotify totals (liked, artists, albums) and store in CacheMeta.
+        Called once at startup; safe to call again to refresh.
+        Skips silently if rate-limited or DB unavailable."""
+        if not self._db or self._is_rate_limited():
+            return
+        pairs = [
+            ('total_liked',   lambda: self.sp.current_user_saved_tracks(limit=1)['total']),
+            ('total_artists', lambda: self.sp.current_user_followed_artists(limit=1)['artists']['total']),
+            ('total_albums',  lambda: self.sp.current_user_saved_albums(limit=1)['total']),
+        ]
+        for key, fetch in pairs:
+            if self._is_rate_limited():
+                break
+            try:
+                value = fetch()
+                self._db.set_cache_meta(key, value)
+                print(f"fetch_spotify_totals: {key}={value}")
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                break
+            except Exception as e:
+                print(f"fetch_spotify_totals {key} error: {e}")
+
+    def should_warmup(self, entity_type, discover_level=5):
+        """Return True if a warmup run is needed for *entity_type*.
+
+        Triggers when EITHER:
+          - TTL since last warmup is exceeded, OR
+          - fill rate is below the discover_level-adjusted threshold.
+
+        discover_level influence: higher DL → stricter threshold (needs more novelty).
+          dl=0  → 30 %   dl=5 → 55 %   dl=10 → 80 %
+        """
+        if not self._db:
+            return False
+        import datetime as dt
+        # TTL check
+        _, last_at = self._db.get_cache_meta(f'warmup_{entity_type}_at')
+        ttl = self._WARMUP_TTL.get(entity_type, 7)
+        if last_at:
+            days_since = (dt.datetime.utcnow() - last_at).days if isinstance(last_at, dt.datetime) else ttl + 1
+            if days_since < ttl:
+                # TTL still fresh — only trigger if fill rate is below DL threshold
+                threshold = 0.30 + 0.05 * discover_level
+                return not self._db.is_cache_rich(entity_type, threshold)
+        # TTL expired → always warmup
+        return True
+
+    def warmup_liked_tracks(self):
+        """Page through all liked tracks and cache them (liked=1)."""
+        if self._is_rate_limited():
+            return
+        print("warmup: syncing liked tracks…")
+        count = 0
+        try:
+            response = self.sp.current_user_saved_tracks(limit=50)
+            while response and response.get('items'):
+                for item in response['items']:
+                    if self._is_rate_limited():
+                        return
+                    track = item.get('track')
+                    if track and track.get('uri'):
+                        self._cache_track(track)
+                        if self._db:
+                            self._db.mark_track_liked(track['uri'], item.get('added_at'))
+                        count += 1
+                if response.get('next'):
+                    response = self.sp.next(response)
+                else:
+                    break
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            return
+        except Exception as e:
+            print(f"warmup_liked_tracks error: {e}")
+            return
+        print(f"warmup: {count} liked tracks synced")
+        if self._db:
+            self._db.set_cache_meta('warmup_liked_at', count)
+
+    def warmup_saved_albums(self):
+        """Page through all saved albums, cache metadata + tracks via AlbumTrack."""
+        if self._is_rate_limited():
+            return
+        print("warmup: syncing saved albums…")
+        count = 0
+        try:
+            response = self.sp.current_user_saved_albums(limit=50)
+            while response and response.get('items'):
+                for item in response['items']:
+                    if self._is_rate_limited():
+                        return
+                    album = item.get('album')
+                    if not album:
+                        continue
+                    self._cache_album(album)
+                    if self._db:
+                        self._db.mark_album_saved(album['id'])
+                    # cache tracks if not already fresh
+                    if self._db and not self._db.is_album_track_cache_fresh(album['id']):
+                        for pos, track in enumerate(album.get('tracks', {}).get('items') or []):
+                            if track and track.get('uri'):
+                                track.setdefault('album', album)
+                                self._cache_track(track)
+                                self._db.save_album_track(album['id'], track['uri'], pos)
+                    count += 1
+                if response.get('next'):
+                    response = self.sp.next(response)
+                else:
+                    break
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            return
+        except Exception as e:
+            print(f"warmup_saved_albums error: {e}")
+            return
+        print(f"warmup: {count} saved albums synced")
+        if self._db:
+            self._db.set_cache_meta('warmup_albums_at', count)
+
+    def warmup_cache(self, discover_level=5):
+        """Orchestrate all warmup passes based on should_warmup() decision.
+        Designed to run in a background thread at startup."""
+        print(f"warmup_cache: starting (dl={discover_level})")
+        self.fetch_spotify_totals()
+        for entity_type, method in [
+            ('liked',           self.warmup_liked_tracks),
+            ('albums',          self.warmup_saved_albums),
+            ('artists',         self.get_all_followed_artists),   # already pages + caches
+            ('playlist_tracks', self.cache_all_playlists),
+        ]:
+            if self._is_rate_limited():
+                print(f"warmup_cache: rate-limited, stopping before {entity_type}")
+                break
+            if self.should_warmup(entity_type, discover_level):
+                print(f"warmup_cache: running warmup for {entity_type}")
+                method()
+            else:
+                print(f"warmup_cache: {entity_type} cache is rich enough, skipping")
+        print("warmup_cache: done")
 
 ################### ALBUMS  #############################
 
@@ -825,20 +996,21 @@ class SpotifyHandler:
         if self._db:
             saved_ids = self._db.get_saved_album_ids()
             if saved_ids:
-                if self._is_rate_limited():
-                    print(f"get_my_albums_tracks: rate-limited, using {len(saved_ids)} cached saved albums")
-                t_list = []
-                selected = random.sample(saved_ids, min(limit, len(saved_ids)))
-                for album_id in selected:
-                    tracks = self._db.get_album_tracks(album_id)
-                    if tracks and unit != 0:
-                        for _ in range(unit):
-                            t_list.append(random.choice(tracks))
-                    elif tracks:
-                        t_list.extend(tracks)
-                if t_list:
-                    return t_list
-                # saved_ids exist but no AlbumTrack rows yet — fall through to API
+                if self._is_rate_limited() or self._db.is_cache_rich('albums'):
+                    if self._is_rate_limited():
+                        print(f"get_my_albums_tracks: rate-limited, using {len(saved_ids)} cached saved albums")
+                    t_list = []
+                    selected = random.sample(saved_ids, min(limit, len(saved_ids)))
+                    for album_id in selected:
+                        tracks = self._db.get_album_tracks(album_id)
+                        if tracks and unit != 0:
+                            for _ in range(unit):
+                                t_list.append(random.choice(tracks))
+                        elif tracks:
+                            t_list.extend(tracks)
+                    if t_list:
+                        return t_list
+                # Cache sparse or no AlbumTrack rows yet — fall through to API
 
         if self._is_rate_limited():
             return []
@@ -1094,14 +1266,16 @@ class SpotifyHandler:
 ################### FAVORITES AND MISC #############################
 
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
-        # Cache-first: use liked tracks from DB if available
+        # Cache-first only when cache is rich enough (or rate-limited)
         if self._db:
             cached = self._db.get_liked_track_uris()
             if cached:
-                if self._is_rate_limited():
-                    print(f"get_library_favorite_tracks: rate-limited, using {len(cached)} cached liked tracks")
-                random.shuffle(cached)
-                return cached[:limit]
+                if self._is_rate_limited() or self._db.is_cache_rich('liked'):
+                    if self._is_rate_limited():
+                        print(f"get_library_favorite_tracks: rate-limited, using {len(cached)} cached liked tracks")
+                    random.shuffle(cached)
+                    return cached[:limit]
+                # Cache exists but is sparse → fall through to API
 
         if self._is_rate_limited():
             return []

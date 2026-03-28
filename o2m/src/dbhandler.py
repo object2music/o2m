@@ -9,7 +9,7 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 from src.o2mmodels import (
     Box, Track, Stats_Raw, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
-    Playlist, PlaylistTrack, AlbumTrack,
+    Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
     setup_database,
 )
 from peewee import IntegrityError as PeeweeIntegrityError
@@ -24,7 +24,7 @@ python3
 >>> quit()
 '''
 
-CACHE_TTL = {'track': 30, 'artist': 7, 'album': 30, 'playlist': 7}  # days
+CACHE_TTL = {'track': 30, 'artist': 7, 'album': 30, 'playlist': 7, 'album_track': 100}  # days
 
 def create_tables():
     with db:
@@ -583,6 +583,68 @@ class DatabaseHandler():
     def get_liked_track_uris(self):
         """Return list of URIs where liked=1."""
         return [t.uri for t in Track.select(Track.uri).where(Track.liked == 1)]
+
+    # ─── CacheMeta ─────────────────────────────────────────────────────────────
+
+    # Static fallback thresholds when no Spotify total reference is available
+    _CACHE_STATIC_MIN = {
+        'liked':           20,
+        'artists':         10,
+        'albums':           5,
+        'playlist_tracks': 50,
+    }
+
+    def get_cache_meta(self, key):
+        """Return (value_int, updated_at) for *key*, or (None, None) if absent."""
+        try:
+            row = CacheMeta.get_by_id(key)
+            return row.value_int, row.updated_at
+        except CacheMeta.DoesNotExist:
+            return None, None
+
+    def set_cache_meta(self, key, value_int):
+        """Upsert a CacheMeta entry with current timestamp."""
+        CacheMeta.insert({
+            'key':        key,
+            'value_int':  value_int,
+            'updated_at': datetime.datetime.utcnow(),
+        }).on_conflict_replace().execute()
+
+    def count_cached(self, entity_type):
+        """Count locally cached entries for *entity_type*."""
+        try:
+            if entity_type == 'liked':
+                return Track.select().where(Track.liked == 1).count()
+            if entity_type == 'artists':
+                return Artist.select().where(Artist.followed == 1).count()
+            if entity_type == 'albums':
+                return Album.select().where(Album.saved == 1).count()
+            if entity_type == 'playlist_tracks':
+                return PlaylistTrack.select().count()
+        except Exception:
+            pass
+        return 0
+
+    def is_cache_rich(self, entity_type, fill_rate=0.5):
+        """True if cached count >= fill_rate * Spotify total (or static min fallback)."""
+        count = self.count_cached(entity_type)
+        total_ref, _ = self.get_cache_meta(f'total_{entity_type}')
+        if total_ref and total_ref > 0:
+            return count >= total_ref * fill_rate
+        # Static fallback
+        return count >= self._CACHE_STATIC_MIN.get(entity_type, 10)
+
+    def is_album_track_cache_fresh(self, album_id):
+        """True if AlbumTrack rows exist for album_id AND the parent album was cached
+        within CACHE_TTL['album_track'] days."""
+        try:
+            exists = AlbumTrack.select().where(AlbumTrack.album_id == album_id).exists()
+            if not exists:
+                return False
+            album = Album.get_by_id(album_id)
+            return self.is_cache_fresh(album.cached_at, 'album_track')
+        except Exception:
+            return False
 
 
 if __name__ == "__main__":

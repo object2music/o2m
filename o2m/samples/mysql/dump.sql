@@ -85,13 +85,15 @@ CREATE TABLE IF NOT EXISTS `album` (
   `id`           varchar(255)  NOT NULL                    COMMENT 'Spotify album ID',
   `uri`          varchar(255)  DEFAULT NULL                COMMENT 'spotify:album:ID',
   `name`         text          DEFAULT NULL,
-  `artist_name`  text          DEFAULT NULL               COMMENT 'Artiste principal (dénormalisé)',
+  `artist_name`  text          DEFAULT NULL                COMMENT 'Artiste principal (dénormalisé)',
   `album_type`   varchar(32)   DEFAULT NULL                COMMENT 'album | single | compilation',
   `release_date` varchar(16)   DEFAULT NULL                COMMENT 'YYYY, YYYY-MM or YYYY-MM-DD',
   `total_tracks` int(11)       DEFAULT NULL,
   `image_url`    text          DEFAULT NULL,
   `storage`      varchar(10)   NOT NULL DEFAULT 'sp'       COMMENT 'sp | local',
   `cached_at`    bigint(20)    DEFAULT NULL,
+  `saved`        tinyint(1)    NOT NULL DEFAULT 0          COMMENT '1 = dans les albums sauvegardés',
+  `saved_at`     bigint(20)    DEFAULT NULL                COMMENT 'Date de sauvegarde (UTC)',
   PRIMARY KEY (`id`),
   KEY `idx_album_cached_at` (`cached_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -101,14 +103,16 @@ CREATE TABLE IF NOT EXISTS `album` (
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS `artist` (
-  `id`         varchar(255)  NOT NULL                      COMMENT 'Spotify artist ID',
-  `uri`        varchar(255)  DEFAULT NULL                  COMMENT 'spotify:artist:ID',
-  `name`       text          DEFAULT NULL,
-  `popularity` int(11)       DEFAULT NULL                  COMMENT '0-100',
-  `followers`  int(11)       DEFAULT NULL,
-  `image_url`  text          DEFAULT NULL,
-  `storage`    varchar(10)   NOT NULL DEFAULT 'sp'         COMMENT 'sp | local',
-  `cached_at`  bigint(20)    DEFAULT NULL,
+  `id`          varchar(255)  NOT NULL                     COMMENT 'Spotify artist ID',
+  `uri`         varchar(255)  DEFAULT NULL                 COMMENT 'spotify:artist:ID',
+  `name`        text          DEFAULT NULL,
+  `popularity`  int(11)       DEFAULT NULL                 COMMENT '0-100',
+  `followers`   int(11)       DEFAULT NULL,
+  `image_url`   text          DEFAULT NULL,
+  `storage`     varchar(10)   NOT NULL DEFAULT 'sp'        COMMENT 'sp | local',
+  `cached_at`   bigint(20)    DEFAULT NULL,
+  `followed`    tinyint(1)    NOT NULL DEFAULT 0           COMMENT '1 = suivi par l''utilisateur',
+  `followed_at` bigint(20)    DEFAULT NULL                 COMMENT 'Date du suivi (UTC)',
   PRIMARY KEY (`id`),
   KEY `idx_artist_cached_at` (`cached_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -189,6 +193,29 @@ CREATE TABLE IF NOT EXISTS `artistgenre` (
   `genre_id`   int(11)       NOT NULL   COMMENT '→ genre.id',
   PRIMARY KEY (`artist_id`, `genre_id`),
   KEY `idx_ag_genre` (`genre_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ============================================================
+--  TABLE `albumtrack`  (album.id ↔ track.uri)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `albumtrack` (
+  `album_id`   varchar(255)  NOT NULL   COMMENT '→ album.id',
+  `track_uri`  varchar(255)  NOT NULL   COMMENT '→ track.uri',
+  `position`   int(11)       NOT NULL DEFAULT 0,
+  PRIMARY KEY (`album_id`, `track_uri`),
+  KEY `idx_at_track` (`track_uri`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- ============================================================
+--  TABLE `cachemeta`  (métriques santé du cache)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `cachemeta` (
+  `key`        varchar(255)  NOT NULL   COMMENT 'Identifiant de la métrique',
+  `value_int`  int(11)       DEFAULT NULL COMMENT 'Total Spotify ou comptage local',
+  `updated_at` bigint(20)    DEFAULT NULL COMMENT 'Timestamp dernière mise à jour (UTC)',
+  PRIMARY KEY (`key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- ============================================================

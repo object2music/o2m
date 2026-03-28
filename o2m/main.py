@@ -1,4 +1,4 @@
-import logging, subprocess, os, spotipy, json
+import logging, subprocess, os, spotipy, json, threading
 
 from mopidyapi import MopidyAPI
 from src import util
@@ -62,7 +62,17 @@ if __name__ == "__main__":
         else:
             break
 
-    
+    # Background cache warmup — runs after o2mHandler is ready, non-blocking
+    def _background_warmup():
+        sleep(5)  # let Flask start first
+        try:
+            dl = o2mHandler.discover_level if o2mHandler.discover_level is not None else 5
+            o2mHandler.spotifyHandler.warmup_cache(discover_level=dl)
+        except Exception as e:
+            print(f"background warmup error: {e}")
+
+    threading.Thread(target=_background_warmup, daemon=True).start()
+
 #API DEF AND LISTENER (to be move in a dedicated part)
     #API BOX ACTION (mode : toogle, add, remove) AND SHOW
     def api_box_action(uid='',option_type='',mode='toogle'):
