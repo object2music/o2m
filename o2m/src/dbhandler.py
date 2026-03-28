@@ -571,6 +571,11 @@ class DatabaseHandler():
 
     def mark_track_liked(self, uri, liked_at=None):
         """Set liked=1 on a track row (create it if needed)."""
+        if isinstance(liked_at, str):
+            try:
+                liked_at = datetime.datetime.strptime(liked_at, '%Y-%m-%dT%H:%M:%SZ')
+            except Exception:
+                liked_at = None
         updates = {
             'liked':    1,
             'liked_at': liked_at or datetime.datetime.utcnow(),

@@ -809,15 +809,16 @@ class SpotifyHandler:
     _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3}
 
     def fetch_spotify_totals(self):
-        """Fetch Spotify totals (liked, artists, albums) and store in CacheMeta.
+        """Fetch Spotify totals (liked, artists, albums, playlists) and store in CacheMeta.
         Called once at startup; safe to call again to refresh.
         Skips silently if rate-limited or DB unavailable."""
         if not self._db or self._is_rate_limited():
             return
         pairs = [
-            ('total_liked',   lambda: self.sp.current_user_saved_tracks(limit=1)['total']),
-            ('total_artists', lambda: self.sp.current_user_followed_artists(limit=1)['artists']['total']),
-            ('total_albums',  lambda: self.sp.current_user_saved_albums(limit=1)['total']),
+            ('total_liked',     lambda: self.sp.current_user_saved_tracks(limit=1)['total']),
+            ('total_artists',   lambda: self.sp.current_user_followed_artists(limit=1)['artists']['total']),
+            ('total_albums',    lambda: self.sp.current_user_saved_albums(limit=1)['total']),
+            ('total_playlists', lambda: self.sp.current_user_playlists(limit=1)['total']),
         ]
         for key, fetch in pairs:
             if self._is_rate_limited():
