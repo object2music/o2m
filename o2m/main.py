@@ -256,6 +256,14 @@ if __name__ == "__main__":
                             resolved = o2mHandler.spotifyHandler.get_resource_name(stored)
 
                     library_name = resolved
+
+                    # Persist resolved name so subsequent calls skip the API entirely
+                    if resolved and resolved != stored and not resolved.startswith('spotify:'):
+                        try:
+                            stat.in_library = resolved
+                            stat.save()
+                        except Exception:
+                            pass
                 except Exception as e:
                     print(f"Error getting library name: {e}")
                     library_name = stored

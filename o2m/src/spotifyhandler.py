@@ -1034,11 +1034,6 @@ class SpotifyHandler:
     
     def get_my_artists_tracks(self,limit=1,unit=1):
         if self._is_rate_limited():
-            if self._db:
-                fallback = self._db.get_random_played_track_uris(limit)
-                if fallback:
-                    print(f"get_my_artists_tracks: rate-limited, using {len(fallback)} tracks from play history")
-                    return fallback
             return []
         t_list=[]
         total=0
