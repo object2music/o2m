@@ -519,6 +519,12 @@ class DatabaseHandler():
 
     def save_playlist_track(self, playlist_id, track_uri, position=0, added_at=None):
         """Link a track to a playlist (upsert)."""
+        import datetime
+        if isinstance(added_at, str):
+            try:
+                added_at = datetime.datetime.strptime(added_at, '%Y-%m-%dT%H:%M:%SZ')
+            except Exception:
+                added_at = None
         try:
             PlaylistTrack.insert({
                 'playlist_id': playlist_id,
@@ -526,8 +532,8 @@ class DatabaseHandler():
                 'position':    position,
                 'added_at':    added_at,
             }).on_conflict_ignore().execute()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"save_playlist_track error: {e}")
 
     def get_playlist(self, playlist_id):
         """Return Playlist from cache, or None if missing/stale (TTL 7 days)."""

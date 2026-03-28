@@ -94,7 +94,7 @@ class SpotifyHandler:
             if not pl_data:
                 return
             position = 0
-            tracks_page = pl_data.get('tracks') or (pl_data if pl_data.get('items') is not None else None)
+            tracks_page = pl_data.get('tracks') or pl_data.get('items')
             while tracks_page:
                 for item in (tracks_page.get('items') or []):
                     if self._is_rate_limited():
@@ -128,7 +128,7 @@ class SpotifyHandler:
         def _save_items(items):
             tracks = []
             for position, item in enumerate(items or []):
-                track = item.get('track') if item else None
+                track = (item.get('track') or item.get('item')) if item else None
                 if track and track.get('uri'):
                     tracks.append(track['uri'])
                     if self._db:
@@ -730,16 +730,15 @@ class SpotifyHandler:
                     pl_data = self.sp.playlist(playlist['id'])
                     if not pl_data:
                         continue
-                    # Spotify changed format: items now at top level instead of tracks.items
-                    items_response = pl_data.get('tracks') or (pl_data if pl_data.get('items') is not None else None)
+                    items_response = pl_data.get('tracks') or pl_data.get('items')
                 except spotipy.SpotifyException as e:
                     if e.http_status == 429:
                         self._on_rate_limit(e)
                         return cached
-                    print(f"cache_all_playlists sp.playlist() error for '{playlist.get('name')}': {e}")
+                    print(f"cache_all_playlists sp.playlist() SpotifyException http_status={e.http_status} for '{playlist.get('name')}': {e}")
                     continue
                 except Exception as e:
-                    print(f"cache_all_playlists sp.playlist() error for '{playlist.get('name')}': {e}")
+                    print(f"cache_all_playlists sp.playlist() {type(e).__name__} for '{playlist.get('name')}': {e!r}")
                     continue
 
                 before = cached
@@ -1148,7 +1147,7 @@ class SpotifyHandler:
             for item in response['items']:
                 if self._is_rate_limited():
                     return cached
-                track = item.get('track') if item else None
+                track = (item.get('track') or item.get('item')) if item else None
                 if track and track.get('uri'):
                     self._cache_track(track)
                     if self._db:

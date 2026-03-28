@@ -63,6 +63,7 @@ COPY  ./o2m.css /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.c
 COPY  ./o2m.js /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/o2m.js
 COPY  ./app.js /app/app.js
 COPY ./index.html /app/index.html
+COPY spotipy.token /app/.cache_spotipy
 #See https://github.com/mopidy/mopidy-spotify/issues/394 for how to get credentials.json
 #COPY ./credentials.json /app/credentials.json
 #COPY ./samples/index.html /usr/local/lib/python3.10/dist-packages/mopidy_iris/static/index.html
