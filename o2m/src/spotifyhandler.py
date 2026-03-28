@@ -800,7 +800,7 @@ class SpotifyHandler:
 
         print(f"cache_all_playlists: {cached} tracks cached")
         if self._db:
-            self._db.set_cache_meta('warmup_playlists_at', cached)
+            self._db.set_cache_meta('warmup_playlist_tracks_at', cached)
         return cached
 
     # ─── Cache health ──────────────────────────────────────────────────────────
@@ -950,6 +950,9 @@ class SpotifyHandler:
             if self.should_warmup(entity_type, discover_level):
                 print(f"warmup_cache: running warmup for {entity_type}")
                 method()
+                # Save warmup timestamp for entities whose methods don't do it themselves
+                if entity_type == 'artists' and self._db:
+                    self._db.set_cache_meta('warmup_artists_at', 1)
             else:
                 print(f"warmup_cache: {entity_type} cache is rich enough, skipping")
         print("warmup_cache: done")
