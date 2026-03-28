@@ -821,8 +821,28 @@ class SpotifyHandler:
         return tracks_uris[:limit]
 
     def get_my_albums_tracks(self,limit=1,unit=1):
+        # Cache-first: use saved albums from DB if available (avoids API call for total)
+        if self._db:
+            saved_ids = self._db.get_saved_album_ids()
+            if saved_ids:
+                if self._is_rate_limited():
+                    print(f"get_my_albums_tracks: rate-limited, using {len(saved_ids)} cached saved albums")
+                t_list = []
+                selected = random.sample(saved_ids, min(limit, len(saved_ids)))
+                for album_id in selected:
+                    tracks = self._db.get_album_tracks(album_id)
+                    if tracks and unit != 0:
+                        for _ in range(unit):
+                            t_list.append(random.choice(tracks))
+                    elif tracks:
+                        t_list.extend(tracks)
+                if t_list:
+                    return t_list
+                # saved_ids exist but no AlbumTrack rows yet — fall through to API
+
         if self._is_rate_limited():
             return []
+
         t_list=[]
         total=0
         try:
@@ -854,10 +874,12 @@ class SpotifyHandler:
                     print(f"Erreur albums3 : {val_e}")
                     continue
                 # bulk cache all tracks from this album
-                for item in (tracks.get('items') or []):
+                for pos, item in enumerate(tracks.get('items') or []):
                     if item and item.get('uri'):
                         item.setdefault('album', album_data)
                         self._cache_track(item)
+                        if self._db:
+                            self._db.save_album_track(album_data['id'], item['uri'], pos)
                 #Extract n=unit tracks for playback
                 if unit != 0:
                     for j in range(unit):
@@ -1031,11 +1053,10 @@ class SpotifyHandler:
         return all_followed
     
     def get_my_artists_tracks(self,limit=1,unit=1):
-        if self._is_rate_limited():
-            return []
         t_list=[]
         total=0
         try:
+            # get_all_followed_artists handles rate-limit via Artist.followed=1 cache
             artists = self.get_all_followed_artists()
             if len(artists)>0:
                 for i in range(limit):
@@ -1073,13 +1094,16 @@ class SpotifyHandler:
 ################### FAVORITES AND MISC #############################
 
     def get_library_favorite_tracks(self, limit=20, offset=0, market=None):
-        if self._is_rate_limited():
-            if self._db:
-                cached = self._db.get_liked_track_uris()
-                if cached:
+        # Cache-first: use liked tracks from DB if available
+        if self._db:
+            cached = self._db.get_liked_track_uris()
+            if cached:
+                if self._is_rate_limited():
                     print(f"get_library_favorite_tracks: rate-limited, using {len(cached)} cached liked tracks")
-                    random.shuffle(cached)
-                    return cached[:limit]
+                random.shuffle(cached)
+                return cached[:limit]
+
+        if self._is_rate_limited():
             return []
         #Warning : may probably be the last 20 only
         t_list=[]

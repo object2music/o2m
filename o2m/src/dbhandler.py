@@ -24,7 +24,7 @@ python3
 >>> quit()
 '''
 
-CACHE_TTL = {'track': 30, 'artist': 7, 'album': 30}  # days
+CACHE_TTL = {'track': 30, 'artist': 7, 'album': 30, 'playlist': 7}  # days
 
 def create_tables():
     with db:
@@ -539,7 +539,7 @@ class DatabaseHandler():
         """Return Playlist from cache, or None if missing/stale (TTL 7 days)."""
         try:
             p = Playlist.get_by_id(playlist_id)
-            if self.is_cache_fresh(p.cached_at, 'artist'):  # 7-day TTL
+            if self.is_cache_fresh(p.cached_at, 'playlist'):
                 return p
         except Playlist.DoesNotExist:
             pass
