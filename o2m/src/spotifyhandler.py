@@ -731,7 +731,7 @@ class SpotifyHandler:
                     if pl_data:
                         total = (items_response or {}).get('total', '?')
                         n_items = len((items_response or {}).get('items') or [])
-                        print(f"cache_all_playlists: '{playlist.get('name')}' total={total}, first_page={n_items}")
+                        print(f"cache_all_playlists: '{playlist.get('name')}' total={total}, first_page={n_items}, keys={list(pl_data.keys())}")
                 except spotipy.SpotifyException as e:
                     if e.http_status == 429:
                         self._on_rate_limit(e)
