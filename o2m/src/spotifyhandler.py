@@ -470,51 +470,63 @@ class SpotifyHandler:
             return uri
     
     def get_resource_name(self, uri):
-        """Get human-readable name from Spotify URI (playlist, album, artist)"""
-        if self._is_rate_limited():
-            return uri  # return raw URI rather than blocking
+        """Get human-readable name from Spotify URI (playlist, album, artist).
+        DB cache is always checked first — API only called when cache misses and not rate-limited."""
         try:
             if not uri or uri == '':
                 return ''
 
+            # o2m: URIs are internal constants — no API call ever needed
+            if str(uri).startswith('o2m:'):
+                return str(uri).replace('o2m:', '').replace('_', ' ').title()
+
             uri = self.normalize_spotify_uri(uri)
-            
-            # Handle o2m: custom URIs
-            if uri.startswith('o2m:'):
-                return uri.replace('o2m:', '').replace('_', ' ').title()
-            
-            # Handle Spotify URIs
+
             if uri.startswith('spotify:'):
                 parts = uri.split(':')
                 if len(parts) >= 3:
                     resource_type = parts[1]
                     resource_id = self.normalize_spotify_id(parts[2])
 
-                    # Defensive: only call Spotify APIs with a real base62 id.
-                    # Spotify IDs are 22 chars; values like "Calm" must be treated as display names.
+                    # Non-ID values (e.g. display names stored as 'playlist:Calm') — return as-is
                     if not re.fullmatch(r"[A-Za-z0-9]{22}", str(resource_id or "")):
                         return uri
-                    
+
+                    # ── DB cache-first (works even when rate-limited) ──────────
+                    if self._db:
+                        if resource_type == 'playlist':
+                            try:
+                                from src.o2mmodels import Playlist
+                                p = Playlist.get_by_id(resource_id)
+                                if p and p.name:
+                                    return p.name
+                            except Exception:
+                                pass
+                        elif resource_type == 'album':
+                            cached = self._db.get_album(resource_id)
+                            if cached and cached.name:
+                                return cached.name.strip() or uri
+                        elif resource_type == 'artist':
+                            cached = self._db.get_artist(resource_id)
+                            if cached and cached.name:
+                                return cached.name or uri
+
+                    # ── API fallback (skipped when rate-limited) ──────────────
+                    if self._is_rate_limited():
+                        return uri
+
                     try:
                         if resource_type == 'playlist':
                             playlist = self.sp.playlist(resource_id, fields='name')
                             name = playlist.get('name', uri)
                             return name if name else uri
                         elif resource_type == 'album':
-                            # cache-first
-                            cached = self._db.get_album(resource_id) if self._db else None
-                            if cached:
-                                return f"{cached.name}".strip() or uri
                             album = self.sp.album(resource_id)
                             self._cache_album(album)
                             album_name = album.get('name', '')
                             artist_name = album.get('artists', [{}])[0].get('name', '')
                             return f"{album_name} - {artist_name}".strip(' -') if album_name else uri
                         elif resource_type == 'artist':
-                            # cache-first
-                            cached = self._db.get_artist(resource_id) if self._db else None
-                            if cached:
-                                return cached.name or uri
                             artist = self.sp.artist(resource_id)
                             self._cache_artist(artist)
                             name = artist.get('name', uri)
@@ -522,12 +534,10 @@ class SpotifyHandler:
                     except Exception as api_e:
                         print(f"Spotify API error for {resource_type} {resource_id}: {api_e}")
                         return uri
-            
+
             return uri
         except Exception as e:
             print(f"Error getting resource name for {uri}: {e}")
-            import traceback
-            traceback.print_exc()
             return uri
 
 ################### PLAYLISTS #############################

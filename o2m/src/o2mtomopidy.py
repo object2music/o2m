@@ -1207,63 +1207,51 @@ class O2mToMopidy:
 
     def get_track_recommandation(self,track_uri, discover_level=5, limit=1, data=''):
         # Get tracks recommandations
-        if "spotify:track" in track_uri:
-            track_data = track_uri.split(":")  # on découpe l'uri' :
-            track_seed = [track_data[2]]  # track id
+        if "spotify:track" not in track_uri:
+            return []
 
-            choices = ['album','artist','reco']
-            uris = []
-            #Ponderation Album / Artist / Reco depending the context data
-            if 'album' in data:
-                p = [0, 0.8, 0.2]
-            else:
-                #p = [0.4, 0.3, 0.3]
-                p = [0.5, 0.3, 0.2]
+        track_data = track_uri.split(":")
+        track_seed = [track_data[2]]
 
-            #Randomly ponderated type of track added
-            for i in range(0, limit):
-                c = random.choices(choices, weights=p, k=3)
-                print (c)
-                #c=np.random.choice(choices,1,replace=False,p=p)
-                new_uri = track_uri
+        choices = ['album','artist','reco']
+        uris = []
 
-                #1 : Same Album
-                if c[0]=='album':
-                    for _attempt in range(5):
-                        candidate = self.get_same_album_tracks(track_uri, 1)
-                        if not candidate:
-                            break
-                        new_uri = candidate
-                        if new_uri != track_uri:
-                            break
-                    if new_uri and new_uri != track_uri:
-                        uris += new_uri
+        #Ponderation Album / Artist / Reco depending the context data
+        if 'album' in data:
+            p = [0, 0.8, 0.2]
+        else:
+            p = [0.5, 0.3, 0.2]
 
-                #2 : Same Artist
-                elif c[0]=='artist':
-                    for _attempt in range(5):
-                        candidate = self.get_same_artist_tracks(track_uri, 1)
-                        if not candidate:
-                            break
-                        new_uri = candidate
-                        if new_uri != track_uri:
-                            break
-                    if new_uri and new_uri != track_uri:
-                        uris += new_uri
+        # Tracks to exclude: seed + already chosen in this call
+        excluded = {track_uri}
 
-                #3 : Spotify Reco
-                elif c[0]=='reco':
-                    for _attempt in range(5):
-                        candidate = self.get_spotify_reco(track_seed, 1)
-                        if not candidate:
-                            break
-                        new_uri = candidate
-                        if new_uri != track_uri:
-                            break
-                    if new_uri and new_uri != track_uri:
-                        uris += new_uri
+        for i in range(0, limit):
+            c = random.choices(choices, weights=p, k=3)
+            print(c)
+            new_uri = None
 
-            return uris
+            for _attempt in range(5):
+                if c[0] == 'album':
+                    candidates = self.get_same_album_tracks(track_uri, 3)
+                elif c[0] == 'artist':
+                    candidates = self.get_same_artist_tracks(track_uri, 3)
+                else:  # reco
+                    candidates = self.get_spotify_reco(track_seed, 3)
+
+                if not candidates:
+                    break
+
+                # Pick first candidate that isn't the seed or already selected
+                valid = [u for u in candidates if u and u not in excluded]
+                if valid:
+                    new_uri = valid[0]
+                    break
+
+            if new_uri:
+                uris.append(new_uri)
+                excluded.add(new_uri)
+
+        return uris
 
 
 #  TRACKS AND STATS MANAGEMENT
