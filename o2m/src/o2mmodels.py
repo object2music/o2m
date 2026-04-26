@@ -256,42 +256,44 @@ class AlbumTrack(BaseModel):
 
 
 class CacheMeta(BaseModel):
-    """Key/value store for cache health metrics.
-    Keys: total_liked, total_artists, total_albums, total_playlist_tracks
-          warmup_liked_at, warmup_artists_at, warmup_albums_at, warmup_playlists_at
+    """Key/value store for cache health metrics and schema versioning.
+    Reserved key: 'schema_version' (value_int = current schema version).
+    Cache keys: total_liked, total_artists, total_albums, total_playlists
+                warmup_liked_at, warmup_artists_at, warmup_albums_at, warmup_playlist_tracks_at
     """
     key = CharField(unique=True, index=True, primary_key=True)
-    value_int = IntegerField(null=True)    # Spotify total or cached count
+    value_int = IntegerField(null=True)
     updated_at = TimestampField(null=True, utc=True)
 
 
-# ─── Database setup / migration ────────────────────────────────────────────────
+# ─── Database versioning ───────────────────────────────────────────────────────
+#
+# SCHEMA_VERSION is the target version.  setup_database() applies every
+# migration whose version number is above the stored 'schema_version' key.
+# Each migration function must be fully idempotent (IF NOT EXISTS / try-except).
+#
+# To add a new migration:
+#   1. Write  _migration_vN(migrator)
+#   2. Append (N, "short_description", _migration_vN)  to  _MIGRATIONS
+#   3. Bump   SCHEMA_VERSION = N
 
-NEW_TABLES = [Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
-              Playlist, PlaylistTrack, AlbumTrack, CacheMeta]
+SCHEMA_VERSION = 1
 
-# New columns added to existing tables
-_STATS_NEW_COLUMNS = [
-    ('name',         TextField(null=True)),
-    ('duration_ms',  IntegerField(null=True)),
-    ('track_number', IntegerField(null=True)),
-    ('album_id',     CharField(null=True, index=True)),
-    ('preview_url',  TextField(null=True)),
-    ('cached_at',    TimestampField(null=True, utc=True)),
-    ('storage',      CharField(default='sp')),
-    ('liked',        IntegerField(default=0)),   # 1 = in liked tracks
-    ('liked_at',     TimestampField(null=True, utc=True)),
-]
 
-_ARTIST_NEW_COLUMNS = [
-    ('followed',    IntegerField(default=0)),
-    ('followed_at', TimestampField(null=True, utc=True)),
-]
+def _get_schema_version():
+    try:
+        row = CacheMeta.get_by_id('schema_version')
+        return row.value_int or 0
+    except Exception:
+        return 0
 
-_ALBUM_NEW_COLUMNS = [
-    ('saved',    IntegerField(default=0)),
-    ('saved_at', TimestampField(null=True, utc=True)),
-]
+
+def _set_schema_version(version):
+    CacheMeta.insert({
+        'key':        'schema_version',
+        'value_int':  version,
+        'updated_at': datetime.datetime.utcnow(),
+    }).on_conflict_replace().execute()
 
 
 def _add_column_safe(migrator, table, column, field):
@@ -302,20 +304,63 @@ def _add_column_safe(migrator, table, column, field):
         pass  # column already exists
 
 
+# ── Migration v1 ───────────────────────────────────────────────────────────────
+# Adds all Spotify cache tables and new columns on track / artist / album.
+# Corresponds to the state documented in dump.sql as of 2026-04-26.
+
+def _migration_v1(migrator):
+    db.create_tables([
+        Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
+        Playlist, PlaylistTrack, AlbumTrack,
+    ], safe=True)
+
+    for col, field in [
+        ('name',         TextField(null=True)),
+        ('duration_ms',  IntegerField(null=True)),
+        ('track_number', IntegerField(null=True)),
+        ('album_id',     CharField(null=True, index=True)),
+        ('preview_url',  TextField(null=True)),
+        ('cached_at',    TimestampField(null=True, utc=True)),
+        ('storage',      CharField(default='sp')),
+        ('liked',        IntegerField(default=0)),
+        ('liked_at',     TimestampField(null=True, utc=True)),
+    ]:
+        _add_column_safe(migrator, 'track', col, field)
+
+    for col, field in [
+        ('followed',    IntegerField(default=0)),
+        ('followed_at', TimestampField(null=True, utc=True)),
+    ]:
+        _add_column_safe(migrator, 'artist', col, field)
+
+    for col, field in [
+        ('saved',    IntegerField(default=0)),
+        ('saved_at', TimestampField(null=True, utc=True)),
+    ]:
+        _add_column_safe(migrator, 'album', col, field)
+
+
+_MIGRATIONS = [
+    (1, "cache_tables_and_columns", _migration_v1),
+]
+
+
 def setup_database():
-    """Create new tables and migrate existing ones.  Safe to call at every startup."""
-    # Create new tables (IF NOT EXISTS)
-    db.create_tables(NEW_TABLES, safe=True)
+    """Create base tables, then apply all pending schema migrations.
+    Safe to call at every startup — all operations are idempotent."""
 
-    # Migrate existing tables: add new columns when missing
-    if isinstance(db, SqliteDatabase):
-        migrator = SqliteMigrator(db)
-    else:
-        migrator = MySQLMigrator(db)
+    # Bootstrap: base tables + CacheMeta must exist before we can read the version
+    db.create_tables([Box, Track, Stats_Raw, CacheMeta], safe=True)
 
-    for col_name, field in _STATS_NEW_COLUMNS:
-        _add_column_safe(migrator, 'track', col_name, field)
-    for col_name, field in _ARTIST_NEW_COLUMNS:
-        _add_column_safe(migrator, 'artist', col_name, field)
-    for col_name, field in _ALBUM_NEW_COLUMNS:
-        _add_column_safe(migrator, 'album', col_name, field)
+    migrator = SqliteMigrator(db) if isinstance(db, SqliteDatabase) else MySQLMigrator(db)
+    current = _get_schema_version()
+
+    for version, name, fn in _MIGRATIONS:
+        if version > current:
+            print(f"[DB] applying migration v{version}: {name}")
+            fn(migrator)
+            _set_schema_version(version)
+            print(f"[DB] schema version is now v{version}")
+
+    if current >= SCHEMA_VERSION:
+        print(f"[DB] schema up to date (v{SCHEMA_VERSION})")
