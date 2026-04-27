@@ -43,7 +43,10 @@ class O2mToMopidy:
         self.spotifyHandler.set_db_handler(self.dbHandler)  # enable local cache
         self.library_name_cache = {}  # Cache to avoid repeated Spotify lookups for names
         self.library_link_from_track_cache = {}  # Cache: (track_uri, hint) -> full library uri
-        self._reco_tlids = set()  # TLIDs added as reco this session — keyed by unique tlid, no URI collision
+        # Central per-track registry keyed by Mopidy tlid (always unique).
+        # Replaces the parallel box.tlids / box.uris / box.option_types / box.library_link lists.
+        # {tlid: {'uri': str, 'option_type': str, 'library_link': str, 'box_id': str}}
+        self._track_info = {}
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -143,36 +146,36 @@ class O2mToMopidy:
                         self.mopidyHandler.playback.get_current_track(),
                         self.mopidyHandler.playback.get_time_position()
                     )'''
-            elif hasattr(removedBox, 'tlids') and removedBox.tlids != None:
-                #Compute NewTlid (after track removing)
-                current_tlid = self.mopidyHandler.playback.get_current_tlid()
-                last_tlindex = self.mopidyHandler.tracklist.index()
-                next_tlid = current_tlid
-
-                if current_tlid in removedBox.tlids:
-                    self.update_stat_track(
-                        self.mopidyHandler.playback.get_current_track(),
-                        self.mopidyHandler.playback.get_time_position()
-                    )
-                    self.mopidyHandler.playback.stop()
-
-                    current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
-                    current_tlids = [ sub.tlid for sub in current_tracks ]
-
-                    #Looping on active tracks
-                    for i in current_tlids[last_tlindex:]:
-                        if i not in removedBox.tlids:
-                            next_tlid = i
-                            break
-                                
-                #Removing tracks from playslist
-                self.mopidyHandler.tracklist.remove({"tlid": removedBox.tlids})
-
-                if current_tlid in removedBox.tlids and next_tlid!=None:
-                    self.mopidyHandler.playback.play(tlid=next_tlid)
-
             else:
-                print("no uris with removed box")
+                # Collect all tlids owned by this box from _track_info
+                box_tlids = [t for t, info in self._track_info.items() if info.get('box_id') == removedBox.uid]
+                if box_tlids:
+                    current_tlid = self.mopidyHandler.playback.get_current_tlid()
+                    last_tlindex = self.mopidyHandler.tracklist.index()
+                    next_tlid = current_tlid
+
+                    if current_tlid in box_tlids:
+                        self.update_stat_track(
+                            self.mopidyHandler.playback.get_current_track(),
+                            self.mopidyHandler.playback.get_time_position()
+                        )
+                        self.mopidyHandler.playback.stop()
+
+                        current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+                        current_tlids = [sub.tlid for sub in current_tracks]
+                        for i in current_tlids[last_tlindex:]:
+                            if i not in box_tlids:
+                                next_tlid = i
+                                break
+
+                    self.mopidyHandler.tracklist.remove({"tlid": box_tlids})
+                    for t in box_tlids:
+                        self._track_info.pop(t, None)
+
+                    if current_tlid in box_tlids and next_tlid is not None:
+                        self.mopidyHandler.playback.play(tlid=next_tlid)
+                else:
+                    print("no tracks registered for removed box")
             self.queue=0
                 
 
@@ -472,34 +475,15 @@ class O2mToMopidy:
                             print(f"Erreur : {val_e}")
 
                     #***UPDATE VALUES***
-                    # TLIDs : Mopidy Tracks's IDs in tracklist associated to added Box
-                    if hasattr(active_box, "tlids"):
-                        active_box.tlids += [x.tlid for x in slice2]
-                    else:
-                        active_box.tlids = [x.tlid for x in slice2]
-                    #print("box.tlids",box.tlids)
-
-                    # Uris : Mopidy Uri's associated to added Box
-                    if hasattr(active_box, "uris"):
-                        active_box.uris += [x.track.uri for x in slice2]
-                    else:
-                        active_box.uris = [x.track.uri for x in slice2]
-                    #print("box.uris",box.uris)
-
-                    # Option types: 'new' for replaced tracks, original option_type for others
+                    # Register each added track in the central _track_info dict
                     option_types_list = ['new' if x.tlid in replaced_tlids else option_type for x in slice2]
-                    if hasattr(active_box, "option_types"):
-                        active_box.option_types += option_types_list
-                    else:
-                        active_box.option_types = option_types_list
-                    #print("Option_types",box.option_types)
-
-                    #library_link
-                    if hasattr(active_box, "library_link"):
-                        active_box.library_link += [library_link for x in slice2]
-                    else:
-                        active_box.library_link = [library_link for x in slice2]
-                    #print("library_link",box.library_link)
+                    for tl_track, track_option_type in zip(slice2, option_types_list):
+                        self._track_info[tl_track.tlid] = {
+                            'uri':          tl_track.track.uri,
+                            'option_type':  track_option_type,
+                            'library_link': library_link,
+                            'box_id':       active_box.uid,
+                        }
                     
                     # Store library_link in database for each added track
                     for tl_track, track_option_type in zip(slice2, option_types_list):
@@ -946,12 +930,7 @@ class O2mToMopidy:
             print("Clearing tracklist and active boxs")
             self.mopidyHandler.tracklist.clear()
             self.mopidyHandler.playback.stop()
-            for box in self.activeboxs:
-                if hasattr(box, 'tlids') and box.tlids: box.tlids.clear()
-                if hasattr(box, 'uris') and box.uris: box.uris.clear()
-                if hasattr(box, 'option_types') and box.option_types: box.option_types.clear()
-                if hasattr(box, 'library_link') and box.library_link: box.library_link.clear()
-            self._reco_tlids.clear()
+            self._track_info.clear()
 
         # Default volume setting at beginning (or in main ?)
         self.mopidyHandler.tracklist.set_random(False)
@@ -1144,46 +1123,22 @@ class O2mToMopidy:
                     if slice:
                         try:
                             box = target_box or self.get_active_box_by_uri(track_uri)
-                            
-                            # Only update box tracking if we successfully identified the box
-                            if box is not None:
-                                # Ensure tracking lists exist
-                                if not hasattr(box, "tlids") or box.tlids is None:
-                                    box.tlids = []
-                                if not hasattr(box, "uris") or box.uris is None:
-                                    box.uris = []
-                                if not hasattr(box, "option_types") or box.option_types is None:
-                                    box.option_types = []
-                                if not hasattr(box, "library_link") or box.library_link is None:
-                                    box.library_link = []
+                            box_id = box.uid if box is not None else 'mopidy_box'
+                            if box is None:
+                                print(f"Warning: Could not identify box for reco from {track_uri} — registering under mopidy_box")
 
-                                new_tlids = [x.tlid for x in slice if hasattr(x, "tlid")]
-                                new_uris = []
-                                for x in slice:
-                                    try:
-                                        if hasattr(x, "track") and x.track and hasattr(x.track, "uri"):
-                                            new_uris.append(x.track.uri)
-                                    except Exception as e:
-                                        print(f"Error reading track uri from tltrack: {e}")
-
-                                # Fallback to provided URIs if Mopidy track objects are missing
-                                if len(new_uris) == 0:
-                                    new_uris = uris
-
-                                box.tlids += new_tlids
-                                box.uris += new_uris
-                                box.option_types += [new_type for _ in slice]
-                                box.library_link += [library_link for _ in slice]
-
-                                # Keep tlids/uris unique to avoid removal mismatches
-                                box.tlids = list(dict.fromkeys(box.tlids))
-                                box.uris = list(dict.fromkeys(box.uris))
-
-                                # Register reco tlids for guard in track_ended_event
-                                self._reco_tlids.update(new_tlids)
-                                #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} box.option_types {box.option_types} box.library_link {box.library_link} and tlid {slice[0].tlid}\n")
-                            else:
-                                print(f"Warning: Could not identify box for reco tracks from uri {track_uri} - tracks will be orphaned")
+                            # Register each reco track in _track_info (keyed by unique tlid)
+                            for x in slice:
+                                try:
+                                    reco_uri = x.track.uri if (hasattr(x, "track") and x.track) else (uris[0] if uris else '')
+                                    self._track_info[x.tlid] = {
+                                        'uri':          reco_uri,
+                                        'option_type':  new_type,
+                                        'library_link': library_link,
+                                        'box_id':       box_id,
+                                    }
+                                except Exception as e:
+                                    print(f"Error registering reco track in _track_info: {e}")
 
                         except Exception as e:
                             print(f"Erreur : {e}")
@@ -1393,42 +1348,40 @@ class O2mToMopidy:
         return self.dbHandler.get_uris_new_notread(limit)
 
     def get_active_box_by_uri(self, uri):
-        for box in self.activeboxs:
-            #print (box)
-            if hasattr(box, "uris") and box.uris:
-                if uri in box.uris:
+        """Return the active box that owns a track with the given URI."""
+        for info in self._track_info.values():
+            if info.get('uri') == uri:
+                box_id = info.get('box_id')
+                for box in self.activeboxs:
+                    if box.uid == box_id:
+                        return box
+        # Track not registered (added externally via Iris) — fall back to mopidy_box
+        return self._get_or_create_mopidy_box()
+
+    def get_active_box_by_tlid(self, tlid):
+        """Return the active box that owns the given tlid."""
+        if tlid is None:
+            return None
+        info = self._track_info.get(tlid)
+        if info:
+            box_id = info.get('box_id')
+            for box in self.activeboxs:
+                if box.uid == box_id:
                     return box
-        #No box found - create mopidy_box for tracks added via Iris without box association
+        return None
+
+    def _get_or_create_mopidy_box(self):
+        """Return the persistent in-memory mopidy_box, fetching from DB once if needed."""
         try:
+            for box in self.activeboxs:
+                if box.uid == 'mopidy_box':
+                    return box
             mopidy_box = self.dbHandler.get_box_by_uid('mopidy_box')
             if mopidy_box:
-                # Ensure mopidy_box has tracking attributes
-                if not hasattr(mopidy_box, "tlids") or mopidy_box.tlids is None:
-                    mopidy_box.tlids = []
-                if not hasattr(mopidy_box, "uris") or mopidy_box.uris is None:
-                    mopidy_box.uris = [uri]
-                else:
-                    if uri not in mopidy_box.uris:
-                        mopidy_box.uris.append(uri)
-                if not hasattr(mopidy_box, "option_types") or mopidy_box.option_types is None:
-                    mopidy_box.option_types = []
-                if not hasattr(mopidy_box, "library_link") or mopidy_box.library_link is None:
-                    mopidy_box.library_link = []
-                
-                # Only add to activeboxs if not already there
-                if mopidy_box not in self.activeboxs:
-                    self.activeboxs.append(mopidy_box)
+                self.activeboxs.append(mopidy_box)
                 return mopidy_box
         except Exception as e:
             print(f"Error getting/creating mopidy_box: {e}")
-        return None
-
-    def get_active_box_by_tlid(self, tlid):
-        if tlid is None:
-            return None
-        for box in self.activeboxs:
-            if hasattr(box, "tlids") and box.tlids and tlid in box.tlids:
-                return box
         return None
 
     def get_active_box_for_playback(self, track_uri=None, tlid=None):

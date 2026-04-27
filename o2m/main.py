@@ -420,50 +420,32 @@ if __name__ == "__main__":
             #No action if discover_level set to 0
             if discover_level > 0:
             
-                #Box = active_box in memory linked to this uri. Pb if track in many boxes
-                active_box = o2mHandler.get_active_box_by_uri(track.uri)
-                option_type = 'new_mopidy'
-                library_link = ''
+                # Direct lookup from _track_info — no index arithmetic, no parallel lists
+                tlid = event.tl_track.tlid
+                info = o2mHandler._track_info.get(tlid, {})
+                option_type = info.get('option_type', 'new_mopidy')
+                library_link = info.get('library_link', '')
                 data = ''
                 position = event.time_position
-                
-                #Update Dynamic datas linked to Box object and stats (LIBRARY_LINK, etc)
-                #TODO : create a function to calculate data and libreary link from track.uri
+
+                active_box = o2mHandler.get_active_box_by_tlid(tlid)
+                if not active_box:
+                    active_box = o2mHandler.get_active_box_by_uri(track.uri)
+
                 if active_box:
                     if active_box.data != '': data = active_box.data
-
-                    if active_box.option_type != 'new':
-                        if hasattr(active_box, "option_types") and hasattr(active_box, "tlids"):
-                            try: option_type = active_box.option_types[active_box.tlids.index(event.tl_track.tlid)]
-                            except (ValueError, IndexError): option_type = 'new'  # unregistered track → no reco cascade
-                            except Exception as val_e: print(f"Error end_track : {val_e}")
-                        if hasattr(active_box, "library_link") and hasattr(active_box, "tlids"):
-                            try: library_link = active_box.library_link[active_box.tlids.index(event.tl_track.tlid)]
-                            except Exception as val_e: print(f"Erreur : {val_e}")
-                        #Try / except here to check if dynamic playlist computing is not in competition with first playback finishing...
-                        if library_link == '': 
-                            #library_link = active_box.data
-                            #Playlist exctraction : search correspondancy Playlists between my Mopidy Playlists X Active_Box Data 
-                            # Avoid passing legacy/non-playlist URIs to Mopidy playlists.lookup
-                            if active_box.data == 'spotify:favorites':
-                                library_link = 'o2m:favorites'
-                            else:
-                                playlist = None
-                                try:
-                                    if isinstance(active_box.data, str) and (active_box.data.startswith('spotify:playlist:') or 'm3u' in active_box.data):
-                                        playlist = o2mHandler.mopidyHandler.playlists.lookup(active_box.data)
-                                except Exception as e:
-                                    print(f"Error looking up playlist {active_box.data}: {e}")
-                            data = active_box.data.split("\n")
-                            data = [x for x in data if not x.startswith('#')]
-                            data = [x for x in data if not x.startswith('\r')]
-                            #Loop on lines containing the playlist uris
-                            for content in data:
-                                #Taking the first one. Pb if manies ?
-                                if 'spotify:playlist' in content: 
+                    # library_link fallback when not stored in _track_info (e.g. Iris-added track)
+                    if not library_link:
+                        if active_box.data == 'spotify:favorites':
+                            library_link = 'o2m:favorites'
+                        else:
+                            data_lines = [x for x in active_box.data.split("\n")
+                                          if not x.startswith('#') and not x.startswith('\r')]
+                            for content in data_lines:
+                                if 'spotify:playlist' in content:
                                     library_link = content
                                     break
-                        print(f"Library Link : {library_link}")
+                print(f"Library Link : {library_link}")
 
                 if event.event == "track_playback_ended":
                     #Quick and dirty volume Management
@@ -474,9 +456,6 @@ if __name__ == "__main__":
 
                     # Recommandations added at each ended and nottrack (only spotify:track now)
                     if "track" in track.uri and position / track.length > 0.9:
-                        # Session guard: tlid was added as reco this session → no further reco
-                        if option_type != 'new' and event.tl_track.tlid in o2mHandler._reco_tlids:
-                            option_type = 'new'
                         print (f"Ending with option_type {option_type}")
                         if option_type != 'new':
                             #int(round(discover_level * 0.25))
