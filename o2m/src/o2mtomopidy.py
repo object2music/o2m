@@ -43,6 +43,7 @@ class O2mToMopidy:
         self.spotifyHandler.set_db_handler(self.dbHandler)  # enable local cache
         self.library_name_cache = {}  # Cache to avoid repeated Spotify lookups for names
         self.library_link_from_track_cache = {}  # Cache: (track_uri, hint) -> full library uri
+        self._reco_tlids = set()  # TLIDs added as reco this session — keyed by unique tlid, no URI collision
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -941,7 +942,7 @@ class O2mToMopidy:
 #MOPIDY LIVE CONTROL 
     def starting_mode(self,clear=False,start=False,uid=None):
         #Cleaning 
-        if clear == True: 
+        if clear == True:
             print("Clearing tracklist and active boxs")
             self.mopidyHandler.tracklist.clear()
             self.mopidyHandler.playback.stop()
@@ -950,6 +951,7 @@ class O2mToMopidy:
                 if hasattr(box, 'uris') and box.uris: box.uris.clear()
                 if hasattr(box, 'option_types') and box.option_types: box.option_types.clear()
                 if hasattr(box, 'library_link') and box.library_link: box.library_link.clear()
+            self._reco_tlids.clear()
 
         # Default volume setting at beginning (or in main ?)
         self.mopidyHandler.tracklist.set_random(False)
@@ -1176,6 +1178,9 @@ class O2mToMopidy:
                                 # Keep tlids/uris unique to avoid removal mismatches
                                 box.tlids = list(dict.fromkeys(box.tlids))
                                 box.uris = list(dict.fromkeys(box.uris))
+
+                                # Register reco tlids for guard in track_ended_event
+                                self._reco_tlids.update(new_tlids)
                                 #print(f"\nAdding reco new tracks at index {str(new_index)} with uris {uris} discover_level {discover_level} box.option_types {box.option_types} box.library_link {box.library_link} and tlid {slice[0].tlid}\n")
                             else:
                                 print(f"Warning: Could not identify box for reco tracks from uri {track_uri} - tracks will be orphaned")

@@ -435,6 +435,7 @@ if __name__ == "__main__":
                     if active_box.option_type != 'new':
                         if hasattr(active_box, "option_types") and hasattr(active_box, "tlids"):
                             try: option_type = active_box.option_types[active_box.tlids.index(event.tl_track.tlid)]
+                            except (ValueError, IndexError): option_type = 'new'  # unregistered track → no reco cascade
                             except Exception as val_e: print(f"Error end_track : {val_e}")
                         if hasattr(active_box, "library_link") and hasattr(active_box, "tlids"):
                             try: library_link = active_box.library_link[active_box.tlids.index(event.tl_track.tlid)]
@@ -473,8 +474,11 @@ if __name__ == "__main__":
 
                     # Recommandations added at each ended and nottrack (only spotify:track now)
                     if "track" in track.uri and position / track.length > 0.9:
+                        # Session guard: tlid was added as reco this session → no further reco
+                        if option_type != 'new' and event.tl_track.tlid in o2mHandler._reco_tlids:
+                            option_type = 'new'
                         print (f"Ending with option_type {option_type}")
-                        if option_type != 'new': 
+                        if option_type != 'new':
                             #int(round(discover_level * 0.25))
                             #Pb with this library_link calc
                             library_link="o2m:reco_after_track"
