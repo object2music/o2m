@@ -385,7 +385,6 @@ class O2mToMopidy:
                                 stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                                 # When track skipped or too many counts we remove them
                                 if (stat.skipped_count > 0
-                                    or stat.in_library == 1
                                     or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'normal' or stat.option_type == 'incoming')
                                     or self.threshold_playing_count_new(stat.read_count_end-1,self.discover_level) == True
                                     #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
@@ -478,31 +477,28 @@ class O2mToMopidy:
                     # Register each added track in the central _track_info dict
                     option_types_list = ['new' if x.tlid in replaced_tlids else option_type for x in slice2]
                     for tl_track, track_option_type in zip(slice2, option_types_list):
-                        self._track_info[tl_track.tlid] = {
-                            'uri':          tl_track.track.uri,
-                            'option_type':  track_option_type,
-                            'library_link': library_link,
-                            'box_id':       active_box.uid,
-                        }
-                    
-                    # Store library_link in database for each added track
-                    for tl_track, track_option_type in zip(slice2, option_types_list):
                         track_uri = tl_track.track.uri
                         try:
-                            # Resolve per-track library link when the hint is generic (spotify:album / spotify:artist)
                             effective_link = self.get_library_link_for_track(track_uri, library_link)
                             library_display = self.get_library_display(effective_link) if effective_link else ''
-
+                        except Exception:
+                            library_display = ''
+                        self._track_info[tl_track.tlid] = {
+                            'uri':             track_uri,
+                            'option_type':     track_option_type,
+                            'library_link':    library_link,
+                            'library_display': library_display,
+                            'box_id':          active_box.uid,
+                        }
+                        try:
                             if self.dbHandler.stat_exists(track_uri):
                                 stat = self.dbHandler.get_stat_by_uri(track_uri)
                             else:
                                 stat = self.dbHandler.create_stat(track_uri)
 
-                            # Ensure option_type is set (avoid NULLs for newly added tracks)
                             if (not getattr(stat, 'option_type', None)) and track_option_type:
                                 stat.option_type = track_option_type
 
-                            # Persist library display if available
                             if library_display:
                                 stat.in_library = library_display
 
@@ -1128,14 +1124,16 @@ class O2mToMopidy:
                                 print(f"Warning: Could not identify box for reco from {track_uri} — registering under mopidy_box")
 
                             # Register each reco track in _track_info (keyed by unique tlid)
+                            reco_display = self.get_library_display(library_link) if library_link else ''
                             for x in slice:
                                 try:
                                     reco_uri = x.track.uri if (hasattr(x, "track") and x.track) else (uris[0] if uris else '')
                                     self._track_info[x.tlid] = {
-                                        'uri':          reco_uri,
-                                        'option_type':  new_type,
-                                        'library_link': library_link,
-                                        'box_id':       box_id,
+                                        'uri':             reco_uri,
+                                        'option_type':     new_type,
+                                        'library_link':    library_link,
+                                        'library_display': reco_display,
+                                        'box_id':          box_id,
                                     }
                                 except Exception as e:
                                     print(f"Error registering reco track in _track_info: {e}")

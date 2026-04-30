@@ -193,10 +193,17 @@ if __name__ == "__main__":
     @api.route('/api/track_status')
     def api_track_status():
         uri = request.args.get('uri')
-        try: 
+        try:
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
             option_type = str(stat.option_type)
             read_end = float(stat.read_end)
+
+            # Fast path: use pre-resolved library_display from in-session _track_info
+            info = next((v for v in o2mHandler._track_info.values() if v.get('uri') == uri), None)
+            if info and info.get('library_display'):
+                status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + info['library_display']
+                return status
+
             stored = str(stat.in_library) if stat.in_library else ''
 
             # Make in_library intelligible:
