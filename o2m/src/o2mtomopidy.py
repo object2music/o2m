@@ -479,7 +479,7 @@ class O2mToMopidy:
                     for tl_track, track_option_type in zip(slice2, option_types_list):
                         track_uri = tl_track.track.uri
                         if tl_track.tlid in replaced_tlids:
-                            library_display = 'Reco After Track'
+                            library_display = 'Reco'
                         else:
                             try:
                                 effective_link = self.get_library_link_for_track(track_uri, library_link)
@@ -1127,7 +1127,7 @@ class O2mToMopidy:
                                 print(f"Warning: Could not identify box for reco from {track_uri} — registering under mopidy_box")
 
                             # Register each reco track in _track_info (keyed by unique tlid)
-                            reco_display = 'Reco After Track'
+                            reco_display = 'Reco'
                             for x in slice:
                                 try:
                                     reco_uri = x.track.uri if (hasattr(x, "track") and x.track) else (uris[0] if uris else '')
