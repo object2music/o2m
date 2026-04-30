@@ -210,7 +210,7 @@ if __name__ == "__main__":
 
             # Slow path: stat must exist for full DB-based resolution
             if stat is None:
-                return 'External'
+                return 'Manual'
 
             option_type = str(stat.option_type)
             stored = str(stat.in_library) if stat.in_library else ''
