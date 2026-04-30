@@ -194,16 +194,25 @@ if __name__ == "__main__":
     def api_track_status():
         uri = request.args.get('uri')
         try:
-            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
-            option_type = str(stat.option_type)
-            read_end = float(stat.read_end)
-
-            # Fast path: use pre-resolved library_display from in-session _track_info
+            # _track_info is authoritative for current session: checked first so reco/replaced
+            # tracks return the right option_type even before (or without) a DB stat entry.
             info = next((v for v in o2mHandler._track_info.values() if v.get('uri') == uri), None)
+
+            # read_end always comes from DB; default 0 if track not yet recorded
+            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+            read_end = float(stat.read_end) if stat else 0.0
+
+            # Fast path: library_display from _track_info, option_type from DB
             if info and info.get('library_display'):
+                option_type = str(stat.option_type) if stat else 'new'
                 status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + info['library_display']
                 return status
 
+            # Slow path: stat must exist for full DB-based resolution
+            if stat is None:
+                return 'new'
+
+            option_type = str(stat.option_type)
             stored = str(stat.in_library) if stat.in_library else ''
 
             # Make in_library intelligible:
