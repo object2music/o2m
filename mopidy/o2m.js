@@ -384,71 +384,71 @@ window.onload = function() {
   })
 */
 
-// Initialize playback on smartphone devices (one-time on load)
-try {
-  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
-  if (isSmartphone) {
-    
-    setTimeout(() => {
-      fetch(base_url + "initialize_playback")
-      .then(response => {
-        if (!response.ok) throw new Error('initialize_playback failed: ' + response.status);
-        return response.text();
-      })
-      .then(text => console.log('initialize_playback:', text))
-      .catch(err => console.error('initialize_playback error:', err));
-    },5000);
+// Enable Snapcast stream via Iris OutputControl checkbox.
+// Must be called from within a user gesture handler (tap/click) so the
+// browser allows audio to start. Uses element.click() — not dispatchEvent —
+// so React's delegated event handlers fire correctly.
+function enableSnapcastStream() {
+  const checkboxSelector = 'input[name="streaming_enabled"], input[data-qa-file="OutputControl"]';
+  const expandSelector   = 'button[data-qa-file="PlaybackControls"], button.control.expanded-controls';
 
-    };
-} catch (err) {
-  console.error(err);
-}
-
-// Try to simulate clicking the Iris OutputControl "speakers" button
-function clickOutputControl(retries = 20, delay = 500) {
-  const expandSelector = 'button.control.expanded-controls[data-qa-file="PlaybackControls"]';
-  const checkboxSelector = 'input[type="checkbox"][name="streaming_enabled"][data-qa-file="OutputControl"]';
-  let attempts = 0;
-  const tryClick = () => {
-    attempts++;
-    const expandBtn = document.querySelector(expandSelector);
-    
-    if (expandBtn) {
-      try {
-        expandBtn.focus();
-        expandBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        console.log('mopidy/o2m: clicked expand controls button');
-        setTimeout(() => {
-          const checkbox = document.querySelector(checkboxSelector);
-          if (checkbox) {
-            checkbox.focus();
-            checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-            console.log('mopidy/o2m: clicked OutputControl checkbox to deactivate');
-            setTimeout(() => {
-              checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-              console.log('mopidy/o2m: clicked OutputControl checkbox to reactivate');
-            }, 1000);
-          } else {
-            console.warn('mopidy/o2m: OutputControl checkbox not found after expand');
-          }
-        }, 1000);
-      } catch (e) {
-        console.error('mopidy/o2m: error clicking expand button', e);
-      }
-    } else if (attempts < retries) {
-      setTimeout(tryClick, delay);
-    } else {
-      console.warn('mopidy/o2m: expand controls button not found');
+  function tryEnable(attempts) {
+    if (attempts >= 15) {
+      console.warn('o2m: OutputControl not found after 15 attempts');
+      return;
     }
-  };
-  tryClick();
+    const checkbox = document.querySelector(checkboxSelector);
+    if (checkbox) {
+      if (!checkbox.checked) {
+        checkbox.click();
+        console.log('o2m: Snapcast stream enabled');
+      } else {
+        // Already checked but stream may not be active: cycle to force reconnect
+        checkbox.click();
+        setTimeout(() => checkbox.click(), 800);
+        console.log('o2m: Snapcast stream cycled (reconnect)');
+      }
+      return;
+    }
+    // Checkbox hidden: try expanding the controls panel first
+    const expandBtn = document.querySelector(expandSelector);
+    if (expandBtn) {
+      expandBtn.click();
+      setTimeout(() => tryEnable(attempts + 1), 500);
+    } else {
+      setTimeout(() => tryEnable(attempts + 1), 300);
+    }
+  }
+  tryEnable(0);
 }
 
+// Mobile: show a tap overlay to satisfy browser user-gesture requirement,
+// then enable the Snapcast stream and initialize server-side playback.
 try {
-  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
-  //if (isSmartphone) clickOutputControl();
+  const isMobile = (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+                 || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+  if (isMobile) {
+    const overlay = document.createElement('div');
+    overlay.id = 'o2m-audio-overlay';
+    Object.assign(overlay.style, {
+      position: 'fixed', top: '0', left: '0', right: '0', bottom: '0',
+      background: 'rgba(0,0,0,0.75)', zIndex: '9999',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+    });
+    overlay.innerHTML = '<div style="color:white;font-size:40px;margin-bottom:12px">▶</div>'
+                      + '<div style="color:white;font-size:18px;font-weight:bold">Tap to start audio</div>';
+    overlay.addEventListener('click', () => {
+      overlay.remove();
+      enableSnapcastStream();
+      fetch(base_url + 'initialize_playback')
+        .then(r => r.text()).then(t => console.log('o2m: initialize_playback:', t))
+        .catch(err => console.error('o2m: initialize_playback error:', err));
+    }, { once: true });
+    document.body.appendChild(overlay);
+  }
 } catch (e) {
-  console.error(e);
+  console.error('o2m: mobile audio overlay error', e);
 }
 
 
