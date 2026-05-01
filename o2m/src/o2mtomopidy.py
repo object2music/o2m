@@ -927,8 +927,8 @@ class O2mToMopidy:
         #Cleaning 
         if clear == True:
             print("Clearing tracklist and active boxs")
-            self.mopidyHandler.tracklist.clear()
             self.mopidyHandler.playback.stop()
+            self.mopidyHandler.tracklist.clear()
             self._track_info.clear()
 
         # Default volume setting at beginning (or in main ?)
