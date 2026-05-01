@@ -384,46 +384,51 @@ window.onload = function() {
   })
 */
 
-// Enable Snapcast stream via Iris OutputControl checkbox.
-// Must be called from within a user gesture handler (tap/click) so the
-// browser allows audio to start. Uses element.click() — not dispatchEvent —
-// so React's delegated event handlers fire correctly.
-function enableSnapcastStream() {
-  const checkboxSelector = 'input[name="streaming_enabled"], input[data-qa-file="OutputControl"]';
-  const expandSelector   = 'button[data-qa-file="PlaybackControls"], button.control.expanded-controls';
+// Called from the tap overlay handler (user gesture context).
+// 1. Unlocks Web Audio API: creating + resuming an AudioContext in a gesture
+//    handler signals the browser to resume ALL suspended AudioContexts on the
+//    page, including Iris's internal SnapStream ctx. This is why clicking the
+//    expand button manually fixes the stream — it's just a user gesture.
+// 2. Clicks the expand button so Iris re-renders OutputControl (reinforces gesture).
+// 3. Auto-plays via Mopidy RPC if tracklist is not empty and not already playing.
+function enableSnapcastAndPlay() {
+  // Unlock Web Audio API for the whole page
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      const tmp = new AC();
+      tmp.resume().then(() => tmp.close()).catch(() => {});
+    }
+  } catch (e) {}
 
-  function tryEnable(attempts) {
-    if (attempts >= 15) {
-      console.warn('o2m: OutputControl not found after 15 attempts');
-      return;
-    }
-    const checkbox = document.querySelector(checkboxSelector);
-    if (checkbox) {
-      if (!checkbox.checked) {
-        checkbox.click();
-        console.log('o2m: Snapcast stream enabled');
-      } else {
-        // Already checked but stream may not be active: cycle to force reconnect
-        checkbox.click();
-        setTimeout(() => checkbox.click(), 800);
-        console.log('o2m: Snapcast stream cycled (reconnect)');
-      }
-      return;
-    }
-    // Checkbox hidden: try expanding the controls panel first
-    const expandBtn = document.querySelector(expandSelector);
-    if (expandBtn) {
-      expandBtn.click();
-      setTimeout(() => tryEnable(attempts + 1), 500);
-    } else {
-      setTimeout(() => tryEnable(attempts + 1), 300);
-    }
+  // Click the expand button (user gesture reinforcement + OutputControl re-render)
+  const expandBtn = document.querySelector('button.control.expanded-controls[data-qa-file="PlaybackControls"]');
+  if (expandBtn) {
+    expandBtn.click();
+    console.log('o2m: clicked expand controls');
   }
-  tryEnable(0);
+
+  // Auto-play: start playback if tracklist non-empty and not already playing
+  const mopidyRpc = window.location.protocol + '//' + window.location.hostname + ':6680/mopidy/rpc';
+  const rpc = (method) => fetch(mopidyRpc, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({jsonrpc: '2.0', id: 1, method, params: {}})
+  }).then(r => r.json()).then(j => j.result);
+
+  Promise.all([rpc('core.playback.get_state'), rpc('core.tracklist.get_length')])
+    .then(([state, length]) => {
+      console.log('o2m: state=' + state + ' length=' + length);
+      if (state !== 'playing' && length > 0) {
+        fetch(base_url + 'toogle_play')
+          .then(() => console.log('o2m: playback started'))
+          .catch(err => console.error('o2m: toogle_play error:', err));
+      }
+    })
+    .catch(err => console.error('o2m: mopidy rpc error:', err));
 }
 
-// Mobile: show a tap overlay to satisfy browser user-gesture requirement,
-// then enable the Snapcast stream and initialize server-side playback.
+// Mobile: show a tap overlay (satisfies browser user-gesture requirement for audio)
 try {
   const isMobile = (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
                  || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -440,10 +445,7 @@ try {
                       + '<div style="color:white;font-size:18px;font-weight:bold">Tap to start audio</div>';
     overlay.addEventListener('click', () => {
       overlay.remove();
-      enableSnapcastStream();
-      fetch(base_url + 'initialize_playback')
-        .then(r => r.text()).then(t => console.log('o2m: initialize_playback:', t))
-        .catch(err => console.error('o2m: initialize_playback error:', err));
+      enableSnapcastAndPlay();
     }, { once: true });
     document.body.appendChild(overlay);
   }
