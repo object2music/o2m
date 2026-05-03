@@ -74,6 +74,8 @@ class O2mToMopidy:
             self.option_add_reco_after_track = self.clean_bool(self.configO2M["option_add_reco_after_track"])
         else: self.option_add_reco_after_track = False
 
+        self.default_box_uid = self.configO2M.get("default_box_uid", "").strip() or None
+
         if "shuffle" in self.configO2M:
             self.shuffle = self.clean_bool(self.configO2M["shuffle"])
 
@@ -1024,32 +1026,42 @@ class O2mToMopidy:
                 except Exception as e:
                     print(f"Error starting existing playback: {e}")
 
-            # 2) If no tracks in the tracklist -> search for a box in stats_raw
+            # 2) If no tracks in the tracklist -> use default box if configured, else fall back to stats_raw history
             if not tl_length or tl_length == 0:
-                hour = datetime.datetime.now().hour
-                # Use dbHandler.get_stat_raw_by_hour searching for URIs containing 'box:'
-                try:
-                    uris = self.dbHandler.get_stat_raw_by_hour(hour, window, 1, 'box:')
-                except Exception as e:
-                    print(f"Error querying stats_raw: {e}")
-                    uris = None
+                box = None
 
-                if uris and len(uris) > 0:
-                    uri = uris[0]
-                    # Expected format 'box:UID'
+                if self.default_box_uid:
                     try:
-                        if uri.startswith('box:'):
-                            uid = uri.split(':', 1)[1]
-                            box = self.dbHandler.get_box_by_uid(uid)
-                            if box is not None:
-                                # Launch the box (will add tracks and start playing)
-                                try:
-                                    self.box_action(box)
-                                    self.activeboxs.append(box)
-                                except Exception as e:
-                                    print(f"Error launching box from history: {e}")
+                        box = self.dbHandler.get_box_by_uid(self.default_box_uid)
+                        if box is None:
+                            print(f"initialize_playback: default_box_uid '{self.default_box_uid}' not found in DB")
                     except Exception as e:
-                        print(f"Error parsing box uri from stats_raw: {e}")
+                        print(f"initialize_playback: error fetching default box: {e}")
+
+                if box is None:
+                    # Fallback: pick a box from stats_raw history matching current hour
+                    hour = datetime.datetime.now().hour
+                    try:
+                        uris = self.dbHandler.get_stat_raw_by_hour(hour, window, 1, 'box:')
+                    except Exception as e:
+                        print(f"Error querying stats_raw: {e}")
+                        uris = None
+
+                    if uris and len(uris) > 0:
+                        uri = uris[0]
+                        try:
+                            if uri.startswith('box:'):
+                                uid = uri.split(':', 1)[1]
+                                box = self.dbHandler.get_box_by_uid(uid)
+                        except Exception as e:
+                            print(f"Error parsing box uri from stats_raw: {e}")
+
+                if box is not None:
+                    try:
+                        self.box_action(box)
+                        self.activeboxs.append(box)
+                    except Exception as e:
+                        print(f"Error launching box in initialize_playback: {e}")
 
             # Nothing to do
             return False

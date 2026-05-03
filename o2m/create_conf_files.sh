@@ -29,6 +29,7 @@ discover_level = $O2M_DISCOVER_LEVEL
 podcast_newest_first = $O2M_PODCAST_NEWEST_FIRST
 option_autofill_playlists = $O2M_OPTION_AUTOFILL_PLAYLISTS
 option_add_reco_after_track = $O2M_OPTION_ADD_RECO_AFTER_TRACK
+default_box_uid = $O2M_DEFAULT_BOX_UID
 port_mopidy = $PORT_MOPIDY
 host_mopidy = $HOST_MOPIDY
 fix_stats = $O2M_FIX_STATS
