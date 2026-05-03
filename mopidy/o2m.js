@@ -450,7 +450,7 @@ try {
     };
     //, { once: true });
     //document.body.appendChild(overlay);
-  }
+
 } catch (e) {
   console.error('o2m: mobile audio overlay error', e);
 }
