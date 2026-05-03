@@ -268,7 +268,7 @@ window.onload = function() {
           b8.onclick = function(){ 
             window.open(base_url+sp, '_blank');
           }
-          list.insertBefore(b8, list.children[0]);
+          //list.insertBefore(b8, list.children[0]);
         }}};
   xhr1.open("GET",base_url+"spotipy_check");
   xhr1.send();
@@ -433,7 +433,7 @@ try {
   const isMobile = (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
                  || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
   if (isMobile) {
-    const overlay = document.createElement('div');
+    /*const overlay = document.createElement('div');
     overlay.id = 'o2m-audio-overlay';
     Object.assign(overlay.style, {
       position: 'fixed', top: '0', left: '0', right: '0', bottom: '0',
@@ -444,7 +444,8 @@ try {
     overlay.innerHTML = '<div style="color:white;font-size:40px;margin-bottom:12px">▶</div>'
                       + '<div style="color:white;font-size:18px;font-weight:bold">Tap to start audio</div>';
     overlay.addEventListener('click', () => {
-      overlay.remove();
+      overlay.remove();*/
+
       enableSnapcastAndPlay();
     }, { once: true });
     document.body.appendChild(overlay);
@@ -453,6 +454,25 @@ try {
   console.error('o2m: mobile audio overlay error', e);
 }
 
+// Initialize playback on smartphone devices (one-time on load)
+try {
+  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+  if (isSmartphone) {
+    
+    setTimeout(() => {
+      fetch(base_url + "initialize_playback")
+      .then(response => {
+        if (!response.ok) throw new Error('initialize_playback failed: ' + response.status);
+        return response.text();
+      })
+      .then(text => console.log('initialize_playback:', text))
+      .catch(err => console.error('initialize_playback error:', err));
+    },5000);
+
+    };
+} catch (err) {
+  console.error(err);
+}
 
 }, 2000);
 }
