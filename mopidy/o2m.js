@@ -433,7 +433,7 @@ try {
   const isMobile = (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
                  || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
   if (isMobile) {
-    /*const overlay = document.createElement('div');
+    const overlay = document.createElement('div');
     overlay.id = 'o2m-audio-overlay';
     Object.assign(overlay.style, {
       position: 'fixed', top: '0', left: '0', right: '0', bottom: '0',
@@ -444,13 +444,11 @@ try {
     overlay.innerHTML = '<div style="color:white;font-size:40px;margin-bottom:12px">▶</div>'
                       + '<div style="color:white;font-size:18px;font-weight:bold">Tap to start audio</div>';
     overlay.addEventListener('click', () => {
-      overlay.remove();*/
-
+      overlay.remove();
       enableSnapcastAndPlay();
-    };
-    //, { once: true });
+    }); // , { once: true }
     //document.body.appendChild(overlay);
-
+  }
 } catch (e) {
   console.error('o2m: mobile audio overlay error', e);
 }
