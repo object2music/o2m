@@ -1,8 +1,8 @@
 import datetime, time, sys, contextlib, random, subprocess, os
 #import numpy as np
-import random 
+import random
 from mopidy_podcast import Extension, feeds
-from urllib import parse
+from urllib import parse, error as url_error
 
 import src.util as util
 from src.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
@@ -884,13 +884,15 @@ class O2mToMopidy:
         return shows
 
     def get_podcast_from_url(self, url):
-        f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
+        try:
+            f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
+        except (url_error.HTTPError, url_error.URLError) as e:
+            print(f"Podcast feed unavailable ({url}): {e}")
+            return []
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
         print(f"option_sort : {self.option_sort}")
         shows = list(feed.items(self.option_sort))
-        """for item in shows:  
-            if "app_rf_promotion" in item.uri:  max_results += 1"""
         # Conserve les max_results premiers épisodes
         del shows[self.max_results :]
         return shows
