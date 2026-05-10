@@ -326,6 +326,12 @@ class DatabaseHandler():
                 .where(ArtistGenre.artist_id == artist_id))
         return [g.name for g in rows]
 
+    def get_artist_ids_without_genres(self):
+        """Return artist IDs in DB that have no entry in ArtistGenre."""
+        all_ids = {a.id for a in Artist.select(Artist.id)}
+        with_genres = {ag.artist_id for ag in ArtistGenre.select(ArtistGenre.artist_id)}
+        return list(all_ids - with_genres)
+
     # ─── Album cache ───────────────────────────────────────────────────────────
 
     def get_album(self, album_id):
@@ -626,6 +632,8 @@ class DatabaseHandler():
                 return Album.select().where(Album.saved == 1).count()
             if entity_type == 'playlist_tracks':
                 return PlaylistTrack.select().count()
+            if entity_type == 'genres':
+                return ArtistGenre.select(ArtistGenre.artist_id).distinct().count()
         except Exception:
             pass
         return 0

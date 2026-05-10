@@ -1,8 +1,8 @@
 import datetime, time, sys, contextlib, random, subprocess, os
 #import numpy as np
-import random 
+import random
 from mopidy_podcast import Extension, feeds
-from urllib import parse
+from urllib import parse, error as url_error
 
 import src.util as util
 from src.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
@@ -73,6 +73,8 @@ class O2mToMopidy:
         if "option_add_reco_after_track" in self.configO2M:
             self.option_add_reco_after_track = self.clean_bool(self.configO2M["option_add_reco_after_track"])
         else: self.option_add_reco_after_track = False
+
+        self.default_box_uid = self.configO2M.get("default_box_uid", "").strip() or None
 
         if "shuffle" in self.configO2M:
             self.shuffle = self.clean_bool(self.configO2M["shuffle"])
@@ -882,13 +884,15 @@ class O2mToMopidy:
         return shows
 
     def get_podcast_from_url(self, url):
-        f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
+        try:
+            f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
+        except (url_error.HTTPError, url_error.URLError) as e:
+            print(f"Podcast feed unavailable ({url}): {e}")
+            return []
         with contextlib.closing(f) as source:
             feed = feeds.parse(source)
         print(f"option_sort : {self.option_sort}")
         shows = list(feed.items(self.option_sort))
-        """for item in shows:  
-            if "app_rf_promotion" in item.uri:  max_results += 1"""
         # Conserve les max_results premiers épisodes
         del shows[self.max_results :]
         return shows
@@ -1024,32 +1028,42 @@ class O2mToMopidy:
                 except Exception as e:
                     print(f"Error starting existing playback: {e}")
 
-            # 2) If no tracks in the tracklist -> search for a box in stats_raw
+            # 2) If no tracks in the tracklist -> use default box if configured, else fall back to stats_raw history
             if not tl_length or tl_length == 0:
-                hour = datetime.datetime.now().hour
-                # Use dbHandler.get_stat_raw_by_hour searching for URIs containing 'box:'
-                try:
-                    uris = self.dbHandler.get_stat_raw_by_hour(hour, window, 1, 'box:')
-                except Exception as e:
-                    print(f"Error querying stats_raw: {e}")
-                    uris = None
+                box = None
 
-                if uris and len(uris) > 0:
-                    uri = uris[0]
-                    # Expected format 'box:UID'
+                if self.default_box_uid:
                     try:
-                        if uri.startswith('box:'):
-                            uid = uri.split(':', 1)[1]
-                            box = self.dbHandler.get_box_by_uid(uid)
-                            if box is not None:
-                                # Launch the box (will add tracks and start playing)
-                                try:
-                                    self.box_action(box)
-                                    self.activeboxs.append(box)
-                                except Exception as e:
-                                    print(f"Error launching box from history: {e}")
+                        box = self.dbHandler.get_box_by_uid(self.default_box_uid)
+                        if box is None:
+                            print(f"initialize_playback: default_box_uid '{self.default_box_uid}' not found in DB")
                     except Exception as e:
-                        print(f"Error parsing box uri from stats_raw: {e}")
+                        print(f"initialize_playback: error fetching default box: {e}")
+
+                if box is None:
+                    # Fallback: pick a box from stats_raw history matching current hour
+                    hour = datetime.datetime.now().hour
+                    try:
+                        uris = self.dbHandler.get_stat_raw_by_hour(hour, window, 1, 'box:')
+                    except Exception as e:
+                        print(f"Error querying stats_raw: {e}")
+                        uris = None
+
+                    if uris and len(uris) > 0:
+                        uri = uris[0]
+                        try:
+                            if uri.startswith('box:'):
+                                uid = uri.split(':', 1)[1]
+                                box = self.dbHandler.get_box_by_uid(uid)
+                        except Exception as e:
+                            print(f"Error parsing box uri from stats_raw: {e}")
+
+                if box is not None:
+                    try:
+                        self.box_action(box)
+                        self.activeboxs.append(box)
+                    except Exception as e:
+                        print(f"Error launching box in initialize_playback: {e}")
 
             # Nothing to do
             return False
@@ -1191,16 +1205,17 @@ class O2mToMopidy:
             print(c)
             new_uri = None
 
-            for _attempt in range(5):
-                if c[0] == 'album':
+            for _attempt in range(len(c)):
+                strategy = c[_attempt]
+                if strategy == 'album':
                     candidates = self.get_same_album_tracks(track_uri, 3)
-                elif c[0] == 'artist':
+                elif strategy == 'artist':
                     candidates = self.get_same_artist_tracks(track_uri, 3)
                 else:  # reco
                     candidates = self.get_spotify_reco(track_seed, 3)
 
                 if not candidates:
-                    break
+                    continue
 
                 # Pick first candidate that isn't the seed or already selected
                 valid = [u for u in candidates if u and u not in excluded]

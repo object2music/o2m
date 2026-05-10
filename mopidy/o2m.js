@@ -268,7 +268,7 @@ window.onload = function() {
           b8.onclick = function(){ 
             window.open(base_url+sp, '_blank');
           }
-          list.insertBefore(b8, list.children[0]);
+          //list.insertBefore(b8, list.children[0]);
         }}};
   xhr1.open("GET",base_url+"spotipy_check");
   xhr1.send();
@@ -384,6 +384,79 @@ window.onload = function() {
   })
 */
 
+// Called from the tap overlay handler (user gesture context).
+// 1. Unlocks Web Audio API: creating + resuming an AudioContext in a gesture
+//    handler signals the browser to resume ALL suspended AudioContexts on the
+//    page, including Iris's internal SnapStream ctx. This is why clicking the
+//    expand button manually fixes the stream — it's just a user gesture.
+// 2. Clicks the expand button so Iris re-renders OutputControl (reinforces gesture).
+// 3. Auto-plays via Mopidy RPC if tracklist is not empty and not already playing.
+function enableSnapcastAndPlay() {
+  // Unlock Web Audio API for the whole page
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) {
+      const tmp = new AC();
+      tmp.resume().then(() => tmp.close()).catch(() => {});
+    }
+  } catch (e) {}
+
+  // Click expand button to trigger Snapcast stream init, then close it automatically
+  const expandBtn = document.querySelector('button.control.expanded-controls[data-qa-file="PlaybackControls"]');
+  if (expandBtn) {
+    expandBtn.click();
+    console.log('o2m: clicked expand controls');
+    setTimeout(() => {
+      const btn = document.querySelector('button.control.expanded-controls[data-qa-file="PlaybackControls"]');
+      if (btn) { btn.click(); console.log('o2m: closed expand controls'); }
+    }, 1500);
+  }
+
+  // Auto-play: start playback if tracklist non-empty and not already playing
+  const mopidyRpc = window.location.protocol + '//' + window.location.hostname + ':6680/mopidy/rpc';
+  const rpc = (method) => fetch(mopidyRpc, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({jsonrpc: '2.0', id: 1, method, params: {}})
+  }).then(r => r.json()).then(j => j.result);
+
+  Promise.all([rpc('core.playback.get_state'), rpc('core.tracklist.get_length')])
+    .then(([state, length]) => {
+      console.log('o2m: state=' + state + ' length=' + length);
+      if (state !== 'playing' && length > 0) {
+        fetch(base_url + 'toogle_play')
+          .then(() => console.log('o2m: playback started'))
+          .catch(err => console.error('o2m: toogle_play error:', err));
+      }
+    })
+    .catch(err => console.error('o2m: mopidy rpc error:', err));
+}
+
+// Mobile: show a tap overlay (satisfies browser user-gesture requirement for audio)
+try {
+  const isMobile = (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+                 || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+  if (isMobile) {
+    const overlay = document.createElement('div');
+    overlay.id = 'o2m-audio-overlay';
+    Object.assign(overlay.style, {
+      position: 'fixed', top: '0', left: '0', right: '0', bottom: '0',
+      background: 'rgba(0,0,0,0.75)', zIndex: '9999',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+    });
+    overlay.innerHTML = '<div style="color:white;font-size:40px;margin-bottom:12px">▶</div>'
+                      + '<div style="color:white;font-size:18px;font-weight:bold">Tap to start audio</div>';
+    overlay.addEventListener('click', () => {
+      overlay.remove();
+      enableSnapcastAndPlay();
+    }); // , { once: true }
+    document.body.appendChild(overlay);
+  }
+} catch (e) {
+  console.error('o2m: mobile audio overlay error', e);
+}
+
 // Initialize playback on smartphone devices (one-time on load)
 try {
   const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -403,54 +476,6 @@ try {
 } catch (err) {
   console.error(err);
 }
-
-// Try to simulate clicking the Iris OutputControl "speakers" button
-function clickOutputControl(retries = 20, delay = 500) {
-  const expandSelector = 'button.control.expanded-controls[data-qa-file="PlaybackControls"]';
-  const checkboxSelector = 'input[type="checkbox"][name="streaming_enabled"][data-qa-file="OutputControl"]';
-  let attempts = 0;
-  const tryClick = () => {
-    attempts++;
-    const expandBtn = document.querySelector(expandSelector);
-    
-    if (expandBtn) {
-      try {
-        expandBtn.focus();
-        expandBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-        console.log('mopidy/o2m: clicked expand controls button');
-        setTimeout(() => {
-          const checkbox = document.querySelector(checkboxSelector);
-          if (checkbox) {
-            checkbox.focus();
-            checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-            console.log('mopidy/o2m: clicked OutputControl checkbox to deactivate');
-            setTimeout(() => {
-              checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-              console.log('mopidy/o2m: clicked OutputControl checkbox to reactivate');
-            }, 1000);
-          } else {
-            console.warn('mopidy/o2m: OutputControl checkbox not found after expand');
-          }
-        }, 1000);
-      } catch (e) {
-        console.error('mopidy/o2m: error clicking expand button', e);
-      }
-    } else if (attempts < retries) {
-      setTimeout(tryClick, delay);
-    } else {
-      console.warn('mopidy/o2m: expand controls button not found');
-    }
-  };
-  tryClick();
-}
-
-try {
-  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
-  //if (isSmartphone) clickOutputControl();
-} catch (e) {
-  console.error(e);
-}
-
 
 }, 2000);
 }

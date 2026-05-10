@@ -816,7 +816,7 @@ class SpotifyHandler:
     # ─── Cache health ──────────────────────────────────────────────────────────
 
     # TTL (days) between warmup runs per entity type
-    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3}
+    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14}
 
     def fetch_spotify_totals(self):
         """Fetch Spotify totals (liked, artists, albums, playlists) and store in CacheMeta.
@@ -943,6 +943,40 @@ class SpotifyHandler:
         if self._db:
             self._db.set_cache_meta('warmup_albums_at', count)
 
+    def warmup_artist_genres(self):
+        """Batch-fetch genres for all artists in DB that have none yet.
+        Uses sp.artists() (up to 50 IDs per call) to minimise API calls."""
+        if not self._db:
+            return
+        artist_ids = self._db.get_artist_ids_without_genres()
+        if not artist_ids:
+            print("warmup_artist_genres: all artists already have genres")
+            return
+        print(f"warmup_artist_genres: fetching genres for {len(artist_ids)} artists")
+        count = 0
+        for i in range(0, len(artist_ids), 50):
+            if self._is_rate_limited():
+                print(f"warmup_artist_genres: rate-limited after {count} artists")
+                break
+            batch = artist_ids[i:i + 50]
+            try:
+                results = self.sp.artists(batch)
+                for artist in (results or {}).get('artists') or []:
+                    if artist and artist.get('genres'):
+                        self._db.save_artist_genres(artist['id'], artist['genres'])
+                        self._cache_artist(artist)
+                        count += 1
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                break
+            except Exception as e:
+                print(f"warmup_artist_genres batch error: {e}")
+                break
+        print(f"warmup_artist_genres: done ({count} artists with genres saved)")
+        if self._db:
+            self._db.set_cache_meta('warmup_genres_at', count)
+
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
         Designed to run in a background thread at startup."""
@@ -953,6 +987,7 @@ class SpotifyHandler:
             ('albums',          self.warmup_saved_albums),
             ('artists',         self.get_all_followed_artists),   # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
+            ('genres',          self.warmup_artist_genres),
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")
