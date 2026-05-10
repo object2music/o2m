@@ -944,9 +944,8 @@ class SpotifyHandler:
             self._db.set_cache_meta('warmup_albums_at', count)
 
     def warmup_artist_genres(self):
-        """Fetch genres for all artists in DB that have none yet.
-        Tries sp.artists() batch first; falls back to individual sp.artist() calls
-        if the batch endpoint returns 403 (Spotify API restriction since 2024)."""
+        """Fetch genres for all artists in DB that have none yet via individual sp.artist() calls.
+        The batch endpoint sp.artists() returns 403 since Spotify 2024 API changes."""
         if not self._db:
             return
         artist_ids = self._db.get_artist_ids_without_genres()
@@ -955,68 +954,40 @@ class SpotifyHandler:
             return
         print(f"warmup_artist_genres: fetching genres for {len(artist_ids)} artists")
         count = 0
-        use_individual = False
+        abort = False
 
-        for i in range(0, len(artist_ids), 50):
-            if self._is_rate_limited():
-                print(f"warmup_artist_genres: rate-limited after {count} artists")
+        for artist_id in artist_ids:
+            if abort:
                 break
-            batch = artist_ids[i:i + 50]
-
-            if not use_individual:
-                try:
-                    results = self.sp.artists(batch)
-                    for artist in (results or {}).get('artists') or []:
-                        if artist and artist.get('genres'):
-                            self._db.save_artist_genres(artist['id'], artist['genres'])
-                            self._cache_artist(artist)
-                            count += 1
-                    continue
-                except spotipy.SpotifyException as e:
-                    if e.http_status == 429:
-                        self._on_rate_limit(e)
-                        break
-                    if e.http_status == 403:
-                        print("warmup_artist_genres: batch endpoint returned 403, switching to individual calls")
-                        use_individual = True
-                        # rewind: process this batch individually
-                    else:
-                        print(f"warmup_artist_genres batch error: {e}")
-                        break
-                except Exception as e:
-                    print(f"warmup_artist_genres batch error: {e}")
+            # Wait out short rate limits (≤60s); abort on longer ones
+            if self._is_rate_limited():
+                wait = self._rate_limited_until - time.time()
+                if wait > 60:
+                    print(f"warmup_artist_genres: rate-limited for {int(wait)}s, aborting")
                     break
+                print(f"warmup_artist_genres: rate-limited, waiting {int(wait)+1}s…")
+                time.sleep(wait + 1)
+            try:
+                artist = self.sp.artist(artist_id)
+                if artist and artist.get('genres'):
+                    self._db.save_artist_genres(artist['id'], artist['genres'])
+                    self._cache_artist(artist)
+                    count += 1
+                time.sleep(0.1)  # pace requests to stay under rate limit
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                elif e.http_status == 403:
+                    print("warmup_artist_genres: endpoint returned 403, aborting")
+                    abort = True
+                else:
+                    print(f"warmup_artist_genres error ({artist_id}): {e}")
+            except Exception as e:
+                print(f"warmup_artist_genres error ({artist_id}): {e}")
 
-            if use_individual:
-                for artist_id in batch:
-                    # Wait out short rate limits (≤60s) rather than aborting
-                    if self._is_rate_limited():
-                        wait = self._rate_limited_until - time.time()
-                        if wait > 60:
-                            print(f"warmup_artist_genres: rate-limited for {int(wait)}s, aborting")
-                            break
-                        print(f"warmup_artist_genres: rate-limited, waiting {int(wait)+1}s…")
-                        time.sleep(wait + 1)
-                    try:
-                        artist = self.sp.artist(artist_id)
-                        if artist and artist.get('genres'):
-                            self._db.save_artist_genres(artist['id'], artist['genres'])
-                            self._cache_artist(artist)
-                            count += 1
-                        time.sleep(0.1)  # pace requests to stay under rate limit
-                    except spotipy.SpotifyException as e:
-                        if e.http_status == 429:
-                            self._on_rate_limit(e)
-                            # will be handled by the wait block on next iteration
-                        elif e.http_status == 403:
-                            print("warmup_artist_genres: individual endpoint also returned 403, aborting")
-                            break
-                    except Exception as e:
-                        print(f"warmup_artist_genres individual error ({artist_id}): {e}")
-
-        print(f"warmup_artist_genres: done ({count} artists with genres saved)")
+        print(f"warmup_artist_genres: done ({count}/{len(artist_ids)} artists with genres saved)")
         if self._db:
-            self._db.set_cache_meta('warmup_genres_at', count)
+            self._db.set_cache_meta('warmup_genres_at', max(count, 1))
 
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
