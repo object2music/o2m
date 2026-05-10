@@ -989,19 +989,26 @@ class SpotifyHandler:
 
             if use_individual:
                 for artist_id in batch:
+                    # Wait out short rate limits (≤60s) rather than aborting
                     if self._is_rate_limited():
-                        break
+                        wait = self._rate_limited_until - time.time()
+                        if wait > 60:
+                            print(f"warmup_artist_genres: rate-limited for {int(wait)}s, aborting")
+                            break
+                        print(f"warmup_artist_genres: rate-limited, waiting {int(wait)+1}s…")
+                        time.sleep(wait + 1)
                     try:
                         artist = self.sp.artist(artist_id)
                         if artist and artist.get('genres'):
                             self._db.save_artist_genres(artist['id'], artist['genres'])
                             self._cache_artist(artist)
                             count += 1
+                        time.sleep(0.1)  # pace requests to stay under rate limit
                     except spotipy.SpotifyException as e:
                         if e.http_status == 429:
                             self._on_rate_limit(e)
-                            break
-                        if e.http_status == 403:
+                            # will be handled by the wait block on next iteration
+                        elif e.http_status == 403:
                             print("warmup_artist_genres: individual endpoint also returned 403, aborting")
                             break
                     except Exception as e:
