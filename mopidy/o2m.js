@@ -401,11 +401,15 @@ function enableSnapcastAndPlay() {
     }
   } catch (e) {}
 
-  // Click the expand button (user gesture reinforcement + OutputControl re-render)
+  // Click expand button to trigger Snapcast stream init, then close it automatically
   const expandBtn = document.querySelector('button.control.expanded-controls[data-qa-file="PlaybackControls"]');
   if (expandBtn) {
     expandBtn.click();
     console.log('o2m: clicked expand controls');
+    setTimeout(() => {
+      const btn = document.querySelector('button.control.expanded-controls[data-qa-file="PlaybackControls"]');
+      if (btn) { btn.click(); console.log('o2m: closed expand controls'); }
+    }, 1500);
   }
 
   // Auto-play: start playback if tracklist non-empty and not already playing
