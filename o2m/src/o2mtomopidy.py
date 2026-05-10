@@ -1205,16 +1205,17 @@ class O2mToMopidy:
             print(c)
             new_uri = None
 
-            for _attempt in range(5):
-                if c[0] == 'album':
+            for _attempt in range(len(c)):
+                strategy = c[_attempt]
+                if strategy == 'album':
                     candidates = self.get_same_album_tracks(track_uri, 3)
-                elif c[0] == 'artist':
+                elif strategy == 'artist':
                     candidates = self.get_same_artist_tracks(track_uri, 3)
                 else:  # reco
                     candidates = self.get_spotify_reco(track_seed, 3)
 
                 if not candidates:
-                    break
+                    continue
 
                 # Pick first candidate that isn't the seed or already selected
                 valid = [u for u in candidates if u and u not in excluded]
