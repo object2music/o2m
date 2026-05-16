@@ -331,7 +331,7 @@ class O2mToMopidy:
 
 #TRACKLIST FILL / ADD
     # Adding tracks to tracklist and associate them to active_box infos
-    def add_tracks(self, active_box, uris, max_results=15, force_option_type=None, library_link=''):
+    def add_tracks(self, active_box, uris, max_results=15, force_option_type=None, library_link='', bypass_remove_filter=False):
         #Set variables
         option_type = active_box.option_type
         if force_option_type != None: 
@@ -407,8 +407,8 @@ class O2mToMopidy:
                     
                     #****REMOVE***
                     # Exclude tracks already read when option is new
-                    #Too long > to be replaced by a trashing action along playing
-                    if option_type == 'new':
+                    # bypass_remove_filter=True skips this for pre-filtered sources (newrecent, newnotcompleted)
+                    if option_type == 'new' and not bypass_remove_filter:
                         for t in tltracks_added:
                             if self.dbHandler.stat_exists(t.track.uri):
                                 stat = self.dbHandler.get_stat_by_uri(t.track.uri)
@@ -768,18 +768,18 @@ class O2mToMopidy:
                 elif "infos:library" in content :
                     tracklist_uris.append(self.lastinfos(box,max_results))
 
-                # newnotcompleted:library — completed at least once, not skipped, not played in 2w
+                # newnotcompleted:library — pre-filtered in DB, bypass REMOVE in add_tracks
                 elif "newnotcompleted:library" in content:
                     uri_new = self.get_new_tracks_notread(max_results)
                     if uri_new:
-                        tracklist_uris.append(uri_new)
+                        self.add_tracks(box, uri_new, max_results, bypass_remove_filter=True)
 
-                # newrecent:library — cached in last 60 days, never played, not skipped
+                # newrecent:library — pre-filtered in DB, bypass REMOVE in add_tracks
                 elif "newrecent:library" in content:
                     days = 60
                     uri_new = self.get_newrecent_tracks(max_results, days)
                     if uri_new:
-                        tracklist_uris.append(uri_new)
+                        self.add_tracks(box, uri_new, max_results, bypass_remove_filter=True)
 
                 # album:local
                 elif "albums:local" in content :
