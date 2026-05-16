@@ -296,9 +296,12 @@ class O2mToMopidy:
                 tracklist_uris = tracklist_uris[:lenght0]
                 #print(f"\nLenght {len(tracklist_uris)} & tracklist_uris: {tracklist_uris}")
 
-                #Let's go to play
+                #Let's go to play — account for tracks already directly added in tracklistappend_box
                 if len(tracklist_uris)>0:
-                    self.add_tracks(box, tracklist_uris, max_results)
+                    directly_added = self.mopidyHandler.tracklist.get_length() - prev_tl_length
+                    remaining = max(0, max_results - directly_added)
+                    if remaining > 0:
+                        self.add_tracks(box, tracklist_uris, remaining)
 
                 #Shuffle if new tracks were added — regardless of direct vs. indirect add in tracklistappend_box
                 current_tl_length = self.mopidyHandler.tracklist.get_length()
