@@ -275,15 +275,15 @@ window.onload = function() {
 
 //RESET
   var bClear = document.createElement("button");
-  bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>Clear today history";
+  bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>Clear last hour";
   bClear.className = "sidebar__menu__item icon icon--material";
   bClear.onclick = function(){
-    if (!confirm("Effacer l'historique du jour (stats_raw) ?")) return;
+    if (!confirm("Effacer l'historique de la dernière heure (stats_raw) ?")) return;
     var xhr = new XMLHttpRequest();
     xhr.open("GET", base_url+"clear_today_history");
     xhr.onload = function() {
       bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>History cleared";
-      setTimeout(() => { bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>Clear today history"; }, 3000);
+      setTimeout(() => { bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>Clear last hour"; }, 3000);
     };
     xhr.send();
   };

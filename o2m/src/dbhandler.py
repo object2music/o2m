@@ -187,10 +187,10 @@ class DatabaseHandler():
         return query
 
     #STATS_RAW
-    def clear_today_stats_raw(self):
-        today_midnight = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        deleted = Stats_Raw.delete().where(Stats_Raw.read_date >= today_midnight).execute()
-        print(f"clear_today_stats_raw: {deleted} rows deleted")
+    def clear_lasthour_stats_raw(self):
+        one_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+        deleted = Stats_Raw.delete().where(Stats_Raw.read_date >= one_hour_ago).execute()
+        print(f"clear_lasthour_stats_raw: {deleted} rows deleted")
         return deleted
 
     def create_stat_raw(self, uri, read_time, read_hour, username):
