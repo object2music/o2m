@@ -720,13 +720,15 @@ class DatabaseHandler():
         return count >= self._CACHE_STATIC_MIN.get(entity_type, 10)
 
     def is_album_track_cache_fresh(self, album_id):
-        """True if AlbumTrack rows exist for album_id AND the parent album was cached
-        within CACHE_TTL['album_track'] days."""
+        """True if AlbumTrack count matches album.total_tracks AND cache is within TTL."""
         try:
-            exists = AlbumTrack.select().where(AlbumTrack.album_id == album_id).exists()
-            if not exists:
-                return False
             album = Album.get_by_id(album_id)
+            cached_count = AlbumTrack.select().where(AlbumTrack.album_id == album_id).count()
+            if cached_count == 0:
+                return False
+            # If we know the total, require a full cache before considering it fresh
+            if album.total_tracks and cached_count < album.total_tracks:
+                return False
             return self.is_cache_fresh(album.cached_at, 'album_track')
         except Exception:
             return False

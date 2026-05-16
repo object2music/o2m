@@ -920,13 +920,22 @@ class SpotifyHandler:
                     self._cache_album(album)
                     if self._db:
                         self._db.mark_album_saved(album['id'])
-                    # cache tracks if not already fresh
+                    # cache tracks if not already fully fresh
                     if self._db and not self._db.is_album_track_cache_fresh(album['id']):
-                        for pos, track in enumerate(album.get('tracks', {}).get('items') or []):
-                            if track and track.get('uri'):
-                                track.setdefault('album', album)
-                                self._cache_track(track)
-                                self._db.save_album_track(album['id'], track['uri'], pos)
+                        tracks_page = album.get('tracks', {})
+                        pos = 0
+                        while tracks_page:
+                            for track in (tracks_page.get('items') or []):
+                                if track and track.get('uri'):
+                                    track.setdefault('album', album)
+                                    self._cache_track(track)
+                                    self._db.save_album_track(album['id'], track['uri'], pos)
+                                    pos += 1
+                            next_url = tracks_page.get('next')
+                            if next_url and not self._is_rate_limited():
+                                tracks_page = self.sp.next(tracks_page)
+                            else:
+                                break
                     count += 1
                 if response.get('next'):
                     response = self.sp.next(response)
