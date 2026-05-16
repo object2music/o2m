@@ -421,8 +421,17 @@ if __name__ == "__main__":
 
     @api.route('/api/restart_mopidy')
     def api_restart_mopidy():
-        p = subprocess.run("start_mopidy.sh", shell=True, check=True)
-        return ("reset")
+        def do_restart():
+            sleep(1)
+            subprocess.run(['docker', 'compose', '--profile', 'prod', 'restart', 'mopidy', 'o2m'],
+                           capture_output=True)
+        threading.Thread(target=do_restart, daemon=True).start()
+        return ("restarting")
+
+    @api.route('/api/clear_today_history')
+    def api_clear_today_history():
+        o2mHandler.dbHandler.clear_today_stats_raw()
+        return ("cleared")
 
     #SPOTIPY
     if o2mHandler.spotifyHandler.spotipy_config:

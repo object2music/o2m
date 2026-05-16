@@ -41,6 +41,7 @@ services:
       - mysql
     volumes:
       - ./o2m:/app
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6681/health')"]

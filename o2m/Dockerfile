@@ -1,8 +1,10 @@
-FROM python:3.10-alpine 
+FROM python:3.10-alpine
 
 WORKDIR /app
 
 COPY ./ /app/
+
+RUN apk add --no-cache docker-cli
 
 RUN --mount=type=cache,target=/root/.cache \
 python3 -m pip install -r requirements.txt
