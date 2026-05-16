@@ -772,14 +772,14 @@ class O2mToMopidy:
                 elif "newnotcompleted:library" in content:
                     uri_new = self.get_new_tracks_notread(max_results)
                     if uri_new:
-                        self.add_tracks(box, uri_new, max_results, bypass_remove_filter=True)
+                        self.add_tracks(box, uri_new, max_results, library_link='o2m:newnotcompleted', bypass_remove_filter=True)
 
                 # newrecent:library — pre-filtered in DB, bypass REMOVE in add_tracks
                 elif "newrecent:library" in content:
                     days = 60
                     uri_new = self.get_newrecent_tracks(max_results, days)
                     if uri_new:
-                        self.add_tracks(box, uri_new, max_results, bypass_remove_filter=True)
+                        self.add_tracks(box, uri_new, max_results, library_link='o2m:newrecent', bypass_remove_filter=True)
 
                 # album:local
                 elif "albums:local" in content :
