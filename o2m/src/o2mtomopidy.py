@@ -801,12 +801,16 @@ class O2mToMopidy:
                         print(f"Adding : {uri_new} tracks")
                         content += 1
 
-                # albums:spotify 
+                # albums:spotify — direct call to carry the selected album/artist as library_link
                 elif "albums:spotify" in content :
-                    if (random.choice([1,2])) == 1:
-                        tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(1,0))
-                    else:
-                        tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(1,0))
+                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
+                    if remaining > 0:
+                        if (random.choice([1,2])) == 1:
+                            uris, source = self.spotifyHandler.get_my_albums_tracks(1, 0, return_source=True)
+                        else:
+                            uris, source = self.spotifyHandler.get_my_artists_tracks(1, 0, return_source=True)
+                        if uris:
+                            self.add_tracks(box, uris, remaining, library_link=source or '')
 
                 # Autos mode (to be optimized with the above code)
                 elif "auto:library" in content:

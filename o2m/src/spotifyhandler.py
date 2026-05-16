@@ -1057,7 +1057,8 @@ class SpotifyHandler:
         random.shuffle(tracks_uris)
         return tracks_uris[:limit]
 
-    def get_my_albums_tracks(self,limit=1,unit=1):
+    def get_my_albums_tracks(self, limit=1, unit=1, return_source=False):
+        album_uri = None
         # Cache-first: use saved albums from DB if available (avoids API call for total)
         if self._db:
             saved_ids = self._db.get_saved_album_ids()
@@ -1074,12 +1075,14 @@ class SpotifyHandler:
                                 t_list.append(random.choice(tracks))
                         elif tracks:
                             t_list.extend(tracks)
+                        album_uri = f"spotify:album:{album_id}"
+                    t_list = list(dict.fromkeys(t_list))  # deduplicate preserving order
                     if t_list:
-                        return t_list
+                        return (t_list, album_uri) if return_source else t_list
                 # Cache sparse or no AlbumTrack rows yet — fall through to API
 
         if self._is_rate_limited():
-            return []
+            return ([], None) if return_source else []
 
         t_list=[]
         total=0
@@ -1103,6 +1106,7 @@ class SpotifyHandler:
                     print(f"Erreur albums2 : {val_e}")
                     continue
                 album_data = album_response['items'][0]['album']
+                album_uri = album_data['uri']
                 self._cache_album(album_data)
                 if self._db:
                     self._db.mark_album_saved(album_data['id'])
@@ -1126,7 +1130,8 @@ class SpotifyHandler:
                 else:
                     for j in range(len(tracks['items'])):
                         t_list.append(tracks['items'][j]['uri'])
-        return t_list
+        t_list = list(dict.fromkeys(t_list))  # deduplicate preserving order
+        return (t_list, album_uri) if return_source else t_list
 
 
     def get_track_album(self, track_id):
@@ -1290,8 +1295,9 @@ class SpotifyHandler:
                 break
         return all_followed
     
-    def get_my_artists_tracks(self,limit=1,unit=1):
+    def get_my_artists_tracks(self, limit=1, unit=1, return_source=False):
         t_list=[]
+        artist_uri=None
         total=0
         try:
             # get_all_followed_artists handles rate-limit via Artist.followed=1 cache
@@ -1299,6 +1305,7 @@ class SpotifyHandler:
             if len(artists)>0:
                 for i in range(limit):
                     artist = random.choice(artists)
+                    artist_uri = 'spotify:artist:' + artist
                     # top-tracks endpoint restricted since Nov 2024 — use albums instead
                     tracks = self.get_artist_all_tracks(artist, limit=unit if unit > 0 else 10)
                     if tracks and unit != 0:
@@ -1326,8 +1333,8 @@ class SpotifyHandler:
             
         except Exception as val_e:
             print(f"Erreur artist : {val_e}")
-        
-        return t_list
+
+        return (t_list, artist_uri) if return_source else t_list
 
 ################### FAVORITES AND MISC #############################
 
