@@ -278,9 +278,6 @@ class CacheMeta(BaseModel):
 #   2. Append (N, "short_description", _migration_vN)  to  _MIGRATIONS
 #   3. Bump   SCHEMA_VERSION = N
 
-SCHEMA_VERSION = 2
-
-
 def _get_schema_version():
     try:
         row = CacheMeta.get_by_id('schema_version')
@@ -345,9 +342,34 @@ def _migration_v2(migrator):
     _add_column_safe(migrator, 'track', 'local_uri', TextField(null=True))
 
 
+def _migration_v3(migrator):
+    # Remove duplicate (album_id, track_uri) rows keeping the earliest inserted row
+    try:
+        db.execute_sql("""
+            DELETE FROM albumtrack
+            WHERE id NOT IN (
+                SELECT id FROM (
+                    SELECT MIN(id) AS id
+                    FROM albumtrack
+                    GROUP BY album_id, track_uri
+                ) AS tmp
+            )
+        """)
+    except Exception as e:
+        print(f"migration_v3 AlbumTrack dedup: {e}")
+    # Ensure unique index exists (no-op if already present)
+    try:
+        migrate(migrator.add_index('albumtrack', ('album_id', 'track_uri'), unique=True))
+    except Exception:
+        pass  # index already exists
+
+
+SCHEMA_VERSION = 3
+
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
     (2, "track_local_uri", _migration_v2),
+    (3, "albumtrack_dedup_unique_index", _migration_v3),
 ]
 
 
