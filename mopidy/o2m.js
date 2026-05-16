@@ -274,14 +274,29 @@ window.onload = function() {
   xhr1.send();
 
 //RESET
+  var bClear = document.createElement("button");
+  bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>Clear today history";
+  bClear.className = "sidebar__menu__item icon icon--material";
+  bClear.onclick = function(){
+    if (!confirm("Effacer l'historique du jour (stats_raw) ?")) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", base_url+"clear_today_history");
+    xhr.onload = function() {
+      bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>History cleared";
+      setTimeout(() => { bClear.innerHTML = "<i class=\"icon icon--material \">delete</i>Clear today history"; }, 3000);
+    };
+    xhr.send();
+  };
+  list.insertBefore(bClear, list.children[0]);
+
   var b4 = document.createElement("button");
-  b4.innerHTML = "<i class=\"icon icon--material \">restart_alt</i>Relaunch mopidy";
+  b4.innerHTML = "<i class=\"icon icon--material \">explore</i>Relaunch";
   b4.className = "sidebar__menu__item icon icon--material";
   b4.onclick = function(){
     var xhr = new XMLHttpRequest();
     xhr.open("GET", base_url+"restart_mopidy");
     xhr.send();
-    b4.innerHTML = "<i class=\"icon icon--material \">restart_alt</i>Restarting…";
+    b4.innerHTML = "<i class=\"icon icon--material \">explore</i>Restarting…";
     b4.disabled = true;
     setTimeout(() => {
       var but = document.getElementsByTagName('button');
@@ -289,21 +304,6 @@ window.onload = function() {
     }, 500);
   };
   list.insertBefore(b4, list.children[0]);
-
-  var bClear = document.createElement("button");
-  bClear.innerHTML = "<i class=\"icon icon--material \">delete_sweep</i>Clear today history";
-  bClear.className = "sidebar__menu__item icon icon--material";
-  bClear.onclick = function(){
-    if (!confirm("Effacer l'historique du jour (stats_raw) ?")) return;
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", base_url+"clear_today_history");
-    xhr.onload = function() {
-      bClear.innerHTML = "<i class=\"icon icon--material \">delete_sweep</i>History cleared";
-      setTimeout(() => { bClear.innerHTML = "<i class=\"icon icon--material \">delete_sweep</i>Clear today history"; }, 3000);
-    };
-    xhr.send();
-  };
-  list.insertBefore(bClear, list.children[0]);
 
 //BOXES DISPLAY (From API)
   var xhr5 = new XMLHttpRequest();
