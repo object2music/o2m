@@ -944,60 +944,54 @@ class SpotifyHandler:
             self._db.set_cache_meta('warmup_albums_at', count)
 
     def warmup_artist_genres(self):
-        """Fetch genres for artists from all DB sources (Artist + TrackArtist + AlbumArtist).
+        """Fetch genres for up to 30 artists not yet in ArtistGenre.
 
-        Works around the Spotify batch endpoint 403 by calling sp.artist() individually.
-        Processes up to 500 artists per run; subsequent startups continue on remaining ones.
+        Conservative: 1s sleep, abort on any rate limit. Spotify genres are
+        sparse (~20% coverage) so this is a best-effort supplement to the
+        organic path (_cache_artist called during recommendations).
+        Not run automatically — only triggered via /api/warmup_genres.
         """
         if not self._db:
             return
-        artist_ids = self._db.get_artist_ids_without_genres(max_count=500)
+        artist_ids = self._db.get_artist_ids_without_genres(max_count=30)
         if not artist_ids:
             print("warmup_artist_genres: all artists already have genres")
             return
         print(f"warmup_artist_genres: fetching genres for {len(artist_ids)} artists")
         count = 0
         no_genre_count = 0
-        abort = False
 
-        for i, artist_id in enumerate(artist_ids):
-            if abort:
-                break
+        for artist_id in artist_ids:
             if self._is_rate_limited():
-                wait = self._rate_limited_until - time.time()
-                if wait > 60:
-                    print(f"warmup_artist_genres: rate-limited for {int(wait)}s, aborting")
-                    break
-                print(f"warmup_artist_genres: rate-limited, waiting {int(wait)+1}s…")
-                time.sleep(wait + 1)
+                print("warmup_artist_genres: rate-limited, aborting")
+                break
             try:
                 artist = self.sp.artist(artist_id)
                 genres = artist.get('genres') if artist else None
                 if genres:
                     self._db.save_artist_genres(artist['id'], genres)
-                    self._cache_artist(artist)  # creates Artist record if missing
+                    self._cache_artist(artist)
                     count += 1
-                    if count <= 5:
-                        print(f"  genres: {artist.get('name', artist_id)} → {genres[:3]}")
+                    print(f"  genres: {artist.get('name', artist_id)} → {genres[:3]}")
                 else:
                     no_genre_count += 1
-                    if i < 3:  # log first 3 empty results to confirm API is working
-                        print(f"  no genres: {artist.get('name', artist_id) if artist else artist_id}")
-                time.sleep(0.1)
+                time.sleep(1.0)
             except spotipy.SpotifyException as e:
                 if e.http_status == 429:
                     self._on_rate_limit(e)
+                    print("warmup_artist_genres: rate-limited, aborting")
+                    break
                 elif e.http_status == 403:
                     print("warmup_artist_genres: endpoint returned 403, aborting")
-                    abort = True
+                    break
                 else:
                     print(f"warmup_artist_genres error ({artist_id}): {e}")
             except Exception as e:
                 print(f"warmup_artist_genres error ({artist_id}): {e}")
 
         print(f"warmup_artist_genres: done — {count} with genres, {no_genre_count} without, out of {len(artist_ids)}")
-        if self._db:
-            self._db.set_cache_meta('warmup_genres_at', max(count, 1))
+        if self._db and count > 0:
+            self._db.set_cache_meta('warmup_genres_at', count)
 
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
@@ -1009,7 +1003,8 @@ class SpotifyHandler:
             ('albums',          self.warmup_saved_albums),
             ('artists',         self.get_all_followed_artists),   # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
-            ('genres',          self.warmup_artist_genres),
+            # genres: not auto-warmed — Spotify coverage is ~20%; organic via _cache_artist()
+            # Use /api/warmup_genres to trigger manually (conservative: 30 artists, 1s sleep)
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")
