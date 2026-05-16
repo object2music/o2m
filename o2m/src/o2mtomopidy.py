@@ -475,7 +475,8 @@ class O2mToMopidy:
                     replaced_tlids = set()  # Track which tlids were replaced
 
                     #Exclude if DL is on extreme values which has special behaviours and other cases
-                    if discover_level > 0 and discover_level < 10 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash']: 
+                    # 'new' excluded: the new context must play unheard tracks, not recommendations
+                    if discover_level > 0 and discover_level < 10 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash','new']:
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
