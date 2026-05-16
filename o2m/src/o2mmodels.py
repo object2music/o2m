@@ -119,6 +119,7 @@ class Track(BaseModel):
     storage = CharField(default='sp')    # 'sp' or 'local'
     liked = IntegerField(default=0)      # 1 = in liked tracks
     liked_at = TimestampField(null=True, utc=True)
+    local_uri = TextField(null=True)     # file:// URI if downloaded via spotdl
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -277,7 +278,7 @@ class CacheMeta(BaseModel):
 #   2. Append (N, "short_description", _migration_vN)  to  _MIGRATIONS
 #   3. Bump   SCHEMA_VERSION = N
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _get_schema_version():
@@ -340,8 +341,13 @@ def _migration_v1(migrator):
         _add_column_safe(migrator, 'album', col, field)
 
 
+def _migration_v2(migrator):
+    _add_column_safe(migrator, 'track', 'local_uri', TextField(null=True))
+
+
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
+    (2, "track_local_uri", _migration_v2),
 ]
 
 

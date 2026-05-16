@@ -326,11 +326,39 @@ class DatabaseHandler():
                 .where(ArtistGenre.artist_id == artist_id))
         return [g.name for g in rows]
 
-    def get_artist_ids_without_genres(self):
-        """Return artist IDs in DB that have no entry in ArtistGenre."""
-        all_ids = {a.id for a in Artist.select(Artist.id)}
-        with_genres = {ag.artist_id for ag in ArtistGenre.select(ArtistGenre.artist_id)}
-        return list(all_ids - with_genres)
+    def get_artist_ids_without_genres(self, max_count=500):
+        """Return artist IDs (from Artist + TrackArtist + AlbumArtist) with no genre entry yet.
+
+        Covers all sources so we reach actual listening-history artists, not just
+        followed artists (who often have sparse Spotify genre data).
+        Randomizes and caps at max_count to stay within a single warmup run.
+        """
+        from src.o2mmodels import TrackArtist, AlbumArtist
+        from peewee import fn
+
+        already = {ag.artist_id for ag in ArtistGenre.select(ArtistGenre.artist_id)}
+
+        all_ids = set()
+        # 1. Explicitly stored artists (followed/cached via Spotify API)
+        all_ids.update(a.id for a in Artist.select(Artist.id) if a.id)
+        # 2. Artists linked to tracks in listening history
+        all_ids.update(
+            ta.artist_id
+            for ta in TrackArtist.select(TrackArtist.artist_id).distinct()
+            if ta.artist_id
+        )
+        # 3. Artists linked to albums
+        all_ids.update(
+            aa.artist_id
+            for aa in AlbumArtist.select(AlbumArtist.artist_id).distinct()
+            if aa.artist_id
+        )
+
+        without = list(all_ids - already)
+        if max_count and len(without) > max_count:
+            random.shuffle(without)
+            without = without[:max_count]
+        return without
 
     # ─── Album cache ───────────────────────────────────────────────────────────
 
@@ -574,6 +602,24 @@ class DatabaseHandler():
         return uris[:limit]
 
     # ─── Liked tracks ──────────────────────────────────────────────────────────
+
+    def get_local_uri(self, spotify_uri):
+        """Return the local file URI for a spotify:track: URI, or None."""
+        try:
+            t = Track.get_by_id(spotify_uri)
+            return t.local_uri or None
+        except Track.DoesNotExist:
+            return None
+
+    def set_local_uri(self, spotify_uri, local_uri):
+        """Store (or clear) the local file URI for a spotify:track: URI."""
+        Track.insert({'uri': spotify_uri, 'local_uri': local_uri}).on_conflict(
+            action='update', update={'local_uri': local_uri}
+        ).execute()
+
+    def clear_local_uri_by_file(self, local_uri):
+        """Set local_uri=NULL for all tracks with this local file URI."""
+        Track.update(local_uri=None).where(Track.local_uri == local_uri).execute()
 
     def mark_track_liked(self, uri, liked_at=None):
         """Set liked=1 on a track row (create it if needed)."""

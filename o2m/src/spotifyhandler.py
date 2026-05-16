@@ -944,22 +944,25 @@ class SpotifyHandler:
             self._db.set_cache_meta('warmup_albums_at', count)
 
     def warmup_artist_genres(self):
-        """Fetch genres for all artists in DB that have none yet via individual sp.artist() calls.
-        The batch endpoint sp.artists() returns 403 since Spotify 2024 API changes."""
+        """Fetch genres for artists from all DB sources (Artist + TrackArtist + AlbumArtist).
+
+        Works around the Spotify batch endpoint 403 by calling sp.artist() individually.
+        Processes up to 500 artists per run; subsequent startups continue on remaining ones.
+        """
         if not self._db:
             return
-        artist_ids = self._db.get_artist_ids_without_genres()
+        artist_ids = self._db.get_artist_ids_without_genres(max_count=500)
         if not artist_ids:
             print("warmup_artist_genres: all artists already have genres")
             return
         print(f"warmup_artist_genres: fetching genres for {len(artist_ids)} artists")
         count = 0
+        no_genre_count = 0
         abort = False
 
-        for artist_id in artist_ids:
+        for i, artist_id in enumerate(artist_ids):
             if abort:
                 break
-            # Wait out short rate limits (≤60s); abort on longer ones
             if self._is_rate_limited():
                 wait = self._rate_limited_until - time.time()
                 if wait > 60:
@@ -969,11 +972,18 @@ class SpotifyHandler:
                 time.sleep(wait + 1)
             try:
                 artist = self.sp.artist(artist_id)
-                if artist and artist.get('genres'):
-                    self._db.save_artist_genres(artist['id'], artist['genres'])
-                    self._cache_artist(artist)
+                genres = artist.get('genres') if artist else None
+                if genres:
+                    self._db.save_artist_genres(artist['id'], genres)
+                    self._cache_artist(artist)  # creates Artist record if missing
                     count += 1
-                time.sleep(0.1)  # pace requests to stay under rate limit
+                    if count <= 5:
+                        print(f"  genres: {artist.get('name', artist_id)} → {genres[:3]}")
+                else:
+                    no_genre_count += 1
+                    if i < 3:  # log first 3 empty results to confirm API is working
+                        print(f"  no genres: {artist.get('name', artist_id) if artist else artist_id}")
+                time.sleep(0.1)
             except spotipy.SpotifyException as e:
                 if e.http_status == 429:
                     self._on_rate_limit(e)
@@ -985,7 +995,7 @@ class SpotifyHandler:
             except Exception as e:
                 print(f"warmup_artist_genres error ({artist_id}): {e}")
 
-        print(f"warmup_artist_genres: done ({count}/{len(artist_ids)} artists with genres saved)")
+        print(f"warmup_artist_genres: done — {count} with genres, {no_genre_count} without, out of {len(artist_ids)}")
         if self._db:
             self._db.set_cache_meta('warmup_genres_at', max(count, 1))
 

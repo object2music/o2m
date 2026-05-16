@@ -140,6 +140,52 @@ if __name__ == "__main__":
         #boxes = json.dumps(boxes)
         return (boxes)
 
+    #Return a single box's data without triggering playback (used by spotdl cache service)
+    @api.route('/api/box_info')
+    def api_box_info():
+        uid = request.args.get('uid')
+        if not uid:
+            return json.dumps({'error': 'uid required'}), 400
+        box = o2mHandler.dbHandler.get_box_by_uid(uid)
+        if box is None:
+            return json.dumps({'error': 'box not found'}), 404
+        return json.dumps({
+            'uid': box.uid,
+            'data': box.data,
+            'description': box.description,
+            'option_type': box.option_type,
+            'favorite': box.favorite,
+        })
+
+    #Register a local file download for a Spotify track (called by spotdl cache service)
+    @api.route('/api/register_local_track', methods=['POST'])
+    def api_register_local_track():
+        data = request.get_json(silent=True) or {}
+        spotify_uri = (data.get('spotify_uri') or '').strip()
+        local_uri = (data.get('local_uri') or '').strip()
+        if not spotify_uri or not local_uri:
+            return json.dumps({'error': 'spotify_uri and local_uri required'}), 400
+        if not spotify_uri.startswith('spotify:track:'):
+            return json.dumps({'error': 'spotify_uri must be spotify:track:'}), 400
+        try:
+            o2mHandler.dbHandler.set_local_uri(spotify_uri, local_uri)
+            return json.dumps({'ok': True, 'spotify_uri': spotify_uri, 'local_uri': local_uri})
+        except Exception as e:
+            return json.dumps({'error': str(e)}), 500
+
+    #Clear a local file mapping when the file is deleted (called by spotdl cache service)
+    @api.route('/api/clear_local_track', methods=['POST'])
+    def api_clear_local_track():
+        data = request.get_json(silent=True) or {}
+        local_uri = (data.get('local_uri') or '').strip()
+        if not local_uri:
+            return json.dumps({'error': 'local_uri required'}), 400
+        try:
+            o2mHandler.dbHandler.clear_local_uri_by_file(local_uri)
+            return json.dumps({'ok': True})
+        except Exception as e:
+            return json.dumps({'error': str(e)}), 500
+
     #API box checking if activated or not
     @api.route('/api/box_activated')
     def api_box_activated():
@@ -316,6 +362,19 @@ if __name__ == "__main__":
         count = o2mHandler.spotifyHandler.cache_all_playlists()
         return f"cached {count} tracks"
 
+    @api.route('/api/warmup_genres')
+    def api_warmup_genres():
+        """Force an immediate genre warmup run (bypasses TTL)."""
+        import threading
+        o2mHandler.dbHandler.set_cache_meta('warmup_genres_at', 0)
+        def _run():
+            try:
+                o2mHandler.spotifyHandler.warmup_artist_genres()
+            except Exception as e:
+                print(f"api_warmup_genres error: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+        return "genre warmup started"
+
     #RESTART
     @api.route('/health')
     def health_check():
@@ -431,7 +490,9 @@ if __name__ == "__main__":
         def track_ended_event(event):
             #Datas
             track = event.tl_track.track
-            discover_level = o2mHandler.calculate_discover_level(track.uri)
+            # Resolve local file URI back to its Spotify URI for all stat/reco logic
+            effective_uri = o2mHandler.get_spotify_uri(track.uri)
+            discover_level = o2mHandler.calculate_discover_level(effective_uri)
             
             #No action if discover_level set to 0
             if discover_level > 0:
@@ -471,20 +532,20 @@ if __name__ == "__main__":
                         o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
 
                     # Recommandations added at each ended and nottrack (only spotify:track now)
-                    if "track" in track.uri and position / track.length > 0.9:
+                    if "track" in effective_uri and position / track.length > 0.9:
                         print (f"Ending with option_type {option_type}")
                         if option_type != 'new':
                             #int(round(discover_level * 0.25))
                             #Pb with this library_link calc
                             library_link="o2m:reco_after_track"
-                            try: o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
+                            try: o2mHandler.add_reco_after_track_read(effective_uri,library_link,data)
                             except Exception as val_e:
                                 print(f"Erreur : {val_e}")
                                 o2mHandler.spotifyHandler.init_token_sp()
-                                o2mHandler.add_reco_after_track_read(track.uri,library_link,data)
-                        if option_type != 'hidden' and option_type != 'trash' : 
+                                o2mHandler.add_reco_after_track_read(effective_uri,library_link,data)
+                        if option_type != 'hidden' and option_type != 'trash' :
                             print ("Adding raw stats")
-                            o2mHandler.update_stat_raw(track.uri)
+                            o2mHandler.update_stat_raw(effective_uri)
 
                 # Podcast
                 '''if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
@@ -516,15 +577,15 @@ if __name__ == "__main__":
                 # Update stats 
                 if (event.event == "track_playback_ended") or ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
                     
-                    try: 
-                        o2mHandler.update_stat_track(track,position,option_type,library_link)
-                    except Exception as val_e: 
+                    try:
+                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri)
+                    except Exception as val_e:
                         print(f"Erreur : {val_e}")
                         o2mHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve
-                        o2mHandler.update_stat_track(track,position,option_type,library_link)
-                    
-                if "tunein" in track.uri:
-                    if option_type != 'hidden': o2mHandler.update_stat_raw(track.uri)
+                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri)
+
+                if "tunein" in effective_uri:
+                    if option_type != 'hidden': o2mHandler.update_stat_raw(effective_uri)
 
             # Tracklist filling when empty
             tracklist_length = mopidy.tracklist.get_length()

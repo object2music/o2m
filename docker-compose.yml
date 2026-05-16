@@ -119,6 +119,20 @@ services:
       retries: 1
       start_period: 40s
 
+  spotdl:
+    profiles:
+      - prod
+    build:
+      context: ./spotdl
+      dockerfile: Dockerfile
+    volumes:
+      - ./data/music:/music
+    depends_on:
+      - o2m
+    env_file:
+      - .env
+    restart: always
+
   back:
     profiles:
       - dev

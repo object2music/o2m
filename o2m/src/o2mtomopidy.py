@@ -47,6 +47,7 @@ class O2mToMopidy:
         # Replaces the parallel box.tlids / box.uris / box.option_types / box.library_link lists.
         # {tlid: {'uri': str, 'option_type': str, 'library_link': str, 'box_id': str}}
         self._track_info = {}
+        self._local_to_spotify = {}  # file:// URI → spotify:track: URI for stat routing
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -115,6 +116,32 @@ class O2mToMopidy:
         print("\n\nSTATS")
         print("\n".join("{} {}".format(k, v) for k, v in stats.items()))
         return stats
+
+#LOCAL CACHE RESOLUTION
+    def _resolve_uri(self, uri):
+        """Return the local file URI if this Spotify track was downloaded, else original."""
+        if not uri or not uri.startswith('spotify:track:'):
+            return uri
+        try:
+            local = self.dbHandler.get_local_uri(uri)
+            if local:
+                self._local_to_spotify[local] = uri
+                return local
+        except Exception:
+            pass
+        return uri
+
+    def _resolve_uris(self, uris):
+        """Resolve a list of URIs, substituting local files where available."""
+        if not uris:
+            return uris
+        return [self._resolve_uri(u) for u in uris]
+
+    def get_spotify_uri(self, uri):
+        """Canonicalize a local file URI back to its Spotify URI for stat recording."""
+        if not uri or uri.startswith('spotify:'):
+            return uri
+        return self._local_to_spotify.get(uri, uri)
 
 #TAG MANAGEMENT
     def box_action(self,box):
@@ -371,7 +398,7 @@ class O2mToMopidy:
                     current_index = 0 
                 
                 #Adding tracks trought mopidy handler
-                tltracks_added = self.mopidyHandler.tracklist.add(uris=uris)
+                tltracks_added = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris))
                 length = len(tltracks_added)
                 print (f"Lenght added {len(tltracks_added)}")
 
@@ -460,7 +487,7 @@ class O2mToMopidy:
 
                                     if len(uris) > 0 :
                                         index = self.mopidyHandler.tracklist.index(tlid=tlid)
-                                        slice3 = self.mopidyHandler.tracklist.add(uris=uris, at_position=index)
+                                        slice3 = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris), at_position=index)
                                         if slice3:
                                             slice4 = self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
                                             if slice4: 
@@ -1078,7 +1105,7 @@ class O2mToMopidy:
     def add_tracks_after(self, uris):
         print("ADDING SONGS SILENTLY IN TRACKLIST")
         self.clear_tracklist_except_current_song()
-        self.mopidyHandler.tracklist.add(uris=uris)
+        self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris))
 
     def clear_tracklist_except_current_song(self):
         all_tracklist_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
@@ -1130,7 +1157,7 @@ class O2mToMopidy:
                         new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10))) #somewhere in the middle of the tracklist
 
                 if uris:
-                    slice = self.mopidyHandler.tracklist.add(uris=uris, at_position=new_index)
+                    slice = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris), at_position=new_index)
                     # Updating box infos
                     # if 'box' in locals():
                     if slice:
@@ -1461,20 +1488,24 @@ class O2mToMopidy:
         )
 
     # Update tracks stat when finished, skipped or system stopped (if possible)
-    def update_stat_track(self, track, pos=0, option_type='', library_link='', fix=False):
+    def update_stat_track(self, track, pos=0, option_type='', library_link='', fix=False, uri_override=None):
         # Populate metadata cache from Mopidy track object (no API call)
         self.spotifyHandler.cache_track_from_mopidy(track)
+
+        # uri_override allows callers to record stats under the canonical Spotify URI
+        # even when the track was played from a local file (file:// URI)
+        uri = uri_override or track.uri
 
         #Harmonize option_type if new
         if 'new' in option_type: option_type='new'
         new_stat = False
 
         #Get stats
-        if self.dbHandler.stat_exists(track.uri):
-            stat = self.dbHandler.get_stat_by_uri(track.uri)
+        if self.dbHandler.stat_exists(uri):
+            stat = self.dbHandler.get_stat_by_uri(uri)
         else:
             new_stat = True
-            stat = self.dbHandler.create_stat(track.uri)
+            stat = self.dbHandler.create_stat(uri)
 
         #Using rate reading average instead of bool
         track_finished = False
@@ -1508,7 +1539,7 @@ class O2mToMopidy:
         # Store library_link in the in_library field (repurposed from obsolete boolean)
         if library_link and library_link != '':
             try:
-                effective_link = self.get_library_link_for_track(track.uri, library_link)
+                effective_link = self.get_library_link_for_track(uri, library_link)
             except Exception:
                 effective_link = library_link
             stat.in_library = self.get_library_display(effective_link)
