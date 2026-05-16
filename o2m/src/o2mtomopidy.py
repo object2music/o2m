@@ -296,11 +296,9 @@ class O2mToMopidy:
                 tracklist_uris = tracklist_uris[:lenght0]
                 #print(f"\nLenght {len(tracklist_uris)} & tracklist_uris: {tracklist_uris}")
 
-                #Let's go to play — honour quota: direct add_tracks in tracklistappend_box may have already consumed some slots
+                #Let's go to play
                 if len(tracklist_uris)>0:
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - prev_tl_length))
-                    if remaining > 0:
-                        self.add_tracks(box, tracklist_uris, remaining)
+                    self.add_tracks(box, tracklist_uris, max_results)
 
                 #Shuffle if new tracks were added — regardless of direct vs. indirect add in tracklistappend_box
                 current_tl_length = self.mopidyHandler.tracklist.get_length()
@@ -720,15 +718,10 @@ class O2mToMopidy:
 
                 # here&now:library (daily habits + library auto extract)
                 elif "herenow:library" in content :
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
-                    if remaining > 0:
-                        window = int(round(discover_level / 2))
-                        max_result1 = int(round(remaining/2))
-                        uris_herenow = list(util.flatten_list([
-                            self.get_common_tracks(datetime.datetime.now().hour, window, max_result1),
-                            self.spotifyHandler.get_my_albums_tracks(max_result1, 1)
-                        ]))
-                        self.add_tracks(box, uris_herenow, remaining, library_link='o2m:herenow')
+                    window = int(round(discover_level / 2))
+                    max_result1 = int(round(max_results/2))
+                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
 
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto:library" in content :
@@ -756,30 +749,22 @@ class O2mToMopidy:
                 # o2m:favorites (favorites only)
                 elif "o2m:favorites" in content :
                     print ("o2m:favorites")
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
-                    if remaining > 0:
-                        self.add_tracks(box, self.spotifyHandler.get_library_favorite_tracks(remaining), remaining, force_option_type='favorites', library_link='o2m:favorites')
+                    tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results))
 
                 # Backward compatibility: legacy spotify:favorites
                 elif "spotify:favorites" in content:
                     print ("spotify:favorites (legacy) -> o2m:favorites")
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
-                    if remaining > 0:
-                        self.add_tracks(box, self.spotifyHandler.get_library_favorite_tracks(remaining), remaining, force_option_type='favorites', library_link='o2m:favorites')
+                    tracklist_uris.append(self.spotifyHandler.get_library_favorite_tracks(max_results))
 
                 # now:library (daily habits)
                 elif "now:library" in content :
                     print ("now:library")
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
-                    if remaining > 0:
-                        window = int(round(discover_level / 2))
-                        self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour, window, remaining), remaining, library_link='o2m:now')
+                    window = int(round(discover_level / 2))
+                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
 
                 # infos:library (more recent news podcasts (to be updated))
                 elif "infos:library" in content :
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
-                    if remaining > 0:
-                        self.add_tracks(box, self.lastinfos(box, remaining), remaining, library_link='o2m:infos')
+                    tracklist_uris.append(self.lastinfos(box,max_results))
 
                 # newnotcompleted:library — pre-filtered in DB, bypass REMOVE in add_tracks
                 elif "newnotcompleted:library" in content:
@@ -832,11 +817,9 @@ class O2mToMopidy:
 
                 # Unfinished podcasts
                 elif "podcasts:unfinished" in content:
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
-                    if remaining > 0:
-                        uris = self.dbHandler.get_uris_podcasts_notread(remaining)
-                        if uris:
-                            self.add_tracks(box, uris, remaining, library_link='o2m:podcast')
+                    uris = self.dbHandler.get_uris_podcasts_notread(max_results)
+                    if uris:
+                        tracklist_uris.append(uris)
 
                 # Podcast channel
                 elif "podcast+" in content and "#" not in content:
