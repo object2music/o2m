@@ -735,11 +735,16 @@ class O2mToMopidy:
                     tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level,'podcast'))
 
                 # spotify:library (library random extract)
-                elif "spotify:library" in content :
-                    print ("spotify:library")
-                    max_result1 = int(round(max_results/2))
-                    tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
-                    tracklist_uris.append(self.spotifyHandler.get_my_artists_tracks(max_result1,1))
+                elif "spotify:library" in content:
+                    print("spotify:library")
+                    max_result1 = int(round(max_results / 2))
+                    album_pairs = self.spotifyHandler.get_my_albums_tracks(max_result1, 1, return_pairs=True)
+                    artist_pairs = self.spotifyHandler.get_my_artists_tracks(max_result1, 1, return_pairs=True)
+                    for uri, source in album_pairs + artist_pairs:
+                        remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
+                        if remaining <= 0:
+                            break
+                        self.add_tracks(box, [uri], remaining, library_link=source or '')
 
                 # spotify:library (library random extract)
                 elif "spotify:library2" in content :
