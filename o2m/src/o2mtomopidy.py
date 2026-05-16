@@ -767,15 +767,20 @@ class O2mToMopidy:
                 elif "infos:library" in content :
                     tracklist_uris.append(self.lastinfos(box,max_results))
 
-                # newnotcompleted:library (adding new tracks only played once)
-                elif "newnotcompleted:library" in content :
+                # newnotcompleted:library — completed at least once, not skipped, not played in 2w
+                elif "newnotcompleted:library" in content:
                     uri_new = self.get_new_tracks_notread(max_results)
-                    if len(uri_new)>0:
-                        #tracklist_uris.append(uri_new)
+                    if uri_new:
                         tracklist_uris.append(uri_new)
-                        #print(f"Adding : {uri_new} tracks")
-                
-                # album:local 
+
+                # newrecent:library — cached in last 60 days, never played, not skipped
+                elif "newrecent:library" in content:
+                    days = 60
+                    uri_new = self.get_newrecent_tracks(max_results, days)
+                    if uri_new:
+                        tracklist_uris.append(uri_new)
+
+                # album:local
                 elif "albums:local" in content :
                     #list_album = self.mopidyHandler.library.search({'album': ['a']})
                     list_album = self.mopidyHandler.library.get_distinct("albumartist")
@@ -1387,8 +1392,11 @@ class O2mToMopidy:
         if self.local and self.username == None : pattern = "local:local"
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)
 
-    def get_new_tracks_notread(self,limit):
+    def get_new_tracks_notread(self, limit):
         return self.dbHandler.get_uris_new_notread(limit)
+
+    def get_newrecent_tracks(self, limit, days=60):
+        return self.dbHandler.get_uris_newrecent(limit, days)
 
     def get_active_box_by_uri(self, uri):
         """Return the active box that owns a track with the given URI."""

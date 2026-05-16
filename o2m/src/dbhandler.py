@@ -213,16 +213,42 @@ class DatabaseHandler():
             uris = [o.uri for o in results]
             return uris
 
-    def get_uris_new_notread(self, limit=1, date_now=0):
-        #Track boxged new but only read once, probably because of ephemere availability like spotify. Request above two week
-        date_now = datetime.datetime.utcnow().timestamp()
-        query = Track.select().where((Track.uri % '%spotify:track%') & (Track.read_count_end  >= 1) & (Track.skipped_count == 0) & (Track.option_type == 'new') & (Track.last_read_date < (date_now-1209600))).order_by(fn.Rand()).limit(limit)
-        #query = Track.select().where((Track.read_count_end  >= 1) | (Track.skipped_count == 0) | (Track.option_type == 'new') | (date - Track.last_read_date > 1209600)).order_by(fn.Rand()).limit(limit)
+    def get_uris_new_notread(self, limit=1):
+        # Tracks tagged 'new', completed at least once, never skipped — no time constraint
+        query = Track.select().where(
+            (Track.uri % '%spotify:track%')
+            & (Track.read_count_end >= 1)
+            & (Track.skipped_count == 0)
+            & (Track.option_type == 'new')
+        ).order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
-        if len(results) > 0:
+        if results:
             uris = [o.uri for o in results]
-            print (f"Adding : news_notcompleted:library {len(uris)}")
+            print(f"newnotcompleted:library {len(uris)} tracks")
             return uris
+        return []
+
+    def get_uris_newrecent(self, limit=10, days=60):
+        """Spotify tracks cached recently (last N days) that have never been played.
+
+        Source: tracks populated by warmup (albums, playlists, artists) that haven't
+        been played yet, or queued but play never counted (read_count still 0).
+        Podcasts are excluded implicitly by the spotify:track URI filter.
+        """
+        date_now = datetime.datetime.utcnow().timestamp()
+        cutoff = date_now - (days * 86400)
+        query = Track.select().where(
+            (Track.uri % '%spotify:track%')
+            & (Track.cached_at >= cutoff)
+            & (Track.read_count == 0)
+            & (Track.skipped_count == 0)
+        ).order_by(fn.Rand()).limit(limit)
+        results = self.transform_query_to_list(query)
+        if results:
+            uris = [o.uri for o in results]
+            print(f"newrecent:library {len(uris)} unplayed tracks cached in last {days}d")
+            return uris
+        return []
 
     def get_uris_podcasts_notread(self, limit=15, discover_level=5):
         #Track unfinished

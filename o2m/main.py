@@ -141,6 +141,14 @@ if __name__ == "__main__":
         return (boxes)
 
     #Return a single box's data without triggering playback (used by spotdl cache service)
+    @api.route('/api/newrecent')
+    def api_newrecent():
+        """Return unplayed recently-cached tracks for inspection/testing."""
+        limit = int(request.args.get('limit', 20))
+        days = int(request.args.get('days', 60))
+        uris = o2mHandler.dbHandler.get_uris_newrecent(limit=limit, days=days)
+        return json.dumps({'count': len(uris), 'days': days, 'uris': uris})
+
     @api.route('/api/box_info')
     def api_box_info():
         uid = request.args.get('uid')
