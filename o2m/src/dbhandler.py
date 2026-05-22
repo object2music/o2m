@@ -7,7 +7,7 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 
 
 from src.o2mmodels import (
-    Box, Track, Stats_Raw, db,
+    Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
     setup_database,
@@ -196,6 +196,19 @@ class DatabaseHandler():
     def create_stat_raw(self, uri, read_time, read_hour, username):
         stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
         return stat_raw
+
+    def create_playlist_log(self, track_uri, playlist_uri, action, from_option_type=None, to_option_type=None, username=None, track_name=None, playlist_name=None):
+        return PlaylistLog.create(
+            event_date=datetime.datetime.now(datetime.timezone.utc),
+            track_uri=track_uri,
+            track_name=track_name,
+            playlist_uri=playlist_uri,
+            playlist_name=playlist_name,
+            action=action,
+            from_option_type=from_option_type,
+            to_option_type=to_option_type,
+            username=username,
+        )
 
     def get_stat_raw_by_hour(self, read_hour, window=0, limit=1, uri_pattern='track:'):
         print (f"Get stat raw by hour {read_hour} {window} {limit} {uri_pattern}")

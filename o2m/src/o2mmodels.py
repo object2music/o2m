@@ -156,6 +156,20 @@ class Stats_Raw(BaseModel):
         )
 
 
+class PlaylistLog(BaseModel):
+    """Audit log of playlist add/remove operations triggered by update_stat_track."""
+    id = AutoField()
+    event_date = TimestampField(utc=True)
+    track_uri = CharField(index=True)
+    track_name = TextField(null=True)
+    playlist_uri = CharField()
+    playlist_name = TextField(null=True)
+    action = CharField()            # 'add' or 'remove'
+    from_option_type = CharField(null=True)
+    to_option_type = CharField(null=True)
+    username = TextField(null=True)
+
+
 # ─── Spotify local cache ───────────────────────────────────────────────────────
 
 class Album(BaseModel):
@@ -364,12 +378,17 @@ def _migration_v3(migrator):
         pass  # index already exists
 
 
-SCHEMA_VERSION = 3
+def _migration_v4(migrator):
+    db.create_tables([PlaylistLog], safe=True)
+
+
+SCHEMA_VERSION = 4
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
     (2, "track_local_uri", _migration_v2),
     (3, "albumtrack_dedup_unique_index", _migration_v3),
+    (4, "playlist_log_table", _migration_v4),
 ]
 
 
