@@ -962,11 +962,13 @@ class SpotifyHandler:
         """
         if not self._db:
             return
+        from src.o2mmodels import ArtistGenre
+        existing = ArtistGenre.select().count()
         artist_ids = self._db.get_artist_ids_without_genres(max_count=30)
         if not artist_ids:
-            print("warmup_artist_genres: all artists already have genres")
+            print(f"warmup_artist_genres: all artists already have genres ({existing} genre entries)")
             return
-        print(f"warmup_artist_genres: fetching genres for {len(artist_ids)} artists")
+        print(f"warmup_artist_genres: {existing} genre entries in DB, fetching genres for {len(artist_ids)} artists")
         count = 0
         no_genre_count = 0
 
@@ -976,13 +978,15 @@ class SpotifyHandler:
                 break
             try:
                 artist = self.sp.artist(artist_id)
+                name = artist.get('name', artist_id) if artist else artist_id
                 genres = artist.get('genres') if artist else None
                 if genres:
                     self._db.save_artist_genres(artist['id'], genres)
                     self._cache_artist(artist)
                     count += 1
-                    print(f"  genres: {artist.get('name', artist_id)} → {genres[:3]}")
+                    print(f"  genres: {name} → {genres[:3]}")
                 else:
+                    print(f"  no genre: {name}")
                     no_genre_count += 1
                 time.sleep(1.0)
             except spotipy.SpotifyException as e:
@@ -1306,17 +1310,23 @@ class SpotifyHandler:
             return []
         all_followed = []
         response = self.sp.current_user_followed_artists(limit=50)
-        while response and response['artists']['items']:
-            for artist in response['artists']['items']:
+        while response:
+            # sp.next() may return the outer {'artists': {...}} or the raw paging object
+            page = response.get('artists', response)
+            items = page.get('items', [])
+            if not items:
+                break
+            for artist in items:
                 all_followed.append(artist['id'])
                 # Full artist object includes genres — cache + mark followed
                 self._cache_artist(artist)
                 if self._db:
                     self._db.mark_artist_followed(artist['id'])
-            if response['artists']['next']:
-                response = self.sp.next(response['artists'])
+            if page.get('next'):
+                response = self.sp.next(page)
             else:
                 break
+        print(f"get_all_followed_artists: cached {len(all_followed)} followed artists")
         return all_followed
     
     def get_my_artists_tracks(self, limit=1, unit=1, return_source=False, return_pairs=False):
