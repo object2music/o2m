@@ -387,6 +387,7 @@ class DatabaseHandler():
                 )
                 .order_by(Track.read_count_end.desc())
                 .limit(limit)
+                .namedtuples()
             )
             return [(r.uri, r.name, r.artist_name) for r in rows]
         except Exception as e:
