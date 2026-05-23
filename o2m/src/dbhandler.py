@@ -371,6 +371,31 @@ class DatabaseHandler():
                 .where(ArtistGenre.artist_id == artist_id))
         return [g.name for g in rows]
 
+    def get_tracks_without_mood(self, limit=50):
+        """Return [(uri, track_name, artist_name), ...] for tracks that have a name
+        but no mood yet, ordered by most-listened first."""
+        try:
+            rows = (
+                Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'))
+                .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
+                .join(Artist, on=(TrackArtist.artist_id == Artist.id))
+                .where(
+                    Track.mood.is_null() &
+                    Track.name.is_null(False) &
+                    Artist.name.is_null(False) &
+                    (TrackArtist.position == 0)
+                )
+                .order_by(Track.read_count_end.desc())
+                .limit(limit)
+            )
+            return [(r.uri, r.name, r.artist_name) for r in rows]
+        except Exception as e:
+            print(f"get_tracks_without_mood error: {e}")
+            return []
+
+    def update_track_mood(self, uri, mood):
+        Track.update(mood=mood).where(Track.uri == uri).execute()
+
     def get_artist_ids_without_genres(self, max_count=500):
         """Return artist IDs that have a name in the Artist table but no genre entry yet.
 

@@ -887,7 +887,31 @@ class SpotifyHandler:
     # ─── Cache health ──────────────────────────────────────────────────────────
 
     # TTL (days) between warmup runs per entity type
-    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14}
+    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14, 'moods': 30}
+
+    _MOOD_TAGS = {
+        'calm':      {'ambient', 'calm', 'chill', 'chillout', 'relaxing', 'peaceful', 'mellow',
+                      'soft', 'gentle', 'background', 'meditation', 'sleep', 'quiet', 'downtempo',
+                      'lo-fi', 'lofi', 'slow', 'new age', 'nature', 'atmospheric'},
+        'energetic': {'energetic', 'energy', 'upbeat', 'dance', 'workout', 'intense', 'driving',
+                      'fast', 'exciting', 'party', 'power', 'aggressive', 'hard', 'loud',
+                      'high energy', 'adrenaline', 'pump up'},
+        'dark':      {'sad', 'melancholic', 'melancholy', 'dark', 'gloomy', 'depressing',
+                      'emotional', 'heartbreak', 'sorrow', 'lonely', 'tears', 'grief',
+                      'bittersweet', 'introspective'},
+        'happy':     {'happy', 'feel good', 'feelgood', 'cheerful', 'uplifting', 'positive',
+                      'joyful', 'fun', 'summer', 'sunshine', 'optimistic', 'euphoric'},
+    }
+    # Genre tags that can infer mood when track-level tags are absent
+    _GENRE_MOOD = {
+        'calm':      {'classical', 'piano', 'jazz', 'folk', 'acoustic', 'ambient', 'new age',
+                      'chamber', 'baroque', 'bossa nova', 'easy listening', 'smooth jazz',
+                      'instrumental', 'world', 'meditation', 'drone'},
+        'energetic': {'metal', 'punk', 'hardcore', 'edm', 'techno', 'house', 'drum and bass',
+                      'dubstep', 'electro', 'trance', 'breakbeat', 'industrial'},
+        'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave', 'post-punk'},
+        'happy':     {'pop', 'reggae', 'funk', 'soul', 'disco', 'ska'},
+    }
 
     def fetch_spotify_totals(self):
         """Fetch Spotify totals (liked, artists, albums, playlists) and store in CacheMeta.
@@ -1248,6 +1272,91 @@ class SpotifyHandler:
             'count_without': no_genre_count,
         }
 
+    def _lastfm_get_track_mood(self, artist_name, track_name):
+        """Return mood string (calm/energetic/dark/happy) for a track via Last.fm.
+
+        Primary: track.getTopTags — specific to this recording.
+        Fallback: artist genres from ArtistGenre cache — inferred from genre tags.
+        Returns None if Last.fm key absent or no signal found.
+        """
+        if not self._lastfm_api_key:
+            return None
+
+        def _score(tags, category_map):
+            scores = {cat: 0 for cat in category_map}
+            for tag in tags:
+                tl = tag.lower()
+                for cat, keywords in category_map.items():
+                    if tl in keywords:
+                        scores[cat] += 1
+            best_cat = max(scores, key=scores.get)
+            return best_cat if scores[best_cat] > 0 else None
+
+        # --- Primary: track.getTopTags ---
+        try:
+            url = (
+                f"https://ws.audioscrobbler.com/2.0/?method=track.getTopTags"
+                f"&artist={requests.utils.quote(artist_name)}"
+                f"&track={requests.utils.quote(track_name)}"
+                f"&api_key={self._lastfm_api_key}&format=json"
+            )
+            resp = requests.get(url, timeout=5)
+            data = resp.json()
+            raw_tags = (data.get('toptags') or {}).get('tag') or []
+            if isinstance(raw_tags, dict):
+                raw_tags = [raw_tags]
+            tags = [t['name'] for t in raw_tags if int(t.get('count', 0)) >= 3]
+            if tags:
+                mood = _score(tags, self._MOOD_TAGS)
+                if mood:
+                    return mood
+        except Exception:
+            pass
+
+        # --- Fallback: artist genre cache ---
+        try:
+            artist_id = self._resolve_artist_spotify_id(artist_name, allow_api=False)
+            if artist_id and self._db:
+                genres = self._db.get_artist_genres(artist_id)
+                if genres:
+                    mood = _score(genres, self._GENRE_MOOD)
+                    if mood:
+                        return mood
+        except Exception:
+            pass
+
+        return None
+
+    def warmup_track_moods(self, batch_size=50):
+        """Fetch Last.fm mood for tracks that don't have one yet.
+        Processes batch_size tracks per run; smart TTL only activates when all are covered."""
+        if not self._db or not self._lastfm_api_key:
+            print("warmup_track_moods: skipped (no DB or no Last.fm key)")
+            return
+
+        tracks = self._db.get_tracks_without_mood(limit=batch_size)
+        if not tracks:
+            self._db.set_cache_meta('warmup_moods_at', 1)
+            print("warmup_track_moods: all tracks have a mood, TTL set (next run in 30 days)")
+            return
+
+        print(f"warmup_track_moods: fetching mood for {len(tracks)} tracks via Last.fm")
+        count = 0
+        for uri, track_name, artist_name in tracks:
+            if self._is_rate_limited():
+                break
+            try:
+                mood = self._lastfm_get_track_mood(artist_name, track_name)
+                if mood:
+                    self._db.update_track_mood(uri, mood)
+                    count += 1
+                    print(f"  mood: {artist_name} – {track_name} → {mood}")
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"warmup_track_moods error ({track_name}): {e}")
+
+        print(f"warmup_track_moods: done — {count}/{len(tracks)} assigned")
+
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
         Designed to run in a background thread at startup."""
@@ -1259,6 +1368,7 @@ class SpotifyHandler:
             ('artists',         self.get_all_followed_artists),   # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
             ('genres',          self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
+            ('moods',           self.warmup_track_moods),         # 50/run via Last.fm; repeats until all done
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")

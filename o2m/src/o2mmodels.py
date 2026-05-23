@@ -120,6 +120,7 @@ class Track(BaseModel):
     liked = IntegerField(default=0)      # 1 = in liked tracks
     liked_at = TimestampField(null=True, utc=True)
     local_uri = TextField(null=True)     # file:// URI if downloaded via spotdl
+    mood = TextField(null=True)          # Last.fm mood: calm/energetic/dark/happy
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -382,13 +383,18 @@ def _migration_v4(migrator):
     db.create_tables([PlaylistLog], safe=True)
 
 
-SCHEMA_VERSION = 4
+def _migration_v5(migrator):
+    _add_column_safe(migrator, 'track', 'mood', TextField(null=True))
+
+
+SCHEMA_VERSION = 5
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
     (2, "track_local_uri", _migration_v2),
     (3, "albumtrack_dedup_unique_index", _migration_v3),
     (4, "playlist_log_table", _migration_v4),
+    (5, "track_mood_column", _migration_v5),
 ]
 
 
