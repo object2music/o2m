@@ -397,6 +397,17 @@ class DatabaseHandler():
     def update_track_mood(self, uri, mood):
         Track.update(mood=mood).where(Track.uri == uri).execute()
 
+    def update_track_features(self, uri, mood=None, energy=None, valence=None):
+        updates = {}
+        if mood is not None:
+            updates[Track.mood] = mood
+        if energy is not None:
+            updates[Track.energy] = energy
+        if valence is not None:
+            updates[Track.valence] = valence
+        if updates:
+            Track.update(updates).where(Track.uri == uri).execute()
+
     def get_artist_ids_without_genres(self, max_count=500):
         """Return artist IDs that have a name in the Artist table but no genre entry yet.
 

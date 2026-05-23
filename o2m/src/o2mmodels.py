@@ -121,6 +121,8 @@ class Track(BaseModel):
     liked_at = TimestampField(null=True, utc=True)
     local_uri = TextField(null=True)     # file:// URI if downloaded via spotdl
     mood = TextField(null=True)          # Last.fm mood: calm/energetic/dark/happy
+    energy = FloatField(null=True)       # 0.0 (calm/sleep) → 1.0 (intense/metal)
+    valence = FloatField(null=True)      # 0.0 (dark/sad) → 1.0 (joyful/euphoric)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -387,7 +389,34 @@ def _migration_v5(migrator):
     _add_column_safe(migrator, 'track', 'mood', TextField(null=True))
 
 
-SCHEMA_VERSION = 5
+def _migration_v6(migrator):
+    _add_column_safe(migrator, 'track', 'energy', FloatField(null=True))
+    _add_column_safe(migrator, 'track', 'valence', FloatField(null=True))
+    # Backfill approximate energy/valence from existing categorical mood
+    try:
+        db.execute_sql("""
+            UPDATE track SET
+                energy = CASE mood
+                    WHEN 'calm'      THEN 0.2
+                    WHEN 'energetic' THEN 0.8
+                    WHEN 'dark'      THEN 0.3
+                    WHEN 'happy'     THEN 0.6
+                    ELSE NULL
+                END,
+                valence = CASE mood
+                    WHEN 'calm'      THEN 0.6
+                    WHEN 'energetic' THEN 0.7
+                    WHEN 'dark'      THEN 0.2
+                    WHEN 'happy'     THEN 0.9
+                    ELSE NULL
+                END
+            WHERE mood IS NOT NULL
+        """)
+    except Exception as e:
+        print(f"migration_v6 backfill: {e}")
+
+
+SCHEMA_VERSION = 6
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -395,6 +424,7 @@ _MIGRATIONS = [
     (3, "albumtrack_dedup_unique_index", _migration_v3),
     (4, "playlist_log_table", _migration_v4),
     (5, "track_mood_column", _migration_v5),
+    (6, "track_energy_valence_columns", _migration_v6),
 ]
 
 
