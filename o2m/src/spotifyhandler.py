@@ -982,6 +982,10 @@ class SpotifyHandler:
                 genres = artist.get('genres') if artist else None
                 keys = list(artist.keys()) if artist else []
                 print(f"  check: {name} ({artist_id}) keys={keys} raw_genres={genres!r}")
+                if count == 0 and no_genre_count == 0:  # first artist only
+                    plural = self.sp.artists([artist_id])
+                    plural_item = (plural.get('artists') or [None])[0]
+                    print(f"  plural_keys={list(plural_item.keys()) if plural_item else None} plural_genres={plural_item.get('genres') if plural_item else None!r}")
                 if genres:
                     self._db.save_artist_genres(artist['id'], genres)
                     self._cache_artist(artist)
