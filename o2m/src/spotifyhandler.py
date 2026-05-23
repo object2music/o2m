@@ -269,20 +269,22 @@ class SpotifyHandler:
     def get_recommendations(
         self, seed_genres=None, seed_artists=None, seed_tracks=None, limit=10, discover_level=5
     ):
-        """
-        Replacement for Spotify's removed /recommendations endpoint.
-        Phase 1 — style: scores user's followed artists by genre overlap with seeds.
-        Phase 2 — rhythm: refines track selection via audio features (tempo/energy/danceability)
-                          if the endpoint is still accessible.
+        """Replacement for Spotify's removed /recommendations endpoint.
+
+        Primary path: Last.fm artist.getSimilar (collaborative filtering).
+          - Seed artists resolved from tracks/artists/genres.
+          - Similar artists mixed: followed (low DL) vs external (high DL).
+          - External artists resolved DB-first, sp.search() fallback up to budget.
+
+        Fallback (no Last.fm key, or similar list empty):
+          - Genre overlap scoring on local cache.
+          - External discovery via Last.fm tag.getTopArtists (or sp.search as last resort).
         """
         try:
-            target_genres = set(seed_genres or [])
             seed_artist_ids = set()
-
-            # True when the artist cache is rich enough to avoid individual sp.artist() calls
             use_cache_only = bool(self._db and self._db.is_cache_rich('artists'))
 
-            # Resolve seed tracks → artist ids (DB-first via TrackArtist, API fallback)
+            # ── 1. Resolve seed tracks → artist IDs ────────────────────────
             if seed_tracks:
                 from src.o2mmodels import TrackArtist
                 track_ids = seed_tracks if isinstance(seed_tracks, list) else [seed_tracks]
@@ -290,7 +292,6 @@ class SpotifyHandler:
                 for track_id in track_ids:
                     if self._is_rate_limited():
                         break
-                    # DB-first: resolve via TrackArtist table
                     uri = f"spotify:track:{track_id}"
                     try:
                         rows = list(TrackArtist.select(TrackArtist.artist_id)
@@ -301,7 +302,7 @@ class SpotifyHandler:
                     except Exception:
                         pass
                     if use_cache_only:
-                        continue  # cache rich but track not in TrackArtist — skip API
+                        continue
                     try:
                         t0 = time.time()
                         info = self.sp.track(track_id)
@@ -318,95 +319,163 @@ class SpotifyHandler:
                 ids = seed_artists if isinstance(seed_artists, list) else [seed_artists]
                 seed_artist_ids.update(self.normalize_spotify_id(i) for i in ids if i)
 
-            # Fetch genres for seed artists — cache-first, API only when cache is sparse
-            for artist_id in list(seed_artist_ids)[:50]:
-                if self._is_rate_limited():
-                    break
-                cached = self._db.get_artist(artist_id) if self._db else None
-                if cached:
-                    target_genres.update(self._db.get_artist_genres(artist_id))
-                    continue
-                if use_cache_only:
-                    continue  # skip API when cache is rich enough
-                try:
-                    a = self.sp.artist(artist_id)
-                    if a:
-                        target_genres.update(a.get('genres', []))
-                        self._cache_artist(a)
-                except spotipy.SpotifyException as e:
-                    if e.http_status == 429:
-                        self._on_rate_limit(e)
-                        break
-                except Exception:
-                    pass
+            # ── 2. Seed artist names for Last.fm lookup ─────────────────────
+            seed_artist_names = []
+            if self._db:
+                for artist_id in list(seed_artist_ids)[:3]:
+                    cached = self._db.get_artist(artist_id)
+                    if cached and cached.name:
+                        seed_artist_names.append(cached.name)
 
-            # Score user's followed artists by genre overlap (batched, max 200)
             followed = self.get_all_followed_artists()
             followed_set = set(followed)
-            candidates = [i for i in followed if i not in seed_artist_ids]
-            random.shuffle(candidates)
 
-            # Augment with external artists proportional to discover_level
-            # sp.search is intentionally NOT gated by use_cache_only: it provides novelty at high DL
-            n_external = discover_level * 10
-            if n_external > 0 and target_genres and not self._is_rate_limited():
-                external_ids = []
-                for genre in list(target_genres)[:3]:
-                    if len(external_ids) >= n_external or self._is_rate_limited():
+            # ── 3. PRIMARY: Last.fm artist.getSimilar ───────────────────────
+            artist_pool = []
+            if self._lastfm_api_key and seed_artist_names:
+                # Collect and merge similar artists from up to 2 seed artists
+                merged = {}  # name → max score
+                for name in seed_artist_names[:2]:
+                    for similar_name, score in self._lastfm_get_similar_artists(name, limit=40):
+                        if similar_name not in merged or score > merged[similar_name]:
+                            merged[similar_name] = score
+
+                similar_sorted = sorted(merged.items(), key=lambda x: -x[1])
+
+                if similar_sorted:
+                    # Budget for sp.search() API calls to resolve unknown artists
+                    api_budget = max(0, discover_level // 2)  # 0..5 calls
+                    resolved_followed = []   # (artist_id, score)
+                    resolved_external = []   # (artist_id, score)
+
+                    for sim_name, score in similar_sorted[:30]:
+                        # DB-first resolution
+                        artist_id = self._resolve_artist_spotify_id(sim_name, allow_api=False)
+                        # API fallback if budget allows
+                        if not artist_id and api_budget > 0:
+                            artist_id = self._resolve_artist_spotify_id(sim_name, allow_api=True)
+                            if artist_id:
+                                api_budget -= 1
+                        if not artist_id or artist_id in seed_artist_ids:
+                            continue
+                        if artist_id in followed_set:
+                            resolved_followed.append((artist_id, score))
+                        else:
+                            resolved_external.append((artist_id, score))
+
+                    # Mix: prioritise followed at low DL, external at high DL
+                    n_followed = max(2, 8 - discover_level)
+                    n_external = min(discover_level, len(resolved_external))
+                    pool = (
+                        [aid for aid, _ in resolved_followed[:n_followed]]
+                        + [aid for aid, _ in resolved_external[:n_external]]
+                    )
+                    random.shuffle(pool)
+                    artist_pool = pool
+                    print(f"get_recommendations: lastfm similar → {len(resolved_followed)} followed, "
+                          f"{len(resolved_external)} external; pool={len(artist_pool)}")
+
+            # ── 4. FALLBACK: genre overlap on local cache ───────────────────
+            if not artist_pool:
+                target_genres = set(seed_genres or [])
+
+                # Infer genres from seed artists (DB-first)
+                for artist_id in list(seed_artist_ids)[:50]:
+                    if self._is_rate_limited():
                         break
+                    cached = self._db.get_artist(artist_id) if self._db else None
+                    if cached:
+                        target_genres.update(self._db.get_artist_genres(artist_id))
+                        continue
+                    if use_cache_only:
+                        continue
                     try:
-                        results = self.sp.search(
-                            q=f'genre:"{genre}"', type='artist', limit=20,
-                            offset=random.randint(0, 50)
-                        )
-                        for artist in results.get('artists', {}).get('items', []):
-                            aid = artist['id']
-                            if aid not in followed_set and aid not in seed_artist_ids:
-                                external_ids.append(aid)
+                        a = self.sp.artist(artist_id)
+                        if a:
+                            target_genres.update(a.get('genres', []))
+                            self._cache_artist(a)
                     except spotipy.SpotifyException as e:
                         if e.http_status == 429:
                             self._on_rate_limit(e)
-                        break
+                            break
                     except Exception:
                         pass
-                random.shuffle(external_ids)
-                candidates.extend(external_ids[:n_external])
+
+                candidates = [i for i in followed if i not in seed_artist_ids]
                 random.shuffle(candidates)
 
-            scored = []
-            for artist_id in candidates[:10]:
-                if self._is_rate_limited():
-                    break
-                # cache-first for scoring — API only when cache is sparse
-                cached = self._db.get_artist(artist_id) if self._db else None
-                if cached:
-                    genres = set(self._db.get_artist_genres(artist_id))
-                    overlap = len(genres & target_genres)
-                    if overlap > 0:
-                        scored.append((overlap, artist_id))
-                    continue
-                if use_cache_only:
-                    continue  # skip API when cache is rich enough
-                try:
-                    a = self.sp.artist(artist_id)
-                    if a:
-                        overlap = len(set(a.get('genres', [])) & target_genres)
+                # External artists: Last.fm tag.getTopArtists (DB-only resolution)
+                n_external = discover_level * 10
+                if n_external > 0 and target_genres and not self._is_rate_limited():
+                    external_ids = []
+                    if self._lastfm_api_key:
+                        for genre in list(target_genres)[:3]:
+                            if len(external_ids) >= n_external:
+                                break
+                            for name in self._lastfm_get_tag_artists(genre, limit=20):
+                                aid = self._resolve_artist_spotify_id(name, allow_api=False)
+                                if aid and aid not in followed_set and aid not in seed_artist_ids:
+                                    external_ids.append(aid)
+                    else:
+                        # Last resort: sp.search(genre:...)
+                        for genre in list(target_genres)[:3]:
+                            if len(external_ids) >= n_external or self._is_rate_limited():
+                                break
+                            try:
+                                results = self.sp.search(
+                                    q=f'genre:"{genre}"', type='artist', limit=20,
+                                    offset=random.randint(0, 50)
+                                )
+                                for artist in results.get('artists', {}).get('items', []):
+                                    aid = artist['id']
+                                    if aid not in followed_set and aid not in seed_artist_ids:
+                                        external_ids.append(aid)
+                            except spotipy.SpotifyException as e:
+                                if e.http_status == 429:
+                                    self._on_rate_limit(e)
+                                break
+                            except Exception:
+                                pass
+                    random.shuffle(external_ids)
+                    candidates.extend(external_ids[:n_external])
+                    random.shuffle(candidates)
+
+                # Score by genre overlap
+                scored = []
+                for artist_id in candidates[:10]:
+                    if self._is_rate_limited():
+                        break
+                    cached = self._db.get_artist(artist_id) if self._db else None
+                    if cached:
+                        genres = set(self._db.get_artist_genres(artist_id))
+                        overlap = len(genres & target_genres)
                         if overlap > 0:
                             scored.append((overlap, artist_id))
-                        self._cache_artist(a)
-                except spotipy.SpotifyException as e:
-                    if e.http_status == 429:
-                        self._on_rate_limit(e)
-                        break
-                except Exception:
-                    pass
+                        continue
+                    if use_cache_only:
+                        continue
+                    try:
+                        a = self.sp.artist(artist_id)
+                        if a:
+                            overlap = len(set(a.get('genres', [])) & target_genres)
+                            if overlap > 0:
+                                scored.append((overlap, artist_id))
+                            self._cache_artist(a)
+                    except spotipy.SpotifyException as e:
+                        if e.http_status == 429:
+                            self._on_rate_limit(e)
+                            break
+                    except Exception:
+                        pass
 
-            scored.sort(reverse=True)
-            artist_pool = [aid for _, aid in scored[:8]] or candidates[:5]
+                scored.sort(reverse=True)
+                artist_pool = [aid for _, aid in scored[:8]] or candidates[:5]
+                print(f"get_recommendations: genre fallback → genres={target_genres}, pool={len(artist_pool)}")
+
             if not artist_pool:
                 return []
 
-            # Collect tracks from matching artists
+            # ── 5. Collect tracks from artist pool ──────────────────────────
             per_artist = max(2, (limit * 2) // min(len(artist_pool), 5))
             result = []
             for artist_id in artist_pool[:5]:
@@ -997,6 +1066,87 @@ class SpotifyHandler:
         except Exception as e:
             print(f"lastfm_get_top_tags({artist_name}): {e}")
             return None
+
+    def _lastfm_get_similar_artists(self, artist_name, limit=40):
+        """Return [(name, match_score), ...] from Last.fm artist.getSimilar, sorted by score desc."""
+        import requests as req
+        if not self._lastfm_api_key or not artist_name:
+            return []
+        try:
+            resp = req.get(
+                'https://ws.audioscrobbler.com/2.0/',
+                params={
+                    'method': 'artist.getSimilar',
+                    'artist': artist_name,
+                    'api_key': self._lastfm_api_key,
+                    'autocorrect': 1,
+                    'limit': limit,
+                    'format': 'json',
+                },
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            artists = (data.get('similarartists') or {}).get('artist') or []
+            if isinstance(artists, dict):
+                artists = [artists]
+            return [(a['name'], float(a.get('match', 0))) for a in artists if a.get('name')]
+        except Exception as e:
+            print(f"lastfm_get_similar_artists({artist_name}): {e}")
+            return []
+
+    def _lastfm_get_tag_artists(self, tag, limit=20):
+        """Return [artist_name, ...] from Last.fm tag.getTopArtists."""
+        import requests as req
+        if not self._lastfm_api_key or not tag:
+            return []
+        try:
+            resp = req.get(
+                'https://ws.audioscrobbler.com/2.0/',
+                params={
+                    'method': 'tag.getTopArtists',
+                    'tag': tag,
+                    'api_key': self._lastfm_api_key,
+                    'limit': limit,
+                    'format': 'json',
+                },
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            artists = (data.get('topartists') or {}).get('artist') or []
+            if isinstance(artists, dict):
+                artists = [artists]
+            return [a['name'] for a in artists if a.get('name')]
+        except Exception as e:
+            print(f"lastfm_get_tag_artists({tag}): {e}")
+            return []
+
+    def _resolve_artist_spotify_id(self, artist_name, allow_api=True):
+        """Resolve an artist name to a Spotify ID. DB-first, then sp.search() if allow_api."""
+        if not artist_name:
+            return None
+        if self._db:
+            from src.o2mmodels import Artist
+            try:
+                return Artist.get(Artist.name == artist_name).id
+            except Exception:
+                pass
+        if not allow_api or self._is_rate_limited():
+            return None
+        try:
+            results = self.sp.search(q=f'artist:"{artist_name}"', type='artist', limit=1)
+            items = (results.get('artists') or {}).get('items') or []
+            if items:
+                a = items[0]
+                if a.get('name', '').lower() == artist_name.lower():
+                    self._cache_artist(a)
+                    return a['id']
+        except Exception:
+            pass
+        return None
 
     def warmup_artist_genres(self):
         """Fetch genres for up to 30 artists not yet in ArtistGenre via Last.fm API.
