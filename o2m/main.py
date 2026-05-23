@@ -394,6 +394,40 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    # ── Mood interface ────────────────────────────────────────────────────────────
+
+    @api.route('/api/mood', methods=['GET'])
+    def api_mood_get():
+        from flask import jsonify
+        dist = o2mHandler.dbHandler.get_mood_distribution()
+        return jsonify({
+            'energy':        o2mHandler.mood_energy,
+            'valence':       o2mHandler.mood_valence,
+            'genres':        o2mHandler.mood_genres,
+            'discover_level': o2mHandler.discover_level,
+            'distribution':  dist,
+        })
+
+    @api.route('/api/mood', methods=['POST'])
+    def api_mood_post():
+        from flask import jsonify, request as req
+        data = req.get_json(silent=True) or {}
+        if 'energy' in data:
+            o2mHandler.mood_energy = float(data['energy'])
+        if 'valence' in data:
+            o2mHandler.mood_valence = float(data['valence'])
+        if 'genres' in data:
+            o2mHandler.mood_genres = data['genres'] if isinstance(data['genres'], list) else []
+        if 'discover_level' in data:
+            o2mHandler.discover_level = int(data['discover_level'])
+        added = o2mHandler.apply_mood_settings()
+        return jsonify({'status': 'ok', 'tracks_added': added})
+
+    @api.route('/api/genres')
+    def api_genres():
+        from flask import jsonify
+        return jsonify(o2mHandler.dbHandler.get_genres_with_counts())
+
     #RESTART
     @api.route('/health')
     def health_check():

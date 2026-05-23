@@ -61,6 +61,11 @@ class O2mToMopidy:
         #Wether discover_level is on from the outside (api) or not
         self.discover_level_on = False
 
+        # Mood interface settings (None = inactive)
+        self.mood_energy = None    # float 0.0-1.0 target energy
+        self.mood_valence = None   # float 0.0-1.0 target valence
+        self.mood_genres = []      # list of genre name strings
+
         if "podcast_newest_first" in self.configO2M:
             self.podcast_newest_first = self.configO2M["podcast_newest_first"] 
 
@@ -1031,6 +1036,50 @@ class O2mToMopidy:
             print(f"play_or_resume: resuming from pause")
         else:
             print(f"play_or_resume: already playing or unknown state, no action")
+
+    def apply_mood_settings(self):
+        """Rebuild the tracklist tail using mood_energy/mood_valence/discover_level.
+
+        Keeps the currently playing track; replaces everything after it.
+        Returns the number of tracks added, or -1 if mood settings are not set.
+        """
+        if self.mood_energy is None or self.mood_valence is None:
+            return -1
+
+        radius = self.discover_level / 20.0 + 0.05  # DL=0 → 0.05, DL=10 → 0.55
+
+        uris = self.dbHandler.get_tracks_by_mood_features(
+            energy_target=self.mood_energy,
+            valence_target=self.mood_valence,
+            radius=radius,
+            genre_names=self.mood_genres or None,
+            limit=25,
+        )
+
+        if not uris:
+            print(f"apply_mood_settings: no tracks found (e={self.mood_energy} v={self.mood_valence} r={radius})")
+            return 0
+
+        # Remove tracks after current position
+        current_tlid = self.mopidyHandler.playback.get_current_tlid()
+        all_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+        if current_tlid:
+            current_idx = next((i for i, t in enumerate(all_tracks) if t.tlid == current_tlid), None)
+            if current_idx is not None:
+                to_remove = [t.tlid for t in all_tracks[current_idx + 1:]]
+                if to_remove:
+                    self.mopidyHandler.tracklist.remove({'tlid': to_remove})
+
+        added = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris))
+        print(f"apply_mood_settings: added {len(added)} tracks (e={self.mood_energy} v={self.mood_valence} r={radius:.2f})")
+
+        state = self.mopidyHandler.playback.get_state()
+        if state == "stopped":
+            tl_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+            if tl_tracks:
+                self.mopidyHandler.playback.play(tlid=tl_tracks[0].tlid)
+
+        return len(added)
 
     def initialize_playback(self, window=1):
         """

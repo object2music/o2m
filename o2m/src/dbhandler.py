@@ -408,6 +408,77 @@ class DatabaseHandler():
         if updates:
             Track.update(updates).where(Track.uri == uri).execute()
 
+    def get_tracks_by_mood_features(self, energy_target, valence_target, radius, genre_names=None, limit=25):
+        """Return shuffled URIs of tracks within [energy_target±radius, valence_target±radius].
+
+        Optionally restricts to tracks whose primary artist belongs to one of genre_names.
+        Excludes tracks with NULL energy/valence.
+        """
+        try:
+            q = (Track.select(Track.uri)
+                 .where(
+                     Track.energy.is_null(False) &
+                     Track.valence.is_null(False) &
+                     (fn.ABS(Track.energy - energy_target) <= radius) &
+                     (fn.ABS(Track.valence - valence_target) <= radius)
+                 ))
+
+            if genre_names:
+                genre_ids = [g.id for g in Genre.select().where(Genre.name << genre_names)]
+                if genre_ids:
+                    artist_ids = [ag.artist_id for ag in
+                                  ArtistGenre.select(ArtistGenre.artist_id)
+                                  .where(ArtistGenre.genre_id << genre_ids)]
+                    if artist_ids:
+                        track_uris_in_genre = [ta.track_uri for ta in
+                                               TrackArtist.select(TrackArtist.track_uri)
+                                               .where(TrackArtist.artist_id << artist_ids,
+                                                      TrackArtist.position == 0)]
+                        q = q.where(Track.uri << track_uris_in_genre)
+
+            uris = [r.uri for r in q.namedtuples()]
+            random.shuffle(uris)
+            return uris[:limit]
+        except Exception as e:
+            print(f"get_tracks_by_mood_features error: {e}")
+            return []
+
+    def get_mood_distribution(self):
+        """Return energy/valence stats for UI calibration: count, mean, std per axis."""
+        try:
+            rows = (Track.select(Track.energy, Track.valence)
+                    .where(Track.energy.is_null(False) & Track.valence.is_null(False))
+                    .namedtuples())
+            energies = [r.energy for r in rows]
+            valences = [r.valence for r in rows]
+            if not energies:
+                return {'count': 0}
+            count = len(energies)
+            e_mean = sum(energies) / count
+            v_mean = sum(valences) / count
+            return {
+                'count': count,
+                'energy': {'mean': round(e_mean, 3), 'min': round(min(energies), 3), 'max': round(max(energies), 3)},
+                'valence': {'mean': round(v_mean, 3), 'min': round(min(valences), 3), 'max': round(max(valences), 3)},
+            }
+        except Exception as e:
+            print(f"get_mood_distribution error: {e}")
+            return {}
+
+    def get_genres_with_counts(self, limit=100):
+        """Return [{name, count}] genres sorted by number of associated tracks."""
+        try:
+            rows = (Genre.select(Genre.name, fn.COUNT(ArtistGenre.artist_id).alias('cnt'))
+                    .join(ArtistGenre, on=(Genre.id == ArtistGenre.genre_id))
+                    .group_by(Genre.id)
+                    .order_by(fn.COUNT(ArtistGenre.artist_id).desc())
+                    .limit(limit)
+                    .namedtuples())
+            return [{'name': r.name, 'count': r.cnt} for r in rows]
+        except Exception as e:
+            print(f"get_genres_with_counts error: {e}")
+            return []
+
     def get_artist_ids_without_genres(self, max_count=500):
         """Return artist IDs that have a name in the Artist table but no genre entry yet.
 
