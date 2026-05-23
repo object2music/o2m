@@ -372,34 +372,20 @@ class DatabaseHandler():
         return [g.name for g in rows]
 
     def get_artist_ids_without_genres(self, max_count=500):
-        """Return artist IDs (from Artist + TrackArtist + AlbumArtist) with no genre entry yet.
+        """Return artist IDs that have a name in the Artist table but no genre entry yet.
 
-        Covers all sources so we reach actual listening-history artists, not just
-        followed artists (who often have sparse Spotify genre data).
+        Only returns artists with a stored name so warmup_artist_genres can search
+        by name. Artists from TrackArtist/AlbumArtist without an Artist row are
+        ignored — they'd need a separate fetch step to get their name first.
         Randomizes and caps at max_count to stay within a single warmup run.
         """
-        from src.o2mmodels import TrackArtist, AlbumArtist
-        from peewee import fn
-
         already = {ag.artist_id for ag in ArtistGenre.select(ArtistGenre.artist_id)}
-
-        all_ids = set()
-        # 1. Explicitly stored artists (followed/cached via Spotify API)
-        all_ids.update(a.id for a in Artist.select(Artist.id) if a.id)
-        # 2. Artists linked to tracks in listening history
-        all_ids.update(
-            ta.artist_id
-            for ta in TrackArtist.select(TrackArtist.artist_id).distinct()
-            if ta.artist_id
-        )
-        # 3. Artists linked to albums
-        all_ids.update(
-            aa.artist_id
-            for aa in AlbumArtist.select(AlbumArtist.artist_id).distinct()
-            if aa.artist_id
-        )
-
-        without = list(all_ids - already)
+        named_ids = {
+            a.id
+            for a in Artist.select(Artist.id, Artist.name).where(Artist.name.is_null(False))
+            if a.id and a.name
+        }
+        without = list(named_ids - already)
         if max_count and len(without) > max_count:
             random.shuffle(without)
             without = without[:max_count]
