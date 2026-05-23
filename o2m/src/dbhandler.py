@@ -714,6 +714,11 @@ class DatabaseHandler():
             return row.value_int, row.updated_at
         except CacheMeta.DoesNotExist:
             return None, None
+        except (ValueError, OverflowError):
+            # Corrupt updated_at (e.g. MySQL DATETIME int stored in a BIGINT/TimestampField).
+            # Reset the row so warmup re-runs cleanly.
+            self.set_cache_meta(key, 0)
+            return 0, None
 
     def set_cache_meta(self, key, value_int):
         """Upsert a CacheMeta entry with current timestamp."""
