@@ -1235,8 +1235,11 @@ class SpotifyHandler:
 
         existing_after = ArtistGenre.select().count()
         print(f"warmup_artist_genres: done — {count} with genres, {no_genre_count} without, out of {len(artist_ids)}")
-        if count > 0:
-            self._db.set_cache_meta('warmup_genres_at', count)
+        # Only set TTL when no artists remain — lets warmup_cache re-run each startup until complete
+        remaining = self._db.get_artist_ids_without_genres(max_count=1)
+        if not remaining:
+            self._db.set_cache_meta('warmup_genres_at', existing_after or 1)
+            print("warmup_artist_genres: all artists covered, TTL set (next run in 14 days)")
         return {
             'genre_entries_before': existing_before,
             'genre_entries_after': existing_after,
@@ -1255,8 +1258,7 @@ class SpotifyHandler:
             ('albums',          self.warmup_saved_albums),
             ('artists',         self.get_all_followed_artists),   # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
-            # genres: not auto-warmed — Spotify coverage is ~20%; organic via _cache_artist()
-            # Use /api/warmup_genres to trigger manually (conservative: 30 artists, 1s sleep)
+            ('genres',          self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")
