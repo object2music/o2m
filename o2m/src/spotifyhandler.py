@@ -980,7 +980,8 @@ class SpotifyHandler:
                 print("warmup_artist_genres: rate-limited, aborting")
                 break
             try:
-                artist = self.sp.artist(artist_id)
+                result = self.sp.artists([artist_id])
+                artist = (result.get('artists') or [None])[0] if result else None
                 name = artist.get('name', artist_id) if artist else artist_id
                 genres = artist.get('genres') if artist else None
                 artists_checked.append({'id': artist_id, 'name': name, 'genres_raw': genres})
