@@ -955,22 +955,22 @@ class SpotifyHandler:
     def warmup_artist_genres(self):
         """Fetch genres for up to 30 artists not yet in ArtistGenre.
 
-        Conservative: 1s sleep, abort on any rate limit. Spotify genres are
-        sparse (~20% coverage) so this is a best-effort supplement to the
-        organic path (_cache_artist called during recommendations).
+        Uses sp.search(type='artist') which returns full artist objects with genres,
+        since sp.artist() and sp.artists() do not reliably include genre data.
+        Conservative: 0.5s sleep, abort on any rate limit.
         Not run automatically — only triggered via /api/warmup_genres or /api/diag/genres.
         Returns a dict of results for diagnostic use.
         """
         if not self._db:
             return {'error': 'no db'}
-        from src.o2mmodels import ArtistGenre
+        from src.o2mmodels import ArtistGenre, Artist
         existing_before = ArtistGenre.select().count()
         artist_ids = self._db.get_artist_ids_without_genres(max_count=30)
         if not artist_ids:
             print(f"warmup_artist_genres: all artists already have genres ({existing_before} genre entries)")
             return {'genre_entries_before': existing_before, 'genre_entries_after': existing_before,
                     'artists_checked': [], 'count_with_genres': 0, 'count_without': 0}
-        print(f"warmup_artist_genres: {existing_before} genre entries in DB, fetching genres for {len(artist_ids)} artists")
+        print(f"warmup_artist_genres: {existing_before} genre entries, searching genres for {len(artist_ids)} artists")
         count = 0
         no_genre_count = 0
         artists_checked = []
@@ -980,19 +980,37 @@ class SpotifyHandler:
                 print("warmup_artist_genres: rate-limited, aborting")
                 break
             try:
-                result = self.sp.artists([artist_id])
-                artist = (result.get('artists') or [None])[0] if result else None
-                name = artist.get('name', artist_id) if artist else artist_id
-                genres = artist.get('genres') if artist else None
-                artists_checked.append({'id': artist_id, 'name': name, 'genres_raw': genres})
-                if genres:
-                    self._db.save_artist_genres(artist['id'], genres)
-                    self._cache_artist(artist)
-                    count += 1
-                    print(f"  genres: {name} → {genres[:3]}")
-                else:
+                # Look up stored name — needed to search by artist name
+                try:
+                    artist_name = Artist.get_by_id(artist_id).name
+                except Exception:
+                    artist_name = None
+
+                if not artist_name:
+                    artists_checked.append({'id': artist_id, 'name': artist_id, 'genres_raw': None, 'skip': 'no_name'})
                     no_genre_count += 1
-                time.sleep(1.0)
+                    continue
+
+                # sp.search(type='artist') returns full objects with genres
+                results = self.sp.search(q=f'artist:{artist_name}', type='artist', limit=5)
+                items = (results.get('artists') or {}).get('items') or []
+                match = next((a for a in items if a['id'] == artist_id), None)
+
+                if match:
+                    genres = match.get('genres') or []
+                    artists_checked.append({'id': artist_id, 'name': artist_name, 'genres_raw': genres})
+                    if genres:
+                        self._db.save_artist_genres(artist_id, genres)
+                        self._cache_artist(match)
+                        count += 1
+                        print(f"  genres: {artist_name} → {genres[:3]}")
+                    else:
+                        no_genre_count += 1
+                else:
+                    artists_checked.append({'id': artist_id, 'name': artist_name, 'genres_raw': None, 'skip': 'no_search_match'})
+                    no_genre_count += 1
+
+                time.sleep(0.5)
             except spotipy.SpotifyException as e:
                 artists_checked.append({'id': artist_id, 'name': artist_id, 'error': str(e)})
                 if e.http_status == 429:
@@ -1010,7 +1028,7 @@ class SpotifyHandler:
 
         existing_after = ArtistGenre.select().count()
         print(f"warmup_artist_genres: done — {count} with genres, {no_genre_count} without, out of {len(artist_ids)}")
-        if self._db and count > 0:
+        if count > 0:
             self._db.set_cache_meta('warmup_genres_at', count)
         return {
             'genre_entries_before': existing_before,
