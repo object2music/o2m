@@ -383,6 +383,17 @@ if __name__ == "__main__":
         threading.Thread(target=_run, daemon=True).start()
         return "genre warmup started"
 
+    @api.route('/api/diag/genres')
+    def api_diag_genres():
+        """Synchronous genre diagnostic — runs warmup and returns JSON results."""
+        from flask import jsonify
+        try:
+            o2mHandler.dbHandler.set_cache_meta('warmup_genres_at', 0)
+            result = o2mHandler.spotifyHandler.warmup_artist_genres()
+            return jsonify(result or {'error': 'no result'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     #RESTART
     @api.route('/health')
     def health_check():

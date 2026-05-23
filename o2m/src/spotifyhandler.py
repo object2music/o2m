@@ -958,19 +958,22 @@ class SpotifyHandler:
         Conservative: 1s sleep, abort on any rate limit. Spotify genres are
         sparse (~20% coverage) so this is a best-effort supplement to the
         organic path (_cache_artist called during recommendations).
-        Not run automatically — only triggered via /api/warmup_genres.
+        Not run automatically — only triggered via /api/warmup_genres or /api/diag/genres.
+        Returns a dict of results for diagnostic use.
         """
         if not self._db:
-            return
+            return {'error': 'no db'}
         from src.o2mmodels import ArtistGenre
-        existing = ArtistGenre.select().count()
+        existing_before = ArtistGenre.select().count()
         artist_ids = self._db.get_artist_ids_without_genres(max_count=30)
         if not artist_ids:
-            print(f"warmup_artist_genres: all artists already have genres ({existing} genre entries)")
-            return
-        print(f"warmup_artist_genres: {existing} genre entries in DB, fetching genres for {len(artist_ids)} artists")
+            print(f"warmup_artist_genres: all artists already have genres ({existing_before} genre entries)")
+            return {'genre_entries_before': existing_before, 'genre_entries_after': existing_before,
+                    'artists_checked': [], 'count_with_genres': 0, 'count_without': 0}
+        print(f"warmup_artist_genres: {existing_before} genre entries in DB, fetching genres for {len(artist_ids)} artists")
         count = 0
         no_genre_count = 0
+        artists_checked = []
 
         for artist_id in artist_ids:
             if self._is_rate_limited():
@@ -980,12 +983,9 @@ class SpotifyHandler:
                 artist = self.sp.artist(artist_id)
                 name = artist.get('name', artist_id) if artist else artist_id
                 genres = artist.get('genres') if artist else None
-                keys = list(artist.keys()) if artist else []
-                print(f"  check: {name} ({artist_id}) keys={keys} raw_genres={genres!r}")
-                if count == 0 and no_genre_count == 0:  # first artist only
-                    plural = self.sp.artists([artist_id])
-                    plural_item = (plural.get('artists') or [None])[0]
-                    print(f"  plural_keys={list(plural_item.keys()) if plural_item else None} plural_genres={plural_item.get('genres') if plural_item else None!r}")
+                artists_checked.append({'id': artist_id, 'name': name, 'genres_raw': genres,
+                                        'keys': list(artist.keys()) if artist else []})
+                print(f"  check: {name} ({artist_id}) raw_genres={genres!r}")
                 if genres:
                     self._db.save_artist_genres(artist['id'], genres)
                     self._cache_artist(artist)
@@ -995,6 +995,7 @@ class SpotifyHandler:
                     no_genre_count += 1
                 time.sleep(1.0)
             except spotipy.SpotifyException as e:
+                artists_checked.append({'id': artist_id, 'name': artist_id, 'error': str(e)})
                 if e.http_status == 429:
                     self._on_rate_limit(e)
                     print("warmup_artist_genres: rate-limited, aborting")
@@ -1005,11 +1006,20 @@ class SpotifyHandler:
                 else:
                     print(f"warmup_artist_genres error ({artist_id}): {e}")
             except Exception as e:
+                artists_checked.append({'id': artist_id, 'name': artist_id, 'error': str(e)})
                 print(f"warmup_artist_genres error ({artist_id}): {e}")
 
+        existing_after = ArtistGenre.select().count()
         print(f"warmup_artist_genres: done — {count} with genres, {no_genre_count} without, out of {len(artist_ids)}")
         if self._db and count > 0:
             self._db.set_cache_meta('warmup_genres_at', count)
+        return {
+            'genre_entries_before': existing_before,
+            'genre_entries_after': existing_after,
+            'artists_checked': artists_checked,
+            'count_with_genres': count,
+            'count_without': no_genre_count,
+        }
 
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
