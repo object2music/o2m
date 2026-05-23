@@ -6,6 +6,8 @@ import src.util as util
 class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("o2m.conf")["spotipy"]
+        o2m_config = util.get_config_file("o2m.conf")["o2m"]
+        self._lastfm_api_key = o2m_config.get("lastfm_api_key", "").strip() or None
         self.cache_path = ".cache_spotipy"
         self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
@@ -952,12 +954,55 @@ class SpotifyHandler:
         if self._db:
             self._db.set_cache_meta('warmup_albums_at', count)
 
-    def warmup_artist_genres(self):
-        """Fetch genres for up to 30 artists not yet in ArtistGenre.
+    def _lastfm_get_top_tags(self, artist_name, max_tags=8):
+        """Fetch top tags for an artist from Last.fm API.
 
-        Uses sp.search(type='artist') which returns full artist objects with genres,
-        since sp.artist() and sp.artists() do not reliably include genre data.
-        Conservative: 0.5s sleep, abort on any rate limit.
+        Returns a list of tag name strings (up to max_tags), or None on error.
+        Tags with count < 10 are filtered out to avoid noise.
+        """
+        import requests as req
+        if not self._lastfm_api_key:
+            return None
+        # Tags that are not genres (Last.fm crowdsourced noise)
+        _non_genre = {'seen live', 'favorites', 'favourite', 'love', 'loved', 'american',
+                      'british', 'french', 'german', 'swedish', 'norwegian', 'japanese',
+                      'all', 'good', 'best', 'classic', 'awesome', 'cool'}
+        try:
+            resp = req.get(
+                'https://ws.audioscrobbler.com/2.0/',
+                params={
+                    'method': 'artist.getTopTags',
+                    'artist': artist_name,
+                    'api_key': self._lastfm_api_key,
+                    'autocorrect': 1,
+                    'format': 'json',
+                },
+                timeout=8,
+            )
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            tags = (data.get('toptags') or {}).get('tag') or []
+            if isinstance(tags, dict):
+                tags = [tags]
+            result = []
+            for t in tags:
+                name = (t.get('name') or '').strip().lower()
+                count = int(t.get('count') or 0)
+                if name and count >= 10 and name not in _non_genre:
+                    result.append(name)
+                if len(result) >= max_tags:
+                    break
+            return result
+        except Exception as e:
+            print(f"lastfm_get_top_tags({artist_name}): {e}")
+            return None
+
+    def warmup_artist_genres(self):
+        """Fetch genres for up to 30 artists not yet in ArtistGenre via Last.fm API.
+
+        Falls back to sp.search() if no Last.fm API key is configured.
+        Conservative: 0.3s sleep between calls (Last.fm allows 5 req/s).
         Not run automatically — only triggered via /api/warmup_genres or /api/diag/genres.
         Returns a dict of results for diagnostic use.
         """
@@ -970,17 +1015,19 @@ class SpotifyHandler:
             print(f"warmup_artist_genres: all artists already have genres ({existing_before} genre entries)")
             return {'genre_entries_before': existing_before, 'genre_entries_after': existing_before,
                     'artists_checked': [], 'count_with_genres': 0, 'count_without': 0}
-        print(f"warmup_artist_genres: {existing_before} genre entries, searching genres for {len(artist_ids)} artists")
+
+        use_lastfm = bool(self._lastfm_api_key)
+        source = 'lastfm' if use_lastfm else 'spotify_search'
+        print(f"warmup_artist_genres: {existing_before} genre entries, fetching for {len(artist_ids)} artists via {source}")
         count = 0
         no_genre_count = 0
         artists_checked = []
 
         for artist_id in artist_ids:
-            if self._is_rate_limited():
+            if not use_lastfm and self._is_rate_limited():
                 print("warmup_artist_genres: rate-limited, aborting")
                 break
             try:
-                # Look up stored name — needed to search by artist name
                 try:
                     artist_name = Artist.get_by_id(artist_id).name
                 except Exception:
@@ -991,26 +1038,36 @@ class SpotifyHandler:
                     no_genre_count += 1
                     continue
 
-                # sp.search(type='artist') returns full objects with genres
-                results = self.sp.search(q=f'artist:{artist_name}', type='artist', limit=5)
-                items = (results.get('artists') or {}).get('items') or []
-                match = next((a for a in items if a['id'] == artist_id), None)
-
-                if match:
-                    genres = match.get('genres') or []
-                    artists_checked.append({'id': artist_id, 'name': artist_name, 'genres_raw': genres})
+                if use_lastfm:
+                    genres = self._lastfm_get_top_tags(artist_name)
+                    artists_checked.append({'id': artist_id, 'name': artist_name, 'genres_raw': genres, 'source': 'lastfm'})
                     if genres:
                         self._db.save_artist_genres(artist_id, genres)
-                        self._cache_artist(match)
                         count += 1
                         print(f"  genres: {artist_name} → {genres[:3]}")
                     else:
                         no_genre_count += 1
+                    time.sleep(0.3)
                 else:
-                    artists_checked.append({'id': artist_id, 'name': artist_name, 'genres_raw': None, 'skip': 'no_search_match'})
-                    no_genre_count += 1
+                    # Fallback: Spotify search (may return empty genres)
+                    results = self.sp.search(q=f'artist:{artist_name}', type='artist', limit=5)
+                    items = (results.get('artists') or {}).get('items') or []
+                    match = next((a for a in items if a['id'] == artist_id), None)
+                    if match:
+                        genres = match.get('genres') or []
+                        artists_checked.append({'id': artist_id, 'name': artist_name, 'genres_raw': genres, 'source': 'spotify'})
+                        if genres:
+                            self._db.save_artist_genres(artist_id, genres)
+                            self._cache_artist(match)
+                            count += 1
+                            print(f"  genres: {artist_name} → {genres[:3]}")
+                        else:
+                            no_genre_count += 1
+                    else:
+                        artists_checked.append({'id': artist_id, 'name': artist_name, 'genres_raw': None, 'skip': 'no_search_match'})
+                        no_genre_count += 1
+                    time.sleep(0.5)
 
-                time.sleep(0.5)
             except spotipy.SpotifyException as e:
                 artists_checked.append({'id': artist_id, 'name': artist_id, 'error': str(e)})
                 if e.http_status == 429:

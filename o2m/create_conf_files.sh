@@ -33,6 +33,7 @@ default_box_uid = $O2M_DEFAULT_BOX_UID
 port_mopidy = $PORT_MOPIDY
 host_mopidy = $HOST_MOPIDY
 fix_stats = $O2M_FIX_STATS
+lastfm_api_key = $LASTFM_API_KEY
 
 # mysql or sqlite
 db_type = $DB_TYPE
