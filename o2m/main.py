@@ -69,7 +69,9 @@ if __name__ == "__main__":
             dl = o2mHandler.discover_level if o2mHandler.discover_level is not None else 5
             o2mHandler.spotifyHandler.warmup_cache(discover_level=dl)
         except Exception as e:
+            import traceback
             print(f"background warmup error: {e}")
+            traceback.print_exc()
 
     threading.Thread(target=_background_warmup, daemon=True).start()
 
