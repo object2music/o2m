@@ -983,9 +983,7 @@ class SpotifyHandler:
                 artist = self.sp.artist(artist_id)
                 name = artist.get('name', artist_id) if artist else artist_id
                 genres = artist.get('genres') if artist else None
-                artists_checked.append({'id': artist_id, 'name': name, 'genres_raw': genres,
-                                        'keys': list(artist.keys()) if artist else []})
-                print(f"  check: {name} ({artist_id}) raw_genres={genres!r}")
+                artists_checked.append({'id': artist_id, 'name': name, 'genres_raw': genres})
                 if genres:
                     self._db.save_artist_genres(artist['id'], genres)
                     self._cache_artist(artist)
