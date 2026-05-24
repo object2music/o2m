@@ -11,18 +11,18 @@
   :root {
     --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
     --accent: #e94560; --text: #eaeaea; --muted: #8892a4;
-    --dial-size: 110px;
   }
+  html, body { height: 100%; }
   body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
-         min-height: 100dvh; display: flex; flex-direction: column; overflow-x: hidden; }
+         display: flex; flex-direction: column; overflow: hidden; height: 100dvh; }
 
-  /* ── Header / Now Playing ── */
+  /* ── Now Playing ── */
   #now-playing {
     display: flex; align-items: center; gap: 12px;
-    padding: 14px 16px; background: var(--surface);
-    border-bottom: 1px solid #ffffff18;
+    padding: 12px 14px; background: var(--surface);
+    border-bottom: 1px solid #ffffff18; flex-shrink: 0;
   }
-  #cover { width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
+  #cover { width: 52px; height: 52px; border-radius: 6px; object-fit: cover;
            background: var(--card); flex-shrink: 0; }
   #track-info { flex: 1; min-width: 0; }
   #track-name { font-size: 14px; font-weight: 600; white-space: nowrap;
@@ -36,51 +36,81 @@
   /* ── Controls ── */
   #controls {
     display: flex; justify-content: center; align-items: center; gap: 28px;
-    padding: 14px 16px; background: var(--surface);
+    padding: 10px 16px; background: var(--surface);
+    border-bottom: 1px solid #ffffff18; flex-shrink: 0;
   }
   .ctrl-btn {
     background: none; border: none; color: var(--text); cursor: pointer;
-    font-size: 28px; line-height: 1; padding: 6px; border-radius: 50%;
+    font-size: 26px; line-height: 1; padding: 6px; border-radius: 50%;
     transition: background .15s, transform .1s;
   }
   .ctrl-btn:active { background: #ffffff20; transform: scale(.92); }
-  #btn-play { font-size: 38px; color: var(--accent); }
+  #btn-play { font-size: 34px; color: var(--accent); }
 
-  /* ── Dials section ── */
+  /* ── Scrollable content ── */
+  #scroll-area {
+    flex: 1; overflow-y: auto; overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── Dials ── */
   #dials {
     display: flex; justify-content: space-around; align-items: flex-end;
-    padding: 20px 8px 12px; gap: 4px;
+    padding: 16px 8px 8px; gap: 4px;
   }
-  .dial-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .dial-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .dial-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
                 letter-spacing: .08em; text-align: center; }
-  .dial-value { font-size: 13px; font-weight: 700; color: var(--text); min-width: 28px;
-                text-align: center; }
   .dial-svg { touch-action: none; cursor: grab; display: block; }
   .dial-svg:active { cursor: grabbing; }
   .dial-track { fill: none; stroke: #ffffff18; stroke-width: 8; stroke-linecap: round; }
   .dial-fill  { fill: none; stroke-width: 8; stroke-linecap: round;
                 transition: stroke-dashoffset .05s; }
-  .dial-knob  { transition: transform .05s; }
+  .dial-sub { font-size: 10px; color: var(--muted); text-align: center; }
 
   /* ── Genres ── */
-  #genres-section { padding: 12px 16px 4px; }
+  #genres-section { padding: 10px 14px 6px; }
   #genres-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
-                  letter-spacing: .08em; margin-bottom: 8px; }
+                  letter-spacing: .08em; margin-bottom: 7px; }
   #genres-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
   .genre-chip {
-    padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    padding: 4px 11px; border-radius: 20px; font-size: 12px; font-weight: 500;
     border: 1px solid #ffffff28; background: none; color: var(--muted);
     cursor: pointer; transition: all .15s;
   }
-  .genre-chip.active { background: var(--accent); border-color: var(--accent);
-                        color: #fff; }
+  .genre-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .genre-chip:active { transform: scale(.95); }
 
-  /* ── Footer feedback ── */
+  /* ── Tracklist ── */
+  #tracklist-section { padding: 10px 14px 4px; }
+  #tracklist-label {
+    font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .08em; margin-bottom: 6px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #tracklist-count { font-size: 11px; color: var(--muted); }
+  #tracklist-wrap { display: flex; flex-direction: column; gap: 2px; }
+  .tl-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 6px; cursor: pointer;
+    transition: background .12s;
+  }
+  .tl-item:active { background: #ffffff10; }
+  .tl-item.current { background: var(--card); }
+  .tl-item.current .tl-name { color: var(--accent); }
+  .tl-num { font-size: 11px; color: var(--muted); min-width: 18px; text-align: right; flex-shrink: 0; }
+  .tl-item.current .tl-num { color: var(--accent); }
+  .tl-texts { flex: 1; min-width: 0; }
+  .tl-name { font-size: 13px; font-weight: 500; white-space: nowrap;
+             overflow: hidden; text-overflow: ellipsis; }
+  .tl-artist { font-size: 11px; color: var(--muted); white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .tl-dur { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+
+  /* ── Feedback ── */
   #feedback {
-    margin-top: auto; padding: 10px 16px;
-    font-size: 11px; color: var(--muted); text-align: center; min-height: 24px;
+    flex-shrink: 0; padding: 6px 14px 8px;
+    font-size: 11px; color: var(--muted); text-align: center; min-height: 22px;
   }
 </style>
 </head>
@@ -98,141 +128,129 @@
 
 <!-- Playback controls -->
 <div id="controls">
-  <button class="ctrl-btn" id="btn-prev" title="Précédent">⏮</button>
-  <button class="ctrl-btn" id="btn-play" title="Play/Pause">▶</button>
-  <button class="ctrl-btn" id="btn-next" title="Suivant">⏭</button>
+  <button class="ctrl-btn" id="btn-prev">⏮</button>
+  <button class="ctrl-btn" id="btn-play">▶</button>
+  <button class="ctrl-btn" id="btn-next">⏭</button>
 </div>
 
-<!-- Dials -->
-<div id="dials">
-  <div class="dial-wrap">
-    <div class="dial-label">Énergie</div>
-    <svg class="dial-svg" id="dial-energy" width="110" height="110" viewBox="0 0 110 110">
-      <circle class="dial-track" cx="55" cy="55" r="42"
-              stroke-dasharray="227" stroke-dashoffset="57" transform="rotate(135 55 55)"/>
-      <circle class="dial-fill" id="fill-energy" cx="55" cy="55" r="42"
-              stroke="#e94560" stroke-dasharray="227" stroke-dashoffset="227" transform="rotate(135 55 55)"/>
-      <circle class="dial-knob" id="knob-energy" cx="55" cy="13" r="7" fill="#e94560"/>
-      <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-energy">5</text>
-    </svg>
-    <div class="dial-label" style="color:var(--text);font-size:10px" id="lbl-energy-range">calme ↔ intense</div>
+<!-- Scrollable area -->
+<div id="scroll-area">
+
+  <!-- Dials -->
+  <div id="dials">
+    <div class="dial-wrap">
+      <div class="dial-label">Énergie</div>
+      <svg class="dial-svg" id="dial-energy" width="100" height="100" viewBox="0 0 110 110">
+        <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
+        <circle class="dial-fill" id="fill-energy" cx="55" cy="55" r="42"
+                stroke="#e94560" transform="rotate(135 55 55)"/>
+        <circle id="knob-energy" cx="55" cy="13" r="7" fill="#e94560"/>
+        <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-energy">5</text>
+      </svg>
+      <div class="dial-sub">calme ↔ intense</div>
+    </div>
+
+    <div class="dial-wrap">
+      <div class="dial-label">Valence</div>
+      <svg class="dial-svg" id="dial-valence" width="100" height="100" viewBox="0 0 110 110">
+        <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
+        <circle class="dial-fill" id="fill-valence" cx="55" cy="55" r="42"
+                stroke="#7c4dff" transform="rotate(135 55 55)"/>
+        <circle id="knob-valence" cx="55" cy="13" r="7" fill="#7c4dff"/>
+        <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-valence">5</text>
+      </svg>
+      <div class="dial-sub">sombre ↔ joyeux</div>
+    </div>
+
+    <div class="dial-wrap">
+      <div class="dial-label">Découverte</div>
+      <svg class="dial-svg" id="dial-dl" width="100" height="100" viewBox="0 0 110 110">
+        <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
+        <circle class="dial-fill" id="fill-dl" cx="55" cy="55" r="42"
+                stroke="#00bcd4" transform="rotate(135 55 55)"/>
+        <circle id="knob-dl" cx="55" cy="13" r="7" fill="#00bcd4"/>
+        <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-dl">5</text>
+      </svg>
+      <div class="dial-sub">précis ↔ aventurier</div>
+    </div>
   </div>
 
-  <div class="dial-wrap">
-    <div class="dial-label">Valence</div>
-    <svg class="dial-svg" id="dial-valence" width="110" height="110" viewBox="0 0 110 110">
-      <circle class="dial-track" cx="55" cy="55" r="42"
-              stroke-dasharray="227" stroke-dashoffset="57" transform="rotate(135 55 55)"/>
-      <circle class="dial-fill" id="fill-valence" cx="55" cy="55" r="42"
-              stroke="#7c4dff" stroke-dasharray="227" stroke-dashoffset="227" transform="rotate(135 55 55)"/>
-      <circle class="dial-knob" id="knob-valence" cx="55" cy="13" r="7" fill="#7c4dff"/>
-      <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-valence">5</text>
-    </svg>
-    <div class="dial-label" style="color:var(--text);font-size:10px">sombre ↔ joyeux</div>
+  <!-- Genres -->
+  <div id="genres-section">
+    <div id="genres-label">Genres</div>
+    <div id="genres-wrap"></div>
   </div>
 
-  <div class="dial-wrap">
-    <div class="dial-label">Découverte</div>
-    <svg class="dial-svg" id="dial-dl" width="110" height="110" viewBox="0 0 110 110">
-      <circle class="dial-track" cx="55" cy="55" r="42"
-              stroke-dasharray="227" stroke-dashoffset="57" transform="rotate(135 55 55)"/>
-      <circle class="dial-fill" id="fill-dl" cx="55" cy="55" r="42"
-              stroke="#00bcd4" stroke-dasharray="227" stroke-dashoffset="227" transform="rotate(135 55 55)"/>
-      <circle class="dial-knob" id="knob-dl" cx="55" cy="13" r="7" fill="#00bcd4"/>
-      <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-dl">5</text>
-    </svg>
-    <div class="dial-label" style="color:var(--text);font-size:10px">précis ↔ aventurier</div>
+  <!-- Tracklist -->
+  <div id="tracklist-section">
+    <div id="tracklist-label">
+      <span>Tracklist</span>
+      <span id="tracklist-count"></span>
+    </div>
+    <div id="tracklist-wrap"></div>
   </div>
-</div>
 
-<!-- Genres -->
-<div id="genres-section">
-  <div id="genres-label">Genres</div>
-  <div id="genres-wrap"></div>
-</div>
+</div><!-- /scroll-area -->
 
 <div id="feedback"></div>
 
 <script>
-const API = `${location.origin.replace(location.port, location.port)}/api`;
+const API = location.origin + '/api';
 
 /* ── State ── */
-let state = { energy: 0.5, valence: 0.6, dl: 5, genres: [], playing: false };
+let appState = { energy: 0.5, valence: 0.6, dl: 5, genres: [] };
 let applyTimer = null;
+let currentTlid = null;
 
-/* ── Dial logic ── */
-// Arc: 270° starting at 135°, radius 42, center 55,55
-// dasharray = 2π*42 ≈ 264. We use 227 (≈ 270° of 264 total circumference * 270/360)
-// Actually: circumference = 2π*42 = 263.9. 270/360 * 263.9 = 197.9 ≈ 198
-// Let's recalculate properly:
+/* ── Dial geometry ── */
 const R = 42, CX = 55, CY = 55;
-const CIRC = 2 * Math.PI * R;           // 263.9
-const ARC  = CIRC * 270 / 360;          // 197.9  (270° arc)
-const GAP  = CIRC - ARC;                // 66.0   (90° gap at bottom)
+const CIRC = 2 * Math.PI * R;
+const ARC  = CIRC * 270 / 360;
 
-function setupDialSVG(svg) {
-  // Fix dasharray/dashoffset on track and fill
+function setupDial(id) {
+  const svg   = document.getElementById('dial-' + id);
   const track = svg.querySelector('.dial-track');
   const fill  = svg.querySelector('.dial-fill');
   track.setAttribute('stroke-dasharray', ARC + ' ' + CIRC);
   track.setAttribute('stroke-dashoffset', 0);
   fill.setAttribute('stroke-dasharray', ARC + ' ' + CIRC);
-  fill.setAttribute('stroke-dashoffset', ARC); // starts empty
+  fill.setAttribute('stroke-dashoffset', ARC);
 }
 
-function setDialValue(id, value01) {
-  const svg   = document.getElementById('dial-' + id);
-  const fill  = document.getElementById('fill-' + id);
-  const knob  = document.getElementById('knob-' + id);
-  const txt   = document.getElementById('txt-' + id);
-
-  const offset = ARC * (1 - value01);
-  fill.setAttribute('stroke-dashoffset', offset);
-
-  // Knob position: angle goes from 135° to 405° (=45°)
-  const angleDeg = 135 + value01 * 270;
-  const angleRad = angleDeg * Math.PI / 180;
-  const kx = CX + R * Math.cos(angleRad);
-  const ky = CY + R * Math.sin(angleRad);
-  knob.setAttribute('cx', kx.toFixed(1));
-  knob.setAttribute('cy', ky.toFixed(1));
-
-  const display = id === 'dl' ? Math.round(value01 * 10) : Math.round(value01 * 10);
-  txt.textContent = display;
+function setDial(id, v01) {
+  const fill = document.getElementById('fill-' + id);
+  const knob = document.getElementById('knob-' + id);
+  const txt  = document.getElementById('txt-' + id);
+  fill.setAttribute('stroke-dashoffset', ARC * (1 - v01));
+  const a = (135 + v01 * 270) * Math.PI / 180;
+  knob.setAttribute('cx', (CX + R * Math.cos(a)).toFixed(1));
+  knob.setAttribute('cy', (CY + R * Math.sin(a)).toFixed(1));
+  txt.textContent = Math.round(v01 * 10);
 }
 
-function makeDraggable(dialId, onValue) {
-  const svg = document.getElementById('dial-' + dialId);
-  let dragging = false;
-
-  function angleFromEvent(e) {
+function makeDraggable(id, onChange) {
+  const svg = document.getElementById('dial-' + id);
+  let active = false;
+  function v01fromEvent(e) {
     const rect = svg.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top  + rect.height / 2;
-    const px = (e.touches ? e.touches[0].clientX : e.clientX) - cx;
-    const py = (e.touches ? e.touches[0].clientY : e.clientY) - cy;
-    let deg = Math.atan2(py, px) * 180 / Math.PI; // -180..180
-    // Map to 0..270 where 0=135°, 270=45°(=405°)
-    deg = deg - 135;
+    const px = (e.touches ? e.touches[0].clientX : e.clientX) - (rect.left + rect.width / 2);
+    const py = (e.touches ? e.touches[0].clientY : e.clientY) - (rect.top  + rect.height / 2);
+    let deg = Math.atan2(py, px) * 180 / Math.PI - 135;
     if (deg < 0) deg += 360;
-    return Math.min(Math.max(deg, 0), 270);
+    return Math.min(Math.max(deg, 0), 270) / 270;
   }
-
-  function onMove(e) {
-    if (!dragging) return;
-    e.preventDefault();
-    const deg = angleFromEvent(e);
-    const v01 = deg / 270;
-    setDialValue(dialId, v01);
-    onValue(v01);
-  }
-
-  svg.addEventListener('pointerdown', e => { dragging = true; svg.setPointerCapture(e.pointerId); onMove(e); });
-  svg.addEventListener('pointermove', onMove);
-  svg.addEventListener('pointerup',   () => { dragging = false; scheduleApply(); });
+  svg.addEventListener('pointerdown', e => {
+    active = true; svg.setPointerCapture(e.pointerId);
+    const v = v01fromEvent(e); setDial(id, v); onChange(v);
+  });
+  svg.addEventListener('pointermove', e => {
+    if (!active) return; e.preventDefault();
+    const v = v01fromEvent(e); setDial(id, v); onChange(v);
+  });
+  svg.addEventListener('pointerup', () => { active = false; scheduleApply(); });
 }
 
-/* ── Apply changes ── */
+/* ── Apply ── */
 function scheduleApply() {
   clearTimeout(applyTimer);
   applyTimer = setTimeout(applyMood, 400);
@@ -241,56 +259,116 @@ function scheduleApply() {
 async function applyMood() {
   setFeedback('Application…');
   try {
-    const body = { energy: state.energy, valence: state.valence,
-                   discover_level: state.dl, genres: state.genres };
-    const r = await fetch(API + '/mood', { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const body = { energy: appState.energy, valence: appState.valence,
+                   discover_level: appState.dl, genres: appState.genres };
+    const r = await fetch(API + '/mood', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
     const d = await r.json();
     setFeedback(d.tracks_added > 0 ? `${d.tracks_added} titres chargés` : 'Aucun titre correspondant');
+    setTimeout(refreshNowPlaying, 600);
   } catch(e) { setFeedback('Erreur réseau'); }
 }
 
-/* ── Controls ── */
-async function mopidyRPC(method, params = {}) {
-  return fetch(API + '/mopidy_rpc', { method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
-    .then(r => r.json()).catch(() => null);
+/* ── Mopidy RPC ── */
+async function rpc(method, params = {}) {
+  try {
+    const r = await fetch(API + '/mopidy_rpc', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({jsonrpc: '2.0', id: 1, method, params})
+    });
+    return await r.json();
+  } catch(e) { return null; }
 }
 
+/* ── Controls ── */
 document.getElementById('btn-play').addEventListener('click', async () => {
   await fetch(API + '/toogle_play');
   setTimeout(refreshNowPlaying, 500);
 });
 document.getElementById('btn-next').addEventListener('click', async () => {
-  await mopidyRPC('core.playback.next');
+  await rpc('core.playback.next');
   setTimeout(refreshNowPlaying, 800);
 });
 document.getElementById('btn-prev').addEventListener('click', async () => {
-  await mopidyRPC('core.playback.previous');
+  await rpc('core.playback.previous');
   setTimeout(refreshNowPlaying, 800);
 });
 
-/* ── Now playing ── */
+/* ── Now playing + tracklist ── */
+function msToMin(ms) {
+  if (!ms) return '';
+  const s = Math.round(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function imageUrl(uri) {
+  if (!uri) return '';
+  if (uri.startsWith('http')) return uri;
+  return API + '/mopidy_image?uri=' + encodeURIComponent(uri);
+}
+
+function renderTracklist(tracks, activeTlid) {
+  const wrap = document.getElementById('tracklist-wrap');
+  const count = document.getElementById('tracklist-count');
+  wrap.innerHTML = '';
+  count.textContent = tracks.length ? `${tracks.length} titres` : '';
+  let scrollTarget = null;
+  tracks.forEach(({tlid, track}, i) => {
+    const item = document.createElement('div');
+    item.className = 'tl-item' + (tlid === activeTlid ? ' current' : '');
+    const num = document.createElement('div');
+    num.className = 'tl-num';
+    num.textContent = tlid === activeTlid ? '▶' : (i + 1);
+    const texts = document.createElement('div');
+    texts.className = 'tl-texts';
+    texts.innerHTML = `<div class="tl-name">${track.name || '?'}</div>
+      <div class="tl-artist">${(track.artists||[]).map(a=>a.name).join(', ')}</div>`;
+    const dur = document.createElement('div');
+    dur.className = 'tl-dur';
+    dur.textContent = msToMin(track.length);
+    item.append(num, texts, dur);
+    item.addEventListener('click', () => {
+      rpc('core.playback.play', {tlid}).then(() => setTimeout(refreshNowPlaying, 500));
+    });
+    wrap.appendChild(item);
+    if (tlid === activeTlid) scrollTarget = item;
+  });
+  if (scrollTarget) scrollTarget.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+}
+
 async function refreshNowPlaying() {
-  try {
-    const r = await mopidyRPC('core.playback.get_current_tl_track');
-    const track = r?.result?.track;
-    const state_r = await mopidyRPC('core.playback.get_state');
-    const playing = state_r?.result === 'playing';
+  const [curR, stateR, tlR] = await Promise.all([
+    rpc('core.playback.get_current_tl_track'),
+    rpc('core.playback.get_state'),
+    rpc('core.tracklist.get_tl_tracks'),
+  ]);
 
-    document.getElementById('status-dot').className = playing ? 'playing' : '';
-    document.getElementById('btn-play').textContent = playing ? '⏸' : '▶';
+  const tlt   = curR?.result;
+  const track = tlt?.track;
+  const tlid  = tlt?.tlid ?? null;
+  const playing = stateR?.result === 'playing';
+  const tracks  = tlR?.result || [];
 
-    if (track) {
-      document.getElementById('track-name').textContent = track.name || '—';
-      const artists = (track.artists || []).map(a => a.name).join(', ');
-      document.getElementById('artist-name').textContent = artists || '—';
-      const img = track.album?.images?.[0]?.uri || track.album?.images?.[0]?.url || '';
-      const coverEl = document.getElementById('cover');
-      if (img) coverEl.src = img; else coverEl.src = '';
-    }
-  } catch(e) {}
+  currentTlid = tlid;
+  document.getElementById('status-dot').className = playing ? 'playing' : '';
+  document.getElementById('btn-play').textContent  = playing ? '⏸' : '▶';
+
+  if (track) {
+    document.getElementById('track-name').textContent  = track.name || '—';
+    document.getElementById('artist-name').textContent =
+      (track.artists || []).map(a => a.name).join(', ') || '—';
+
+    // Fetch album art via get_images
+    const imgR = await rpc('core.library.get_images', {uris: [track.uri]});
+    const imgs = imgR?.result?.[track.uri] || [];
+    const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+    const coverEl = document.getElementById('cover');
+    coverEl.src = best ? imageUrl(best.uri || best) : '';
+  }
+
+  renderTracklist(tracks, tlid);
 }
 
 /* ── Genres ── */
@@ -298,7 +376,6 @@ async function loadGenres() {
   try {
     const genres = await fetch(API + '/genres').then(r => r.json());
     const wrap = document.getElementById('genres-wrap');
-    wrap.innerHTML = '';
     genres.slice(0, 20).forEach(g => {
       const chip = document.createElement('button');
       chip.className = 'genre-chip';
@@ -306,7 +383,7 @@ async function loadGenres() {
       chip.dataset.name = g.name;
       chip.addEventListener('click', () => {
         chip.classList.toggle('active');
-        state.genres = [...wrap.querySelectorAll('.genre-chip.active')].map(c => c.dataset.name);
+        appState.genres = [...wrap.querySelectorAll('.genre-chip.active')].map(c => c.dataset.name);
         scheduleApply();
       });
       wrap.appendChild(chip);
@@ -316,21 +393,20 @@ async function loadGenres() {
 
 /* ── Init ── */
 async function init() {
-  ['energy', 'valence', 'dl'].forEach(id => setupDialSVG(document.getElementById('dial-' + id)));
-
-  makeDraggable('energy', v => { state.energy = v; });
-  makeDraggable('valence', v => { state.valence = v; });
-  makeDraggable('dl', v => { state.dl = Math.round(v * 10); });
+  ['energy', 'valence', 'dl'].forEach(setupDial);
+  makeDraggable('energy', v => { appState.energy = v; });
+  makeDraggable('valence', v => { appState.valence = v; });
+  makeDraggable('dl',     v => { appState.dl = Math.round(v * 10); });
 
   try {
-    const settings = await fetch(API + '/mood').then(r => r.json());
-    const e = settings.energy ?? 0.5;
-    const v = settings.valence ?? 0.6;
-    const dl = (settings.discover_level ?? 5) / 10;
-    state.energy = e; state.valence = v; state.dl = settings.discover_level ?? 5;
-    setDialValue('energy', e);
-    setDialValue('valence', v);
-    setDialValue('dl', dl);
+    const s  = await fetch(API + '/mood').then(r => r.json());
+    const e  = s.energy  ?? 0.5;
+    const v  = s.valence ?? 0.6;
+    const dl = s.discover_level ?? 5;
+    appState.energy = e; appState.valence = v; appState.dl = dl;
+    setDial('energy', e);
+    setDial('valence', v);
+    setDial('dl', dl / 10);
   } catch(e) {}
 
   await loadGenres();

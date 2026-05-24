@@ -446,6 +446,23 @@ if __name__ == "__main__":
         except urllib.error.URLError as e:
             return jsonify({'error': str(e)}), 502
 
+    @api.route('/api/mopidy_image')
+    def api_mopidy_image():
+        from flask import request as req, redirect as redir
+        import urllib.request
+        uri = req.args.get('uri', '')
+        if not uri:
+            return '', 404
+        if uri.startswith('http'):
+            return redir(uri)
+        base = mopidy.http_url.replace('/mopidy/rpc', '')
+        try:
+            r = urllib.request.urlopen(base + uri, timeout=5)
+            ct = r.headers.get('Content-Type', 'image/jpeg')
+            return r.read(), 200, {'Content-Type': ct}
+        except Exception:
+            return '', 404
+
     #RESTART
     @api.route('/health')
     def health_check():
