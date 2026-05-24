@@ -428,6 +428,11 @@ if __name__ == "__main__":
         from flask import jsonify
         return jsonify(o2mHandler.dbHandler.get_genres_with_counts())
 
+    @api.route('/mood')
+    def mood_ui():
+        from flask import send_from_directory
+        return send_from_directory('static', 'mood.html')
+
     #RESTART
     @api.route('/health')
     def health_check():
