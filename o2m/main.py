@@ -433,6 +433,19 @@ if __name__ == "__main__":
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
+    @api.route('/api/mopidy_rpc', methods=['POST'])
+    def api_mopidy_rpc():
+        from flask import jsonify, request as req
+        import urllib.request, urllib.error
+        body = req.get_data()
+        try:
+            r = urllib.request.urlopen(
+                urllib.request.Request(mopidy.http_url, data=body,
+                    headers={'Content-Type': 'application/json'}), timeout=5)
+            return r.read(), 200, {'Content-Type': 'application/json'}
+        except urllib.error.URLError as e:
+            return jsonify({'error': str(e)}), 502
+
     #RESTART
     @api.route('/health')
     def health_check():

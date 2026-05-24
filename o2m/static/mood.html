@@ -252,10 +252,7 @@ async function applyMood() {
 
 /* ── Controls ── */
 async function mopidyRPC(method, params = {}) {
-  const base = location.origin.replace(':' + location.port, '');
-  // Try to reach Mopidy via the same host, port 6680
-  const mopidyUrl = base.replace(location.port, '6680') + '/mopidy/rpc';
-  return fetch(mopidyUrl, { method: 'POST',
+  return fetch(API + '/mopidy_rpc', { method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })
     .then(r => r.json()).catch(() => null);
