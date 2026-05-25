@@ -373,7 +373,8 @@ class DatabaseHandler():
 
     def get_tracks_without_mood(self, limit=50):
         """Return [(uri, track_name, artist_name), ...] for tracks that have a name
-        but no mood yet, ordered by most-listened first."""
+        but no mood yet (mood IS NULL), ordered by most-listened first.
+        Tracks marked mood='_' (no Last.fm data found) are excluded."""
         try:
             rows = (
                 Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'))
@@ -393,6 +394,23 @@ class DatabaseHandler():
         except Exception as e:
             print(f"get_tracks_without_mood error: {e}")
             return []
+
+    def count_tracks_without_mood(self):
+        """Return count of tracks with no mood data (NULL only, excludes '_' sentinel)."""
+        try:
+            return (
+                Track.select()
+                .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
+                .where(
+                    Track.mood.is_null() &
+                    Track.name.is_null(False) &
+                    (TrackArtist.position == 0)
+                )
+                .count()
+            )
+        except Exception as e:
+            print(f"count_tracks_without_mood error: {e}")
+            return -1
 
     def update_track_mood(self, uri, mood):
         Track.update(mood=mood).where(Track.uri == uri).execute()
