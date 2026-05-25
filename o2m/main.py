@@ -394,18 +394,35 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/warmup_moods')
+    def api_warmup_moods():
+        """Trigger mood/energy/valence warmup for tracks missing features (background, up to 1000 tracks)."""
+        import threading
+        o2mHandler.dbHandler.set_cache_meta('warmup_moods_at', 0)
+        def _run():
+            try:
+                o2mHandler.spotifyHandler.warmup_track_moods(batch_size=50, max_batches=20)
+            except Exception as e:
+                print(f"api_warmup_moods error: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+        pending = o2mHandler.dbHandler.count_tracks_without_mood()
+        from flask import jsonify
+        return jsonify({'status': 'started', 'tracks_pending': pending})
+
     # ── Mood interface ────────────────────────────────────────────────────────────
 
     @api.route('/api/mood', methods=['GET'])
     def api_mood_get():
         from flask import jsonify
         dist = o2mHandler.dbHandler.get_mood_distribution()
+        pending = o2mHandler.dbHandler.count_tracks_without_mood()
         return jsonify({
-            'energy':        o2mHandler.mood_energy,
-            'valence':       o2mHandler.mood_valence,
-            'genres':        o2mHandler.mood_genres,
-            'discover_level': o2mHandler.discover_level,
-            'distribution':  dist,
+            'energy':          o2mHandler.mood_energy,
+            'valence':         o2mHandler.mood_valence,
+            'genres':          o2mHandler.mood_genres,
+            'discover_level':  o2mHandler.discover_level,
+            'distribution':    dist,
+            'tracks_pending':  pending,
         })
 
     @api.route('/api/mood', methods=['POST'])
