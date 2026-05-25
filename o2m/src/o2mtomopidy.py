@@ -1,4 +1,4 @@
-import datetime, time, sys, contextlib, random, subprocess, os
+import datetime, time, sys, contextlib, random, subprocess, os, threading
 #import numpy as np
 import random
 from mopidy_podcast import Extension, feeds
@@ -1760,6 +1760,30 @@ class O2mToMopidy:
                                     result5 = self.remove_spotify_playlist(playlist.tracks[0].uri,uri)
                                     if result5: stat.option_type = 'normal'
                                     if result5: self._log_playlist_change(uri[0], playlist.tracks[0].uri, 'remove', _from_option_type, 'normal', _track_name)
+
+        # Deferred mood enrichment: if energy/valence still missing and not yet attempted,
+        # fetch from Last.fm in a background thread so the playback event is not blocked.
+        if stat.energy is None and stat.mood is None:
+            _track_name   = getattr(track, 'name', None)
+            _artists      = getattr(track, 'artists', None) or []
+            _artist_name  = next((a.name for a in _artists if getattr(a, 'name', None)), None)
+            _uri_mood     = uri
+            _db           = self.dbHandler
+            _sp           = self.spotifyHandler
+            if _track_name and _artist_name and not any(
+                s in _uri_mood for s in ('podcast', 'rss', 'http://', 'https://')
+            ):
+                def _enrich():
+                    try:
+                        mood, energy, valence = _sp._lastfm_get_track_mood(_artist_name, _track_name)
+                        if mood or energy is not None:
+                            _db.update_track_features(_uri_mood, mood=mood, energy=energy, valence=valence)
+                            print(f"deferred mood: {_artist_name} – {_track_name} → mood={mood} e={energy} v={valence}")
+                        else:
+                            _db.update_track_features(_uri_mood, mood='_')
+                    except Exception as e:
+                        print(f"deferred mood error ({_track_name}): {e}")
+                threading.Thread(target=_enrich, daemon=True).start()
 
         print(f"\n\nUpdate and Fix {fix} stat track {stat}\n\n")
         stat.update()
