@@ -51,9 +51,9 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
 
 ### Key source files in `o2m/src/`:
 - **`o2mtomopidy.py`** — Central logic class `O2mToMopidy`. Manages active NFC boxes, tracklist filling, Spotify recommendations, and stats tracking. This is where most business logic lives.
-- **`o2mmodels.py`** — Peewee ORM models (`Box`, `Stats`, `Stats_Raw`). Connects to MySQL or SQLite based on `o2m.conf`. Database connection is initialized at module import time.
+- **`o2mmodels.py`** — Peewee ORM models (`Box`, `Track`, `Stats_Raw`, `PlaylistLog`, `Artist`, `ArtistGenre`, etc.). Connects to MySQL or SQLite based on `o2m.conf`. Database connection is initialized at module import time. Schema migrations versioned via `CacheMeta` table (`SCHEMA_VERSION` + `_MIGRATIONS` list).
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
-- **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, and auth.
+- **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, auth, and Last.fm enrichment.
 - **`nfcreader.py`** — NFC/smartcard reader integration via `pyscard`. Fires events on card insert/remove.
 
 ### Configuration
@@ -88,3 +88,71 @@ All service configuration is via `.env` file (not committed). Key variables:
 - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET`, `SPOTIPY_REDIRECT_URI`
 - `SPOTIFY_USERNAME`, `SPOTIFY_PASSWORD`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
 - `HOST_MOPIDY`, `O2M_DISCOVER_LEVEL`, `O2M_DEFAULT_VOLUME`, etc.
+- `LASTFM_API_KEY` — Last.fm API key for genre and mood enrichment (injected into `o2m.conf` via `create_conf_files.sh`)
+
+## External API status (2026)
+
+- **Spotify `/audio-features`** — removed Nov 2024, `spotipy` marks it deprecated. No tempo/energy/valence from Spotify.
+- **Spotify `/recommendations`** — removed Nov 2024.
+- **Spotify artist genres** — no longer returned reliably (`sp.artist()` gives simplified objects, `sp.search()` returns empty arrays).
+- **Last.fm** replaces all three: `artist.getTopTags` for genres (min count 10, noise-filtered), `artist.getSimilar` for recommendations, `track.getTopTags` for mood (min count 3, fallback to artist genre cache).
+
+## Cache warmup & CacheMeta
+
+`SpotifyHandler.warmup_cache()` runs at startup in a background thread. Sequence: `liked` → `albums` → `artists` → `playlist_tracks` → `genres` → `moods`. TTLs in `_WARMUP_TTL` (days). `should_warmup()` skips if cache is fresh AND fill rate > threshold derived from `discover_level`.
+
+**Progressive population** — genres (30/run) and moods (50/run) don't set their TTL until all items are covered; each startup processes the next batch.
+
+**CacheMeta corruption**: `updated_at` is stored as BIGINT Unix seconds. An older code path wrote a MySQL DATETIME integer (`YYYYMMDDHHMMSS`, e.g. `20260523060530`) into that column. Peewee then calls `utcfromtimestamp(20260523060530)` → `ValueError: year 644000 is out of range`, killing the warmup thread. `get_cache_meta()` now catches `ValueError`/`OverflowError` and resets the row.
+
+## Peewee ORM conventions
+
+- JOIN queries that alias columns from joined tables (e.g. `Artist.name.alias('artist_name')`) **must call `.namedtuples()`** on the queryset — plain model instances don't expose aliased join columns as attributes.
+- `TimestampField(utc=True)` maps to `BIGINT` in MySQL. Always let Peewee convert via `db_value`/`python_value` — never store raw datetime integers.
+- Migrations: add `_migration_vN(migrator)`, append to `_MIGRATIONS`, bump `SCHEMA_VERSION`. Use `_add_column_safe()` for `ADD COLUMN` (idempotent). `setup_database()` is safe to call at every startup.
+
+## Mood UI (`o2m/static/mood.html`)
+
+Mobile-first PWA served at `GET /mood`. Dark theme, 3 SVG circular potentiometers (Energy, Valence, Découverte). Architecture rules:
+- **CORS**: All Mopidy JSON-RPC calls go through `POST /api/mopidy_rpc` (Flask proxy) — never call Mopidy port 6680 directly from the browser
+- Album art fetched via `core.library.get_images` (not from `get_current_tl_track`) → proxied through `GET /api/mopidy_image?uri=...` for non-HTTP URIs
+- Click-to-play uses `core.playback.play({tlid})` with the `tlid` from `core.tracklist.get_tl_tracks`
+- **Never reconstruct Mopidy URL from `.env` port variables** — those are external mapped ports. Use `mopidy.http_url` (already validated at startup)
+
+## Mood / Energy / Valence enrichment
+
+Track mood features come from Last.fm `_TAG_FEATURES` dict → averaged (energy, valence) from matching tags.
+
+- `warmup_track_moods(batch_size, max_batches)` in `spotifyhandler.py` — called at startup (5 batches of 50) and via `GET /api/warmup_moods` (20 batches async, resets rate-limit sentinel first)
+- Tracks with no Last.fm data get `mood='_'` sentinel to avoid endless retries
+- `dbhandler.count_tracks_without_mood()` excludes the `'_'` sentinel (only truly NULL moods)
+- Deferred enrichment in `o2mtomopidy.update_stat_track()`: if a played track has no mood, a daemon thread calls Last.fm in background without blocking the playback event
+
+## Server topology
+
+Two working directories on the server (`o2m@maudus`):
+- `~/o2m_0` → branch `develop_pv` (main prod instance, external port 6681)
+- `~/o2m_1` → branch `feature/mood-interface` (secondary instance, external port 6691)
+
+**`docker-compose.yml` on o2m_1 was modified directly on server** — never overwrite it via git pull. All other files: commit → push → pull on server (never edit directly).
+
+Deploy workflow:
+```bash
+git push
+ssh o2m-server 'chmod 600 /home/o2m/o2m_0/.ssh/id_github && git -C /home/o2m/o2m_0 pull'
+ssh o2m-server 'docker compose --profile prod -f /home/o2m/o2m_0/docker-compose.yml up -d --force-recreate o2m'
+```
+`up -d` without `--force-recreate` **does not restart a running container**. `docker restart` reuses existing env — use `up -d` to reload `.env` variables.
+
+## SSH access for automation (`claude-o2m` user)
+
+Restricted user on server for remote docker operations:
+- Shell: `rbash` — PATH is restricted, use full paths (`/usr/bin/sudo`, `/usr/bin/docker`)
+- sudoers: `/etc/sudoers.d/claude-o2m` — NOPASSWD for `docker compose restart`, `docker ps`, `docker logs`, `docker inspect`
+- `Defaults:claude-o2m !use_pty` is required to allow passwordless sudo over non-PTY SSH connections
+- `ForceCommand internal-sftp` and `ChrootDirectory` are commented out in `/etc/ssh/sshd_config` (they blocked all command execution)
+- `docker exec` and `docker run` are intentionally NOT in sudoers
+
+## Instructions pour Claude
+- En fin de session ou avant /compact, propose une mise à jour de ce fichier
+  avec les décisions architecturales et conventions découvertes.
