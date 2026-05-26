@@ -1410,35 +1410,53 @@ class SpotifyHandler:
 
         return None, None, None
 
-    def warmup_track_moods(self, batch_size=50):
+    def warmup_track_moods(self, batch_size=50, max_batches=1):
         """Fetch Last.fm mood for tracks that don't have one yet.
-        Processes batch_size tracks per run; smart TTL only activates when all are covered."""
+
+        Processes up to batch_size*max_batches tracks; stops early if rate-limited or all done.
+        Returns (assigned, remaining) counts.
+        Smart TTL activates only when all tracks are covered.
+        """
         if not self._db or not self._lastfm_api_key:
             print("warmup_track_moods: skipped (no DB or no Last.fm key)")
-            return
+            return 0, 0
 
-        tracks = self._db.get_tracks_without_mood(limit=batch_size)
-        if not tracks:
-            self._db.set_cache_meta('warmup_moods_at', 1)
-            print("warmup_track_moods: all tracks have a mood, TTL set (next run in 30 days)")
-            return
-
-        print(f"warmup_track_moods: fetching mood for {len(tracks)} tracks via Last.fm")
-        count = 0
-        for uri, track_name, artist_name in tracks:
+        total_assigned = 0
+        for batch_num in range(max_batches):
             if self._is_rate_limited():
+                print("warmup_track_moods: rate-limited, stopping")
                 break
-            try:
-                mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name)
-                if mood or energy is not None:
-                    self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
-                    count += 1
-                    print(f"  features: {artist_name} – {track_name} → mood={mood} e={energy} v={valence}")
-                time.sleep(0.3)
-            except Exception as e:
-                print(f"warmup_track_moods error ({track_name}): {e}")
 
-        print(f"warmup_track_moods: done — {count}/{len(tracks)} assigned")
+            tracks = self._db.get_tracks_without_mood(limit=batch_size)
+            if not tracks:
+                self._db.set_cache_meta('warmup_moods_at', 1)
+                print("warmup_track_moods: all tracks have features, TTL set (30 days)")
+                return total_assigned, 0
+
+            print(f"warmup_track_moods: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks via Last.fm")
+            batch_assigned = 0
+            for uri, track_name, artist_name in tracks:
+                if self._is_rate_limited():
+                    break
+                try:
+                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name)
+                    if mood or energy is not None:
+                        self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
+                        batch_assigned += 1
+                        print(f"  {artist_name} – {track_name} → mood={mood} e={energy} v={valence}")
+                    else:
+                        # Mark as attempted so it isn't retried endlessly this session
+                        self._db.update_track_features(uri, mood='_')
+                    time.sleep(0.25)
+                except Exception as e:
+                    print(f"warmup_track_moods error ({track_name}): {e}")
+
+            total_assigned += batch_assigned
+            print(f"warmup_track_moods: batch done — {batch_assigned}/{len(tracks)} assigned")
+
+        remaining = len(self._db.get_tracks_without_mood(limit=1))
+        print(f"warmup_track_moods: session total {total_assigned} assigned, ~{remaining} remaining")
+        return total_assigned, remaining
 
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
@@ -1451,7 +1469,7 @@ class SpotifyHandler:
             ('artists',         self.get_all_followed_artists),   # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
             ('genres',          self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
-            ('moods',           self.warmup_track_moods),         # 50/run via Last.fm; repeats until all done
+            ('moods',           lambda: self.warmup_track_moods(batch_size=50, max_batches=5)),  # up to 250/startup
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")
