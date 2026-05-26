@@ -415,12 +415,14 @@ if __name__ == "__main__":
     def api_mood_get():
         from flask import jsonify
         dist = o2mHandler.dbHandler.get_mood_distribution()
+        pending = o2mHandler.dbHandler.count_tracks_without_mood()
         return jsonify({
-            'energy':        o2mHandler.mood_energy,
-            'valence':       o2mHandler.mood_valence,
-            'genres':        o2mHandler.mood_genres,
-            'discover_level': o2mHandler.discover_level,
-            'distribution':  dist,
+            'energy':          o2mHandler.mood_energy,
+            'valence':         o2mHandler.mood_valence,
+            'genres':          o2mHandler.mood_genres,
+            'discover_level':  o2mHandler.discover_level,
+            'distribution':    dist,
+            'tracks_pending':  pending,
         })
 
     @api.route('/api/mood', methods=['POST'])
@@ -460,6 +462,23 @@ if __name__ == "__main__":
             return r.read(), 200, {'Content-Type': 'application/json'}
         except urllib.error.URLError as e:
             return jsonify({'error': str(e)}), 502
+
+    @api.route('/api/mopidy_image')
+    def api_mopidy_image():
+        from flask import request as req, redirect as redir
+        import urllib.request
+        uri = req.args.get('uri', '')
+        if not uri:
+            return '', 404
+        if uri.startswith('http'):
+            return redir(uri)
+        base = mopidy.http_url.replace('/mopidy/rpc', '')
+        try:
+            r = urllib.request.urlopen(base + uri, timeout=5)
+            ct = r.headers.get('Content-Type', 'image/jpeg')
+            return r.read(), 200, {'Content-Type': ct}
+        except Exception:
+            return '', 404
 
     #RESTART
     @api.route('/health')
