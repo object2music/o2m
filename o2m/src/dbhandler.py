@@ -872,6 +872,122 @@ class DatabaseHandler():
         except Exception:
             return False
 
+    # ─── Stats dashboard ───────────────────────────────────────────────────────
+
+    def get_stats_mood(self):
+        """Return mood tag distribution and scatter data for the stats dashboard."""
+        try:
+            mood_counts = {}
+            for row in db.execute_sql(
+                "SELECT COALESCE(mood, 'null') AS m, COUNT(*) AS cnt FROM track GROUP BY m"
+            ):
+                mood_counts[row[0]] = row[1]
+
+            scatter = []
+            rows = db.execute_sql(
+                """
+                SELECT t.energy, t.valence, COALESCE(t.mood, 'unknown') AS mood,
+                       t.name, a.name AS artist_name
+                FROM track t
+                LEFT JOIN trackartist ta ON ta.track_uri = t.uri AND ta.position = 0
+                LEFT JOIN artist a ON a.id = ta.artist_id
+                WHERE t.energy IS NOT NULL AND t.valence IS NOT NULL
+                ORDER BY t.read_count_end DESC
+                LIMIT 2000
+                """
+            )
+            for r in rows:
+                scatter.append({
+                    'energy': r[0],
+                    'valence': r[1],
+                    'mood': r[2],
+                    'name': r[3] or '',
+                    'artist': r[4] or '',
+                })
+            return {'mood_distribution': mood_counts, 'scatter': scatter}
+        except Exception as e:
+            print(f"get_stats_mood error: {e}")
+            return {'mood_distribution': {}, 'scatter': []}
+
+    def get_stats_tracks(self):
+        """Return histogram data for read_end, read_count, read_count_end, last_read_date."""
+        result = {
+            'read_end_hist': [],
+            'read_count_hist': [],
+            'read_count_end_hist': [],
+            'last_read_hist': [],
+        }
+        try:
+            buckets_20 = [i / 20 for i in range(21)]
+            read_end_counts = [0] * 20
+            for row in db.execute_sql(
+                "SELECT read_end FROM track WHERE read_end > 0 AND read_end IS NOT NULL"
+            ):
+                v = float(row[0])
+                idx = min(int(v * 20), 19)
+                read_end_counts[idx] += 1
+            result['read_end_hist'] = [
+                [round(buckets_20[i], 2), round(buckets_20[i + 1], 2), read_end_counts[i]]
+                for i in range(20)
+            ]
+        except Exception as e:
+            print(f"get_stats_tracks read_end error: {e}")
+
+        count_buckets = [(0, 5), (5, 10), (10, 20), (20, 50), (50, None)]
+        for col, key in [('read_count', 'read_count_hist'), ('read_count_end', 'read_count_end_hist')]:
+            try:
+                hist = []
+                for lo, hi in count_buckets:
+                    if hi is None:
+                        row = db.execute_sql(
+                            f"SELECT COUNT(*) FROM track WHERE {col} >= {lo}"
+                        ).fetchone()
+                        hist.append([lo, None, row[0]])
+                    else:
+                        row = db.execute_sql(
+                            f"SELECT COUNT(*) FROM track WHERE {col} >= {lo} AND {col} < {hi}"
+                        ).fetchone()
+                        hist.append([lo, hi, row[0]])
+                result[key] = hist
+            except Exception as e:
+                print(f"get_stats_tracks {col} error: {e}")
+
+        try:
+            months = []
+            for row in db.execute_sql(
+                """
+                SELECT DATE_FORMAT(FROM_UNIXTIME(last_read_date), '%%Y-%%m') AS month,
+                       COUNT(*) AS cnt
+                FROM track
+                WHERE last_read_date IS NOT NULL
+                  AND last_read_date > UNIX_TIMESTAMP(DATE_SUB(NOW(), INTERVAL 12 MONTH))
+                GROUP BY month
+                ORDER BY month ASC
+                """
+            ):
+                months.append({'month': row[0], 'count': row[1]})
+            result['last_read_hist'] = months
+        except Exception:
+            try:
+                months = []
+                for row in db.execute_sql(
+                    """
+                    SELECT strftime('%%Y-%%m', datetime(last_read_date, 'unixepoch')) AS month,
+                           COUNT(*) AS cnt
+                    FROM track
+                    WHERE last_read_date IS NOT NULL
+                      AND last_read_date > strftime('%%s', date('now', '-12 months'))
+                    GROUP BY month
+                    ORDER BY month ASC
+                    """
+                ):
+                    months.append({'month': row[0], 'count': row[1]})
+                result['last_read_hist'] = months
+            except Exception as e:
+                print(f"get_stats_tracks last_read error: {e}")
+
+        return result
+
 
 if __name__ == "__main__":
 

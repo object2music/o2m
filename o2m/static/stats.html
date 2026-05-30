@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a1a2e">
+<title>O2M Stats</title>
+<script src="https://unpkg.com/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
+    --accent: #e94560; --text: #eaeaea; --muted: #8892a4;
+    --border: #ffffff18;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
+         min-height: 100vh; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
+  .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 28px; }
+  .subtitle a { color: var(--muted); text-decoration: none; }
+  .subtitle a:hover { color: var(--text); }
+
+  .section { margin-bottom: 32px; }
+  .section-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin-bottom: 12px;
+  }
+  .card {
+    background: var(--surface); border-radius: 10px; padding: 16px;
+    border: 1px solid var(--border);
+  }
+  .chart-wrap { position: relative; width: 100%; }
+  .chart-wrap canvas { max-height: 260px; }
+  .chart-wide canvas { max-height: 320px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 500px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Mood bars */
+  .mood-list { display: flex; flex-direction: column; gap: 10px; }
+  .mood-row { display: flex; flex-direction: column; gap: 4px; }
+  .mood-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .mood-label { font-size: 13px; font-weight: 600; }
+  .mood-count { font-size: 12px; color: var(--muted); }
+  .mood-bar-bg { background: var(--card); border-radius: 4px; height: 8px; overflow: hidden; }
+  .mood-bar-fill { height: 100%; border-radius: 4px; transition: width .5s; }
+
+  #error-msg { color: var(--accent); font-size: 13px; margin-bottom: 16px; display: none; }
+</style>
+</head>
+<body>
+
+<h1>O2M Stats</h1>
+<p class="subtitle">Bibliothèque musicale &mdash; <a href="/mood">&#8592; Mood</a></p>
+
+<div id="error-msg"></div>
+
+<!-- 1. Mood tags -->
+<div class="section">
+  <div class="section-title">Mood tags</div>
+  <div class="card">
+    <div class="mood-list" id="mood-list">
+      <div style="color:var(--muted);font-size:13px">Chargement…</div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Scatter Energy × Valence -->
+<div class="section">
+  <div class="section-title">Matrice Energy &times; Valence</div>
+  <div class="card chart-wide">
+    <div class="chart-wrap">
+      <canvas id="chart-scatter"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Distribution read_end -->
+<div class="section">
+  <div class="section-title">Distribution taux de fin d&rsquo;écoute (read_end)</div>
+  <div class="card">
+    <div class="chart-wrap">
+      <canvas id="chart-read-end"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- 4. read_count + read_count_end -->
+<div class="section">
+  <div class="section-title">Distribution écoutes totales vs. complètes</div>
+  <div class="two-col">
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">read_count</div>
+      <div class="chart-wrap"><canvas id="chart-read-count"></canvas></div>
+    </div>
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">read_count_end</div>
+      <div class="chart-wrap"><canvas id="chart-read-count-end"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. last_read_date par mois -->
+<div class="section">
+  <div class="section-title">Dernières écoutes par mois (12 mois)</div>
+  <div class="card chart-wide">
+    <div class="chart-wrap">
+      <canvas id="chart-last-read"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = location.origin + '/api';
+
+const MOOD_COLORS = {
+  calm:      '#4fc3f7',
+  energetic: '#ef5350',
+  dark:      '#9c27b0',
+  happy:     '#ffee58',
+  unknown:   '#607d8b',
+  '_':       '#607d8b',
+  'null':    '#37474f',
+};
+
+const MOOD_LABELS = {
+  calm: 'Calm', energetic: 'Energetic', dark: 'Dark',
+  happy: 'Happy', '_': 'Non classé', 'null': 'NULL', unknown: 'Unknown',
+};
+
+const CHART_DEFAULTS = {
+  color: '#eaeaea',
+  plugins: { legend: { labels: { color: '#eaeaea', font: { size: 11 } } } },
+};
+
+Chart.defaults.color = '#8892a4';
+Chart.defaults.borderColor = '#ffffff18';
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+/* ── Mood bars ── */
+function renderMoodBars(dist) {
+  const el = document.getElementById('mood-list');
+  const total = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
+  const order = ['calm', 'energetic', 'dark', 'happy', '_', 'null'];
+  const keys = [...new Set([...order, ...Object.keys(dist)])];
+  el.innerHTML = '';
+  keys.forEach(key => {
+    const count = dist[key] || 0;
+    if (count === 0 && !['calm','energetic','dark','happy'].includes(key)) return;
+    const pct = ((count / total) * 100).toFixed(1);
+    const color = MOOD_COLORS[key] || MOOD_COLORS.unknown;
+    const label = MOOD_LABELS[key] || key;
+    el.innerHTML += `
+      <div class="mood-row">
+        <div class="mood-header">
+          <span class="mood-label" style="color:${color}">${label}</span>
+          <span class="mood-count">${count.toLocaleString()} (${pct}%)</span>
+        </div>
+        <div class="mood-bar-bg">
+          <div class="mood-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+      </div>`;
+  });
+}
+
+/* ── Scatter ── */
+function renderScatter(scatter) {
+  const groups = {};
+  scatter.forEach(p => {
+    const m = p.mood || 'unknown';
+    if (!groups[m]) groups[m] = [];
+    groups[m].push({ x: p.energy, y: p.valence, name: p.name, artist: p.artist });
+  });
+
+  const datasets = Object.entries(groups).map(([mood, pts]) => ({
+    label: MOOD_LABELS[mood] || mood,
+    data: pts,
+    backgroundColor: (MOOD_COLORS[mood] || MOOD_COLORS.unknown) + 'bb',
+    pointRadius: 3,
+    pointHoverRadius: 5,
+  }));
+
+  new Chart(document.getElementById('chart-scatter'), {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive: true,
+      animation: false,
+      scales: {
+        x: {
+          title: { display: true, text: 'Energy', color: '#8892a4' },
+          min: 0, max: 1,
+          ticks: { color: '#8892a4' },
+          grid: { color: '#ffffff12' },
+        },
+        y: {
+          title: { display: true, text: 'Valence', color: '#8892a4' },
+          min: 0, max: 1,
+          ticks: { color: '#8892a4' },
+          grid: { color: '#ffffff12' },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: '#eaeaea', font: { size: 11 }, boxWidth: 10 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const d = ctx.raw;
+              return `${d.artist ? d.artist + ' — ' : ''}${d.name || ''} (${ctx.parsed.x.toFixed(2)}, ${ctx.parsed.y.toFixed(2)})`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+/* ── Bar chart helper ── */
+function barChart(id, labels, data, color, xLabel) {
+  new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: color + 'bb', borderColor: color, borderWidth: 1 }],
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#8892a4', font: { size: 10 } },
+          grid: { color: '#ffffff12' },
+          title: xLabel ? { display: true, text: xLabel, color: '#8892a4' } : undefined,
+        },
+        y: {
+          ticks: { color: '#8892a4', font: { size: 10 } },
+          grid: { color: '#ffffff12' },
+          title: { display: true, text: 'tracks', color: '#8892a4' },
+        },
+      },
+    },
+  });
+}
+
+/* ── Read end histogram ── */
+function renderReadEnd(hist) {
+  const labels = hist.map(b => `${Math.round(b[0] * 100)}%`);
+  const data = hist.map(b => b[2]);
+  barChart('chart-read-end', labels, data, '#4fc3f7', 'Taux de fin d\'écoute');
+}
+
+/* ── Count histograms ── */
+function countLabel(lo, hi) {
+  return hi === null ? `${lo}+` : `${lo}–${hi - 1}`;
+}
+
+function renderCountHist(id, hist, color) {
+  const labels = hist.map(b => countLabel(b[0], b[1]));
+  const data = hist.map(b => b[2]);
+  barChart(id, labels, data, color);
+}
+
+/* ── Last read by month ── */
+function renderLastRead(hist) {
+  const labels = hist.map(h => h.month);
+  const data = hist.map(h => h.count);
+  new Chart(document.getElementById('chart-last-read'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: '#7c4dff99',
+        borderColor: '#7c4dff',
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' } },
+        y: {
+          ticks: { color: '#8892a4', font: { size: 10 } },
+          grid: { color: '#ffffff12' },
+          title: { display: true, text: 'tracks', color: '#8892a4' },
+        },
+      },
+    },
+  });
+}
+
+/* ── Init ── */
+async function init() {
+  try {
+    const [moodData, trackData] = await Promise.all([
+      fetch(API + '/stats/mood').then(r => r.json()),
+      fetch(API + '/stats/tracks').then(r => r.json()),
+    ]);
+
+    renderMoodBars(moodData.mood_distribution || {});
+    if (moodData.scatter && moodData.scatter.length > 0) {
+      renderScatter(moodData.scatter);
+    }
+
+    if (trackData.read_end_hist && trackData.read_end_hist.length > 0) {
+      renderReadEnd(trackData.read_end_hist);
+    }
+    if (trackData.read_count_hist && trackData.read_count_hist.length > 0) {
+      renderCountHist('chart-read-count', trackData.read_count_hist, '#4caf50');
+    }
+    if (trackData.read_count_end_hist && trackData.read_count_end_hist.length > 0) {
+      renderCountHist('chart-read-count-end', trackData.read_count_end_hist, '#ff9800');
+    }
+    if (trackData.last_read_hist && trackData.last_read_hist.length > 0) {
+      renderLastRead(trackData.last_read_hist);
+    }
+  } catch (e) {
+    showError('Erreur de chargement : ' + e.message);
+  }
+}
+
+init();
+</script>
+</body>
+</html>

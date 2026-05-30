@@ -450,6 +450,27 @@ if __name__ == "__main__":
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
+    @api.route('/api/stats/mood')
+    def api_stats_mood():
+        from flask import jsonify
+        try:
+            return jsonify(o2mHandler.dbHandler.get_stats_mood())
+        except Exception as e:
+            return jsonify({'error': str(e), 'mood_distribution': {}, 'scatter': []}), 500
+
+    @api.route('/api/stats/tracks')
+    def api_stats_tracks():
+        from flask import jsonify
+        try:
+            return jsonify(o2mHandler.dbHandler.get_stats_tracks())
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/stats')
+    def stats_ui():
+        from flask import send_from_directory
+        return send_from_directory('static', 'stats.html')
+
     @api.route('/api/mopidy_rpc', methods=['POST'])
     def api_mopidy_rpc():
         from flask import jsonify, request as req
