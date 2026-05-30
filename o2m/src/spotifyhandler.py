@@ -1354,11 +1354,10 @@ class SpotifyHandler:
             'count_without': no_genre_count,
         }
 
-    def _lastfm_get_track_mood(self, artist_name, track_name):
+    def _lastfm_get_track_mood(self, artist_name, track_name, album_name=None):
         """Return (mood, energy, valence) for a track via Last.fm tags.
 
-        Primary: track.getTopTags — specific to this recording.
-        Fallback: artist genres from ArtistGenre cache.
+        Fallback chain: track.getTopTags → album.getTopTags → artist genre cache → artist.getTopTags
         Returns (None, None, None) if Last.fm key absent or no signal found.
         """
         if not self._lastfm_api_key:
@@ -1421,7 +1420,30 @@ class SpotifyHandler:
         except Exception:
             pass
 
-        # --- Fallback 1: artist genre cache (DB, no API) ---
+        # --- Fallback 1: album.getTopTags ---
+        if album_name:
+            try:
+                url = (
+                    f"https://ws.audioscrobbler.com/2.0/?method=album.getTopTags"
+                    f"&artist={requests.utils.quote(artist_name)}"
+                    f"&album={requests.utils.quote(album_name)}"
+                    f"&autocorrect=1&api_key={self._lastfm_api_key}&format=json"
+                )
+                resp = requests.get(url, timeout=5)
+                data = resp.json()
+                raw_tags = (data.get('toptags') or {}).get('tag') or []
+                if isinstance(raw_tags, dict):
+                    raw_tags = [raw_tags]
+                tags = [t['name'] for t in raw_tags if int(t.get('count', 0)) >= 5]
+                if tags:
+                    mood = _score_mood(tags, self._MOOD_TAGS)
+                    energy, valence = _score_features(tags)
+                    if mood or energy is not None:
+                        return _finalize(mood, energy, valence)
+            except Exception:
+                pass
+
+        # --- Fallback 2: artist genre cache (DB, no API) ---
         try:
             artist_id = self._resolve_artist_spotify_id(artist_name, allow_api=False)
             if artist_id and self._db:
@@ -1472,11 +1494,11 @@ class SpotifyHandler:
 
             print(f"warmup_track_moods: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks via Last.fm")
             batch_assigned = 0
-            for uri, track_name, artist_name in tracks:
+            for uri, track_name, artist_name, album_name in tracks:
                 if self._is_rate_limited():
                     break
                 try:
-                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name)
+                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name, album_name)
                     if mood or energy is not None:
                         self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
                         batch_assigned += 1
@@ -1513,11 +1535,11 @@ class SpotifyHandler:
                 break
             print(f"warmup_retry_sentinels: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks")
             batch_assigned = 0
-            for uri, track_name, artist_name in tracks:
+            for uri, track_name, artist_name, album_name in tracks:
                 if self._is_rate_limited():
                     break
                 try:
-                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name)
+                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name, album_name)
                     if mood or energy is not None:
                         self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
                         batch_assigned += 1

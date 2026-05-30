@@ -1,6 +1,6 @@
 import logging, pprint, datetime, random, json
 
-from peewee import IntegrityError, fn
+from peewee import IntegrityError, fn, JOIN
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
 from playhouse.reflection import generate_models, print_model
 from playhouse.shortcuts import model_to_dict, dict_to_model
@@ -372,14 +372,17 @@ class DatabaseHandler():
         return [g.name for g in rows]
 
     def get_tracks_without_mood(self, limit=50):
-        """Return [(uri, track_name, artist_name), ...] for tracks that have a name
+        """Return [(uri, track_name, artist_name, album_name), ...] for tracks that have a name
         but no mood yet (mood IS NULL), ordered by most-listened first.
         Tracks marked mood='_' (no Last.fm data found) are excluded."""
         try:
             rows = (
-                Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'))
+                Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'),
+                             Album.name.alias('album_name'))
                 .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
                 .join(Artist, on=(TrackArtist.artist_id == Artist.id))
+                .switch(Track)
+                .join(Album, JOIN.LEFT_OUTER, on=(Track.album_id == Album.id))
                 .where(
                     Track.mood.is_null() &
                     Track.name.is_null(False) &
@@ -390,7 +393,7 @@ class DatabaseHandler():
                 .limit(limit)
                 .namedtuples()
             )
-            return [(r.uri, r.name, r.artist_name) for r in rows]
+            return [(r.uri, r.name, r.artist_name, getattr(r, 'album_name', None)) for r in rows]
         except Exception as e:
             print(f"get_tracks_without_mood error: {e}")
             return []
@@ -416,14 +419,17 @@ class DatabaseHandler():
             return -1
 
     def get_sentinel_tracks_with_artist_genres(self, limit=50):
-        """Return [(uri, track_name, artist_name)] for tracks with mood='_' (sentinel)
+        """Return [(uri, track_name, artist_name, album_name)] for tracks with mood='_' (sentinel)
         whose primary artist now has genres in ArtistGenre — eligible for a retry."""
         try:
             rows = (
-                Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'))
+                Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'),
+                             Album.name.alias('album_name'))
                 .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
                 .join(Artist, on=(TrackArtist.artist_id == Artist.id))
                 .join(ArtistGenre, on=(ArtistGenre.artist_id == Artist.id))
+                .switch(Track)
+                .join(Album, JOIN.LEFT_OUTER, on=(Track.album_id == Album.id))
                 .where(
                     (Track.mood == '_') &
                     Track.name.is_null(False) &
@@ -434,7 +440,7 @@ class DatabaseHandler():
                 .limit(limit)
                 .namedtuples()
             )
-            return [(r.uri, r.name, r.artist_name) for r in rows]
+            return [(r.uri, r.name, r.artist_name, getattr(r, 'album_name', None)) for r in rows]
         except Exception as e:
             print(f"get_sentinel_tracks_with_artist_genres error: {e}")
             return []
