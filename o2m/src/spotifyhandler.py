@@ -909,14 +909,14 @@ class SpotifyHandler:
                       'instrumental', 'world', 'meditation', 'drone',
                       'chanson', 'chanson francaise', 'chanson française', 'french pop',
                       'singer-songwriter', 'singer songwriter',
-                      'jazz fusion', 'fusion', 'contemporary jazz', 'jazz manouche',
-                      'cool jazz', 'free jazz', 'bebop', 'post-bop',
+                      'contemporary jazz', 'jazz manouche', 'cool jazz', 'nu jazz',
                       'indie', 'lo-fi', 'lofi', 'neo-soul', 'trip-hop'},
         'energetic': {'metal', 'punk', 'hardcore', 'edm', 'techno', 'house', 'drum and bass',
                       'dubstep', 'electro', 'trance', 'breakbeat', 'industrial',
                       'rock', 'alternative', 'alternative rock', 'indie rock', 'hard rock',
                       'progressive rock', 'post-rock', 'grunge',
-                      'hip-hop', 'hip hop', 'rap', 'electronic', 'r&b'},
+                      'hip-hop', 'hip hop', 'rap', 'electronic', 'r&b',
+                      'bebop', 'post-bop', 'free jazz', 'acid jazz', 'jazz fusion', 'fusion'},
         'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave', 'post-punk',
                       'experimental', 'noise', 'avant-garde', 'drone metal', 'shoegaze',
                       'dark folk', 'dark ambient'},
@@ -925,74 +925,84 @@ class SpotifyHandler:
                       'swing', 'big band', 'dance', 'pop rock', 'world music'},
     }
 
-    # Numeric (energy, valence) per Last.fm tag — averaged across all matching tags.
-    # energy: 0.0 = sleep/ambient  → 1.0 = metal/hardcore
-    # valence: 0.0 = dark/grief    → 1.0 = joyful/euphoric
+    # Numeric (energy, valence) per Last.fm tag — weighted average across matching tags.
+    # energy: 0.0 = silence/sleep  → 1.0 = extreme metal
+    # valence: 0.0 = grief/despair → 1.0 = euphoria/joy
+    # Instruments (trumpet, guitar…) intentionally absent — they describe timbre, not mood.
     _TAG_FEATURES = {
         # ── Very low energy ───────────────────────────────────────────────────────
-        'sleep':          (0.05, 0.50), 'ambient':        (0.10, 0.55),
-        'meditation':     (0.08, 0.62), 'drone':          (0.10, 0.45),
+        'sleep':          (0.05, 0.50), 'ambient':        (0.10, 0.52),
+        'meditation':     (0.08, 0.62), 'drone':          (0.08, 0.38),
         'nature':         (0.10, 0.65),
-        # ── Low energy ────────────────────────────────────────────────────────────
-        'calm':           (0.20, 0.60), 'chill':          (0.25, 0.60),
-        'chillout':       (0.25, 0.60), 'relaxing':       (0.20, 0.65),
-        'peaceful':       (0.18, 0.70), 'mellow':         (0.25, 0.55),
-        'soft':           (0.20, 0.60), 'gentle':         (0.18, 0.65),
-        'background':     (0.15, 0.55), 'quiet':          (0.15, 0.60),
-        'downtempo':      (0.30, 0.50), 'lo-fi':          (0.25, 0.55),
-        'lofi':           (0.25, 0.55), 'slow':           (0.20, 0.50),
-        'new age':        (0.12, 0.65), 'atmospheric':    (0.20, 0.50),
-        # ── Low-medium energy ─────────────────────────────────────────────────────
-        'classical':      (0.30, 0.55), 'piano':          (0.28, 0.55),
-        'acoustic':       (0.32, 0.60), 'folk':           (0.32, 0.62),
-        'jazz':           (0.35, 0.60), 'instrumental':   (0.30, 0.55),
-        'bossa nova':     (0.35, 0.65), 'smooth jazz':    (0.30, 0.60),
-        'easy listening': (0.25, 0.60), 'chamber':        (0.28, 0.55),
-        'baroque':        (0.32, 0.55), 'world':          (0.42, 0.60),
+        # ── Low energy — ambiance calme ───────────────────────────────────────────
+        'calm':           (0.18, 0.62), 'chill':          (0.22, 0.62),
+        'chillout':       (0.22, 0.60), 'relaxing':       (0.18, 0.65),
+        'peaceful':       (0.15, 0.70), 'mellow':         (0.25, 0.58),
+        'soft':           (0.18, 0.62), 'gentle':         (0.15, 0.65),
+        'background':     (0.12, 0.55), 'quiet':          (0.12, 0.58),
+        'downtempo':      (0.28, 0.48), 'lo-fi':          (0.22, 0.55),
+        'lofi':           (0.22, 0.55), 'slow':           (0.18, 0.48),
+        'new age':        (0.10, 0.65), 'atmospheric':    (0.18, 0.48),
+        # ── Low-medium energy — acoustique / classique ────────────────────────────
+        'classical':      (0.32, 0.55), 'piano':          (0.30, 0.55),
+        'acoustic':       (0.38, 0.62), 'folk':           (0.38, 0.65),
+        'instrumental':   (0.32, 0.55), 'easy listening': (0.25, 0.62),
+        'chamber':        (0.28, 0.55), 'baroque':        (0.30, 0.55),
+        'chanson':        (0.35, 0.58),
+        # ── Jazz — famille ────────────────────────────────────────────────────────
+        # Jazz = présence, swing, sophistication — PAS lounge (0.35 était trop bas)
+        'jazz':           (0.52, 0.60), 'smooth jazz':    (0.35, 0.62),
+        'cool jazz':      (0.40, 0.60), 'bossa nova':     (0.45, 0.72),
+        'nu jazz':        (0.50, 0.58), 'jazz manouche':  (0.55, 0.68),
+        'acid jazz':      (0.62, 0.65), 'jazz fusion':    (0.65, 0.55),
+        'bebop':          (0.72, 0.58), 'post-bop':       (0.65, 0.55),
+        'swing':          (0.68, 0.78), 'big band':       (0.65, 0.72),
+        'electro jazz':   (0.60, 0.62), 'groovy':         (0.68, 0.75),
         # ── Medium energy ─────────────────────────────────────────────────────────
-        'country':        (0.50, 0.65), 'blues':          (0.45, 0.35),
-        'soul':           (0.50, 0.65), 'r&b':            (0.52, 0.65),
-        'indie':          (0.52, 0.58), 'alternative':    (0.55, 0.55),
-        'pop':            (0.60, 0.70), 'reggae':         (0.55, 0.75),
-        'funk':           (0.65, 0.75), 'disco':          (0.70, 0.78),
-        'ska':            (0.68, 0.75), 'rock':           (0.65, 0.55),
-        'hip-hop':        (0.65, 0.55), 'hip hop':        (0.65, 0.55),
-        'rap':            (0.68, 0.55),
-        # ── Dark/sad valence ──────────────────────────────────────────────────────
-        'sad':            (0.35, 0.15), 'melancholic':    (0.30, 0.15),
-        'melancholy':     (0.30, 0.15), 'dark':           (0.40, 0.20),
-        'gloomy':         (0.30, 0.15), 'depressing':     (0.25, 0.10),
-        'emotional':      (0.35, 0.30), 'heartbreak':     (0.30, 0.15),
-        'sorrow':         (0.25, 0.15), 'lonely':         (0.25, 0.20),
-        'grief':          (0.20, 0.08), 'bittersweet':    (0.38, 0.40),
-        'introspective':  (0.30, 0.35), 'gothic':         (0.45, 0.22),
-        'darkwave':       (0.50, 0.25), 'post-punk':      (0.60, 0.30),
-        # ── Happy/positive valence ────────────────────────────────────────────────
-        'happy':          (0.65, 0.90), 'feel good':      (0.65, 0.88),
+        'world':          (0.50, 0.62), 'country':        (0.55, 0.68),
+        'blues':          (0.50, 0.28), 'soul':           (0.58, 0.70),
+        'r&b':            (0.60, 0.65), 'indie':          (0.55, 0.58),
+        'alternative':    (0.60, 0.50), 'pop':            (0.65, 0.72),
+        'reggae':         (0.58, 0.78), 'funk':           (0.72, 0.78),
+        'disco':          (0.75, 0.80), 'ska':            (0.72, 0.78),
+        'rock':           (0.72, 0.50), 'hip-hop':        (0.70, 0.52),
+        'hip hop':        (0.70, 0.52), 'rap':            (0.72, 0.50),
+        'trip-hop':       (0.35, 0.42), 'shoegaze':       (0.55, 0.35),
+        # ── Dark/sad ──────────────────────────────────────────────────────────────
+        'sad':            (0.30, 0.12), 'melancholic':    (0.28, 0.15),
+        'melancholy':     (0.28, 0.15), 'dark':           (0.42, 0.18),
+        'gloomy':         (0.28, 0.15), 'depressing':     (0.22, 0.10),
+        'emotional':      (0.35, 0.28), 'heartbreak':     (0.28, 0.12),
+        'sorrow':         (0.25, 0.15), 'lonely':         (0.22, 0.20),
+        'grief':          (0.18, 0.08), 'bittersweet':    (0.38, 0.38),
+        'introspective':  (0.30, 0.38), 'gothic':         (0.50, 0.22),
+        'darkwave':       (0.52, 0.25), 'post-punk':      (0.62, 0.30),
+        # ── Happy/positive ────────────────────────────────────────────────────────
+        'happy':          (0.68, 0.90), 'feel good':      (0.65, 0.88),
         'feelgood':       (0.65, 0.88), 'cheerful':       (0.62, 0.88),
-        'uplifting':      (0.65, 0.85), 'positive':       (0.60, 0.85),
-        'joyful':         (0.65, 0.90), 'fun':            (0.68, 0.88),
+        'uplifting':      (0.65, 0.85), 'positive':       (0.62, 0.85),
+        'joyful':         (0.68, 0.90), 'fun':            (0.70, 0.88),
         'summer':         (0.70, 0.85), 'sunshine':       (0.65, 0.88),
         'optimistic':     (0.62, 0.85), 'euphoric':       (0.82, 0.92),
         # ── High energy ───────────────────────────────────────────────────────────
         'energetic':      (0.85, 0.70), 'energy':         (0.85, 0.70),
         'upbeat':         (0.80, 0.80), 'dance':          (0.80, 0.78),
-        'workout':        (0.85, 0.70), 'intense':        (0.85, 0.58),
-        'driving':        (0.78, 0.58), 'fast':           (0.82, 0.60),
+        'workout':        (0.85, 0.68), 'intense':        (0.85, 0.55),
+        'driving':        (0.78, 0.58), 'fast':           (0.82, 0.58),
         'exciting':       (0.80, 0.75), 'party':          (0.82, 0.80),
-        'power':          (0.82, 0.62), 'high energy':    (0.88, 0.70),
-        'adrenaline':     (0.90, 0.62), 'pump up':        (0.88, 0.72),
+        'power':          (0.82, 0.60), 'high energy':    (0.88, 0.68),
+        'adrenaline':     (0.90, 0.60), 'pump up':        (0.88, 0.70),
         'electronic':     (0.68, 0.60), 'electro':        (0.72, 0.60),
         'edm':            (0.85, 0.70), 'house':          (0.80, 0.68),
-        'techno':         (0.85, 0.58), 'trance':         (0.85, 0.65),
-        'drum and bass':  (0.88, 0.60), 'dubstep':        (0.85, 0.52),
+        'techno':         (0.85, 0.55), 'trance':         (0.85, 0.65),
+        'drum and bass':  (0.88, 0.58), 'dubstep':        (0.85, 0.50),
         'breakbeat':      (0.82, 0.58),
         # ── Very high energy ──────────────────────────────────────────────────────
-        'punk':           (0.82, 0.55), 'metal':          (0.88, 0.38),
-        'hardcore':       (0.92, 0.48), 'black metal':    (0.88, 0.22),
-        'doom metal':     (0.70, 0.20), 'industrial':     (0.85, 0.32),
-        'aggressive':     (0.88, 0.38), 'hard':           (0.82, 0.48),
-        'loud':           (0.85, 0.52),
+        'punk':           (0.85, 0.52), 'metal':          (0.90, 0.35),
+        'hardcore':       (0.92, 0.40), 'black metal':    (0.90, 0.18),
+        'doom metal':     (0.72, 0.18), 'industrial':     (0.85, 0.28),
+        'aggressive':     (0.88, 0.35), 'hard':           (0.82, 0.45),
+        'loud':           (0.85, 0.50),
     }
 
     def fetch_spotify_totals(self):
@@ -1363,25 +1373,28 @@ class SpotifyHandler:
         if not self._lastfm_api_key:
             return None, None, None
 
-        def _score_mood(tags, category_map):
+        def _score_mood(tags_wc, category_map):
+            # tags_wc: [(name, weight), ...] — weight = Last.fm count or 1 for equal weight
             scores = {cat: 0 for cat in category_map}
-            for tag in tags:
+            for tag, weight in tags_wc:
                 tl = tag.lower()
                 for cat, keywords in category_map.items():
                     if tl in keywords:
-                        scores[cat] += 1
+                        scores[cat] += weight
             best_cat = max(scores, key=scores.get)
             return best_cat if scores[best_cat] > 0 else None
 
-        def _score_features(tags):
-            matches = [(e, v) for tag in tags
+        def _score_features(tags_wc):
+            # tags_wc: [(name, weight), ...] — weighted average of (energy, valence)
+            matches = [(e, v, w) for tag, w in tags_wc
                        for k, (e, v) in self._TAG_FEATURES.items()
                        if tag.lower() == k]
             if not matches:
                 return None, None
+            total_w = sum(w for _, _, w in matches)
             return (
-                round(sum(e for e, v in matches) / len(matches), 3),
-                round(sum(v for e, v in matches) / len(matches), 3),
+                round(sum(e * w for e, _, w in matches) / total_w, 3),
+                round(sum(v * w for _, v, w in matches) / total_w, 3),
             )
 
         def _finalize(mood, energy, valence):
@@ -1411,16 +1424,17 @@ class SpotifyHandler:
             raw_tags = (data.get('toptags') or {}).get('tag') or []
             if isinstance(raw_tags, dict):
                 raw_tags = [raw_tags]
-            tags = [t['name'] for t in raw_tags if int(t.get('count', 0)) >= 3]
-            if tags:
-                mood = _score_mood(tags, self._MOOD_TAGS)
-                energy, valence = _score_features(tags)
+            tags_wc = [(t['name'], int(t.get('count', 0)))
+                       for t in raw_tags if int(t.get('count', 0)) >= 3]
+            if tags_wc:
+                mood = _score_mood(tags_wc, self._MOOD_TAGS)
+                energy, valence = _score_features(tags_wc)
                 if mood or energy is not None:
                     return _finalize(mood, energy, valence)
         except Exception:
             pass
 
-        # --- Fallback 1: album.getTopTags ---
+        # --- Fallback 1: album.getTopTags (pondéré par count) ---
         if album_name:
             try:
                 url = (
@@ -1434,34 +1448,37 @@ class SpotifyHandler:
                 raw_tags = (data.get('toptags') or {}).get('tag') or []
                 if isinstance(raw_tags, dict):
                     raw_tags = [raw_tags]
-                tags = [t['name'] for t in raw_tags if int(t.get('count', 0)) >= 5]
-                if tags:
-                    mood = _score_mood(tags, self._MOOD_TAGS)
-                    energy, valence = _score_features(tags)
+                tags_wc = [(t['name'], int(t.get('count', 0)))
+                           for t in raw_tags if int(t.get('count', 0)) >= 5]
+                if tags_wc:
+                    mood = _score_mood(tags_wc, self._MOOD_TAGS)
+                    energy, valence = _score_features(tags_wc)
                     if mood or energy is not None:
                         return _finalize(mood, energy, valence)
             except Exception:
                 pass
 
-        # --- Fallback 2: artist genre cache (DB, no API) ---
+        # --- Fallback 2: artist genre cache DB (poids égaux) ---
         try:
             artist_id = self._resolve_artist_spotify_id(artist_name, allow_api=False)
             if artist_id and self._db:
                 genres = self._db.get_artist_genres(artist_id)
                 if genres:
-                    mood = _score_mood(genres, self._GENRE_MOOD)
-                    energy, valence = _score_features(genres)
+                    genres_wc = [(g, 1) for g in genres]
+                    mood = _score_mood(genres_wc, self._GENRE_MOOD)
+                    energy, valence = _score_features(genres_wc)
                     if mood or energy is not None:
                         return _finalize(mood, energy, valence)
         except Exception:
             pass
 
-        # --- Fallback 2: artist.getTopTags direct Last.fm (quand genres pas en cache) ---
+        # --- Fallback 3: artist.getTopTags direct Last.fm (poids égaux) ---
         try:
             artist_tags = self._lastfm_get_top_tags(artist_name) or []
             if artist_tags:
-                mood = _score_mood(artist_tags, self._GENRE_MOOD)
-                energy, valence = _score_features(artist_tags)
+                artist_wc = [(t, 1) for t in artist_tags]
+                mood = _score_mood(artist_wc, self._GENRE_MOOD)
+                energy, valence = _score_features(artist_wc)
                 if mood or energy is not None:
                     return _finalize(mood, energy, valence)
         except Exception:
