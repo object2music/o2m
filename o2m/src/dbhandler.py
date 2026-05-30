@@ -415,6 +415,30 @@ class DatabaseHandler():
             print(f"count_tracks_without_mood error: {e}")
             return -1
 
+    def get_sentinel_tracks_with_artist_genres(self, limit=50):
+        """Return [(uri, track_name, artist_name)] for tracks with mood='_' (sentinel)
+        whose primary artist now has genres in ArtistGenre — eligible for a retry."""
+        try:
+            rows = (
+                Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'))
+                .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
+                .join(Artist, on=(TrackArtist.artist_id == Artist.id))
+                .join(ArtistGenre, on=(ArtistGenre.artist_id == Artist.id))
+                .where(
+                    (Track.mood == '_') &
+                    Track.name.is_null(False) &
+                    Artist.name.is_null(False) &
+                    (TrackArtist.position == 0)
+                )
+                .order_by(Track.read_count_end.desc())
+                .limit(limit)
+                .namedtuples()
+            )
+            return [(r.uri, r.name, r.artist_name) for r in rows]
+        except Exception as e:
+            print(f"get_sentinel_tracks_with_artist_genres error: {e}")
+            return []
+
     def update_track_mood(self, uri, mood):
         Track.update(mood=mood).where(Track.uri == uri).execute()
 
