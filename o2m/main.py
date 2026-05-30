@@ -256,10 +256,22 @@ if __name__ == "__main__":
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
             read_end = float(stat.read_end) if stat else 0.0
 
+            def mood_suffix(s):
+                if not s:
+                    return ''
+                parts = []
+                if s.mood and s.mood != '_':
+                    parts.append(s.mood)
+                if s.energy is not None:
+                    parts.append(f"e:{round(s.energy * 10)}")
+                if s.valence is not None:
+                    parts.append(f"v:{round(s.valence * 10)}")
+                return ' (' + ' '.join(parts) + ')' if parts else ''
+
             # Fast path: library_display from _track_info, option_type from DB
             if info and info.get('library_display'):
                 option_type = str(stat.option_type) if stat else 'new'
-                status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + info['library_display']
+                status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + info['library_display'] + mood_suffix(stat)
                 return status
 
             # Slow path: stat must exist for full DB-based resolution
@@ -302,7 +314,7 @@ if __name__ == "__main__":
                                 if not _looks_like_spotify_id(normalized_id):
                                     resolved = f"{prefix}:{value}"
                                     library_name = resolved
-                                    status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name
+                                    status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name + mood_suffix(stat)
                                     return status
                                 value = normalized_id
 
@@ -348,7 +360,7 @@ if __name__ == "__main__":
                     print(f"Error getting library name: {e}")
                     library_name = stored
 
-            status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name
+            status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name + mood_suffix(stat)
         except Exception as val_e:
             status = 'new'
         return status
@@ -444,6 +456,27 @@ if __name__ == "__main__":
     def api_genres():
         from flask import jsonify
         return jsonify(o2mHandler.dbHandler.get_genres_with_counts())
+
+    @api.route('/api/track_info')
+    def api_track_info():
+        uri = request.args.get('uri')
+        if not uri:
+            return jsonify({})
+        try:
+            stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+            info = next((v for v in o2mHandler._track_info.values() if v.get('uri') == uri), None)
+            library = (info.get('library_display') if info else None) or (str(stat.in_library) if stat and stat.in_library else '')
+            return jsonify({
+                'option_type':    str(stat.option_type) if stat else 'new',
+                'read_end':       round(float(stat.read_end), 2) if stat else 0.0,
+                'read_count_end': int(stat.read_count_end) if stat else 0,
+                'mood':           str(stat.mood) if stat and stat.mood and stat.mood != '_' else None,
+                'energy':         round(float(stat.energy), 3) if stat and stat.energy is not None else None,
+                'valence':        round(float(stat.valence), 3) if stat and stat.valence is not None else None,
+                'library':        library,
+            })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     @api.route('/mood')
     def mood_ui():
