@@ -462,6 +462,7 @@ if __name__ == "__main__":
 
     @api.route('/api/track_info')
     def api_track_info():
+        from flask import jsonify
         uri = request.args.get('uri')
         if not uri:
             return jsonify({})
