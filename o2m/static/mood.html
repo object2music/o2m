@@ -146,6 +146,17 @@
   .tl-artist { font-size: 11px; color: var(--muted); white-space: nowrap;
                overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
   .tl-dur { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .tl-status {
+    font-size: 10px; color: var(--muted); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tl-status.s-library   { color: #4fc3f7; }
+  .tl-status.s-favorites { color: #81c784; }
+  .tl-status.s-incoming  { color: #ffb74d; }
+  .tl-status.s-new       { color: #ff8a65; }
+  .tl-status.s-trash     { color: #ef9a9a; }
+  .tl-status.s-hidden    { color: #ce93d8; }
+  .tl-status.s-podcast   { color: #90a4ae; }
 
   /* ── Feedback ── */
   #feedback {
@@ -370,8 +381,14 @@ function renderTracklist(tracks, activeTlid) {
     num.textContent = tlid === activeTlid ? '▶' : (i + 1);
     const texts = document.createElement('div');
     texts.className = 'tl-texts';
+    const cached = getCachedStatus(track.uri);
+    const statusHtml = cached
+      ? `<div class="tl-status ${STATUS_CLASS[(cached.split(' - ')[0]||'').trim().toLowerCase()]||''}"
+              data-uri="${track.uri.replace(/"/g,'&quot;')}">${formatStatus(cached)}</div>`
+      : `<div class="tl-status" data-uri="${track.uri.replace(/"/g,'&quot;')}"></div>`;
     texts.innerHTML = `<div class="tl-name">${track.name || '?'}</div>
-      <div class="tl-artist">${(track.artists||[]).map(a=>a.name).join(', ')}</div>`;
+      <div class="tl-artist">${(track.artists||[]).map(a=>a.name).join(', ')}</div>
+      ${statusHtml}`;
     const dur = document.createElement('div');
     dur.className = 'tl-dur';
     dur.textContent = msToMin(track.length);
@@ -383,6 +400,7 @@ function renderTracklist(tracks, activeTlid) {
     if (tlid === activeTlid) scrollTarget = item;
   });
   if (scrollTarget) scrollTarget.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  fetchTracklistStatuses(tracks);
 }
 
 const STATUS_CLASS = {
@@ -391,12 +409,64 @@ const STATUS_CLASS = {
   new: 's-new', trash: 's-trash', hidden: 's-hidden', podcast: 's-podcast',
 };
 
+/* ── Status helpers ── */
+const statusCache = new Map(); // uri → {text, ts}
+const STATUS_TTL  = 5 * 60 * 1000;
+
+function getCachedStatus(uri) {
+  const e = statusCache.get(uri);
+  if (!e || Date.now() - e.ts > STATUS_TTL) return null;
+  return e.text;
+}
+
+function formatStatus(raw) {
+  if (!raw || raw === 'Manual') return '';
+  const parts = raw.split(' - ');
+  const ot    = parts[0] || '';
+  const score = parts[1] || '';
+  let lib     = (parts[2] || '').replace(/^(playlist|album|artist):/, '');
+  if (score && lib) return `${ot} · ${score} · ${lib}`;
+  if (score)        return `${ot} · ${score}`;
+  return ot;
+}
+
+function applyStatusEl(el, raw) {
+  const ot  = (raw || '').split(' - ')[0].trim().toLowerCase();
+  const cls = STATUS_CLASS[ot] || '';
+  el.textContent = formatStatus(raw);
+  el.className   = 'tl-status' + (cls ? ' ' + cls : '');
+}
+
+async function fetchStatus(uri) {
+  const cached = getCachedStatus(uri);
+  if (cached !== null) return cached;
+  try {
+    const r = await fetch(API + '/track_status?uri=' + encodeURIComponent(uri));
+    const t = r.ok ? await r.text() : '';
+    statusCache.set(uri, { text: t, ts: Date.now() });
+    return t;
+  } catch(e) { return ''; }
+}
+
 function updateStatusBadge(text) {
   const el = document.getElementById('track-status-badge');
-  if (!text) { el.textContent = ''; el.className = ''; return; }
-  const ot = text.split(' - ')[0].trim().toLowerCase();
-  el.textContent = ot === 'library' ? 'library' : ot;
-  el.className = STATUS_CLASS[ot] || '';
+  const ot = (text || '').split(' - ')[0].trim().toLowerCase();
+  el.textContent = formatStatus(text);
+  el.className   = STATUS_CLASS[ot] || '';
+}
+
+async function fetchTracklistStatuses(tracks) {
+  const CONCURRENCY = 4;
+  for (let i = 0; i < tracks.length; i += CONCURRENCY) {
+    await Promise.all(
+      tracks.slice(i, i + CONCURRENCY).map(async ({ track }) => {
+        if (!track?.uri) return;
+        const text = await fetchStatus(track.uri);
+        const el = document.querySelector(`.tl-status[data-uri="${CSS.escape(track.uri)}"]`);
+        if (el && text) applyStatusEl(el, text);
+      })
+    );
+  }
 }
 
 async function refreshVolume() {
