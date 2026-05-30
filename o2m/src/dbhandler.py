@@ -374,46 +374,44 @@ class DatabaseHandler():
     def get_tracks_without_mood(self, limit=50):
         """Return [(uri, track_name, artist_name, album_name), ...] for tracks that have a name
         but no mood yet (mood IS NULL), ordered by most-listened first.
-        Tracks marked mood='_' (no Last.fm data found) are excluded."""
+        Tracks marked mood='_' (no Last.fm data found) are excluded.
+        Falls back to album.artist_name when the artist row is missing from the artist table."""
         try:
-            rows = (
-                Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'),
-                             Album.name.alias('album_name'))
-                .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
-                .join(Artist, on=(TrackArtist.artist_id == Artist.id))
-                .switch(Track)
-                .join(Album, JOIN.LEFT_OUTER, on=(Track.album_id == Album.id))
-                .where(
-                    Track.mood.is_null() &
-                    Track.name.is_null(False) &
-                    Artist.name.is_null(False) &
-                    (TrackArtist.position == 0)
-                )
-                .order_by(Track.read_count_end.desc())
-                .limit(limit)
-                .namedtuples()
-            )
-            return [(r.uri, r.name, r.artist_name, getattr(r, 'album_name', None)) for r in rows]
+            from peewee import fn as _fn
+            rows = db.execute_sql("""
+                SELECT t.uri, t.name,
+                       COALESCE(a.name, al.artist_name) AS artist_name,
+                       al.name AS album_name
+                FROM track t
+                JOIN trackartist ta ON ta.track_uri = t.uri AND ta.position = 0
+                LEFT JOIN artist a ON a.id = ta.artist_id
+                LEFT JOIN album al ON al.id = t.album_id
+                WHERE t.mood IS NULL
+                  AND t.name IS NOT NULL
+                  AND COALESCE(a.name, al.artist_name) IS NOT NULL
+                ORDER BY t.read_count_end DESC
+                LIMIT %s
+            """, (limit,))
+            return [(r[0], r[1], r[2], r[3]) for r in rows]
         except Exception as e:
             print(f"get_tracks_without_mood error: {e}")
             return []
 
     def count_tracks_without_mood(self):
         """Return count of tracks with no mood data (NULL only, excludes '_' sentinel).
-        Uses the same joins/filters as get_tracks_without_mood for consistency."""
+        Uses the same logic as get_tracks_without_mood (COALESCE artist fallback)."""
         try:
-            return (
-                Track.select()
-                .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
-                .join(Artist, on=(TrackArtist.artist_id == Artist.id))
-                .where(
-                    Track.mood.is_null() &
-                    Track.name.is_null(False) &
-                    Artist.name.is_null(False) &
-                    (TrackArtist.position == 0)
-                )
-                .count()
-            )
+            row = db.execute_sql("""
+                SELECT COUNT(DISTINCT t.uri)
+                FROM track t
+                JOIN trackartist ta ON ta.track_uri = t.uri AND ta.position = 0
+                LEFT JOIN artist a ON a.id = ta.artist_id
+                LEFT JOIN album al ON al.id = t.album_id
+                WHERE t.mood IS NULL
+                  AND t.name IS NOT NULL
+                  AND COALESCE(a.name, al.artist_name) IS NOT NULL
+            """).fetchone()
+            return row[0] if row else 0
         except Exception as e:
             print(f"count_tracks_without_mood error: {e}")
             return -1
