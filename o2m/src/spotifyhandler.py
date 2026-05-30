@@ -1014,6 +1014,33 @@ class SpotifyHandler:
         'loud':           (0.85, 0.50),
     }
 
+    # Tags Last.fm sans valeur musicale pour le scoring mood/energy/valence.
+    # Complété par _is_noise_tag() qui filtre aussi les tags décennie/année (80s, 1986…).
+    _NOISE_TAGS = frozenset({
+        # Personnel / collection
+        'seen live', 'favorites', 'favourite', 'favourites', 'love', 'loved',
+        'my favorite', 'favourite albums', 'favourite songs', 'my favourites',
+        'wishlist', 'to buy', 'owned',
+        # Qualité générique
+        'good', 'best', 'awesome', 'cool', 'great', 'amazing', 'beautiful',
+        'perfect', 'classic', 'all', 'under 2000',
+        # Nationalité (non-genre)
+        'american', 'british', 'english', 'german', 'swedish', 'norwegian',
+        'japanese', 'australian', 'canadian', 'irish', 'scottish',
+        'italian', 'spanish',
+        # Artiste utilisé comme tag
+        'manu chao', 'miles', 'the smiths', 'nirvana',
+        # Bruit divers
+        'various artists', 'unknown', 'albums i own', 'check', 'spotify',
+    })
+
+    import re as _re
+    _NOISE_TAG_RE = _re.compile(r'^\d+s?$')  # 80s, 1986, 00s, 2000s…
+
+    def _is_noise_tag(self, name):
+        n = name.lower().strip()
+        return n in self._NOISE_TAGS or bool(self._NOISE_TAG_RE.match(n))
+
     def fetch_spotify_totals(self):
         """Fetch Spotify totals (liked, artists, albums, playlists) and store in CacheMeta.
         Called once at startup; safe to call again to refresh.
@@ -1157,10 +1184,6 @@ class SpotifyHandler:
         import requests as req
         if not self._lastfm_api_key:
             return None
-        # Tags that are not genres (Last.fm crowdsourced noise)
-        _non_genre = {'seen live', 'favorites', 'favourite', 'love', 'loved', 'american',
-                      'british', 'french', 'german', 'swedish', 'norwegian', 'japanese',
-                      'all', 'good', 'best', 'classic', 'awesome', 'cool'}
         try:
             resp = req.get(
                 'https://ws.audioscrobbler.com/2.0/',
@@ -1183,7 +1206,7 @@ class SpotifyHandler:
             for t in tags:
                 name = (t.get('name') or '').strip().lower()
                 count = int(t.get('count') or 0)
-                if name and count >= 10 and name not in _non_genre:
+                if name and count >= 10 and not self._is_noise_tag(name):
                     result.append(name)
                 if len(result) >= max_tags:
                     break
@@ -1434,7 +1457,9 @@ class SpotifyHandler:
             if isinstance(raw_tags, dict):
                 raw_tags = [raw_tags]
             tags_wc = [(t['name'], int(t.get('count', 0)))
-                       for t in raw_tags if int(t.get('count', 0)) >= 3]
+                       for t in raw_tags
+                       if int(t.get('count', 0)) >= 3
+                       and not self._is_noise_tag(t.get('name', ''))]
             if tags_wc:
                 mood = _score_mood(tags_wc, self._MOOD_TAGS)
                 energy, valence = _score_features(tags_wc)
@@ -1458,7 +1483,9 @@ class SpotifyHandler:
                 if isinstance(raw_tags, dict):
                     raw_tags = [raw_tags]
                 tags_wc = [(t['name'], int(t.get('count', 0)))
-                           for t in raw_tags if int(t.get('count', 0)) >= 5]
+                           for t in raw_tags
+                           if int(t.get('count', 0)) >= 5
+                           and not self._is_noise_tag(t.get('name', ''))]
                 if tags_wc:
                     mood = _score_mood(tags_wc, self._MOOD_TAGS)
                     energy, valence = _score_features(tags_wc)
