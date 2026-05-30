@@ -33,6 +33,46 @@
                 background: var(--muted); flex-shrink: 0; transition: background .3s; }
   #status-dot.playing { background: #4caf50; }
 
+  /* track status badge */
+  #track-status-badge {
+    display: inline-block; margin-top: 4px;
+    font-size: 10px; font-weight: 600; letter-spacing: .04em;
+    padding: 2px 7px; border-radius: 10px;
+    background: #ffffff18; color: var(--muted);
+    text-transform: uppercase; transition: background .2s, color .2s;
+  }
+  #track-status-badge.s-library   { background: #1565c066; color: #4fc3f7; }
+  #track-status-badge.s-favorites { background: #2e7d3266; color: #81c784; }
+  #track-status-badge.s-incoming  { background: #f57f1766; color: #ffb74d; }
+  #track-status-badge.s-new       { background: #e65c0066; color: #ff8a65; }
+  #track-status-badge.s-trash     { background: #c62828aa; color: #ef9a9a; }
+  #track-status-badge.s-hidden    { background: #4a148c66; color: #ce93d8; }
+  #track-status-badge.s-podcast   { background: #37474f66; color: #90a4ae; }
+
+  /* tracklist count pill */
+  #tl-count-pill {
+    font-size: 11px; color: var(--muted); background: #ffffff12;
+    padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* volume row */
+  #volume-row {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 2px 14px 0;
+  }
+  #volume-icon { font-size: 16px; flex-shrink: 0; color: var(--muted); }
+  #volume-slider {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--vol-pct, 50%), #ffffff28 var(--vol-pct, 50%));
+  }
+  #volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+  }
+  #volume-val { font-size: 11px; color: var(--muted); min-width: 28px; text-align: right; flex-shrink: 0; }
+
   /* ── Controls ── */
   #controls {
     display: flex; justify-content: center; align-items: center; gap: 28px;
@@ -122,7 +162,9 @@
   <div id="track-info">
     <div id="track-name">—</div>
     <div id="artist-name">O2M Mood</div>
+    <div id="track-status-badge"></div>
   </div>
+  <span id="tl-count-pill"></span>
   <div id="status-dot"></div>
 </div>
 
@@ -131,6 +173,11 @@
   <button class="ctrl-btn" id="btn-prev">⏮</button>
   <button class="ctrl-btn" id="btn-play">▶</button>
   <button class="ctrl-btn" id="btn-next">⏭</button>
+  <div id="volume-row">
+    <span id="volume-icon">🔈</span>
+    <input type="range" id="volume-slider" min="0" max="100" value="50">
+    <span id="volume-val">50%</span>
+  </div>
 </div>
 
 <!-- Scrollable area -->
@@ -338,6 +385,32 @@ function renderTracklist(tracks, activeTlid) {
   if (scrollTarget) scrollTarget.scrollIntoView({behavior: 'smooth', block: 'nearest'});
 }
 
+const STATUS_CLASS = {
+  library: 's-library', normal: 's-library',
+  favorites: 's-favorites', incoming: 's-incoming',
+  new: 's-new', trash: 's-trash', hidden: 's-hidden', podcast: 's-podcast',
+};
+
+function updateStatusBadge(text) {
+  const el = document.getElementById('track-status-badge');
+  if (!text) { el.textContent = ''; el.className = ''; return; }
+  const ot = text.split(' - ')[0].trim().toLowerCase();
+  el.textContent = ot === 'library' ? 'library' : ot;
+  el.className = STATUS_CLASS[ot] || '';
+}
+
+async function refreshVolume() {
+  const r = await rpc('core.mixer.get_volume');
+  const vol = r?.result ?? null;
+  if (vol === null) return;
+  const slider = document.getElementById('volume-slider');
+  const val = document.getElementById('volume-val');
+  slider.value = vol;
+  slider.style.setProperty('--vol-pct', vol + '%');
+  val.textContent = vol + '%';
+  document.getElementById('volume-icon').textContent = vol === 0 ? '🔇' : vol < 50 ? '🔈' : '🔊';
+}
+
 async function refreshNowPlaying() {
   const [curR, stateR, tlR] = await Promise.all([
     rpc('core.playback.get_current_tl_track'),
@@ -355,10 +428,20 @@ async function refreshNowPlaying() {
   document.getElementById('status-dot').className = playing ? 'playing' : '';
   document.getElementById('btn-play').textContent  = playing ? '⏸' : '▶';
 
+  // Tracklist count pill
+  document.getElementById('tl-count-pill').textContent = tracks.length ? `${tracks.length} ♫` : '';
+
   if (track) {
     document.getElementById('track-name').textContent  = track.name || '—';
     document.getElementById('artist-name').textContent =
       (track.artists || []).map(a => a.name).join(', ') || '—';
+
+    // o2m track status badge
+    try {
+      const statusText = await fetch(API + '/track_status?uri=' + encodeURIComponent(track.uri))
+        .then(r => r.ok ? r.text() : '');
+      updateStatusBadge(statusText);
+    } catch(e) { updateStatusBadge(''); }
 
     // Fetch album art via get_images
     const imgR = await rpc('core.library.get_images', {uris: [track.uri]});
@@ -366,6 +449,8 @@ async function refreshNowPlaying() {
     const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
     const coverEl = document.getElementById('cover');
     coverEl.src = best ? imageUrl(best.uri || best) : '';
+  } else {
+    updateStatusBadge('');
   }
 
   renderTracklist(tracks, tlid);
@@ -391,6 +476,17 @@ async function loadGenres() {
   } catch(e) {}
 }
 
+/* ── Volume slider ── */
+let volumeTimer = null;
+document.getElementById('volume-slider').addEventListener('input', e => {
+  const vol = parseInt(e.target.value);
+  e.target.style.setProperty('--vol-pct', vol + '%');
+  document.getElementById('volume-val').textContent = vol + '%';
+  document.getElementById('volume-icon').textContent = vol === 0 ? '🔇' : vol < 50 ? '🔈' : '🔊';
+  clearTimeout(volumeTimer);
+  volumeTimer = setTimeout(() => rpc('core.mixer.set_volume', {volume: vol}), 200);
+});
+
 /* ── Init ── */
 async function init() {
   ['energy', 'valence', 'dl'].forEach(setupDial);
@@ -411,7 +507,9 @@ async function init() {
 
   await loadGenres();
   await refreshNowPlaying();
+  await refreshVolume();
   setInterval(refreshNowPlaying, 10000);
+  setInterval(refreshVolume, 15000);
 }
 
 function setFeedback(msg) {
