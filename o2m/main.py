@@ -262,10 +262,13 @@ if __name__ == "__main__":
                 parts = []
                 if s.mood and s.mood != '_':
                     parts.append(s.mood)
+                ev = []
                 if s.energy is not None:
-                    parts.append(f"e:{round(s.energy * 10)}")
+                    ev.append(str(round(s.energy * 10)))
                 if s.valence is not None:
-                    parts.append(f"v:{round(s.valence * 10)}")
+                    ev.append(str(round(s.valence * 10)))
+                if ev:
+                    parts.append('|'.join(ev))
                 return ' (' + ' '.join(parts) + ')' if parts else ''
 
             # Fast path: library_display from _track_info, option_type from DB

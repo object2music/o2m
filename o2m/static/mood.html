@@ -424,9 +424,11 @@ function formatStatus(raw) {
   const parts = raw.split(' - ');
   const ot    = parts[0] || '';
   const score = parts[1] || '';
-  let lib     = (parts[2] || '').replace(/^(playlist|album|artist):/, '');
-  if (score && lib) return `${ot} · ${score} · ${lib}`;
-  if (score)        return `${ot} · ${score}`;
+  let lib     = (parts[2] || '').replace(/^(playlist|album|artist):/, '').trim();
+  if (score && lib) return lib.startsWith('(')
+    ? `${ot} · ${score} ${lib}`
+    : `${ot} · ${score} · ${lib}`;
+  if (score) return `${ot} · ${score}`;
   return ot;
 }
 
