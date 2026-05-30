@@ -906,11 +906,23 @@ class SpotifyHandler:
     _GENRE_MOOD = {
         'calm':      {'classical', 'piano', 'jazz', 'folk', 'acoustic', 'ambient', 'new age',
                       'chamber', 'baroque', 'bossa nova', 'easy listening', 'smooth jazz',
-                      'instrumental', 'world', 'meditation', 'drone'},
+                      'instrumental', 'world', 'meditation', 'drone',
+                      'chanson', 'chanson francaise', 'chanson française', 'french pop',
+                      'singer-songwriter', 'singer songwriter',
+                      'jazz fusion', 'fusion', 'contemporary jazz', 'jazz manouche',
+                      'cool jazz', 'free jazz', 'bebop', 'post-bop',
+                      'indie', 'lo-fi', 'lofi', 'neo-soul', 'trip-hop'},
         'energetic': {'metal', 'punk', 'hardcore', 'edm', 'techno', 'house', 'drum and bass',
-                      'dubstep', 'electro', 'trance', 'breakbeat', 'industrial'},
-        'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave', 'post-punk'},
-        'happy':     {'pop', 'reggae', 'funk', 'soul', 'disco', 'ska'},
+                      'dubstep', 'electro', 'trance', 'breakbeat', 'industrial',
+                      'rock', 'alternative', 'alternative rock', 'indie rock', 'hard rock',
+                      'progressive rock', 'post-rock', 'grunge',
+                      'hip-hop', 'hip hop', 'rap', 'electronic', 'r&b'},
+        'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave', 'post-punk',
+                      'experimental', 'noise', 'avant-garde', 'drone metal', 'shoegaze',
+                      'dark folk', 'dark ambient'},
+        'happy':     {'pop', 'reggae', 'funk', 'soul', 'disco', 'ska',
+                      'african', 'afrobeat', 'afropop', 'latin', 'cumbia', 'salsa', 'samba',
+                      'swing', 'big band', 'dance', 'pop rock', 'world music'},
     }
 
     # Numeric (energy, valence) per Last.fm tag — averaged across all matching tags.
@@ -1373,6 +1385,20 @@ class SpotifyHandler:
                 round(sum(v for e, v in matches) / len(matches), 3),
             )
 
+        def _finalize(mood, energy, valence):
+            """Ensure mood is always set when features are available to avoid warmup re-processing."""
+            if mood is None and energy is not None:
+                v = valence if valence is not None else 0.5
+                if v < 0.35:
+                    mood = 'dark'
+                elif energy >= 0.65:
+                    mood = 'energetic'
+                elif v >= 0.65:
+                    mood = 'happy'
+                else:
+                    mood = 'calm'
+            return mood, energy, valence
+
         # --- Primary: track.getTopTags ---
         try:
             url = (
@@ -1391,7 +1417,7 @@ class SpotifyHandler:
                 mood = _score_mood(tags, self._MOOD_TAGS)
                 energy, valence = _score_features(tags)
                 if mood or energy is not None:
-                    return mood, energy, valence
+                    return _finalize(mood, energy, valence)
         except Exception:
             pass
 
@@ -1404,7 +1430,7 @@ class SpotifyHandler:
                     mood = _score_mood(genres, self._GENRE_MOOD)
                     energy, valence = _score_features(genres)
                     if mood or energy is not None:
-                        return mood, energy, valence
+                        return _finalize(mood, energy, valence)
         except Exception:
             pass
 
@@ -1454,8 +1480,8 @@ class SpotifyHandler:
             total_assigned += batch_assigned
             print(f"warmup_track_moods: batch done — {batch_assigned}/{len(tracks)} assigned")
 
-        remaining = len(self._db.get_tracks_without_mood(limit=1))
-        print(f"warmup_track_moods: session total {total_assigned} assigned, ~{remaining} remaining")
+        remaining = self._db.count_tracks_without_mood()
+        print(f"warmup_track_moods: session total {total_assigned} assigned, {remaining} remaining")
         return total_assigned, remaining
 
     def warmup_cache(self, discover_level=5):

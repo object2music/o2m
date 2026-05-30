@@ -80,6 +80,76 @@ SvelteKit + TypeScript + Tailwind CSS app. Source in `frontend/src/`:
 
 `mopidy/o2m.js` and `mopidy/o2m.css` are injected into the Mopidy-Iris web UI. `o2m.js` adds O2M sidebar buttons (box toggles, backoffice link, Spotify auth) and displays per-track status badges by calling the O2M API at `base_url` (auto-detected as `<origin-host>:6681/api/`). `mopidy/app.js` is a large webpack bundle for the Iris extension — do not edit directly.
 
+## Mood / Energy / Valence Pipeline
+
+Tracks carry three enrichment fields (added via DB migrations v5/v6):
+- `mood` TEXT — categorical: `calm`, `energetic`, `dark`, `happy`, or `_` (sentinel = tried, no data)
+- `energy` FLOAT — 0.0 (sleep/ambient) → 1.0 (metal/hardcore)
+- `valence` FLOAT — 0.0 (dark/grief) → 1.0 (joyful/euphoric)
+
+### Three filling paths
+
+**1. Warmup at startup** (`warmup_cache` → `warmup_track_moods`, `spotifyhandler.py`)
+- Up to 250 tracks/startup (5 batches × 50), ordered by `read_count_end` DESC
+- TTL = 30 days, but **only activated when all tracks are covered** → re-runs every startup until complete
+- Controlled by `should_warmup('moods', discover_level)`
+
+**2. Manual trigger** `GET /api/warmup_moods`
+- Resets TTL to 0, runs up to 1000 tracks (20 × 50) in background thread
+
+**3. Deferred enrichment on playback end** (`o2mtomopidy.py`, `track_playback_ended`)
+- Triggers when `stat.energy is None AND stat.mood is None` after a track ends
+- Fires a background thread calling `_lastfm_get_track_mood`
+
+### Scoring logic (`spotifyhandler.py`)
+
+`_lastfm_get_track_mood(artist, track)`:
+1. **Primary**: `track.getTopTags` (Last.fm) — tags with `count >= 3` only
+2. **Fallback**: artist genres from `ArtistGenre` cache (no API call, `allow_api=False`)
+
+Scoring uses:
+- `_MOOD_TAGS` — 4 categories (calm/energetic/dark/happy) → ~70 tag strings
+- `_GENRE_MOOD` — genre name → mood category (narrower set than `_MOOD_TAGS`)
+- `_TAG_FEATURES` — 50+ tags → `(energy, valence)` numeric tuple, averaged across matches
+
+Returns `(mood, energy, valence)`. If only energy/valence found (mood=None), `update_track_features`
+sets energy/valence but leaves mood=NULL — **these tracks are picked up again by the next warmup**
+(known issue: should be given a derived mood or a different sentinel to break the loop).
+
+### Genre pipeline
+
+`warmup_artist_genres` (`spotifyhandler.py`) — called inside `warmup_cache`:
+- 30 artists per run, 0.3s/call via Last.fm `artist.getTopTags`
+- Fallback: Spotify `search()` if no Last.fm key
+- TTL = 14 days, **only set when all artists are covered**
+- Note: the function's docstring incorrectly says "not run automatically" — it IS in `warmup_cache`
+
+### Prod DB fill rates (o2m_0, measured 2026-05-30)
+
+| Entity | Total | With name | With name+artist | Mood filled | Mood '\_' | Pending |
+|--------|-------|-----------|-----------------|-------------|-----------|---------|
+| Tracks | 45,744 | 20,864 | 9,797 | 108 (1.1%) | 481 | 9,208 |
+| Energy/valence | — | — | 9,797 | 158 (1.6%) | — | — |
+
+**50 tracks have energy set but mood=NULL** — these are stuck in an infinite warmup loop (see bug above).
+
+Artists: 234 with names, 57 with genres (24%). Top genres: jazz (26), rock (13), alternative (10), piano (7), folk (5), chanson française (5).
+
+**Root cause of low fill rate**: many niche/French tracks (Alain Bashung, Têtes Raides…) have no
+`track.getTopTags` data on Last.fm (→ 81% of attempted tracks get sentinel `_`). The artist-genre
+fallback partially helps for energy/valence but `_GENRE_MOOD` doesn't cover tags like
+`chanson francaise`, `jazz fusion`, `african`, so mood stays NULL.
+
+### API endpoints
+
+- `GET /api/warmup_moods` — trigger background mood warmup (up to 1000 tracks)
+- `GET /api/warmup_genres` — trigger background genre warmup
+- `GET /api/diag/genres` — synchronous genre diagnostic, returns JSON
+- `GET /api/mood` — current mood state + energy/valence distribution + pending count
+- `POST /api/mood` — set `energy`, `valence`, `genres` → triggers `apply_mood_settings()`
+- `GET /api/genres` — genre list with track counts
+- `GET /mood` — mood UI (served from `o2m/static/mood.html`)
+
 ## Environment Variables
 
 All service configuration is via `.env` file (not committed). Key variables:
@@ -88,3 +158,4 @@ All service configuration is via `.env` file (not committed). Key variables:
 - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET`, `SPOTIPY_REDIRECT_URI`
 - `SPOTIFY_USERNAME`, `SPOTIFY_PASSWORD`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
 - `HOST_MOPIDY`, `O2M_DISCOVER_LEVEL`, `O2M_DEFAULT_VOLUME`, etc.
+- `LASTFM_API_KEY` — required for mood/genre enrichment via Last.fm

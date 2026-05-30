@@ -396,14 +396,17 @@ class DatabaseHandler():
             return []
 
     def count_tracks_without_mood(self):
-        """Return count of tracks with no mood data (NULL only, excludes '_' sentinel)."""
+        """Return count of tracks with no mood data (NULL only, excludes '_' sentinel).
+        Uses the same joins/filters as get_tracks_without_mood for consistency."""
         try:
             return (
                 Track.select()
                 .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
+                .join(Artist, on=(TrackArtist.artist_id == Artist.id))
                 .where(
                     Track.mood.is_null() &
                     Track.name.is_null(False) &
+                    Artist.name.is_null(False) &
                     (TrackArtist.position == 0)
                 )
                 .count()
