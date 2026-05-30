@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#1a1a2e">
 <title>O2M Stats</title>
-<script src="https://unpkg.com/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="/static/chart.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -132,9 +132,6 @@ const CHART_DEFAULTS = {
   color: '#eaeaea',
   plugins: { legend: { labels: { color: '#eaeaea', font: { size: 11 } } } },
 };
-
-Chart.defaults.color = '#8892a4';
-Chart.defaults.borderColor = '#ffffff18';
 
 function showError(msg) {
   const el = document.getElementById('error-msg');
@@ -299,6 +296,8 @@ function renderLastRead(hist) {
 
 /* ── Init ── */
 async function init() {
+  Chart.defaults.color = '#8892a4';
+  Chart.defaults.borderColor = '#ffffff18';
   try {
     const [moodData, trackData] = await Promise.all([
       fetch(API + '/stats/mood').then(r => r.json()),
