@@ -1816,7 +1816,10 @@ class O2mToMopidy:
             _track_name   = getattr(track, 'name', None)
             _artists      = getattr(track, 'artists', None) or []
             _artist_name  = next((a.name for a in _artists if getattr(a, 'name', None)), None)
-            _album_name   = getattr(getattr(track, 'album', None), 'name', None)
+            _track_album  = getattr(track, 'album', None)
+            _album_name   = getattr(_track_album, 'name', None)
+            _album_uri    = getattr(_track_album, 'uri', None) or ''
+            _album_id     = _album_uri.split(':')[-1] if ':' in _album_uri else None
             _uri_mood     = uri
             _db           = self.dbHandler
             _sp           = self.spotifyHandler
@@ -1825,7 +1828,9 @@ class O2mToMopidy:
             ):
                 def _enrich():
                     try:
-                        mood, energy, valence = _sp._lastfm_get_track_mood(_artist_name, _track_name, _album_name)
+                        mood, energy, valence = _sp._lastfm_get_track_mood(
+                            _artist_name, _track_name, _album_name,
+                            track_uri=_uri_mood, album_id=_album_id)
                         if mood or energy is not None:
                             _db.update_track_features(_uri_mood, mood=mood, energy=energy, valence=valence)
                             print(f"deferred mood: {_artist_name} – {_track_name} → mood={mood} e={energy} v={valence}")

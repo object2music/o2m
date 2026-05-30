@@ -239,6 +239,26 @@ class ArtistGenre(BaseModel):
         indexes = ((('artist_id', 'genre_id'), True),)
 
 
+class TrackGenre(BaseModel):
+    """N:N  track.uri ↔ genre.id — persists Last.fm track.getTopTags with weight."""
+    track_uri = CharField(index=True)   # → Track.uri
+    genre_id  = IntegerField(index=True) # → Genre.id
+    weight    = IntegerField(default=0)  # Last.fm count
+
+    class Meta:
+        indexes = ((('track_uri', 'genre_id'), True),)
+
+
+class AlbumGenre(BaseModel):
+    """N:N  album.id ↔ genre.id — persists Last.fm album.getTopTags with weight."""
+    album_id = CharField(index=True)    # → Album.id
+    genre_id = IntegerField(index=True) # → Genre.id
+    weight   = IntegerField(default=0)  # Last.fm count
+
+    class Meta:
+        indexes = ((('album_id', 'genre_id'), True),)
+
+
 class Playlist(BaseModel):
     id = CharField(unique=True, index=True, primary_key=True)  # Spotify playlist ID
     uri = CharField(null=True)
@@ -416,7 +436,11 @@ def _migration_v6(migrator):
         print(f"migration_v6 backfill: {e}")
 
 
-SCHEMA_VERSION = 6
+def _migration_v7(migrator):
+    db.create_tables([TrackGenre, AlbumGenre], safe=True)
+
+
+SCHEMA_VERSION = 7
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -425,6 +449,7 @@ _MIGRATIONS = [
     (4, "playlist_log_table", _migration_v4),
     (5, "track_mood_column", _migration_v5),
     (6, "track_energy_valence_columns", _migration_v6),
+    (7, "track_album_genre_tables", _migration_v7),
 ]
 
 

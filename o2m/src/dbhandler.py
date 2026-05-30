@@ -1,4 +1,4 @@
-import logging, pprint, datetime, random, json
+import logging, pprint, datetime, random, json, re as _re, unicodedata as _unicodedata
 
 from peewee import IntegrityError, fn, JOIN
 from playhouse.migrate import SqliteDatabase, SqliteMigrator
@@ -9,9 +9,38 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 from src.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
+    TrackGenre, AlbumGenre,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
     setup_database,
 )
+
+# ── Genre normalization ────────────────────────────────────────────────────────
+
+_GENRE_NOISE = frozenset({
+    'seen live', 'favorites', 'favourite', 'favourites', 'love', 'loved',
+    'my favorite', 'favourite albums', 'favourite songs', 'my favourites',
+    'wishlist', 'to buy', 'owned',
+    'good', 'best', 'awesome', 'cool', 'great', 'amazing', 'beautiful',
+    'perfect', 'classic', 'all', 'under 2000',
+    'american', 'british', 'english', 'german', 'swedish', 'norwegian',
+    'japanese', 'australian', 'canadian', 'irish', 'scottish', 'italian', 'spanish',
+    'female vocalists', 'male vocalists',
+    'various artists', 'unknown', 'albums i own', 'check', 'spotify',
+})
+_GENRE_NOISE_RE = _re.compile(r'^\d+s?$')
+
+
+def _normalize_genre(name):
+    """Lowercase, strip accents, replace hyphens with spaces, collapse whitespace."""
+    n = name.lower().strip()
+    n = _unicodedata.normalize('NFKD', n)
+    n = ''.join(c for c in n if not _unicodedata.combining(c))
+    n = n.replace('-', ' ')
+    return ' '.join(n.split())
+
+
+def _is_noise_genre(name):
+    return name in _GENRE_NOISE or bool(_GENRE_NOISE_RE.match(name))
 from peewee import IntegrityError as PeeweeIntegrityError
 
 '''
@@ -353,9 +382,12 @@ class DatabaseHandler():
         return [a.id for a in Artist.select(Artist.id).where(Artist.followed == 1)]
 
     def save_artist_genres(self, artist_id, genres):
-        """Upsert genre list and link them to *artist_id*."""
+        """Upsert normalized genre list and link them to *artist_id*."""
         for genre_name in genres:
-            genre, _ = Genre.get_or_create(name=genre_name)
+            n = _normalize_genre(genre_name)
+            if not n or _is_noise_genre(n):
+                continue
+            genre, _ = Genre.get_or_create(name=n)
             try:
                 ArtistGenre.insert(
                     {'artist_id': artist_id, 'genre_id': genre.id}
@@ -371,17 +403,65 @@ class DatabaseHandler():
                 .where(ArtistGenre.artist_id == artist_id))
         return [g.name for g in rows]
 
+    def save_track_genres(self, track_uri, tags_wc):
+        """Persist [(tag_name, weight)] for a track (from track.getTopTags). Normalizes names."""
+        for tag_name, weight in tags_wc:
+            n = _normalize_genre(tag_name)
+            if not n or _is_noise_genre(n):
+                continue
+            genre, _ = Genre.get_or_create(name=n)
+            try:
+                TrackGenre.insert({'track_uri': track_uri, 'genre_id': genre.id, 'weight': weight}
+                                  ).on_conflict_replace().execute()
+            except Exception:
+                pass
+
+    def save_album_genres(self, album_id, tags_wc):
+        """Persist [(tag_name, weight)] for an album (from album.getTopTags). Normalizes names."""
+        for tag_name, weight in tags_wc:
+            n = _normalize_genre(tag_name)
+            if not n or _is_noise_genre(n):
+                continue
+            genre, _ = Genre.get_or_create(name=n)
+            try:
+                AlbumGenre.insert({'album_id': album_id, 'genre_id': genre.id, 'weight': weight}
+                                  ).on_conflict_replace().execute()
+            except Exception:
+                pass
+
+    def get_track_genres(self, track_uri):
+        """Return [(name, weight)] for a track, or [] if not cached."""
+        try:
+            rows = (Genre
+                    .select(Genre.name, TrackGenre.weight)
+                    .join(TrackGenre, on=(Genre.id == TrackGenre.genre_id))
+                    .where(TrackGenre.track_uri == track_uri))
+            return [(r.name, r.trackgenre.weight) for r in rows]
+        except Exception:
+            return []
+
+    def get_album_genres(self, album_id):
+        """Return [(name, weight)] for an album, or [] if not cached."""
+        try:
+            rows = (Genre
+                    .select(Genre.name, AlbumGenre.weight)
+                    .join(AlbumGenre, on=(Genre.id == AlbumGenre.genre_id))
+                    .where(AlbumGenre.album_id == album_id))
+            return [(r.name, r.albumgenre.weight) for r in rows]
+        except Exception:
+            return []
+
     def get_tracks_without_mood(self, limit=50):
-        """Return [(uri, track_name, artist_name, album_name), ...] for tracks that have a name
-        but no mood yet (mood IS NULL), ordered by most-listened first.
+        """Return [(uri, track_name, artist_name, album_name, album_id), ...] for tracks that
+        have a name but no mood yet (mood IS NULL), ordered by most-listened first.
         Tracks marked mood='_' (no Last.fm data found) are excluded.
         Falls back to album.artist_name when the artist row is missing from the artist table."""
         try:
-            from peewee import fn as _fn
             rows = db.execute_sql("""
                 SELECT t.uri, t.name,
                        COALESCE(a.name, al.artist_name) AS artist_name,
-                       al.name AS album_name
+                       al.name AS album_name,
+                       al.id   AS album_id
                 FROM track t
                 JOIN trackartist ta ON ta.track_uri = t.uri AND ta.position = 0
                 LEFT JOIN artist a ON a.id = ta.artist_id
@@ -392,7 +472,7 @@ class DatabaseHandler():
                 ORDER BY t.read_count_end DESC
                 LIMIT %s
             """, (limit,))
-            return [(r[0], r[1], r[2], r[3]) for r in rows]
+            return [(r[0], r[1], r[2], r[3], r[4]) for r in rows]
         except Exception as e:
             print(f"get_tracks_without_mood error: {e}")
             return []
@@ -417,12 +497,12 @@ class DatabaseHandler():
             return -1
 
     def get_sentinel_tracks_with_artist_genres(self, limit=50):
-        """Return [(uri, track_name, artist_name, album_name)] for tracks with mood='_' (sentinel)
+        """Return [(uri, track_name, artist_name, album_name, album_id)] for tracks with mood='_'
         whose primary artist now has genres in ArtistGenre — eligible for a retry."""
         try:
             rows = (
                 Track.select(Track.uri, Track.name, Artist.name.alias('artist_name'),
-                             Album.name.alias('album_name'))
+                             Album.name.alias('album_name'), Album.id.alias('album_id'))
                 .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
                 .join(Artist, on=(TrackArtist.artist_id == Artist.id))
                 .join(ArtistGenre, on=(ArtistGenre.artist_id == Artist.id))
@@ -438,7 +518,9 @@ class DatabaseHandler():
                 .limit(limit)
                 .namedtuples()
             )
-            return [(r.uri, r.name, r.artist_name, getattr(r, 'album_name', None)) for r in rows]
+            return [(r.uri, r.name, r.artist_name,
+                     getattr(r, 'album_name', None),
+                     getattr(r, 'album_id', None)) for r in rows]
         except Exception as e:
             print(f"get_sentinel_tracks_with_artist_genres error: {e}")
             return []

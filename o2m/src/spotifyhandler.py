@@ -892,7 +892,7 @@ class SpotifyHandler:
     _MOOD_TAGS = {
         'calm':      {'ambient', 'calm', 'chill', 'chillout', 'relaxing', 'peaceful', 'mellow',
                       'soft', 'gentle', 'background', 'meditation', 'sleep', 'quiet', 'downtempo',
-                      'lo-fi', 'lofi', 'slow', 'new age', 'nature', 'atmospheric'},
+                      'lo fi', 'lofi', 'slow', 'new age', 'nature', 'atmospheric'},
         'energetic': {'energetic', 'energy', 'upbeat', 'dance', 'workout', 'intense', 'driving',
                       'fast', 'exciting', 'party', 'power', 'aggressive', 'hard', 'loud',
                       'high energy', 'adrenaline', 'pump up'},
@@ -907,19 +907,19 @@ class SpotifyHandler:
         'calm':      {'classical', 'piano', 'jazz', 'folk', 'acoustic', 'ambient', 'new age',
                       'chamber', 'baroque', 'bossa nova', 'easy listening', 'smooth jazz',
                       'instrumental', 'world', 'meditation', 'drone',
-                      'chanson', 'chanson francaise', 'chanson française', 'french pop',
-                      'singer-songwriter', 'singer songwriter',
+                      'chanson', 'chanson francaise', 'french pop',
+                      'singer songwriter',
                       'contemporary jazz', 'jazz manouche', 'cool jazz', 'nu jazz',
-                      'indie', 'lo-fi', 'lofi', 'neo-soul', 'trip-hop'},
+                      'indie', 'lo fi', 'lofi', 'neo soul', 'trip hop'},
         'energetic': {'metal', 'punk', 'hardcore', 'edm', 'techno', 'house', 'drum and bass',
                       'dubstep', 'electro', 'trance', 'breakbeat', 'industrial',
                       'rock', 'alternative', 'alternative rock', 'indie rock', 'hard rock',
-                      'progressive rock', 'post-rock', 'grunge', 'classic rock',
-                      'post-punk', 'new wave', 'jangle pop', 'britpop', 'indie pop',
-                      'hip-hop', 'hip hop', 'rap', 'electronic', 'r&b',
-                      'bebop', 'post-bop', 'free jazz', 'acid jazz', 'jazz fusion', 'fusion'},
+                      'progressive rock', 'post rock', 'grunge', 'classic rock',
+                      'post punk', 'new wave', 'jangle pop', 'britpop', 'indie pop',
+                      'hip hop', 'rap', 'electronic', 'r&b',
+                      'bebop', 'post bop', 'free jazz', 'acid jazz', 'jazz fusion', 'fusion'},
         'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave',
-                      'experimental', 'noise', 'avant-garde', 'drone metal', 'shoegaze',
+                      'experimental', 'noise', 'avant garde', 'drone metal', 'shoegaze',
                       'dark folk', 'dark ambient', 'emo', 'grunge'},
         'happy':     {'pop', 'reggae', 'funk', 'soul', 'disco', 'ska',
                       'african', 'afrobeat', 'afropop', 'latin', 'cumbia', 'salsa', 'samba',
@@ -941,7 +941,7 @@ class SpotifyHandler:
         'peaceful':       (0.15, 0.70), 'mellow':         (0.25, 0.58),
         'soft':           (0.18, 0.62), 'gentle':         (0.15, 0.65),
         'background':     (0.12, 0.55), 'quiet':          (0.12, 0.58),
-        'downtempo':      (0.28, 0.48), 'lo-fi':          (0.22, 0.55),
+        'downtempo':      (0.28, 0.48), 'lo fi':          (0.22, 0.55),
         'lofi':           (0.22, 0.55), 'slow':           (0.18, 0.48),
         'new age':        (0.10, 0.65), 'atmospheric':    (0.18, 0.48),
         # ── Low-medium energy — acoustique / classique ────────────────────────────
@@ -966,17 +966,17 @@ class SpotifyHandler:
         'alternative':    (0.65, 0.48), 'pop':            (0.65, 0.72),
         'reggae':         (0.58, 0.78), 'funk':           (0.72, 0.78),
         'disco':          (0.75, 0.80), 'ska':            (0.72, 0.78),
-        'rock':           (0.72, 0.50), 'hip-hop':        (0.70, 0.52),
-        'hip hop':        (0.70, 0.52), 'rap':            (0.72, 0.50),
-        'trip-hop':       (0.35, 0.42), 'shoegaze':       (0.60, 0.32),
+        'rock':           (0.72, 0.50), 'hip hop':        (0.70, 0.52),
+        'rap':            (0.72, 0.50),
+        'trip hop':       (0.35, 0.42), 'shoegaze':       (0.60, 0.32),
         # rock sous-genres — présents dans les tags réels Last.fm
         'indie rock':     (0.70, 0.50), 'indie pop':      (0.62, 0.65),
         'jangle pop':     (0.65, 0.60), 'britpop':        (0.68, 0.55),
-        'new wave':       (0.68, 0.45), 'post-punk':      (0.70, 0.28),
+        'new wave':       (0.68, 0.45), 'post punk':      (0.70, 0.28),
         'alternative rock': (0.68, 0.48), 'hard rock':    (0.80, 0.42),
         'progressive rock': (0.72, 0.50), 'classic rock':  (0.70, 0.50),
         'grunge':         (0.75, 0.30), 'emo':            (0.65, 0.22),
-        'metalcore':      (0.88, 0.30), 'post-rock':      (0.62, 0.42),
+        'metalcore':      (0.88, 0.30), 'post rock':      (0.62, 0.42),
         # ── Dark/sad ──────────────────────────────────────────────────────────────
         'sad':            (0.30, 0.12), 'melancholic':    (0.28, 0.15),
         'melancholy':     (0.28, 0.15), 'dark':           (0.42, 0.18),
@@ -1037,8 +1037,18 @@ class SpotifyHandler:
     import re as _re
     _NOISE_TAG_RE = _re.compile(r'^\d+s?$')  # 80s, 1986, 00s, 2000s…
 
-    def _is_noise_tag(self, name):
+    @staticmethod
+    def _normalize_tag(name):
+        """Lowercase, strip accents, hyphens→spaces, collapse whitespace."""
+        import unicodedata as _ud
         n = name.lower().strip()
+        n = _ud.normalize('NFKD', n)
+        n = ''.join(c for c in n if not _ud.combining(c))
+        n = n.replace('-', ' ')
+        return ' '.join(n.split())
+
+    def _is_noise_tag(self, name):
+        n = self._normalize_tag(name)
         return n in self._NOISE_TAGS or bool(self._NOISE_TAG_RE.match(n))
 
     def fetch_spotify_totals(self):
@@ -1396,10 +1406,13 @@ class SpotifyHandler:
             'count_without': no_genre_count,
         }
 
-    def _lastfm_get_track_mood(self, artist_name, track_name, album_name=None):
+    def _lastfm_get_track_mood(self, artist_name, track_name, album_name=None,
+                               track_uri=None, album_id=None):
         """Return (mood, energy, valence) for a track via Last.fm tags.
 
         Fallback chain: track.getTopTags → album.getTopTags → artist genre cache → artist.getTopTags
+        track_uri / album_id: when provided, DB cache (TrackGenre / AlbumGenre) is checked before
+        calling the API, and results are persisted after a successful API call.
         Returns (None, None, None) if Last.fm key absent or no signal found.
         """
         if not self._lastfm_api_key:
@@ -1409,9 +1422,9 @@ class SpotifyHandler:
             # tags_wc: [(name, weight), ...] — weight = Last.fm count or 1 for equal weight
             scores = {cat: 0 for cat in category_map}
             for tag, weight in tags_wc:
-                tl = tag.lower()
+                tn = self._normalize_tag(tag)
                 for cat, keywords in category_map.items():
-                    if tl in keywords:
+                    if tn in keywords:
                         scores[cat] += weight
             best_cat = max(scores, key=scores.get)
             return best_cat if scores[best_cat] > 0 else None
@@ -1420,7 +1433,7 @@ class SpotifyHandler:
             # tags_wc: [(name, weight), ...] — weighted average of (energy, valence)
             matches = [(e, v, w) for tag, w in tags_wc
                        for k, (e, v) in self._TAG_FEATURES.items()
-                       if tag.lower() == k]
+                       if self._normalize_tag(tag) == k]
             if not matches:
                 return None, None
             total_w = sum(w for _, _, w in matches)
@@ -1443,7 +1456,15 @@ class SpotifyHandler:
                     mood = 'calm'
             return mood, energy, valence
 
-        # --- Primary: track.getTopTags ---
+        # --- Primary: track.getTopTags (DB cache first) ---
+        if track_uri and self._db:
+            cached = self._db.get_track_genres(track_uri)
+            if cached:
+                mood = _score_mood(cached, self._MOOD_TAGS)
+                energy, valence = _score_features(cached)
+                if mood or energy is not None:
+                    return _finalize(mood, energy, valence)
+
         try:
             url = (
                 f"https://ws.audioscrobbler.com/2.0/?method=track.getTopTags"
@@ -1461,6 +1482,8 @@ class SpotifyHandler:
                        if int(t.get('count', 0)) >= 3
                        and not self._is_noise_tag(t.get('name', ''))]
             if tags_wc:
+                if track_uri and self._db:
+                    self._db.save_track_genres(track_uri, tags_wc)
                 mood = _score_mood(tags_wc, self._MOOD_TAGS)
                 energy, valence = _score_features(tags_wc)
                 if mood or energy is not None:
@@ -1468,7 +1491,15 @@ class SpotifyHandler:
         except Exception:
             pass
 
-        # --- Fallback 1: album.getTopTags (pondéré par count) ---
+        # --- Fallback 1: album.getTopTags (DB cache first) ---
+        if album_id and self._db:
+            cached = self._db.get_album_genres(album_id)
+            if cached:
+                mood = _score_mood(cached, self._MOOD_TAGS)
+                energy, valence = _score_features(cached)
+                if mood or energy is not None:
+                    return _finalize(mood, energy, valence)
+
         if album_name:
             try:
                 url = (
@@ -1487,6 +1518,8 @@ class SpotifyHandler:
                            if int(t.get('count', 0)) >= 5
                            and not self._is_noise_tag(t.get('name', ''))]
                 if tags_wc:
+                    if album_id and self._db:
+                        self._db.save_album_genres(album_id, tags_wc)
                     mood = _score_mood(tags_wc, self._MOOD_TAGS)
                     energy, valence = _score_features(tags_wc)
                     if mood or energy is not None:
@@ -1547,11 +1580,12 @@ class SpotifyHandler:
 
             print(f"warmup_track_moods: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks via Last.fm")
             batch_assigned = 0
-            for uri, track_name, artist_name, album_name in tracks:
+            for uri, track_name, artist_name, album_name, album_id in tracks:
                 if self._is_rate_limited():
                     break
                 try:
-                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name, album_name)
+                    mood, energy, valence = self._lastfm_get_track_mood(
+                        artist_name, track_name, album_name, track_uri=uri, album_id=album_id)
                     if mood or energy is not None:
                         self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
                         batch_assigned += 1
@@ -1588,11 +1622,12 @@ class SpotifyHandler:
                 break
             print(f"warmup_retry_sentinels: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks")
             batch_assigned = 0
-            for uri, track_name, artist_name, album_name in tracks:
+            for uri, track_name, artist_name, album_name, album_id in tracks:
                 if self._is_rate_limited():
                     break
                 try:
-                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name, album_name)
+                    mood, energy, valence = self._lastfm_get_track_mood(
+                        artist_name, track_name, album_name, track_uri=uri, album_id=album_id)
                     if mood or energy is not None:
                         self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
                         batch_assigned += 1
