@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tag Features — O2M</title>
+<style>
+  :root {
+    --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
+    --accent: #e94560; --text: #eee; --muted: #888;
+    --calm: #4fc3f7; --energetic: #ff7043; --dark: #9575cd; --happy: #66bb6a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif;
+         font-size: 13px; min-height: 100vh; }
+  header { background: var(--surface); padding: 12px 20px; display: flex;
+           align-items: center; gap: 16px; border-bottom: 1px solid #333; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-btn { padding: 4px 12px; border-radius: 20px; border: 1px solid #555;
+                background: transparent; color: var(--muted); cursor: pointer;
+                font-size: 12px; transition: all .15s; }
+  .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .stats { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  main { padding: 16px 20px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+  .search { background: var(--surface); border: 1px solid #444; border-radius: 6px;
+            padding: 6px 10px; color: var(--text); width: 220px; font-size: 13px; }
+  .add-btn { padding: 6px 14px; background: var(--accent); color: #fff; border: none;
+             border-radius: 6px; cursor: pointer; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: var(--surface); padding: 8px 10px; text-align: left;
+       font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+       color: var(--muted); position: sticky; top: 0; }
+  td { padding: 6px 10px; border-bottom: 1px solid #222; vertical-align: middle; }
+  tr:hover td { background: rgba(255,255,255,.03); }
+  .tag-name { font-weight: 500; font-family: monospace; font-size: 13px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
+           font-size: 11px; font-weight: 600; }
+  .badge-calm      { background: rgba(79,195,247,.2); color: var(--calm); }
+  .badge-energetic { background: rgba(255,112,67,.2); color: var(--energetic); }
+  .badge-dark      { background: rgba(149,117,205,.2); color: var(--dark); }
+  .badge-happy     { background: rgba(102,187,106,.2); color: var(--happy); }
+  .badge-noise     { background: rgba(136,136,136,.2); color: var(--muted); }
+  .bar-wrap { display: flex; align-items: center; gap: 6px; min-width: 90px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--accent);
+         min-width: 2px; transition: width .2s; }
+  .bar-label { font-size: 11px; color: var(--muted); width: 24px; text-align: right; }
+  .actions { display: flex; gap: 6px; }
+  .btn-edit, .btn-del { padding: 3px 8px; border-radius: 4px; border: none;
+                        cursor: pointer; font-size: 11px; }
+  .btn-edit { background: rgba(255,255,255,.08); color: var(--text); }
+  .btn-del  { background: rgba(233,69,96,.15); color: var(--accent); }
+  .empty { text-align: center; padding: 40px; color: var(--muted); }
+
+  /* Modal */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+             z-index: 100; align-items: center; justify-content: center; }
+  .overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid #444; border-radius: 10px;
+           padding: 24px; width: 380px; max-width: 95vw; }
+  .modal h2 { font-size: 15px; margin-bottom: 16px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 11px; color: var(--muted);
+                 text-transform: uppercase; margin-bottom: 4px; }
+  .field input, .field select { width: 100%; background: var(--bg);
+    border: 1px solid #444; border-radius: 6px; padding: 7px 10px;
+    color: var(--text); font-size: 13px; }
+  .range-row { display: flex; align-items: center; gap: 8px; }
+  .range-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .range-val { width: 36px; text-align: right; font-size: 12px; color: var(--muted); }
+  .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .modal-btns button { padding: 7px 16px; border-radius: 6px; border: none;
+                       cursor: pointer; font-size: 13px; }
+  .btn-cancel { background: rgba(255,255,255,.08); color: var(--text); }
+  .btn-save   { background: var(--accent); color: #fff; }
+  .noise-row  { display: flex; align-items: center; gap: 8px; }
+  .noise-row input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tag Features</h1>
+  <div class="filters">
+    <button class="filter-btn active" data-f="">Tous</button>
+    <button class="filter-btn" data-f="mood">Mood</button>
+    <button class="filter-btn" data-f="feature">Energy/Valence</button>
+    <button class="filter-btn" data-f="noise">Noise</button>
+    <button class="filter-btn" data-f="unknown">Inconnus</button>
+  </div>
+  <span class="stats" id="stats"></span>
+</header>
+<main>
+  <div class="toolbar">
+    <input class="search" id="search" placeholder="Filtrer..." oninput="render()">
+    <button class="add-btn" onclick="openModal(null)">+ Ajouter</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Tag</th><th>Mood</th>
+        <th>Energy</th><th>Valence</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="empty" id="empty" style="display:none">Aucun tag</div>
+</main>
+
+<!-- Modal -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="modal-title">Tag</h2>
+    <div class="field">
+      <label>Tag</label>
+      <input id="m-tag" type="text" placeholder="post punk">
+    </div>
+    <div class="field">
+      <label>Mood</label>
+      <select id="m-mood">
+        <option value="">— aucun —</option>
+        <option value="calm">calm</option>
+        <option value="energetic">energetic</option>
+        <option value="dark">dark</option>
+        <option value="happy">happy</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Energy <span id="m-energy-val" class="range-val">—</span></label>
+      <div class="range-row">
+        <input id="m-energy" type="range" min="0" max="1" step="0.01" value="0.5"
+               oninput="document.getElementById('m-energy-val').textContent=parseFloat(this.value).toFixed(2)">
+      </div>
+    </div>
+    <div class="field">
+      <label>Valence <span id="m-valence-val" class="range-val">—</span></label>
+      <div class="range-row">
+        <input id="m-valence" type="range" min="0" max="1" step="0.01" value="0.5"
+               oninput="document.getElementById('m-valence-val').textContent=parseFloat(this.value).toFixed(2)">
+      </div>
+    </div>
+    <div class="field">
+      <label>Options</label>
+      <div class="noise-row">
+        <input id="m-noise" type="checkbox">
+        <span>Tag bruit (ignorer dans le scoring)</span>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-save" onclick="saveTag()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin + (window.location.pathname.replace(/\/tag_features.*/, ''));
+let allTags = [];
+let currentFilter = '';
+let editingTag = null;
+let hasEnergy = true, hasValence = true;
+
+async function load(filter) {
+  currentFilter = filter;
+  const url = BASE + '/api/tag_features' + (filter ? '?filter=' + filter : '');
+  const r = await fetch(url);
+  allTags = await r.json();
+  document.getElementById('stats').textContent = allTags.length + ' tags';
+  render();
+}
+
+function render() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const rows = allTags.filter(t => !q || t.tag.includes(q));
+  const tbody = document.getElementById('tbody');
+  const empty = document.getElementById('empty');
+  if (!rows.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = rows.map(t => {
+    const moodBadge = t.is_noise
+      ? '<span class="badge badge-noise">noise</span>'
+      : t.mood ? `<span class="badge badge-${t.mood}">${t.mood}</span>` : '<span style="color:#555">—</span>';
+    const eVal = t.energy != null ? Math.round(t.energy * 100) : null;
+    const vVal = t.valence != null ? Math.round(t.valence * 100) : null;
+    const energyBar = eVal != null
+      ? `<div class="bar-wrap"><div class="bar" style="width:${eVal}px"></div><span class="bar-label">${(t.energy).toFixed(2)}</span></div>`
+      : '<span style="color:#555">—</span>';
+    const valenceBar = vVal != null
+      ? `<div class="bar-wrap"><div class="bar" style="width:${vVal}px;background:#66bb6a"></div><span class="bar-label">${(t.valence).toFixed(2)}</span></div>`
+      : '<span style="color:#555">—</span>';
+    return `<tr>
+      <td class="tag-name">${t.tag}</td>
+      <td>${moodBadge}</td>
+      <td>${energyBar}</td>
+      <td>${valenceBar}</td>
+      <td class="actions">
+        <button class="btn-edit" onclick='openModal(${JSON.stringify(t)})'>Éditer</button>
+        <button class="btn-del" onclick='deleteTag("${t.tag}")'>✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openModal(tag) {
+  editingTag = tag ? tag.tag : null;
+  document.getElementById('modal-title').textContent = tag ? 'Éditer : ' + tag.tag : 'Ajouter un tag';
+  document.getElementById('m-tag').value = tag ? tag.tag : '';
+  document.getElementById('m-tag').readOnly = !!tag;
+  document.getElementById('m-mood').value = tag ? (tag.mood || '') : '';
+  document.getElementById('m-noise').checked = tag ? !!tag.is_noise : false;
+
+  const e = tag && tag.energy != null ? tag.energy : 0.5;
+  const v = tag && tag.valence != null ? tag.valence : 0.5;
+  document.getElementById('m-energy').value = e;
+  document.getElementById('m-valence').value = v;
+  document.getElementById('m-energy-val').textContent = tag && tag.energy != null ? e.toFixed(2) : '—';
+  document.getElementById('m-valence-val').textContent = tag && tag.valence != null ? v.toFixed(2) : '—';
+  document.getElementById('overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.remove('open');
+  editingTag = null;
+}
+
+async function saveTag() {
+  const tag = document.getElementById('m-tag').value.trim();
+  if (!tag) return;
+  const noise = document.getElementById('m-noise').checked;
+  const energy = noise ? null : parseFloat(document.getElementById('m-energy').value);
+  const valence = noise ? null : parseFloat(document.getElementById('m-valence').value);
+  const mood = noise ? null : document.getElementById('m-mood').value || null;
+
+  await fetch(BASE + '/api/tag_features', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({tag, energy, valence, mood, is_noise: noise ? 1 : 0}),
+  });
+  closeModal();
+  load(currentFilter);
+}
+
+async function deleteTag(tag) {
+  if (!confirm('Supprimer "' + tag + '" ?')) return;
+  await fetch(BASE + '/api/tag_features/' + encodeURIComponent(tag), {method: 'DELETE'});
+  load(currentFilter);
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    load(btn.dataset.f);
+  });
+});
+
+load('');
+</script>
+</body>
+</html>

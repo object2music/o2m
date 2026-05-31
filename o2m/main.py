@@ -487,6 +487,46 @@ if __name__ == "__main__":
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
+    @api.route('/tag_features')
+    def tag_features_ui():
+        from flask import send_from_directory
+        return send_from_directory('static', 'tag_features.html')
+
+    @api.route('/api/tag_features', methods=['GET'])
+    def api_tag_features_get():
+        from flask import jsonify
+        filter_type = request.args.get('filter')  # all / noise / mood / feature / unknown
+        if filter_type == 'unknown':
+            tags = o2mHandler.dbHandler.get_unknown_tags(limit=200)
+            return jsonify([{'tag': t} for t in tags])
+        return jsonify(o2mHandler.dbHandler.get_all_tag_features(filter_type=filter_type))
+
+    @api.route('/api/tag_features', methods=['POST'])
+    def api_tag_features_post():
+        from flask import jsonify
+        data = request.get_json(force=True) or {}
+        tag = data.get('tag', '').strip()
+        if not tag:
+            return jsonify({'error': 'tag required'}), 400
+        ok = o2mHandler.dbHandler.upsert_tag_feature(
+            tag,
+            energy=data.get('energy'),
+            valence=data.get('valence'),
+            mood=data.get('mood') or None,
+            is_noise=int(data.get('is_noise', 0)),
+        )
+        if ok:
+            o2mHandler.spotifyHandler._reload_tag_features()
+        return jsonify({'ok': ok})
+
+    @api.route('/api/tag_features/<path:tag>', methods=['DELETE'])
+    def api_tag_features_delete(tag):
+        from flask import jsonify
+        ok = o2mHandler.dbHandler.delete_tag_feature(tag)
+        if ok:
+            o2mHandler.spotifyHandler._reload_tag_features()
+        return jsonify({'ok': ok})
+
     @api.route('/api/stats/mood')
     def api_stats_mood():
         from flask import jsonify

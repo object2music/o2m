@@ -9,7 +9,7 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 from src.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
-    TrackGenre, AlbumGenre,
+    TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
     setup_database,
 )
@@ -629,6 +629,72 @@ class DatabaseHandler():
             random.shuffle(without)
             without = without[:max_count]
         return without
+
+    # ─── TagFeature — data-driven tag scoring ─────────────────────────────────
+
+    def get_all_tag_features(self, filter_type=None):
+        """Return all TagFeature rows as list of dicts.
+        filter_type: None=all, 'noise'=is_noise=1, 'mood'=has mood, 'feature'=has energy+valence
+        """
+        try:
+            q = TagFeature.select()
+            if filter_type == 'noise':
+                q = q.where(TagFeature.is_noise == 1)
+            elif filter_type == 'mood':
+                q = q.where(TagFeature.mood.is_null(False))
+            elif filter_type == 'feature':
+                q = q.where(TagFeature.energy.is_null(False))
+            return [{'tag': t.tag, 'energy': t.energy, 'valence': t.valence,
+                     'mood': t.mood, 'is_noise': t.is_noise} for t in q.order_by(TagFeature.tag)]
+        except Exception as e:
+            print(f"get_all_tag_features error: {e}")
+            return []
+
+    def upsert_tag_feature(self, tag, energy=None, valence=None, mood=None, is_noise=0):
+        """Insert or replace a TagFeature entry. Tag is normalized before save."""
+        n = _normalize_genre(tag)
+        if not n:
+            return False
+        try:
+            TagFeature.insert({'tag': n, 'energy': energy, 'valence': valence,
+                               'mood': mood, 'is_noise': is_noise}
+                              ).on_conflict_replace().execute()
+            return True
+        except Exception as e:
+            print(f"upsert_tag_feature error: {e}")
+            return False
+
+    def delete_tag_feature(self, tag):
+        n = _normalize_genre(tag)
+        try:
+            TagFeature.delete().where(TagFeature.tag == n).execute()
+            return True
+        except Exception as e:
+            print(f"delete_tag_feature error: {e}")
+            return False
+
+    def get_unknown_tags(self, limit=100):
+        """Return tag names that appear in TrackGenre/AlbumGenre/ArtistGenre
+        but have no entry in TagFeature — candidates for manual classification."""
+        try:
+            known = {t.tag for t in TagFeature.select(TagFeature.tag)}
+            rows = db.execute_sql("""
+                SELECT DISTINCT g.name FROM genre g
+                WHERE EXISTS (
+                    SELECT 1 FROM trackgenre tg WHERE tg.genre_id = g.id
+                    UNION ALL
+                    SELECT 1 FROM albumgenre ag WHERE ag.genre_id = g.id
+                    UNION ALL
+                    SELECT 1 FROM artistgenre agi WHERE agi.genre_id = g.id
+                )
+                ORDER BY g.name
+                LIMIT %s
+            """, (limit * 3,))
+            unknown = [r[0] for r in rows if r[0] not in known]
+            return unknown[:limit]
+        except Exception as e:
+            print(f"get_unknown_tags error: {e}")
+            return []
 
     # ─── Album cache ───────────────────────────────────────────────────────────
 

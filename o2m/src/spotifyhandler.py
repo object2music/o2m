@@ -17,11 +17,93 @@ class SpotifyHandler:
         self._rate_limited_until = self._load_rate_limit()
         self._last_retry_after = None  # captured from Retry-After response header
         self._db = None  # set via set_db_handler() after DatabaseHandler is ready
+        self._tag_mood_map = self._build_tag_mood_map_from_class()
         self.init_token_sp()
 
     def set_db_handler(self, db_handler):
         """Inject the DatabaseHandler to enable local cache read/write."""
         self._db = db_handler
+        self._init_tag_features()
+
+    def _init_tag_features(self):
+        """Seed TagFeature table if empty, then load into instance attributes."""
+        if not self._db:
+            return
+        try:
+            from src.o2mmodels import TagFeature
+            if TagFeature.select().count() == 0:
+                self._seed_tag_features()
+            self._reload_tag_features()
+        except Exception as e:
+            print(f"_init_tag_features error: {e} — falling back to hardcoded dicts")
+            self._tag_mood_map = self._build_tag_mood_map_from_class()
+
+    def _seed_tag_features(self):
+        """Populate TagFeature from hardcoded class-level dicts (runs once on first startup)."""
+        from src.o2mmodels import TagFeature, db as _db
+        entries = {}  # tag → {energy, valence, mood, is_noise}
+
+        for tag, (energy, valence) in self.__class__._TAG_FEATURES.items():
+            entries[tag] = {'energy': energy, 'valence': valence, 'mood': None, 'is_noise': 0}
+
+        for cat, tags in self.__class__._MOOD_TAGS.items():
+            for tag in tags:
+                if tag not in entries:
+                    entries[tag] = {'energy': None, 'valence': None, 'mood': cat, 'is_noise': 0}
+                elif entries[tag]['mood'] is None:
+                    entries[tag]['mood'] = cat
+
+        for cat, tags in self.__class__._GENRE_MOOD.items():
+            for tag in tags:
+                if tag not in entries:
+                    entries[tag] = {'energy': None, 'valence': None, 'mood': cat, 'is_noise': 0}
+                elif entries[tag]['mood'] is None:
+                    entries[tag]['mood'] = cat
+
+        for tag in self.__class__._NOISE_TAGS:
+            if tag not in entries:
+                entries[tag] = {'energy': None, 'valence': None, 'mood': None, 'is_noise': 1}
+            else:
+                entries[tag]['is_noise'] = 1
+
+        with _db.atomic():
+            for tag, data in entries.items():
+                TagFeature.insert({'tag': tag, **data}).on_conflict_ignore().execute()
+        print(f"_seed_tag_features: {len(entries)} entries seeded to DB")
+
+    def _reload_tag_features(self):
+        """Load TagFeature table into instance attributes, replacing hardcoded dicts."""
+        from src.o2mmodels import TagFeature
+        tag_features = {}
+        tag_mood_map = {}
+        noise_tags = set()
+
+        for tf in TagFeature.select():
+            if tf.is_noise:
+                noise_tags.add(tf.tag)
+                continue
+            if tf.energy is not None and tf.valence is not None:
+                tag_features[tf.tag] = (tf.energy, tf.valence)
+            if tf.mood:
+                tag_mood_map[tf.tag] = tf.mood
+
+        self._TAG_FEATURES = tag_features
+        self._tag_mood_map = tag_mood_map
+        self._NOISE_TAGS   = frozenset(noise_tags)
+        print(f"_reload_tag_features: {len(tag_features)} features, "
+              f"{len(tag_mood_map)} mood mappings, {len(noise_tags)} noise tags")
+
+    def _build_tag_mood_map_from_class(self):
+        """Fallback: build {tag: mood_cat} from hardcoded class constants."""
+        m = {}
+        for cat, tags in self.__class__._MOOD_TAGS.items():
+            for t in tags:
+                m[t] = cat
+        for cat, tags in self.__class__._GENRE_MOOD.items():
+            for t in tags:
+                if t not in m:
+                    m[t] = cat
+        return m
 
     def cache_track_from_mopidy(self, mopidy_track):
         """Populate track cache from a Mopidy track object — zero API calls.
@@ -1422,14 +1504,15 @@ class SpotifyHandler:
         if not self._lastfm_api_key:
             return None, None, None
 
-        def _score_mood(tags_wc, category_map):
+        def _score_mood(tags_wc):
             # tags_wc: [(name, weight), ...] — weight = Last.fm count or 1 for equal weight
-            scores = {cat: 0 for cat in category_map}
+            # Uses self._tag_mood_map: {normalized_tag: mood_cat} loaded from DB
+            scores = {'calm': 0, 'energetic': 0, 'dark': 0, 'happy': 0}
             for tag, weight in tags_wc:
                 tn = self._normalize_tag(tag)
-                for cat, keywords in category_map.items():
-                    if tn in keywords:
-                        scores[cat] += weight
+                cat = self._tag_mood_map.get(tn)
+                if cat and cat in scores:
+                    scores[cat] += weight
             best_cat = max(scores, key=scores.get)
             return best_cat if scores[best_cat] > 0 else None
 
@@ -1464,7 +1547,7 @@ class SpotifyHandler:
         if track_uri and self._db:
             cached = self._db.get_track_genres(track_uri)
             if cached:
-                mood = _score_mood(cached, self._MOOD_TAGS)
+                mood = _score_mood(cached)
                 energy, valence = _score_features(cached)
                 if mood or energy is not None:
                     return _finalize(mood, energy, valence)
@@ -1488,7 +1571,7 @@ class SpotifyHandler:
             if tags_wc:
                 if track_uri and self._db:
                     self._db.save_track_genres(track_uri, tags_wc)
-                mood = _score_mood(tags_wc, self._MOOD_TAGS)
+                mood = _score_mood(tags_wc)
                 energy, valence = _score_features(tags_wc)
                 if mood or energy is not None:
                     return _finalize(mood, energy, valence)
@@ -1499,7 +1582,7 @@ class SpotifyHandler:
         if album_id and self._db:
             cached = self._db.get_album_genres(album_id)
             if cached:
-                mood = _score_mood(cached, self._MOOD_TAGS)
+                mood = _score_mood(cached)
                 energy, valence = _score_features(cached)
                 if mood or energy is not None:
                     return _finalize(mood, energy, valence)
@@ -1524,7 +1607,7 @@ class SpotifyHandler:
                 if tags_wc:
                     if album_id and self._db:
                         self._db.save_album_genres(album_id, tags_wc)
-                    mood = _score_mood(tags_wc, self._MOOD_TAGS)
+                    mood = _score_mood(tags_wc)
                     energy, valence = _score_features(tags_wc)
                     if mood or energy is not None:
                         return _finalize(mood, energy, valence)
@@ -1538,7 +1621,7 @@ class SpotifyHandler:
                 genres = self._db.get_artist_genres(artist_id)
                 if genres:
                     genres_wc = [(g, 1) for g in genres]
-                    mood = _score_mood(genres_wc, self._GENRE_MOOD)
+                    mood = _score_mood(genres_wc)
                     energy, valence = _score_features(genres_wc)
                     if mood or energy is not None:
                         return _finalize(mood, energy, valence)
@@ -1550,7 +1633,7 @@ class SpotifyHandler:
             artist_tags = self._lastfm_get_top_tags(artist_name) or []
             if artist_tags:
                 artist_wc = [(t, 1) for t in artist_tags]
-                mood = _score_mood(artist_wc, self._GENRE_MOOD)
+                mood = _score_mood(artist_wc)
                 energy, valence = _score_features(artist_wc)
                 if mood or energy is not None:
                     return _finalize(mood, energy, valence)

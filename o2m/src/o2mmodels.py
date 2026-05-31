@@ -259,6 +259,16 @@ class AlbumGenre(BaseModel):
         indexes = ((('album_id', 'genre_id'), True),)
 
 
+class TagFeature(BaseModel):
+    """Data-driven tag → (energy, valence, mood) mapping. Replaces hardcoded dicts.
+    Seeded at startup from SpotifyHandler class constants, then editable via UI."""
+    tag      = CharField(primary_key=True, max_length=100)  # normalized tag name
+    energy   = FloatField(null=True)    # 0.0–1.0
+    valence  = FloatField(null=True)    # 0.0–1.0
+    mood     = CharField(null=True, max_length=20)   # calm / energetic / dark / happy
+    is_noise = IntegerField(default=0)  # 1 = filter this tag from scoring
+
+
 class Playlist(BaseModel):
     id = CharField(unique=True, index=True, primary_key=True)  # Spotify playlist ID
     uri = CharField(null=True)
@@ -440,7 +450,11 @@ def _migration_v7(migrator):
     db.create_tables([TrackGenre, AlbumGenre], safe=True)
 
 
-SCHEMA_VERSION = 7
+def _migration_v8(migrator):
+    db.create_tables([TagFeature], safe=True)
+
+
+SCHEMA_VERSION = 8
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -450,6 +464,7 @@ _MIGRATIONS = [
     (5, "track_mood_column", _migration_v5),
     (6, "track_energy_valence_columns", _migration_v6),
     (7, "track_album_genre_tables", _migration_v7),
+    (8, "tagfeature_table", _migration_v8),
 ]
 
 
