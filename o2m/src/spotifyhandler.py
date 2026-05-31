@@ -916,6 +916,7 @@ class SpotifyHandler:
                       'rock', 'alternative', 'alternative rock', 'indie rock', 'hard rock',
                       'progressive rock', 'post rock', 'grunge', 'classic rock',
                       'post punk', 'new wave', 'jangle pop', 'britpop', 'indie pop',
+                      'synthpop', 'art pop', 'psychedelic pop', 'psychedelic', 'neo psychedelia',
                       'hip hop', 'rap', 'electronic', 'r&b',
                       'bebop', 'post bop', 'free jazz', 'acid jazz', 'jazz fusion', 'fusion'},
         'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave',
@@ -969,10 +970,13 @@ class SpotifyHandler:
         'rock':           (0.72, 0.50), 'hip hop':        (0.70, 0.52),
         'rap':            (0.72, 0.50),
         'trip hop':       (0.35, 0.42), 'shoegaze':       (0.60, 0.32),
-        # rock sous-genres — présents dans les tags réels Last.fm
+        # rock / pop sous-genres
         'indie rock':     (0.70, 0.50), 'indie pop':      (0.62, 0.65),
         'jangle pop':     (0.65, 0.60), 'britpop':        (0.68, 0.55),
         'new wave':       (0.68, 0.45), 'post punk':      (0.70, 0.28),
+        'synthpop':       (0.72, 0.62), 'art pop':        (0.58, 0.60),
+        'psychedelic pop':(0.62, 0.65), 'psychedelic':    (0.60, 0.58),
+        'neo psychedelia':(0.58, 0.55),
         'alternative rock': (0.68, 0.48), 'hard rock':    (0.80, 0.42),
         'progressive rock': (0.72, 0.50), 'classic rock':  (0.70, 0.50),
         'grunge':         (0.75, 0.30), 'emo':            (0.65, 0.22),
