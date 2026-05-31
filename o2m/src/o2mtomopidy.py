@@ -1810,9 +1810,16 @@ class O2mToMopidy:
                                     if result5: stat.option_type = 'normal'
                                     if result5: self._log_playlist_change(uri[0], playlist.tracks[0].uri, 'remove', _from_option_type, 'normal', _track_name)
 
-        # Deferred mood enrichment: if energy/valence still missing and not yet attempted,
-        # fetch from Last.fm in a background thread so the playback event is not blocked.
-        if stat.energy is None and stat.mood is None:
+        # Deferred mood enrichment — three cases handled:
+        # 1. mood=NULL : never attempted
+        # 2. mood='_'  : sentinel — retry, coverage improved (album fallback, better GENRE_MOOD…)
+        # 3. mood set but energy=NULL : partial data, fill numeric features
+        _needs_enrichment = (
+            (stat.mood is None) or
+            (stat.mood == '_') or
+            (stat.energy is None and stat.mood not in (None, '_'))
+        )
+        if _needs_enrichment:
             _track_name   = getattr(track, 'name', None)
             _artists      = getattr(track, 'artists', None) or []
             _artist_name  = next((a.name for a in _artists if getattr(a, 'name', None)), None)
