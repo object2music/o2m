@@ -1531,10 +1531,10 @@ class SpotifyHandler:
             )
 
         def _finalize(mood, energy, valence):
-            """Ensure mood is always set when features are available to avoid warmup re-processing."""
-            if mood is None and energy is not None:
+            """Derive mood from quadrant when energy/valence are available; tag-mood as fallback only."""
+            if energy is not None:
                 v = valence if valence is not None else 0.5
-                # 4-quadrant Russell circumplex (energy=x, valence=y):
+                # 4-quadrant Russell circumplex: mood = f(energy, valence)
                 # happy=haut-droite, energetic=bas-droite, calm=haut-gauche, dark=bas-gauche
                 if energy > 0.5 and v > 0.5:
                     mood = 'happy'
@@ -1544,15 +1544,16 @@ class SpotifyHandler:
                     mood = 'calm'
                 else:
                     mood = 'dark'
+            # else: no features found → keep tag-based mood as fallback
             return mood, energy, valence
 
         # --- Primary: track.getTopTags (DB cache first) ---
         if track_uri and self._db:
             cached = self._db.get_track_genres(track_uri)
             if cached:
-                mood = _score_mood(cached)
                 energy, valence = _score_features(cached)
-                if mood or energy is not None:
+                mood = None if energy is not None else _score_mood(cached)
+                if energy is not None or mood:
                     return _finalize(mood, energy, valence)
 
         try:
@@ -1574,9 +1575,9 @@ class SpotifyHandler:
             if tags_wc:
                 if track_uri and self._db:
                     self._db.save_track_genres(track_uri, tags_wc)
-                mood = _score_mood(tags_wc)
                 energy, valence = _score_features(tags_wc)
-                if mood or energy is not None:
+                mood = None if energy is not None else _score_mood(tags_wc)
+                if energy is not None or mood:
                     return _finalize(mood, energy, valence)
         except Exception:
             pass
@@ -1585,9 +1586,9 @@ class SpotifyHandler:
         if album_id and self._db:
             cached = self._db.get_album_genres(album_id)
             if cached:
-                mood = _score_mood(cached)
                 energy, valence = _score_features(cached)
-                if mood or energy is not None:
+                mood = None if energy is not None else _score_mood(cached)
+                if energy is not None or mood:
                     return _finalize(mood, energy, valence)
 
         if album_name:
@@ -1610,9 +1611,9 @@ class SpotifyHandler:
                 if tags_wc:
                     if album_id and self._db:
                         self._db.save_album_genres(album_id, tags_wc)
-                    mood = _score_mood(tags_wc)
                     energy, valence = _score_features(tags_wc)
-                    if mood or energy is not None:
+                    mood = None if energy is not None else _score_mood(tags_wc)
+                    if energy is not None or mood:
                         return _finalize(mood, energy, valence)
             except Exception:
                 pass
@@ -1624,9 +1625,9 @@ class SpotifyHandler:
                 genres = self._db.get_artist_genres(artist_id)
                 if genres:
                     genres_wc = [(g, 1) for g in genres]
-                    mood = _score_mood(genres_wc)
                     energy, valence = _score_features(genres_wc)
-                    if mood or energy is not None:
+                    mood = None if energy is not None else _score_mood(genres_wc)
+                    if energy is not None or mood:
                         return _finalize(mood, energy, valence)
         except Exception:
             pass
@@ -1636,9 +1637,9 @@ class SpotifyHandler:
             artist_tags = self._lastfm_get_top_tags(artist_name) or []
             if artist_tags:
                 artist_wc = [(t, 1) for t in artist_tags]
-                mood = _score_mood(artist_wc)
                 energy, valence = _score_features(artist_wc)
-                if mood or energy is not None:
+                mood = None if energy is not None else _score_mood(artist_wc)
+                if energy is not None or mood:
                     return _finalize(mood, energy, valence)
         except Exception:
             pass
