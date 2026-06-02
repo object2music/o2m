@@ -988,22 +988,23 @@ class SpotifyHandler:
     _GENRE_MOOD = {
         'calm':      {'classical', 'piano', 'jazz', 'folk', 'acoustic', 'ambient', 'new age',
                       'chamber', 'baroque', 'bossa nova', 'easy listening', 'smooth jazz',
-                      'instrumental', 'world', 'meditation', 'drone',
+                      'instrumental', 'world', 'meditation',
                       'chanson', 'chanson francaise', 'french pop',
                       'singer songwriter',
                       'contemporary jazz', 'jazz manouche', 'cool jazz', 'nu jazz',
-                      'indie', 'lo fi', 'lofi', 'neo soul', 'trip hop'},
+                      'lo fi', 'lofi', 'neo soul'},
         'energetic': {'metal', 'punk', 'hardcore', 'edm', 'techno', 'house', 'drum and bass',
                       'dubstep', 'electro', 'trance', 'breakbeat', 'industrial',
                       'rock', 'alternative', 'alternative rock', 'indie rock', 'hard rock',
-                      'progressive rock', 'post rock', 'grunge', 'classic rock',
+                      'progressive rock', 'post rock', 'classic rock',
                       'post punk', 'new wave', 'jangle pop', 'britpop', 'indie pop',
                       'synthpop', 'art pop', 'psychedelic pop', 'psychedelic', 'neo psychedelia',
-                      'hip hop', 'rap', 'electronic', 'r&b',
+                      'hip hop', 'rap', 'electronic', 'r&b', 'indie',
                       'bebop', 'post bop', 'free jazz', 'acid jazz', 'jazz fusion', 'fusion'},
         'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave',
                       'experimental', 'noise', 'avant garde', 'drone metal', 'shoegaze',
-                      'dark folk', 'dark ambient', 'emo', 'grunge'},
+                      'dark folk', 'dark ambient', 'emo', 'grunge',
+                      'drone', 'trip hop'},
         'happy':     {'pop', 'reggae', 'funk', 'soul', 'disco', 'ska',
                       'african', 'afrobeat', 'afropop', 'latin', 'cumbia', 'salsa', 'samba',
                       'swing', 'big band', 'dance', 'pop rock', 'world music'},
@@ -1533,14 +1534,16 @@ class SpotifyHandler:
             """Ensure mood is always set when features are available to avoid warmup re-processing."""
             if mood is None and energy is not None:
                 v = valence if valence is not None else 0.5
-                if v < 0.35:
-                    mood = 'dark'
-                elif energy >= 0.65:
-                    mood = 'energetic'
-                elif v >= 0.65:
+                # 4-quadrant Russell circumplex (energy=x, valence=y):
+                # happy=haut-droite, energetic=bas-droite, calm=haut-gauche, dark=bas-gauche
+                if energy > 0.5 and v > 0.5:
                     mood = 'happy'
-                else:
+                elif energy > 0.5:
+                    mood = 'energetic'
+                elif v > 0.5:
                     mood = 'calm'
+                else:
+                    mood = 'dark'
             return mood, energy, valence
 
         # --- Primary: track.getTopTags (DB cache first) ---
