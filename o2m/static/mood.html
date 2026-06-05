@@ -108,10 +108,19 @@
                 transition: stroke-dashoffset .05s; }
   .dial-sub { font-size: 10px; color: var(--muted); text-align: center; }
 
+  /* ── Controls-matrix row ── */
+  #controls-matrix { display: flex; flex-direction: column; }
+  @media (min-width: 600px) {
+    #controls-matrix { flex-direction: row; align-items: flex-start; gap: 4px; padding: 4px 8px; }
+    #dials { flex-direction: column; padding: 8px 4px; min-width: 110px; justify-content: center; }
+    #matrix-section { flex: 1; padding: 4px 0 4px 4px; min-width: 0; }
+  }
+
   /* ── Matrix ── */
   #matrix-section { padding: 8px 14px 4px; }
   #mood-matrix { display: block; width: 100%; aspect-ratio: 1 / 1;
                  touch-action: none; cursor: crosshair; border-radius: 8px; }
+  #mood-matrix.cursor-resize { cursor: ew-resize; }
 
   /* ── Genres ── */
   #genres-section { padding: 10px 14px 6px; }
@@ -199,7 +208,8 @@
 <!-- Scrollable area -->
 <div id="scroll-area">
 
-  <!-- Dials -->
+  <!-- Dials + Matrix -->
+  <div id="controls-matrix">
   <div id="dials">
     <div class="dial-wrap">
       <div class="dial-label">Énergie</div>
@@ -242,6 +252,7 @@
   <div id="matrix-section">
     <canvas id="mood-matrix"></canvas>
   </div>
+  </div><!-- /controls-matrix -->
 
   <!-- Genres -->
   <div id="genres-section">
@@ -321,7 +332,7 @@ function makeDraggable(id, onChange) {
 /* ── Apply ── */
 function scheduleApply() {
   clearTimeout(applyTimer);
-  applyTimer = setTimeout(applyMood, 400);
+  applyTimer = setTimeout(applyMood, 900);
 }
 
 async function applyMood() {
@@ -409,7 +420,7 @@ function renderTracklist(tracks, activeTlid) {
     wrap.appendChild(item);
     if (tlid === activeTlid) scrollTarget = item;
   });
-  if (scrollTarget) scrollTarget.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  // if (scrollTarget) scrollTarget.scrollIntoView({behavior: 'smooth', block: 'nearest'});
   fetchTracklistStatuses(tracks);
 }
 
@@ -578,6 +589,7 @@ const PAD = 28;
 let matrixFeatures = {};   // uri → {energy, valence}
 let matrixTlItems  = [];   // [{uri, tlid}]
 let matrixCurUri   = null;
+let matrixMode     = 'move'; // 'move' | 'resize'
 
 function moodColor(e, v, a = 1) {
   if (e > 0.5 && v > 0.5) return `rgba(255,210,60,${a})`;   // happy
@@ -600,16 +612,37 @@ function initMatrix() {
 
   canvas.addEventListener('pointerdown', e => {
     canvas.setPointerCapture(e.pointerId);
-    matrixMove(canvas, e);
+    matrixMode = detectMatrixMode(canvas, e);
+    if (matrixMode === 'resize') matrixResize(canvas, e);
+    else matrixMove(canvas, e);
   });
   canvas.addEventListener('pointermove', e => {
-    if (!e.buttons) return;
+    if (!e.buttons) {
+      // Hover: update cursor
+      const mode = detectMatrixMode(canvas, e);
+      canvas.classList.toggle('cursor-resize', mode === 'resize');
+      return;
+    }
     e.preventDefault();
-    matrixMove(canvas, e);
+    if (matrixMode === 'resize') matrixResize(canvas, e);
+    else matrixMove(canvas, e);
   });
   canvas.addEventListener('pointerup', () => scheduleApply());
 
   requestAnimationFrame(drawMatrix);
+}
+
+function detectMatrixMode(canvas, e) {
+  const rect  = canvas.getBoundingClientRect();
+  const inner = rect.width - 2 * PAD;
+  const tx = rect.left + PAD + appState.energy * inner;
+  const ty = rect.top  + PAD + (1 - appState.valence) * inner;
+  const r  = (appState.dl / 20 + 0.05) * inner;
+  const dx = Math.abs(e.clientX - tx);
+  const dy = Math.abs(e.clientY - ty);
+  const dist = Math.max(dx, dy);           // Chebyshev = square metric
+  const HANDLE = 14;                       // px tolerance around border
+  return Math.abs(dist - r) < HANDLE ? 'resize' : 'move';
 }
 
 function matrixMove(canvas, e) {
@@ -621,6 +654,19 @@ function matrixMove(canvas, e) {
   appState.valence = valence;
   setDial('energy', energy);
   setDial('valence', valence);
+}
+
+function matrixResize(canvas, e) {
+  const rect  = canvas.getBoundingClientRect();
+  const inner = rect.width - 2 * PAD;
+  const tx = rect.left + PAD + appState.energy * inner;
+  const ty = rect.top  + PAD + (1 - appState.valence) * inner;
+  const dx = Math.abs(e.clientX - tx);
+  const dy = Math.abs(e.clientY - ty);
+  const radius01 = Math.max(dx, dy) / inner;
+  const dl = Math.min(10, Math.max(0, Math.round((radius01 - 0.05) * 20)));
+  appState.dl = dl;
+  setDial('dl', dl / 10);
 }
 
 function drawMatrix(ts) {
