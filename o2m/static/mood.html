@@ -122,6 +122,20 @@
                  touch-action: none; cursor: crosshair; border-radius: 8px; }
   #mood-matrix.cursor-resize { cursor: ew-resize; }
 
+  /* ── Matrix tooltip ── */
+  #matrix-tooltip {
+    position: fixed; display: none; pointer-events: none; z-index: 200;
+    background: var(--surface); border: 1px solid #ffffff28; border-radius: 8px;
+    padding: 8px 12px; max-width: 200px;
+    box-shadow: 0 4px 20px #00000070;
+  }
+  #matrix-tooltip .tt-name   { font-size: 13px; font-weight: 600; white-space: nowrap;
+                                overflow: hidden; text-overflow: ellipsis; }
+  #matrix-tooltip .tt-artist { font-size: 11px; color: var(--muted); margin-top: 2px;
+                                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #matrix-tooltip .tt-ev     { font-size: 10px; color: var(--muted); margin-top: 5px;
+                                display: flex; gap: 8px; }
+
   /* ── Genres ── */
   #genres-section { padding: 10px 14px 6px; }
   #genres-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
@@ -271,6 +285,11 @@
 
 </div><!-- /scroll-area -->
 
+<div id="matrix-tooltip">
+  <div class="tt-name"></div>
+  <div class="tt-artist"></div>
+  <div class="tt-ev"></div>
+</div>
 <div id="feedback"></div>
 
 <script>
@@ -519,7 +538,11 @@ async function refreshNowPlaying() {
 
   currentTlid    = tlid;
   matrixCurUri   = track?.uri ?? null;
-  matrixTlItems  = tracks.map(({tlid: id, track: t}) => ({uri: t?.uri, tlid: id}));
+  matrixTlItems  = tracks.map(({tlid: id, track: t}) => ({
+    uri: t?.uri, tlid: id,
+    name:   t?.name || '',
+    artist: (t?.artists || []).map(a => a.name).join(', '),
+  }));
   fetchTrackFeatures([matrixCurUri, ...matrixTlItems.map(i => i.uri)].filter(Boolean));
 
   document.getElementById('status-dot').className = playing ? 'playing' : '';
@@ -618,16 +641,17 @@ function initMatrix() {
   });
   canvas.addEventListener('pointermove', e => {
     if (!e.buttons) {
-      // Hover: update cursor
       const mode = detectMatrixMode(canvas, e);
       canvas.classList.toggle('cursor-resize', mode === 'resize');
+      showMatrixTooltip(canvas, e);
       return;
     }
     e.preventDefault();
     if (matrixMode === 'resize') matrixResize(canvas, e);
     else matrixMove(canvas, e);
   });
-  canvas.addEventListener('pointerup', () => scheduleApply());
+  canvas.addEventListener('pointerup',    () => scheduleApply());
+  canvas.addEventListener('pointerleave', () => hideMatrixTooltip());
 
   requestAnimationFrame(drawMatrix);
 }
@@ -771,6 +795,60 @@ function drawMatrix(ts) {
   ctx.fillStyle = moodColor(energy, valence, 1); ctx.fill();
 
   ctx.restore();
+}
+
+function showMatrixTooltip(canvas, e) {
+  const rect  = canvas.getBoundingClientRect();
+  const inner = rect.width - 2 * PAD;
+  const HIT   = 10; // px hit radius
+
+  // Build candidate list: tracklist dots + currently playing
+  const candidates = matrixTlItems.map(item => {
+    const f = matrixFeatures[item.uri];
+    if (!f) return null;
+    const sx = rect.left + PAD + f.energy * inner;
+    const sy = rect.top  + PAD + (1 - f.valence) * inner;
+    const d  = Math.hypot(e.clientX - sx, e.clientY - sy);
+    return d < HIT ? { item, f, d } : null;
+  }).filter(Boolean);
+
+  // Also check currently playing
+  const curF = matrixFeatures[matrixCurUri];
+  if (curF) {
+    const sx = rect.left + PAD + curF.energy * inner;
+    const sy = rect.top  + PAD + (1 - curF.valence) * inner;
+    const d  = Math.hypot(e.clientX - sx, e.clientY - sy);
+    if (d < HIT + 4) {
+      const curItem = matrixTlItems.find(i => i.uri === matrixCurUri);
+      candidates.push({ item: curItem || { name: '♪ En cours', artist: '' }, f: curF, d });
+    }
+  }
+
+  if (!candidates.length) { hideMatrixTooltip(); return; }
+
+  // Pick closest
+  candidates.sort((a, b) => a.d - b.d);
+  const { item, f } = candidates[0];
+
+  const tip = document.getElementById('matrix-tooltip');
+  tip.querySelector('.tt-name').textContent   = item?.name   || '?';
+  tip.querySelector('.tt-artist').textContent = item?.artist || '';
+  tip.querySelector('.tt-ev').innerHTML =
+    `<span>⚡ ${f.energy.toFixed(2)}</span><span>☀ ${f.valence.toFixed(2)}</span>`;
+
+  // Position: prefer right of dot, flip if near right edge
+  const TX = 14, TY = -8;
+  let left = e.clientX + TX;
+  let top  = e.clientY + TY;
+  tip.style.display = 'block';
+  const tw = tip.offsetWidth;
+  if (left + tw > window.innerWidth - 8) left = e.clientX - tw - TX;
+  tip.style.left = left + 'px';
+  tip.style.top  = top  + 'px';
+}
+
+function hideMatrixTooltip() {
+  document.getElementById('matrix-tooltip').style.display = 'none';
 }
 
 async function fetchTrackFeatures(uris) {
