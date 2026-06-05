@@ -1659,6 +1659,11 @@ class SpotifyHandler:
         if not self._db:
             print("warmup_spotify_features: skipped (no DB)")
             return 0, 0
+        # Check if endpoint was previously found to be unavailable (403)
+        disabled, _ = self._db.get_cache_meta('spotify_features_disabled')
+        if disabled:
+            print("warmup_spotify_features: skipped (audio_features endpoint unavailable for this app)")
+            return 0, 0
 
         total_assigned = 0
         for batch_num in range(max_batches):
@@ -1676,7 +1681,11 @@ class SpotifyHandler:
             try:
                 features_list = self.sp.audio_features(uris)
             except spotipy.SpotifyException as e:
-                if e.http_status == 429:
+                if e.http_status == 403:
+                    # Endpoint deprecated/unavailable for this Spotify app — disable permanently
+                    self._db.set_cache_meta('spotify_features_disabled', 1)
+                    print("warmup_spotify_features: audio_features endpoint returned 403 — disabled (Spotify API deprecation)")
+                elif e.http_status == 429:
                     self._on_rate_limit(e)
                 else:
                     print(f"warmup_spotify_features: Spotify error: {e}")
