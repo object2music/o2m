@@ -455,6 +455,23 @@ if __name__ == "__main__":
         added = o2mHandler.apply_mood_settings()
         return jsonify({'status': 'ok', 'tracks_added': added})
 
+    @api.route('/api/track_features')
+    def api_track_features():
+        from flask import jsonify
+        from src.o2mmodels import Track
+        uris = request.args.getlist('uri')[:40]
+        if not uris:
+            return jsonify({})
+        try:
+            result = {}
+            for t in Track.select(Track.uri, Track.energy, Track.valence).where(
+                Track.uri.in_(uris) & Track.energy.is_null(False)
+            ):
+                result[t.uri] = {'energy': float(t.energy), 'valence': float(t.valence)}
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/genres')
     def api_genres():
         from flask import jsonify

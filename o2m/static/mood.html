@@ -108,6 +108,11 @@
                 transition: stroke-dashoffset .05s; }
   .dial-sub { font-size: 10px; color: var(--muted); text-align: center; }
 
+  /* ── Matrix ── */
+  #matrix-section { padding: 8px 14px 4px; }
+  #mood-matrix { display: block; width: 100%; aspect-ratio: 1 / 1;
+                 touch-action: none; cursor: crosshair; border-radius: 8px; }
+
   /* ── Genres ── */
   #genres-section { padding: 10px 14px 6px; }
   #genres-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
@@ -231,6 +236,11 @@
       </svg>
       <div class="dial-sub">précis ↔ aventurier</div>
     </div>
+  </div>
+
+  <!-- Matrix energy × valence -->
+  <div id="matrix-section">
+    <canvas id="mood-matrix"></canvas>
   </div>
 
   <!-- Genres -->
@@ -496,7 +506,11 @@ async function refreshNowPlaying() {
   const playing = stateR?.result === 'playing';
   const tracks  = tlR?.result || [];
 
-  currentTlid = tlid;
+  currentTlid    = tlid;
+  matrixCurUri   = track?.uri ?? null;
+  matrixTlItems  = tracks.map(({tlid: id, track: t}) => ({uri: t?.uri, tlid: id}));
+  fetchTrackFeatures([matrixCurUri, ...matrixTlItems.map(i => i.uri)].filter(Boolean));
+
   document.getElementById('status-dot').className = playing ? 'playing' : '';
   document.getElementById('btn-play').textContent  = playing ? '⏸' : '▶';
 
@@ -559,12 +573,177 @@ document.getElementById('volume-slider').addEventListener('input', e => {
   volumeTimer = setTimeout(() => rpc('core.mixer.set_volume', {volume: vol}), 200);
 });
 
+/* ── MATRIX energy × valence ── */
+const PAD = 28;
+let matrixFeatures = {};   // uri → {energy, valence}
+let matrixTlItems  = [];   // [{uri, tlid}]
+let matrixCurUri   = null;
+
+function moodColor(e, v, a = 1) {
+  if (e > 0.5 && v > 0.5) return `rgba(255,210,60,${a})`;   // happy
+  if (e > 0.5)             return `rgba(233,69,96,${a})`;    // energetic
+  if (v > 0.5)             return `rgba(130,100,255,${a})`;  // calm
+  return                          `rgba(60,140,240,${a})`;   // dark
+}
+
+function initMatrix() {
+  const canvas = document.getElementById('mood-matrix');
+  const dpr    = window.devicePixelRatio || 1;
+
+  function resizeCanvas() {
+    const w = canvas.offsetWidth;
+    canvas.width  = w * dpr;
+    canvas.height = w * dpr;
+  }
+  resizeCanvas();
+  new ResizeObserver(resizeCanvas).observe(canvas);
+
+  canvas.addEventListener('pointerdown', e => {
+    canvas.setPointerCapture(e.pointerId);
+    matrixMove(canvas, e);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!e.buttons) return;
+    e.preventDefault();
+    matrixMove(canvas, e);
+  });
+  canvas.addEventListener('pointerup', () => scheduleApply());
+
+  requestAnimationFrame(drawMatrix);
+}
+
+function matrixMove(canvas, e) {
+  const rect  = canvas.getBoundingClientRect();
+  const inner = rect.width - 2 * PAD;
+  const energy  = Math.min(1, Math.max(0, (e.clientX - rect.left - PAD) / inner));
+  const valence = Math.min(1, Math.max(0, 1 - (e.clientY - rect.top  - PAD) / inner));
+  appState.energy  = energy;
+  appState.valence = valence;
+  setDial('energy', energy);
+  setDial('valence', valence);
+}
+
+function drawMatrix(ts) {
+  requestAnimationFrame(drawMatrix);
+  const canvas = document.getElementById('mood-matrix');
+  if (!canvas) return;
+
+  const dpr   = window.devicePixelRatio || 1;
+  const W     = canvas.width  / dpr;
+  const H     = canvas.height / dpr;
+  const inner = W - 2 * PAD;
+  const ctx   = canvas.getContext('2d');
+
+  const ex = e => PAD + e * inner;
+  const vy = v => PAD + (1 - v) * inner;
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  /* Background */
+  ctx.fillStyle = '#0b1829';
+  ctx.beginPath(); ctx.roundRect(0, 0, W, H, 8); ctx.fill();
+
+  const mx = PAD + inner / 2, my = PAD + inner / 2;
+
+  /* Quadrant fills */
+  [
+    [PAD, PAD, inner/2, inner/2, '#7c4dff14'], // calm      top-left
+    [mx,  PAD, inner/2, inner/2, '#ffd74018'], // happy     top-right
+    [PAD, my,  inner/2, inner/2, '#1a4a9022'], // dark      bottom-left
+    [mx,  my,  inner/2, inner/2, '#e9456014'], // energetic bottom-right
+  ].forEach(([x, y, w, h, c]) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); });
+
+  /* Center lines */
+  ctx.strokeStyle = '#ffffff1e'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.moveTo(mx, PAD); ctx.lineTo(mx, PAD + inner);
+  ctx.moveTo(PAD, my); ctx.lineTo(PAD + inner, my);
+  ctx.stroke(); ctx.setLineDash([]);
+
+  /* Inner border */
+  ctx.strokeStyle = '#ffffff18'; ctx.lineWidth = 1;
+  ctx.strokeRect(PAD, PAD, inner, inner);
+
+  /* Quadrant labels */
+  ctx.font = '9px system-ui'; ctx.fillStyle = '#ffffff30'; ctx.textAlign = 'center';
+  ctx.fillText('CALM',       PAD + inner * 0.25, PAD + 13);
+  ctx.fillText('HAPPY',      PAD + inner * 0.75, PAD + 13);
+  ctx.fillText('DARK',       PAD + inner * 0.25, PAD + inner - 5);
+  ctx.fillText('ENERGETIC',  PAD + inner * 0.75, PAD + inner - 5);
+
+  /* Axis labels */
+  ctx.font = '8px system-ui'; ctx.fillStyle = '#ffffff44';
+  ctx.textAlign = 'left';   ctx.fillText('◀ Calme',   2, my + 4);
+  ctx.textAlign = 'right';  ctx.fillText('Intense ▶', W - 2, my + 4);
+  ctx.textAlign = 'center';
+  ctx.fillText('▲ Joyeux', mx, 9);
+  ctx.fillText('▼ Sombre', mx, PAD + inner + PAD - 3);
+
+  /* Tracklist dots */
+  matrixTlItems.forEach(({ uri, tlid }) => {
+    const f = matrixFeatures[uri];
+    if (!f || tlid === currentTlid) return;
+    ctx.beginPath();
+    ctx.arc(ex(f.energy), vy(f.valence), 3, 0, Math.PI * 2);
+    ctx.fillStyle = moodColor(f.energy, f.valence, 0.55);
+    ctx.fill();
+  });
+
+  /* Currently playing — vibing dot */
+  const curF = matrixFeatures[matrixCurUri];
+  if (curF) {
+    const cx = ex(curF.energy), cy = vy(curF.valence);
+    const pulse = (Math.sin(ts / 600) + 1) / 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 9 + pulse * 6, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,255,255,${0.28 * (1 - pulse)})`;
+    ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.strokeStyle = moodColor(curF.energy, curF.valence, 1);
+    ctx.lineWidth = 2.5; ctx.stroke();
+  }
+
+  /* DL area — dashed rectangle matching actual query shape */
+  const { energy, valence, dl } = appState;
+  const r  = (dl / 20 + 0.05) * inner;
+  const tx = ex(energy), ty = vy(valence);
+  const rx = Math.max(PAD, tx - r),           ry = Math.max(PAD, ty - r);
+  const rw = Math.min(PAD + inner, tx + r) - rx;
+  const rh = Math.min(PAD + inner, ty + r) - ry;
+  ctx.fillStyle = '#00bcd40d'; ctx.fillRect(rx, ry, rw, rh);
+  ctx.strokeStyle = '#00bcd455'; ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]); ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
+
+  /* Target dot */
+  ctx.beginPath(); ctx.arc(tx, ty, 11, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.strokeStyle = moodColor(energy, valence, 1); ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+  ctx.fillStyle = moodColor(energy, valence, 1); ctx.fill();
+
+  ctx.restore();
+}
+
+async function fetchTrackFeatures(uris) {
+  const missing = [...new Set(uris)].filter(u => u && !(u in matrixFeatures));
+  if (!missing.length) return;
+  try {
+    const qs   = missing.slice(0, 40).map(u => 'uri=' + encodeURIComponent(u)).join('&');
+    const data = await fetch(API + '/track_features?' + qs).then(r => r.json());
+    Object.assign(matrixFeatures, data);
+  } catch(e) {}
+}
+
 /* ── Init ── */
 async function init() {
   ['energy', 'valence', 'dl'].forEach(setupDial);
   makeDraggable('energy', v => { appState.energy = v; });
   makeDraggable('valence', v => { appState.valence = v; });
   makeDraggable('dl',     v => { appState.dl = Math.round(v * 10); });
+  initMatrix();
 
   try {
     const s  = await fetch(API + '/mood').then(r => r.json());
