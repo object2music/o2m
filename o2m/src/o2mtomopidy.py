@@ -27,6 +27,7 @@ class O2mToMopidy:
 
     suffle = False
     max_results = 50
+    mood_queue_size = 25  # tracks queued by apply_mood_settings()
     default_volume = 70  # 0-100
     discover_level = 5  # 0-10
     podcast_newest_first = False
@@ -1053,7 +1054,7 @@ class O2mToMopidy:
             valence_target=self.mood_valence,
             radius=radius,
             genre_names=self.mood_genres or None,
-            limit=25,
+            limit=self.mood_queue_size,
         )
 
         if not uris:
