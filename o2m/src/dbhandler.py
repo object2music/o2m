@@ -525,6 +525,33 @@ class DatabaseHandler():
             print(f"get_sentinel_tracks_with_artist_genres error: {e}")
             return []
 
+    def get_spotify_tracks_without_features(self, limit=100):
+        """Return list of spotify:track: URIs where energy IS NULL or mood='_', ordered by play count."""
+        try:
+            rows = db.execute_sql("""
+                SELECT t.uri FROM track t
+                WHERE t.uri LIKE 'spotify:track:%%'
+                  AND (t.energy IS NULL OR t.mood = '_')
+                ORDER BY t.read_count_end DESC
+                LIMIT %s
+            """, (limit,))
+            return [r[0] for r in rows]
+        except Exception as e:
+            print(f"get_spotify_tracks_without_features error: {e}")
+            return []
+
+    def count_spotify_tracks_without_features(self):
+        try:
+            row = db.execute_sql("""
+                SELECT COUNT(*) FROM track
+                WHERE uri LIKE 'spotify:track:%%'
+                  AND (energy IS NULL OR mood = '_')
+            """).fetchone()
+            return row[0] if row else 0
+        except Exception as e:
+            print(f"count_spotify_tracks_without_features error: {e}")
+            return -1
+
     def update_track_mood(self, uri, mood):
         Track.update(mood=mood).where(Track.uri == uri).execute()
 

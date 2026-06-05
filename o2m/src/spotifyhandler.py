@@ -969,7 +969,7 @@ class SpotifyHandler:
     # ─── Cache health ──────────────────────────────────────────────────────────
 
     # TTL (days) between warmup runs per entity type
-    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14, 'moods': 30, 'mood_retry': 1}
+    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14, 'moods': 30, 'mood_retry': 1, 'spotify_features': 7}
 
     _MOOD_TAGS = {
         'calm':      {'ambient', 'calm', 'chill', 'chillout', 'relaxing', 'peaceful', 'mellow',
@@ -1646,6 +1646,74 @@ class SpotifyHandler:
 
         return None, None, None
 
+    def warmup_spotify_features(self, batch_size=100, max_batches=20):
+        """Fetch energy+valence from Spotify audio_features for all spotify:track: URIs.
+
+        Covers both NULL tracks and '_' sentinel tracks. 100 tracks per API call,
+        no sleep needed. Last.fm pipeline remains as fallback for local/non-Spotify tracks.
+        Returns (assigned, remaining) counts.
+        """
+        if not self.sp:
+            print("warmup_spotify_features: skipped (no Spotify connection)")
+            return 0, 0
+        if not self._db:
+            print("warmup_spotify_features: skipped (no DB)")
+            return 0, 0
+
+        total_assigned = 0
+        for batch_num in range(max_batches):
+            if self._is_rate_limited():
+                print("warmup_spotify_features: rate-limited, stopping")
+                break
+
+            uris = self._db.get_spotify_tracks_without_features(limit=batch_size)
+            if not uris:
+                self._db.set_cache_meta('warmup_spotify_features_at', 1)
+                print("warmup_spotify_features: all Spotify tracks have features, TTL set")
+                break
+
+            print(f"warmup_spotify_features: batch {batch_num+1}/{max_batches} — {len(uris)} tracks")
+            try:
+                features_list = self.sp.audio_features(uris)
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                else:
+                    print(f"warmup_spotify_features: Spotify error: {e}")
+                break
+            except Exception as e:
+                print(f"warmup_spotify_features: error: {e}")
+                break
+
+            batch_assigned = 0
+            for uri, features in zip(uris, features_list or []):
+                if not features:
+                    self._db.update_track_features(uri, mood='_')
+                    continue
+                energy = features.get('energy')
+                valence = features.get('valence')
+                if energy is None:
+                    self._db.update_track_features(uri, mood='_')
+                    continue
+                v = valence if valence is not None else 0.5
+                if energy > 0.5 and v > 0.5:
+                    mood = 'happy'
+                elif energy > 0.5:
+                    mood = 'energetic'
+                elif v > 0.5:
+                    mood = 'calm'
+                else:
+                    mood = 'dark'
+                self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
+                batch_assigned += 1
+
+            total_assigned += batch_assigned
+            print(f"warmup_spotify_features: batch done — {batch_assigned}/{len(uris)} assigned")
+
+        remaining = self._db.count_spotify_tracks_without_features()
+        print(f"warmup_spotify_features: session total {total_assigned} assigned, {remaining} remaining")
+        return total_assigned, remaining
+
     def warmup_track_moods(self, batch_size=50, max_batches=1):
         """Fetch Last.fm mood for tracks that don't have one yet.
 
@@ -1741,9 +1809,10 @@ class SpotifyHandler:
             ('albums',          self.warmup_saved_albums),
             ('artists',         self.get_all_followed_artists),   # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
-            ('genres',          self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
-            ('moods',           lambda: self.warmup_track_moods(batch_size=50, max_batches=5)),  # up to 250/startup
-            ('mood_retry',      lambda: self.warmup_retry_sentinels(batch_size=50, max_batches=2)),  # retry '_' with artist genres
+            ('genres',            self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
+            ('spotify_features',  lambda: self.warmup_spotify_features(batch_size=100, max_batches=5)),  # up to 500/startup via Spotify
+            ('moods',             lambda: self.warmup_track_moods(batch_size=50, max_batches=5)),  # up to 250/startup via Last.fm fallback
+            ('mood_retry',        lambda: self.warmup_retry_sentinels(batch_size=50, max_batches=2)),  # retry '_' with artist genres
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")

@@ -424,6 +424,21 @@ if __name__ == "__main__":
         from flask import jsonify
         return jsonify({'status': 'started', 'tracks_pending': pending})
 
+    @api.route('/api/warmup_spotify_features')
+    def api_warmup_spotify_features():
+        """Trigger Spotify audio_features warmup (background, up to 10k tracks per call)."""
+        import threading
+        o2mHandler.dbHandler.set_cache_meta('warmup_spotify_features_at', 0)
+        def _run():
+            try:
+                o2mHandler.spotifyHandler.warmup_spotify_features(batch_size=100, max_batches=100)
+            except Exception as e:
+                print(f"api_warmup_spotify_features error: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+        pending = o2mHandler.dbHandler.count_spotify_tracks_without_features()
+        from flask import jsonify
+        return jsonify({'status': 'started', 'tracks_pending': pending})
+
     # ── Mood interface ────────────────────────────────────────────────────────────
 
     @api.route('/api/mood', methods=['GET'])
