@@ -546,6 +546,15 @@ if __name__ == "__main__":
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
+    @api.route('/api/client_config')
+    def api_client_config():
+        from flask import jsonify, request as req
+        snap_port = os.environ.get('PORT_SNAPSERVER_HTTP', '6693')
+        host = req.host.split(':')[0]
+        return jsonify({
+            'snap_url': f'http://{host}:{snap_port}',
+        })
+
     @api.route('/tag_features')
     def tag_features_ui():
         from flask import send_from_directory

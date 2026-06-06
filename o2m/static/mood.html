@@ -396,6 +396,32 @@
     flex-shrink: 0; padding: 6px 14px 8px;
     font-size: 11px; color: var(--muted); text-align: center; min-height: 22px;
   }
+
+  /* ── Clear tracklist button ── */
+  #btn-clear-tl {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 13px; padding: 2px 6px; border-radius: 0; line-height: 1;
+    transition: color .15s, background .15s; flex-shrink: 0;
+  }
+  #btn-clear-tl:hover { color: var(--accent); background: var(--fill-2); }
+
+  /* ── Snapcast modal ── */
+  #snap-modal {
+    display: none; position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,.75); flex-direction: column;
+  }
+  #snap-modal.open { display: flex; }
+  #snap-modal-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; background: var(--surface); flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  #snap-modal-title { font-size: 13px; font-weight: 600; }
+  #snap-modal-close {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 20px; line-height: 1; padding: 4px 8px;
+  }
+  #snap-iframe { flex: 1; border: none; width: 100%; }
 </style>
 </head>
 <body>
@@ -409,6 +435,7 @@
     <div id="track-status-badge"></div>
     <div id="track-tags-row"><span id="track-ev"></span></div>
   </div>
+  <button id="btn-clear-tl" title="Vider la tracklist">⊘</button>
   <span id="tl-count-pill"></span>
   <div id="status-dot"></div>
 </div>
@@ -510,6 +537,7 @@
     <a class="footer-link" href="/stats">📊 Stats</a>
     <a class="footer-link" href="/tag_features">🏷 Tag features</a>
     <a class="footer-link" href="/mood">🎛 Mood</a>
+    <button class="footer-link" id="btn-snapcast">📻 Snapcast</button>
     <button class="footer-link" onclick="triggerWarmup('moods')">⚡ Warmup moods</button>
     <button class="footer-link" onclick="triggerWarmup('retry_sentinels')">🔁 Retry sentinels</button>
     <button class="footer-link" onclick="triggerWarmup('genres')">🎸 Warmup genres</button>
@@ -521,6 +549,14 @@
   </div>
 
 </div><!-- /scroll-area -->
+
+<div id="snap-modal">
+  <div id="snap-modal-bar">
+    <span id="snap-modal-title">📻 Snapcast</span>
+    <button id="snap-modal-close">✕</button>
+  </div>
+  <iframe id="snap-iframe" src="" allow="autoplay"></iframe>
+</div>
 
 <div id="matrix-tooltip">
   <div class="tt-name"></div>
@@ -536,6 +572,8 @@ const API = location.origin + '/api';
 let appState = { energy: 0.5, valence: 0.6, dl: 5, genres: [] };
 let applyTimer = null;
 let currentTlid = null;
+let currentTracklistLength = 0;
+let snapUrl = null;
 
 /* ── Dial geometry ── */
 const R = 42, CX = 55, CY = 55;
@@ -586,7 +624,13 @@ function makeDraggable(id, onChange) {
 }
 
 /* ── Apply ── */
+function shouldApplyMood() {
+  const hasActiveBox = !!document.querySelector('.box-btn.active');
+  return hasActiveBox || currentTracklistLength === 0;
+}
+
 function scheduleApply() {
+  if (!shouldApplyMood()) return;
   clearTimeout(applyTimer);
   applyTimer = setTimeout(applyMood, 1800);
 }
@@ -655,6 +699,7 @@ function renderTracklist(tracks, activeTlid) {
   const wrap = document.getElementById('tracklist-wrap');
   const count = document.getElementById('tracklist-count');
   wrap.innerHTML = '';
+  currentTracklistLength = tracks.length;
   count.textContent = tracks.length ? `${tracks.length} titres` : '';
   let scrollTarget = null;
   tracks.forEach(({tlid, track}, i) => {
@@ -1226,6 +1271,21 @@ async function fetchTrackFeatures(uris) {
   } catch(e) {}
 }
 
+/* ── Clear tracklist ── */
+async function clearTracklist() {
+  await rpc('core.tracklist.clear');
+  currentTracklistLength = 0;
+  setTimeout(refreshNowPlaying, 400);
+  setFeedback('Tracklist vidée');
+}
+
+/* ── Snapcast ── */
+function openSnapcast() {
+  if (!snapUrl) { setFeedback('URL Snapcast non disponible'); return; }
+  document.getElementById('snap-iframe').src = snapUrl;
+  document.getElementById('snap-modal').classList.add('open');
+}
+
 /* ── Init ── */
 /* ── Thèmes ── */
 function applyTheme(name) {
@@ -1250,6 +1310,19 @@ async function init() {
   makeDraggable('valence', v => { appState.valence = v; });
   makeDraggable('dl',     v => { appState.dl = Math.round(v * 10); });
   initMatrix();
+
+  document.getElementById('btn-clear-tl').addEventListener('click', clearTracklist);
+  document.getElementById('btn-snapcast').addEventListener('click', openSnapcast);
+  document.getElementById('snap-modal-close').addEventListener('click', () => {
+    document.getElementById('snap-modal').classList.remove('open');
+    document.getElementById('snap-iframe').src = '';
+  });
+
+  // Fetch client config (snap URL)
+  try {
+    const cfg = await fetch(API + '/client_config').then(r => r.json());
+    snapUrl = cfg.snap_url || null;
+  } catch(e) {}
 
   try {
     const s  = await fetch(API + '/mood').then(r => r.json());
