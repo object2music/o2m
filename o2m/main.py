@@ -553,6 +553,7 @@ if __name__ == "__main__":
         host = req.host.split(':')[0]
         return jsonify({
             'snap_url': f'http://{host}:{snap_port}',
+            'snap_ws_url': f'ws://{host}:{snap_port}',
         })
 
     @api.route('/tag_features')
