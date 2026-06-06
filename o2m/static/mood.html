@@ -6,27 +6,135 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1a1a2e">
 <title>O2M Mood</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script>
+  /* Applique le thème avant le rendu pour éviter le flash */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme')
+          || localStorage.getItem('o2m-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-  :root {
+
+  /* ════════════ THÈME : Sombre (défaut) ════════════ */
+  :root, [data-theme="dark"] {
     --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
-    --accent: #e94560; --text: #eaeaea; --muted: #8892a4;
+    --accent: #e94560; --accent-soft: #e9456022;
+    --text: #eaeaea; --muted: #8892a4;
+    --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff28;
+    --fill-1: #ffffff08; --fill-2: #ffffff12; --fill-3: #ffffff20;
+    --track-bg: #333;
+    --c-energy: #e94560; --c-valence: #7c4dff; --c-dl: #00bcd4; --dial-txt: #eaeaea;
+    --font: system-ui, sans-serif; --font-head: system-ui, sans-serif;
+    --head-transform: none; --head-weight: 700; --head-spacing: 0; --radius: 8px;
+    --eyebrow-mark: ""; --eyebrow-color: var(--accent);
+    /* matrice */
+    --mx-bg: #0b1829;
+    --mx-q-calm: #7c4dff14; --mx-q-happy: #ffd74018;
+    --mx-q-dark: #1a4a9022; --mx-q-energetic: #e9456014;
+    --mx-line: #ffffff1e; --mx-border: #ffffff18;
+    --mx-label: #ffffff30; --mx-axis: #ffffff44;
+    --mx-dl-fill: #00bcd40d; --mx-dl-stroke: #00bcd455;
+    --mx-dot-core: #ffffff; --mx-pulse: 255,255,255;
+    --mood-happy: 255,210,60; --mood-energetic: 233,69,96;
+    --mood-calm: 130,100,255; --mood-dark: 60,140,240;
   }
+
+  /* ════════════ THÈME : Crème (éditorial) ════════════ */
+  [data-theme="creme"] {
+    --bg: #f3efe6; --surface: #ece7db; --card: #e2dccb;
+    --accent: #e8462a; --accent-soft: #e8462a1f;
+    --text: #1a1a1a; --muted: #8a8578;
+    --border: #1a1a1a1f; --border-soft: #1a1a1a12; --border-strong: #1a1a1a2e;
+    --fill-1: #1a1a1a08; --fill-2: #1a1a1a10; --fill-3: #1a1a1a1a;
+    --track-bg: #d8d2c4;
+    --c-energy: #e8462a; --c-valence: #7c4dbe; --c-dl: #2e8b8b; --dial-txt: #1a1a1a;
+    --font: 'Archivo', system-ui, sans-serif; --font-head: 'Archivo', system-ui, sans-serif;
+    --head-transform: lowercase; --head-weight: 800; --head-spacing: -.01em; --radius: 4px;
+    --eyebrow-mark: "● "; --eyebrow-color: var(--accent);
+    --mx-bg: #ece7db;
+    --mx-q-calm: #7c4dbe14; --mx-q-happy: #d9a40022;
+    --mx-q-dark: #2c4a7016; --mx-q-energetic: #e8462a14;
+    --mx-line: #1a1a1a26; --mx-border: #1a1a1a2e;
+    --mx-label: #1a1a1a3a; --mx-axis: #1a1a1a55;
+    --mx-dl-fill: #2e8b8b14; --mx-dl-stroke: #2e8b8b66;
+    --mx-dot-core: #ffffff; --mx-pulse: 26,26,26;
+    --mood-happy: 217,164,0; --mood-energetic: 232,70,42;
+    --mood-calm: 124,77,190; --mood-dark: 44,74,112;
+  }
+
+  /* ════════════ THÈME : Mono (brut N&B) ════════════ */
+  [data-theme="mono"] {
+    --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
+    --accent: #111111; --accent-soft: #1111111a;
+    --text: #000000; --muted: #9a9a9a;
+    --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
+    --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
+    --track-bg: #e2e2e2;
+    --c-energy: #111111; --c-valence: #ff3b00; --c-dl: #888888; --dial-txt: #000000;
+    --font: 'Archivo', system-ui, sans-serif; --font-head: 'Archivo', system-ui, sans-serif;
+    --head-transform: uppercase; --head-weight: 800; --head-spacing: -.02em; --radius: 0px;
+    --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
+    --mx-bg: #ffffff;
+    --mx-q-calm: #00000008; --mx-q-happy: #00000010;
+    --mx-q-dark: #00000016; --mx-q-energetic: #ff3b000f;
+    --mx-line: #00000022; --mx-border: #00000033;
+    --mx-label: #00000033; --mx-axis: #00000055;
+    --mx-dl-fill: #00000008; --mx-dl-stroke: #000000aa;
+    --mx-dot-core: #ffffff; --mx-pulse: 0,0,0;
+    --mood-happy: 60,60,60; --mood-energetic: 255,59,0;
+    --mood-calm: 140,140,140; --mood-dark: 20,20,20;
+  }
+
   html, body { height: 100%; }
-  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
-         display: flex; flex-direction: column; overflow: hidden; height: 100dvh; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font);
+         display: flex; flex-direction: column; overflow: hidden; height: 100dvh;
+         transition: background .25s, color .25s; }
+
+
+  /* Couleurs des potentiomètres (override des attributs SVG inline) */
+  #fill-energy  { stroke: var(--c-energy);  }
+  #knob-energy  { fill:   var(--c-energy);  }
+  #fill-valence { stroke: var(--c-valence); }
+  #knob-valence { fill:   var(--c-valence); }
+  #fill-dl      { stroke: var(--c-dl);      }
+  #knob-dl      { fill:   var(--c-dl);      }
+  .dial-svg text { fill: var(--dial-txt); }
+
+  /* Marqueur éditorial devant les libellés de section */
+  #boxes-panel-label::before,
+  #genres-label::before,
+  #tracklist-label > span:first-child::before {
+    content: var(--eyebrow-mark, ""); color: var(--eyebrow-color, var(--accent));
+  }
+
+  /* Sélecteur de thème */
+  #theme-switcher { display: flex; gap: 6px; margin-left: auto; }
+  .theme-chip {
+    font-size: 11px; cursor: pointer; padding: 3px 11px; border-radius: 20px;
+    background: var(--fill-1); border: 1px solid var(--border); color: var(--muted);
+    transition: all .15s; font-family: var(--font);
+  }
+  .theme-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  [data-theme="mono"] .theme-chip.active { color: #fff; }
 
   /* ── Now Playing ── */
   #now-playing {
     display: flex; align-items: flex-start; gap: 14px;
     padding: 12px 16px; background: var(--surface);
-    border-bottom: 1px solid #ffffff18; flex-shrink: 0;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   #cover { width: 112px; height: 112px; border-radius: 8px; object-fit: cover;
            background: var(--card); flex-shrink: 0; }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
-  #track-name { font-size: 17px; font-weight: 600; white-space: nowrap;
-                overflow: hidden; text-overflow: ellipsis; }
+  #track-name { font-size: 17px; white-space: nowrap;
+                overflow: hidden; text-overflow: ellipsis;
+                font-family: var(--font-head); font-weight: var(--head-weight);
+                text-transform: var(--head-transform); letter-spacing: var(--head-spacing); }
   #artist-name { font-size: 14px; color: var(--muted); margin-top: 3px;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #status-dot { width: 8px; height: 8px; border-radius: 50%;
@@ -38,7 +146,7 @@
     display: inline-block; margin-top: 5px;
     font-size: 11px; font-weight: 600; letter-spacing: .04em;
     padding: 2px 8px; border-radius: 10px;
-    background: #ffffff18; color: var(--muted);
+    background: var(--border); color: var(--muted);
     text-transform: uppercase; transition: background .2s, color .2s;
   }
   #track-status-badge.s-library   { background: #1565c066; color: #4fc3f7; }
@@ -51,7 +159,7 @@
 
   /* tracklist count pill */
   #tl-count-pill {
-    font-size: 11px; color: var(--muted); background: #ffffff12;
+    font-size: 11px; color: var(--muted); background: var(--fill-2);
     padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
     white-space: nowrap;
   }
@@ -65,7 +173,7 @@
   #volume-slider {
     flex: 1; -webkit-appearance: none; appearance: none;
     height: 4px; border-radius: 2px; outline: none; cursor: pointer;
-    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--vol-pct, 50%), #ffffff28 var(--vol-pct, 50%));
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--vol-pct, 50%), var(--border-strong) var(--vol-pct, 50%));
   }
   #volume-slider::-webkit-slider-thumb {
     -webkit-appearance: none; width: 14px; height: 14px;
@@ -82,35 +190,35 @@
   #track-tags-row::-webkit-scrollbar { display: none; }
   .tag-chip {
     padding: 2px 9px; border-radius: 8px; font-size: 12px;
-    border: 1px solid #ffffff18; color: var(--muted);
+    border: 1px solid var(--border); color: var(--muted);
     white-space: nowrap; flex-shrink: 0;
   }
   #track-ev {
     font-size: 12px; color: var(--muted); white-space: nowrap;
-    flex-shrink: 0; padding-left: 7px; border-left: 1px solid #ffffff18;
+    flex-shrink: 0; padding-left: 7px; border-left: 1px solid var(--border);
   }
 
   /* ── Controls ── */
   #controls {
     display: flex; justify-content: center; align-items: center; gap: 28px;
     padding: 10px 16px; background: var(--surface);
-    border-bottom: 1px solid #ffffff18; flex-shrink: 0;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   .ctrl-btn {
     background: none; border: none; color: var(--text); cursor: pointer;
     font-size: 30px; line-height: 1; padding: 8px; border-radius: 50%;
     transition: background .15s, transform .1s;
   }
-  .ctrl-btn:active { background: #ffffff20; transform: scale(.92); }
+  .ctrl-btn:active { background: var(--fill-3); transform: scale(.92); }
   #btn-play { font-size: 40px; color: var(--accent); }
 
   /* ── Progress bar ── */
   #progress-wrap {
     padding: 6px 16px 2px; background: var(--surface);
-    border-bottom: 1px solid #ffffff18; flex-shrink: 0;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
   #progress-bar {
-    height: 3px; background: #333; border-radius: 2px;
+    height: 3px; background: var(--track-bg); border-radius: 2px;
     cursor: pointer; position: relative;
   }
   #progress-fill {
@@ -138,7 +246,7 @@
                 letter-spacing: .08em; text-align: center; }
   .dial-svg { touch-action: none; cursor: grab; display: block; }
   .dial-svg:active { cursor: grabbing; }
-  .dial-track { fill: none; stroke: #ffffff18; stroke-width: 8; stroke-linecap: round; }
+  .dial-track { fill: none; stroke: var(--border); stroke-width: 8; stroke-linecap: round; }
   .dial-fill  { fill: none; stroke-width: 8; stroke-linecap: round;
                 transition: stroke-dashoffset .05s; }
   .dial-sub { font-size: 11px; color: var(--muted); text-align: center; }
@@ -146,7 +254,7 @@
   /* ── 3-column layout ── */
   #main-cols { display: flex; flex-direction: column; }
   #left-panel { display: flex; flex-direction: column; }
-  #boxes-panel { padding: 12px 14px; border-top: 1px solid #ffffff0c; }
+  #boxes-panel { padding: 12px 14px; border-top: 1px solid var(--border-soft); }
   #boxes-panel-label {
     font-size: 12px; color: var(--muted); text-transform: uppercase;
     letter-spacing: .08em; margin-bottom: 10px;
@@ -154,25 +262,25 @@
   #boxes-wrap { display: flex; flex-direction: column; gap: 6px; }
   .box-btn {
     padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
-    border: 1px solid #ffffff18; background: #ffffff08; color: var(--muted);
+    border: 1px solid var(--border); background: var(--fill-1); color: var(--muted);
     cursor: pointer; transition: all .15s; text-align: left;
     display: flex; align-items: center; gap: 7px; width: 100%;
   }
   .box-btn .box-icon { font-size: 15px; flex-shrink: 0; }
-  .box-btn.active { background: #e9456022; border-color: var(--accent); color: #fff; }
+  .box-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
   .box-btn.active .box-icon { color: var(--accent); }
   .box-btn:active { transform: scale(.98); }
   .box-btn:disabled { opacity: .5; cursor: wait; }
 
   @media (min-width: 700px) {
     #main-cols { flex-direction: row; align-items: flex-start; }
-    #boxes-panel { flex: 1; border-top: none; border-right: 1px solid #ffffff0c;
+    #boxes-panel { flex: 1; border-top: none; border-right: 1px solid var(--border-soft);
                    padding: 14px 12px; min-height: 300px; }
-    #left-panel  { flex: 2; border-right: 1px solid #ffffff0c; }
+    #left-panel  { flex: 2; border-right: 1px solid var(--border-soft); }
     #tracklist-col { flex: 1; overflow-y: auto; }
     #dials { padding: 12px 10px 6px; }
     #matrix-section { padding: 4px 10px 8px; min-width: 0; }
-    #genres-section { padding: 8px 10px 10px; border-top: 1px solid #ffffff0c; }
+    #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border-soft); }
     #tracklist-section { padding: 12px 12px 6px; }
   }
 
@@ -185,7 +293,7 @@
   /* ── Matrix tooltip ── */
   #matrix-tooltip {
     position: fixed; display: none; pointer-events: none; z-index: 200;
-    background: var(--surface); border: 1px solid #ffffff28; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 8px;
     padding: 8px 12px; max-width: 200px;
     box-shadow: 0 4px 20px #00000070;
   }
@@ -203,7 +311,7 @@
   #genres-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
   .genre-chip {
     padding: 5px 13px; border-radius: 20px; font-size: 13px; font-weight: 500;
-    border: 1px solid #ffffff28; background: none; color: var(--muted);
+    border: 1px solid var(--border-strong); background: none; color: var(--muted);
     cursor: pointer; transition: all .15s;
   }
   .genre-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -223,7 +331,7 @@
     padding: 9px 12px; border-radius: 6px; cursor: pointer;
     transition: background .12s;
   }
-  .tl-item:active { background: #ffffff10; }
+  .tl-item:active { background: var(--fill-2); }
   .tl-item.current { background: var(--card); }
   .tl-item.current .tl-name { color: var(--accent); }
   .tl-num { font-size: 12px; color: var(--muted); min-width: 20px; text-align: right; flex-shrink: 0; }
@@ -248,16 +356,16 @@
 
   /* ── Footer links ── */
   #footer-links {
-    padding: 12px 14px 20px; border-top: 1px solid #ffffff0c;
+    padding: 12px 14px 20px; border-top: 1px solid var(--border-soft);
     display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
   }
   .footer-link {
     font-size: 11px; color: var(--muted); text-decoration: none;
     padding: 3px 10px; border-radius: 10px;
-    background: #ffffff08; border: 1px solid #ffffff14;
+    background: var(--fill-1); border: 1px solid var(--border);
     transition: background .15s; white-space: nowrap;
   }
-  .footer-link:hover { background: #ffffff18; color: var(--text); }
+  .footer-link:hover { background: var(--border); color: var(--text); }
   button.footer-link { cursor: pointer; }
 
   /* ── Feedback ── */
@@ -382,6 +490,11 @@
     <button class="footer-link" onclick="triggerWarmup('moods')">⚡ Warmup moods</button>
     <button class="footer-link" onclick="triggerWarmup('retry_sentinels')">🔁 Retry sentinels</button>
     <button class="footer-link" onclick="triggerWarmup('genres')">🎸 Warmup genres</button>
+    <div id="theme-switcher">
+      <button class="theme-chip" data-theme-set="dark">Sombre</button>
+      <button class="theme-chip" data-theme-set="creme">Crème</button>
+      <button class="theme-chip" data-theme-set="mono">Mono</button>
+    </div>
   </div>
 
 </div><!-- /scroll-area -->
@@ -720,16 +833,37 @@ document.getElementById('volume-slider').addEventListener('input', e => {
 
 /* ── MATRIX energy × valence ── */
 const PAD = 28;
+const MX_FONT = 'Archivo, system-ui, sans-serif';
 let matrixFeatures = {};   // uri → {energy, valence}
 let matrixTlItems  = [];   // [{uri, tlid}]
 let matrixCurUri   = null;
 let matrixMode     = 'move'; // 'move' | 'resize'
 
+/* Couleurs lues depuis les variables CSS du thème courant */
+let themeColors = {};
+function readThemeColors() {
+  const s = getComputedStyle(document.documentElement);
+  const g = n => s.getPropertyValue(n).trim();
+  themeColors = {
+    bg: g('--mx-bg'),
+    qCalm: g('--mx-q-calm'), qHappy: g('--mx-q-happy'),
+    qDark: g('--mx-q-dark'), qEnergetic: g('--mx-q-energetic'),
+    line: g('--mx-line'), border: g('--mx-border'),
+    label: g('--mx-label'), axis: g('--mx-axis'),
+    dlFill: g('--mx-dl-fill'), dlStroke: g('--mx-dl-stroke'),
+    dotCore: g('--mx-dot-core') || '#fff', pulse: g('--mx-pulse') || '255,255,255',
+    happy: g('--mood-happy'), energetic: g('--mood-energetic'),
+    calm: g('--mood-calm'), dark: g('--mood-dark'),
+  };
+}
+
 function moodColor(e, v, a = 1) {
-  if (e > 0.5 && v > 0.5) return `rgba(255,210,60,${a})`;   // happy
-  if (e > 0.5)             return `rgba(233,69,96,${a})`;    // energetic
-  if (v > 0.5)             return `rgba(130,100,255,${a})`;  // calm
-  return                          `rgba(60,140,240,${a})`;   // dark
+  let t;
+  if (e > 0.5 && v > 0.5) t = themeColors.happy;      // happy
+  else if (e > 0.5)        t = themeColors.energetic;  // energetic
+  else if (v > 0.5)        t = themeColors.calm;       // calm
+  else                     t = themeColors.dark;       // dark
+  return `rgba(${t || '120,120,120'},${a})`;
 }
 
 function initMatrix() {
@@ -823,39 +957,39 @@ function drawMatrix(ts) {
   ctx.clearRect(0, 0, W, H);
 
   /* Background */
-  ctx.fillStyle = '#0b1829';
+  ctx.fillStyle = themeColors.bg || '#0b1829';
   ctx.beginPath(); ctx.roundRect(0, 0, W, H, 8); ctx.fill();
 
   const mx = PAD + inner / 2, my = PAD + inner / 2;
 
   /* Quadrant fills */
   [
-    [PAD, PAD, inner/2, inner/2, '#7c4dff14'], // calm      top-left
-    [mx,  PAD, inner/2, inner/2, '#ffd74018'], // happy     top-right
-    [PAD, my,  inner/2, inner/2, '#1a4a9022'], // dark      bottom-left
-    [mx,  my,  inner/2, inner/2, '#e9456014'], // energetic bottom-right
+    [PAD, PAD, inner/2, inner/2, themeColors.qCalm],      // calm      top-left
+    [mx,  PAD, inner/2, inner/2, themeColors.qHappy],     // happy     top-right
+    [PAD, my,  inner/2, inner/2, themeColors.qDark],      // dark      bottom-left
+    [mx,  my,  inner/2, inner/2, themeColors.qEnergetic], // energetic bottom-right
   ].forEach(([x, y, w, h, c]) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); });
 
   /* Center lines */
-  ctx.strokeStyle = '#ffffff1e'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+  ctx.strokeStyle = themeColors.line; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
   ctx.beginPath();
   ctx.moveTo(mx, PAD); ctx.lineTo(mx, PAD + inner);
   ctx.moveTo(PAD, my); ctx.lineTo(PAD + inner, my);
   ctx.stroke(); ctx.setLineDash([]);
 
   /* Inner border */
-  ctx.strokeStyle = '#ffffff18'; ctx.lineWidth = 1;
+  ctx.strokeStyle = themeColors.border; ctx.lineWidth = 1;
   ctx.strokeRect(PAD, PAD, inner, inner);
 
   /* Quadrant labels */
-  ctx.font = '600 13px system-ui'; ctx.fillStyle = '#ffffff30'; ctx.textAlign = 'center';
+  ctx.font = '600 13px ' + MX_FONT; ctx.fillStyle = themeColors.label; ctx.textAlign = 'center';
   ctx.fillText('CALM',       PAD + inner * 0.25, PAD + 17);
   ctx.fillText('HAPPY',      PAD + inner * 0.75, PAD + 17);
   ctx.fillText('DARK',       PAD + inner * 0.25, PAD + inner - 6);
   ctx.fillText('ENERGETIC',  PAD + inner * 0.75, PAD + inner - 6);
 
   /* Axis labels */
-  ctx.font = '11px system-ui'; ctx.fillStyle = '#ffffff44';
+  ctx.font = '11px ' + MX_FONT; ctx.fillStyle = themeColors.axis;
   ctx.textAlign = 'left';   ctx.fillText('◀ Calme',   2, my + 4);
   ctx.textAlign = 'right';  ctx.fillText('Intense ▶', W - 2, my + 4);
   ctx.textAlign = 'center';
@@ -879,10 +1013,10 @@ function drawMatrix(ts) {
     const pulse = (Math.sin(ts / 600) + 1) / 2;
     ctx.beginPath();
     ctx.arc(cx, cy, 9 + pulse * 6, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(255,255,255,${0.28 * (1 - pulse)})`;
+    ctx.strokeStyle = `rgba(${themeColors.pulse},${0.28 * (1 - pulse)})`;
     ctx.lineWidth = 2; ctx.stroke();
     ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2);
-    ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.fillStyle = themeColors.dotCore; ctx.fill();
     ctx.strokeStyle = moodColor(curF.energy, curF.valence, 1);
     ctx.lineWidth = 2.5; ctx.stroke();
   }
@@ -894,13 +1028,13 @@ function drawMatrix(ts) {
   const rx = Math.max(PAD, tx - r),           ry = Math.max(PAD, ty - r);
   const rw = Math.min(PAD + inner, tx + r) - rx;
   const rh = Math.min(PAD + inner, ty + r) - ry;
-  ctx.fillStyle = '#00bcd40d'; ctx.fillRect(rx, ry, rw, rh);
-  ctx.strokeStyle = '#00bcd455'; ctx.lineWidth = 1.5;
+  ctx.fillStyle = themeColors.dlFill; ctx.fillRect(rx, ry, rw, rh);
+  ctx.strokeStyle = themeColors.dlStroke; ctx.lineWidth = 1.5;
   ctx.setLineDash([5, 4]); ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
 
   /* Target dot */
   ctx.beginPath(); ctx.arc(tx, ty, 11, 0, Math.PI * 2);
-  ctx.fillStyle = '#fff'; ctx.fill();
+  ctx.fillStyle = themeColors.dotCore; ctx.fill();
   ctx.strokeStyle = moodColor(energy, valence, 1); ctx.lineWidth = 3; ctx.stroke();
   ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2);
   ctx.fillStyle = moodColor(energy, valence, 1); ctx.fill();
@@ -1070,7 +1204,24 @@ async function fetchTrackFeatures(uris) {
 }
 
 /* ── Init ── */
+/* ── Thèmes ── */
+function applyTheme(name) {
+  document.documentElement.setAttribute('data-theme', name);
+  localStorage.setItem('o2m-theme', name);
+  document.querySelectorAll('.theme-chip').forEach(c =>
+    c.classList.toggle('active', c.dataset.themeSet === name));
+  readThemeColors();
+}
+function setupThemeSwitcher() {
+  document.querySelectorAll('.theme-chip').forEach(c =>
+    c.addEventListener('click', () => applyTheme(c.dataset.themeSet)));
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current);
+}
+
 async function init() {
+  readThemeColors();
+  setupThemeSwitcher();
   ['energy', 'valence', 'dl'].forEach(setupDial);
   makeDraggable('energy', v => { appState.energy = v; });
   makeDraggable('valence', v => { appState.valence = v; });
