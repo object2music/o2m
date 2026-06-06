@@ -848,19 +848,19 @@ function drawMatrix(ts) {
   ctx.strokeRect(PAD, PAD, inner, inner);
 
   /* Quadrant labels */
-  ctx.font = '9px system-ui'; ctx.fillStyle = '#ffffff30'; ctx.textAlign = 'center';
-  ctx.fillText('CALM',       PAD + inner * 0.25, PAD + 13);
-  ctx.fillText('HAPPY',      PAD + inner * 0.75, PAD + 13);
-  ctx.fillText('DARK',       PAD + inner * 0.25, PAD + inner - 5);
-  ctx.fillText('ENERGETIC',  PAD + inner * 0.75, PAD + inner - 5);
+  ctx.font = '600 13px system-ui'; ctx.fillStyle = '#ffffff30'; ctx.textAlign = 'center';
+  ctx.fillText('CALM',       PAD + inner * 0.25, PAD + 17);
+  ctx.fillText('HAPPY',      PAD + inner * 0.75, PAD + 17);
+  ctx.fillText('DARK',       PAD + inner * 0.25, PAD + inner - 6);
+  ctx.fillText('ENERGETIC',  PAD + inner * 0.75, PAD + inner - 6);
 
   /* Axis labels */
-  ctx.font = '8px system-ui'; ctx.fillStyle = '#ffffff44';
+  ctx.font = '11px system-ui'; ctx.fillStyle = '#ffffff44';
   ctx.textAlign = 'left';   ctx.fillText('◀ Calme',   2, my + 4);
   ctx.textAlign = 'right';  ctx.fillText('Intense ▶', W - 2, my + 4);
   ctx.textAlign = 'center';
-  ctx.fillText('▲ Joyeux', mx, 9);
-  ctx.fillText('▼ Sombre', mx, PAD + inner + PAD - 3);
+  ctx.fillText('▲ Joyeux', mx, 12);
+  ctx.fillText('▼ Sombre', mx, PAD + inner + PAD - 2);
 
   /* Tracklist dots */
   matrixTlItems.forEach(({ uri, tlid }) => {
