@@ -8,7 +8,7 @@
 <title>O2M Mood</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&display=swap" rel="stylesheet">
 <script>
   /* Applique le thème avant le rendu pour éviter le flash */
   (function () {
@@ -53,8 +53,9 @@
     --fill-1: #1a1a1a08; --fill-2: #1a1a1a10; --fill-3: #1a1a1a1a;
     --track-bg: #d8d2c4;
     --c-energy: #e8462a; --c-valence: #7c4dbe; --c-dl: #2e8b8b; --dial-txt: #1a1a1a;
-    --font: 'Archivo', system-ui, sans-serif; --font-head: 'Archivo', system-ui, sans-serif;
-    --head-transform: lowercase; --head-weight: 800; --head-spacing: -.01em; --radius: 4px;
+    --font: 'Archivo', system-ui, sans-serif;
+    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
+    --head-transform: lowercase; --head-weight: 700; --head-spacing: -.01em; --radius: 4px;
     --eyebrow-mark: "● "; --eyebrow-color: var(--accent);
     --mx-bg: #ece7db;
     --mx-q-calm: #7c4dbe14; --mx-q-happy: #d9a40022;
@@ -76,8 +77,9 @@
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
     --track-bg: #e2e2e2;
     --c-energy: #111111; --c-valence: #ff3b00; --c-dl: #888888; --dial-txt: #000000;
-    --font: 'Archivo', system-ui, sans-serif; --font-head: 'Archivo', system-ui, sans-serif;
-    --head-transform: uppercase; --head-weight: 800; --head-spacing: -.02em; --radius: 0px;
+    --font: 'Archivo', system-ui, sans-serif;
+    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
+    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
     --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
     --mx-bg: #f4f4f4;
     --mx-q-calm: #00000007; --mx-q-happy: #0000000f;
@@ -141,9 +143,9 @@
                 background: var(--muted); flex-shrink: 0; transition: background .3s; }
   #status-dot.playing { background: #4caf50; }
 
-  /* track status badge */
+  /* track status badge — masqué (info track sous le titre) */
   #track-status-badge {
-    display: inline-block; margin-top: 5px;
+    display: none; margin-top: 5px;
     font-size: 11px; font-weight: 600; letter-spacing: .04em;
     padding: 2px 8px; border-radius: 0;
     background: var(--border); color: var(--muted);
@@ -262,15 +264,15 @@
   }
   #boxes-wrap { display: flex; flex-direction: column; gap: 6px; }
   .box-btn {
-    padding: 8px 14px; border-radius: 0; font-size: 13px; font-weight: 500;
-    border: none; background: var(--fill-1); color: var(--muted);
-    cursor: pointer; transition: all .15s; text-align: left;
-    display: flex; align-items: center; gap: 7px; width: 100%;
+    padding: 6px 0; border-radius: 0; font-size: 13px; font-weight: 500;
+    border: none; background: none; color: var(--muted);
+    cursor: pointer; transition: color .15s, opacity .15s; text-align: left;
+    display: flex; align-items: center; gap: 8px; width: 100%;
   }
-  .box-btn .box-icon { font-size: 15px; flex-shrink: 0; }
-  .box-btn.active { background: var(--accent-soft); color: var(--text); font-weight: 700; }
-  .box-btn.active .box-icon { color: var(--accent); }
-  .box-btn:active { transform: scale(.98); }
+  .box-btn .box-icon { font-size: 15px; flex-shrink: 0; opacity: .7; }
+  .box-btn.active { color: var(--text); font-weight: 700; }
+  .box-btn.active .box-icon { color: var(--accent); opacity: 1; }
+  .box-btn:active { opacity: .6; }
   .box-btn:disabled { opacity: .5; cursor: wait; }
 
   @media (min-width: 700px) {
