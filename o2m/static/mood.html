@@ -974,10 +974,14 @@ async function toggleBox(uid, btn) {
 }
 
 /* ── Track tags bar ── */
+let lastTagsUri = null;
+
 async function fetchAndRenderTrackTags(uri) {
+  if (uri === lastTagsUri) return; // Same track — skip re-render
+  lastTagsUri = uri;
+
   const bar = document.getElementById('track-tags-row');
   const evEl = document.getElementById('track-ev');
-  // Clear previous tags (keep evEl)
   [...bar.querySelectorAll('.tag-chip')].forEach(el => el.remove());
   evEl.textContent = '';
 
@@ -995,11 +999,11 @@ async function fetchAndRenderTrackTags(uri) {
 
   // Energy/valence from matrixFeatures (may need a short wait for the fetch to complete)
   function updateEV() {
+    if (lastTagsUri !== uri) return; // Track changed since we started
     const f = matrixFeatures[uri];
     if (f) evEl.textContent = `⚡ ${f.energy.toFixed(2)} · ☀ ${f.valence.toFixed(2)}`;
   }
   updateEV();
-  // Retry once after features fetch completes
   setTimeout(updateEV, 1200);
 }
 

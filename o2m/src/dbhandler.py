@@ -549,6 +549,21 @@ class DatabaseHandler():
             print(f"get_all_sentinel_tracks error: {e}")
             return []
 
+    def get_artist_genres_for_track(self, track_uri):
+        """Return genre name strings for the primary artist of a track (ArtistGenre fallback)."""
+        try:
+            rows = db.execute_sql("""
+                SELECT g.name FROM genre g
+                JOIN artistgenre ag ON ag.genre_id = g.id
+                JOIN trackartist ta ON ta.artist_id = ag.artist_id
+                WHERE ta.track_uri = %s AND ta.position = 0
+                ORDER BY g.name
+            """, (track_uri,))
+            return [r[0] for r in rows]
+        except Exception as e:
+            print(f"get_artist_genres_for_track error: {e}")
+            return []
+
     def get_spotify_tracks_without_features(self, limit=100):
         """Return list of spotify:track: URIs where energy IS NULL or mood='_', ordered by play count."""
         try:

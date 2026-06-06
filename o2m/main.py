@@ -431,6 +431,10 @@ if __name__ == "__main__":
         if not uri:
             return jsonify([])
         tags = o2mHandler.dbHandler.get_track_genres(uri)  # [(name, weight)]
+        if not tags:
+            # Fallback: artist-level genres (weight=1, no specific track data)
+            genres = o2mHandler.dbHandler.get_artist_genres_for_track(uri)
+            tags = [(name, 1) for name in genres]
         return jsonify([{'name': name, 'weight': weight}
                         for name, weight in sorted(tags, key=lambda x: -x[1])])
 
