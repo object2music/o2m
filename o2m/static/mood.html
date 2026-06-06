@@ -1285,120 +1285,7 @@ async function clearTracklist() {
   setFeedback('Tracklist vidée');
 }
 
-/* ── SnapPlayer — client WebSocket PCM (protocole Snapcast binaire) ── */
-class SnapPlayer {
-  constructor() {
-    this.ws = null; this.ctx = null; this.gainNode = null;
-    this.sampleRate = 48000; this.channels = 2;
-    this.playTime = 0; this.msgId = 0; this.syncTimer = null; this.active = false;
-    this.uid = (() => {
-      let id = localStorage.getItem('o2m-snap-uid');
-      if (!id) { id = Math.random().toString(36).slice(2); localStorage.setItem('o2m-snap-uid', id); }
-      return id;
-    })();
-  }
-
-  start(wsUrl) {
-    this.active = true; this.wsUrl = wsUrl;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC({ latencyHint: 'playback' });
-    this.ctx.resume();
-    this.gainNode = this.ctx.createGain();
-    this.gainNode.connect(this.ctx.destination);
-    this.playTime = this.ctx.currentTime + 1.0;
-    this._connect();
-  }
-
-  stop() {
-    this.active = false;
-    clearInterval(this.syncTimer);
-    if (this.ws) { this.ws.onclose = null; this.ws.close(); this.ws = null; }
-    if (this.ctx) { this.ctx.close().catch(() => {}); this.ctx = null; }
-  }
-
-  _connect() {
-    if (!this.active) return;
-    try {
-      this.ws = new WebSocket(this.wsUrl + '/stream');
-      this.ws.binaryType = 'arraybuffer';
-      this.ws.onopen = () => {
-        this._sendHello();
-        clearInterval(this.syncTimer);
-        this.syncTimer = setInterval(() => this._syncTime(), 1000);
-        setFeedback('📻 Connecté');
-      };
-      this.ws.onmessage = (ev) => this._onMsg(ev.data);
-      this.ws.onerror = () => {};
-      this.ws.onclose = () => {
-        clearInterval(this.syncTimer);
-        if (this.active) { setFeedback('📻 Reconnexion…'); setTimeout(() => this._connect(), 2000); }
-      };
-    } catch(e) { setFeedback('📻 Erreur: ' + e.message); }
-  }
-
-  _onMsg(buf) {
-    const v = new DataView(buf);
-    const type = v.getUint16(0, true);
-    if (type === 1) {
-      const clen = v.getInt32(26, true);
-      const codec = new TextDecoder().decode(buf.slice(30, 30 + clen));
-      if (codec !== 'pcm') { setFeedback('📻 Codec non supporté: ' + codec); this.stop(); _snapBtnOff(); return; }
-      const wv = new DataView(buf, 34 + clen);
-      this.channels = wv.getUint16(22, true);
-      this.sampleRate = wv.getUint32(24, true);
-      setFeedback('📻 En écoute');
-    } else if (type === 2) {
-      if (!this.ctx) return;
-      const s16 = new Int16Array(buf, 38);
-      const frames = s16.length / this.channels;
-      const ab = this.ctx.createBuffer(this.channels, frames, this.sampleRate);
-      for (let ch = 0; ch < this.channels; ch++) {
-        const d = ab.getChannelData(ch);
-        for (let i = 0; i < frames; i++) d[i] = s16[i * this.channels + ch] / 32768;
-      }
-      const src = this.ctx.createBufferSource();
-      src.buffer = ab; src.connect(this.gainNode);
-      const when = Math.max(this.ctx.currentTime + 0.05, this.playTime);
-      src.start(when);
-      this.playTime = when + frames / this.sampleRate;
-    } else if (type === 3) {
-      const slen = v.getUint32(26, true);
-      const cfg = JSON.parse(new TextDecoder().decode(buf.slice(30, 30 + slen)));
-      if (this.gainNode) this.gainNode.gain.value = cfg.muted ? 0 : cfg.volume / 100;
-    }
-  }
-
-  _sendHello() {
-    this._sendJson(5, {
-      MAC: '00:00:00:00:00:00', HostName: 'O2M-mood', Version: '0.26.0',
-      ClientName: 'O2MMood', OS: 'web', Arch: 'web', Instance: 1,
-      ID: this.uid, SnapStreamProtocolVersion: 2
-    });
-  }
-
-  _syncTime() {
-    const now = performance.now();
-    const buf = new ArrayBuffer(34);
-    const v = new DataView(buf);
-    v.setUint16(0, 4, true); v.setUint16(2, ++this.msgId, true);
-    v.setUint32(22, 34, true);
-    v.setInt32(26, Math.floor(now / 1000), true);
-    v.setInt32(30, Math.round((now % 1000) * 1000), true);
-    if (this.ws?.readyState === 1) this.ws.send(buf);
-  }
-
-  _sendJson(type, json) {
-    const bytes = new TextEncoder().encode(JSON.stringify(json));
-    const buf = new ArrayBuffer(30 + bytes.length);
-    const v = new DataView(buf);
-    v.setUint16(0, type, true); v.setUint16(2, ++this.msgId, true);
-    v.setUint32(22, 30 + bytes.length, true);
-    v.setUint32(26, bytes.length, true);
-    new Uint8Array(buf, 30).set(bytes);
-    if (this.ws?.readyState === 1) this.ws.send(buf);
-  }
-}
-
+/* ── Snapcast — wrapper autour de SnapStream (bundle Iris/snapstream.ts) ── */
 function _snapBtnOff() {
   const btn = document.getElementById('btn-snapcast');
   btn.textContent = '📻 Snapcast'; btn.classList.remove('playing');
@@ -1406,14 +1293,15 @@ function _snapBtnOff() {
 
 function toggleSnapcast() {
   const btn = document.getElementById('btn-snapcast');
-  if (snapPlayer?.active) {
+  if (snapPlayer) {
     snapPlayer.stop(); snapPlayer = null;
     _snapBtnOff(); setFeedback('📻 Arrêté');
   } else {
     if (!snapWsUrl) { setFeedback('Snapcast non configuré'); return; }
-    snapPlayer = new SnapPlayer();
-    snapPlayer.start(snapWsUrl);
+    if (!window.SnapStream) { setFeedback('Module Snapcast non chargé'); return; }
+    snapPlayer = new window.SnapStream(snapWsUrl);
     btn.textContent = '📻 ●'; btn.classList.add('playing');
+    setFeedback('📻 Connexion…');
   }
 }
 
@@ -1487,5 +1375,6 @@ function setFeedback(msg) {
 
 init();
 </script>
+<script src="/static/snapstream.bundle.js"></script>
 </body>
 </html>
