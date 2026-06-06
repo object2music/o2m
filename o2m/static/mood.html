@@ -104,6 +104,24 @@
   .ctrl-btn:active { background: #ffffff20; transform: scale(.92); }
   #btn-play { font-size: 34px; color: var(--accent); }
 
+  /* ── Progress bar ── */
+  #progress-wrap {
+    padding: 6px 16px 2px; background: var(--surface);
+    border-bottom: 1px solid #ffffff18; flex-shrink: 0;
+  }
+  #progress-bar {
+    height: 3px; background: #333; border-radius: 2px;
+    cursor: pointer; position: relative;
+  }
+  #progress-fill {
+    height: 100%; background: var(--accent); border-radius: 2px;
+    width: 0%; transition: width 1s linear;
+  }
+  #progress-time {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: var(--muted); margin-top: 3px;
+  }
+
   /* ── Scrollable content ── */
   #scroll-area {
     flex: 1; overflow-y: auto; overscroll-behavior: contain;
@@ -273,6 +291,15 @@
     <span id="volume-icon">🔈</span>
     <input type="range" id="volume-slider" min="0" max="100" value="50">
     <span id="volume-val">50%</span>
+  </div>
+</div>
+
+<!-- Progress bar -->
+<div id="progress-wrap">
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+  <div id="progress-time">
+    <span id="prog-elapsed">0:00</span>
+    <span id="prog-duration"></span>
   </div>
 </div>
 
@@ -455,8 +482,15 @@ async function rpc(method, params = {}) {
 }
 
 /* ── Controls ── */
+let currentDurationMs = 0;
+
 document.getElementById('btn-play').addEventListener('click', async () => {
-  await fetch(API + '/toogle_play');
+  const isPlaying = document.getElementById('btn-play').textContent === '⏸';
+  if (isPlaying) {
+    await rpc('core.playback.pause');
+  } else {
+    await fetch(API + '/toogle_play');
+  }
   setTimeout(refreshNowPlaying, 500);
 });
 document.getElementById('btn-next').addEventListener('click', async () => {
@@ -610,8 +644,10 @@ async function refreshNowPlaying() {
   const playing = stateR?.result === 'playing';
   const tracks  = tlR?.result || [];
 
-  currentTlid    = tlid;
-  matrixCurUri   = track?.uri ?? null;
+  currentTlid      = tlid;
+  matrixCurUri     = track?.uri ?? null;
+  currentDurationMs = track?.length || 0;
+  document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
   matrixTlItems  = tracks.map(({tlid: id, track: t}) => ({
     uri: t?.uri, tlid: id,
     name:   t?.name || '',
@@ -1058,6 +1094,16 @@ async function init() {
   await refreshVolume();
   setInterval(refreshNowPlaying, 10000);
   setInterval(refreshVolume, 15000);
+  setInterval(updateProgress, 1000);
+}
+
+async function updateProgress() {
+  if (!currentDurationMs) return;
+  const r = await rpc('core.playback.get_time_position');
+  const pos = r?.result ?? 0;
+  const pct = Math.min(100, (pos / currentDurationMs) * 100);
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('prog-elapsed').textContent = msToMin(pos);
 }
 
 function setFeedback(msg) {
