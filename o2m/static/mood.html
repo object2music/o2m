@@ -1292,18 +1292,33 @@ function _snapBtnOff() {
   btn.textContent = '📻 Snapcast'; btn.classList.remove('playing');
 }
 
-function toggleSnapcast() {
+function _snapStart() {
+  if (snapPlayer || !snapWsUrl || !window.SnapStream) return;
+  snapPlayer = new window.SnapStream(snapWsUrl);
   const btn = document.getElementById('btn-snapcast');
+  btn.textContent = '📻 ●'; btn.classList.add('playing');
+  setFeedback('📻 Connexion…');
+}
+
+function toggleSnapcast() {
   if (snapPlayer) {
     snapPlayer.stop(); snapPlayer = null;
     _snapBtnOff(); setFeedback('📻 Arrêté');
+    localStorage.removeItem('snap-autoconnect');
   } else {
     if (!snapWsUrl) { setFeedback('Snapcast non configuré'); return; }
     if (!window.SnapStream) { setFeedback('Module Snapcast non chargé'); return; }
-    snapPlayer = new window.SnapStream(snapWsUrl);
-    btn.textContent = '📻 ●'; btn.classList.add('playing');
-    setFeedback('📻 Connexion…');
+    _snapStart();
+    localStorage.setItem('snap-autoconnect', '1');
   }
+}
+
+function autoConnectSnapIfNeeded() {
+  if (!localStorage.getItem('snap-autoconnect') || !snapWsUrl) return;
+  // Connexion au premier geste utilisateur (obligation navigateur pour AudioContext)
+  const onGesture = () => { _snapStart(); };
+  document.addEventListener('click',      onGesture, { once: true });
+  document.addEventListener('touchstart', onGesture, { once: true, passive: true });
 }
 
 /* ── Init ── */
@@ -1358,6 +1373,7 @@ async function init() {
   setInterval(refreshNowPlaying, 10000);
   setInterval(refreshVolume, 15000);
   setInterval(updateProgress, 1000);
+  autoConnectSnapIfNeeded();
 }
 
 async function updateProgress() {
