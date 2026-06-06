@@ -18,16 +18,16 @@
 
   /* ── Now Playing ── */
   #now-playing {
-    display: flex; align-items: flex-start; gap: 12px;
-    padding: 10px 14px; background: var(--surface);
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 12px 16px; background: var(--surface);
     border-bottom: 1px solid #ffffff18; flex-shrink: 0;
   }
-  #cover { width: 96px; height: 96px; border-radius: 8px; object-fit: cover;
+  #cover { width: 112px; height: 112px; border-radius: 8px; object-fit: cover;
            background: var(--card); flex-shrink: 0; }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
-  #track-name { font-size: 14px; font-weight: 600; white-space: nowrap;
+  #track-name { font-size: 17px; font-weight: 600; white-space: nowrap;
                 overflow: hidden; text-overflow: ellipsis; }
-  #artist-name { font-size: 12px; color: var(--muted); margin-top: 2px;
+  #artist-name { font-size: 14px; color: var(--muted); margin-top: 3px;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #status-dot { width: 8px; height: 8px; border-radius: 50%;
                 background: var(--muted); flex-shrink: 0; transition: background .3s; }
@@ -35,9 +35,9 @@
 
   /* track status badge */
   #track-status-badge {
-    display: inline-block; margin-top: 4px;
-    font-size: 10px; font-weight: 600; letter-spacing: .04em;
-    padding: 2px 7px; border-radius: 10px;
+    display: inline-block; margin-top: 5px;
+    font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    padding: 2px 8px; border-radius: 10px;
     background: #ffffff18; color: var(--muted);
     text-transform: uppercase; transition: background .2s, color .2s;
   }
@@ -75,19 +75,19 @@
 
   /* ── Track tags row (inside now-playing) ── */
   #track-tags-row {
-    display: flex; align-items: center; gap: 4px; margin-top: 4px;
+    display: flex; align-items: center; gap: 5px; margin-top: 6px;
     overflow-x: auto; -webkit-overflow-scrolling: touch;
     scrollbar-width: none; flex-wrap: nowrap;
   }
   #track-tags-row::-webkit-scrollbar { display: none; }
   .tag-chip {
-    padding: 1px 7px; border-radius: 8px; font-size: 10px;
+    padding: 2px 9px; border-radius: 8px; font-size: 12px;
     border: 1px solid #ffffff18; color: var(--muted);
     white-space: nowrap; flex-shrink: 0;
   }
   #track-ev {
-    font-size: 10px; color: var(--muted); white-space: nowrap;
-    flex-shrink: 0; padding-left: 6px; border-left: 1px solid #ffffff18;
+    font-size: 12px; color: var(--muted); white-space: nowrap;
+    flex-shrink: 0; padding-left: 7px; border-left: 1px solid #ffffff18;
   }
 
   /* ── Controls ── */
@@ -98,11 +98,11 @@
   }
   .ctrl-btn {
     background: none; border: none; color: var(--text); cursor: pointer;
-    font-size: 26px; line-height: 1; padding: 6px; border-radius: 50%;
+    font-size: 30px; line-height: 1; padding: 8px; border-radius: 50%;
     transition: background .15s, transform .1s;
   }
   .ctrl-btn:active { background: #ffffff20; transform: scale(.92); }
-  #btn-play { font-size: 34px; color: var(--accent); }
+  #btn-play { font-size: 40px; color: var(--accent); }
 
   /* ── Progress bar ── */
   #progress-wrap {
@@ -131,34 +131,34 @@
   /* ── Dials ── */
   #dials {
     display: flex; flex-direction: row; justify-content: space-around;
-    align-items: flex-end; padding: 12px 8px 4px; gap: 4px;
+    align-items: flex-end; padding: 14px 8px 6px; gap: 4px;
   }
-  .dial-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .dial-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
+  .dial-wrap { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .dial-label { font-size: 13px; color: var(--muted); text-transform: uppercase;
                 letter-spacing: .08em; text-align: center; }
   .dial-svg { touch-action: none; cursor: grab; display: block; }
   .dial-svg:active { cursor: grabbing; }
   .dial-track { fill: none; stroke: #ffffff18; stroke-width: 8; stroke-linecap: round; }
   .dial-fill  { fill: none; stroke-width: 8; stroke-linecap: round;
                 transition: stroke-dashoffset .05s; }
-  .dial-sub { font-size: 10px; color: var(--muted); text-align: center; }
+  .dial-sub { font-size: 11px; color: var(--muted); text-align: center; }
 
   /* ── 3-column layout ── */
   #main-cols { display: flex; flex-direction: column; }
   #left-panel { display: flex; flex-direction: column; }
   #boxes-panel { padding: 12px 14px; border-top: 1px solid #ffffff0c; }
   #boxes-panel-label {
-    font-size: 11px; color: var(--muted); text-transform: uppercase;
-    letter-spacing: .08em; margin-bottom: 8px;
+    font-size: 12px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .08em; margin-bottom: 10px;
   }
-  #boxes-wrap { display: flex; flex-direction: column; gap: 5px; }
+  #boxes-wrap { display: flex; flex-direction: column; gap: 6px; }
   .box-btn {
-    padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 500;
+    padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 500;
     border: 1px solid #ffffff18; background: #ffffff08; color: var(--muted);
     cursor: pointer; transition: all .15s; text-align: left;
     display: flex; align-items: center; gap: 7px; width: 100%;
   }
-  .box-btn .box-icon { font-size: 13px; flex-shrink: 0; }
+  .box-btn .box-icon { font-size: 15px; flex-shrink: 0; }
   .box-btn.active { background: #e9456022; border-color: var(--accent); color: #fff; }
   .box-btn.active .box-icon { color: var(--accent); }
   .box-btn:active { transform: scale(.98); }
@@ -167,13 +167,13 @@
   @media (min-width: 700px) {
     #main-cols { flex-direction: row; align-items: flex-start; }
     #boxes-panel { flex: 1; border-top: none; border-right: 1px solid #ffffff0c;
-                   padding: 12px 10px; min-height: 300px; }
-    #left-panel  { flex: 1; border-right: 1px solid #ffffff0c; }
+                   padding: 14px 12px; min-height: 300px; }
+    #left-panel  { flex: 2; border-right: 1px solid #ffffff0c; }
     #tracklist-col { flex: 1; overflow-y: auto; }
-    #dials { padding: 10px 6px 4px; }
-    #matrix-section { padding: 2px 6px 6px; min-width: 0; }
-    #genres-section { padding: 6px 8px 8px; border-top: 1px solid #ffffff0c; }
-    #tracklist-section { padding: 10px 10px 4px; }
+    #dials { padding: 12px 10px 6px; }
+    #matrix-section { padding: 4px 10px 8px; min-width: 0; }
+    #genres-section { padding: 8px 10px 10px; border-top: 1px solid #ffffff0c; }
+    #tracklist-section { padding: 12px 12px 6px; }
   }
 
   /* ── Matrix ── */
@@ -198,11 +198,11 @@
 
   /* ── Genres ── */
   #genres-section { padding: 10px 14px 6px; }
-  #genres-label { font-size: 11px; color: var(--muted); text-transform: uppercase;
-                  letter-spacing: .08em; margin-bottom: 7px; }
-  #genres-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+  #genres-label { font-size: 12px; color: var(--muted); text-transform: uppercase;
+                  letter-spacing: .08em; margin-bottom: 8px; }
+  #genres-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
   .genre-chip {
-    padding: 4px 11px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    padding: 5px 13px; border-radius: 20px; font-size: 13px; font-weight: 500;
     border: 1px solid #ffffff28; background: none; color: var(--muted);
     cursor: pointer; transition: all .15s;
   }
@@ -212,30 +212,30 @@
   /* ── Tracklist ── */
   #tracklist-section { padding: 10px 14px 4px; }
   #tracklist-label {
-    font-size: 11px; color: var(--muted); text-transform: uppercase;
-    letter-spacing: .08em; margin-bottom: 6px;
+    font-size: 12px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .08em; margin-bottom: 8px;
     display: flex; align-items: center; justify-content: space-between;
   }
   #tracklist-count { font-size: 11px; color: var(--muted); }
   #tracklist-wrap { display: flex; flex-direction: column; gap: 2px; }
   .tl-item {
     display: flex; align-items: center; gap: 10px;
-    padding: 7px 10px; border-radius: 6px; cursor: pointer;
+    padding: 9px 12px; border-radius: 6px; cursor: pointer;
     transition: background .12s;
   }
   .tl-item:active { background: #ffffff10; }
   .tl-item.current { background: var(--card); }
   .tl-item.current .tl-name { color: var(--accent); }
-  .tl-num { font-size: 11px; color: var(--muted); min-width: 18px; text-align: right; flex-shrink: 0; }
+  .tl-num { font-size: 12px; color: var(--muted); min-width: 20px; text-align: right; flex-shrink: 0; }
   .tl-item.current .tl-num { color: var(--accent); }
   .tl-texts { flex: 1; min-width: 0; }
-  .tl-name { font-size: 13px; font-weight: 500; white-space: nowrap;
+  .tl-name { font-size: 14px; font-weight: 500; white-space: nowrap;
              overflow: hidden; text-overflow: ellipsis; }
-  .tl-artist { font-size: 11px; color: var(--muted); white-space: nowrap;
-               overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
-  .tl-dur { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .tl-artist { font-size: 12px; color: var(--muted); white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .tl-dur { font-size: 12px; color: var(--muted); flex-shrink: 0; }
   .tl-status {
-    font-size: 10px; color: var(--muted); margin-top: 2px;
+    font-size: 11px; color: var(--muted); margin-top: 2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .tl-status.s-library   { color: #4fc3f7; }
@@ -320,7 +320,7 @@
   <div id="dials">
     <div class="dial-wrap">
       <div class="dial-label">Énergie</div>
-      <svg class="dial-svg" id="dial-energy" width="100" height="100" viewBox="0 0 110 110">
+      <svg class="dial-svg" id="dial-energy" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
         <circle class="dial-fill" id="fill-energy" cx="55" cy="55" r="42"
                 stroke="#e94560" transform="rotate(135 55 55)"/>
@@ -331,7 +331,7 @@
     </div>
     <div class="dial-wrap">
       <div class="dial-label">Valence</div>
-      <svg class="dial-svg" id="dial-valence" width="100" height="100" viewBox="0 0 110 110">
+      <svg class="dial-svg" id="dial-valence" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
         <circle class="dial-fill" id="fill-valence" cx="55" cy="55" r="42"
                 stroke="#7c4dff" transform="rotate(135 55 55)"/>
@@ -342,7 +342,7 @@
     </div>
     <div class="dial-wrap">
       <div class="dial-label">Découverte</div>
-      <svg class="dial-svg" id="dial-dl" width="100" height="100" viewBox="0 0 110 110">
+      <svg class="dial-svg" id="dial-dl" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
         <circle class="dial-fill" id="fill-dl" cx="55" cy="55" r="42"
                 stroke="#00bcd4" transform="rotate(135 55 55)"/>
