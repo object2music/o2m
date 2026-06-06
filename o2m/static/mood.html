@@ -28,6 +28,7 @@
     --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff28;
     --fill-1: #ffffff08; --fill-2: #ffffff12; --fill-3: #ffffff20;
     --track-bg: #333;
+    --duo-lo: #0b1829; --duo-hi: #e94560;
     --c-energy: #e94560; --c-valence: #7c4dff; --c-dl: #00bcd4; --dial-txt: #eaeaea;
     --font: system-ui, sans-serif; --font-head: system-ui, sans-serif;
     --head-transform: none; --head-weight: 700; --head-spacing: 0; --radius: 8px;
@@ -52,6 +53,7 @@
     --border: #1a1a1a1f; --border-soft: #1a1a1a12; --border-strong: #1a1a1a2e;
     --fill-1: #1a1a1a08; --fill-2: #1a1a1a10; --fill-3: #1a1a1a1a;
     --track-bg: #d8d2c4;
+    --duo-lo: #2a1a12; --duo-hi: #e8462a;
     --c-energy: #e8462a; --c-valence: #7c4dbe; --c-dl: #2e8b8b; --dial-txt: #1a1a1a;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
@@ -76,6 +78,7 @@
     --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
     --track-bg: #e2e2e2;
+    --duo-lo: #111111; --duo-hi: #ff3b00;
     --c-energy: #111111; --c-valence: #ff3b00; --c-dl: #888888; --dial-txt: #000000;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
@@ -130,8 +133,20 @@
     padding: 12px 16px; background: var(--surface);
     flex-shrink: 0;
   }
-  #cover { width: 112px; height: 112px; border-radius: 0; object-fit: cover;
-           background: var(--card); flex-shrink: 0; }
+  /* Pochette duotone (ombres → --duo-lo, lumières → --duo-hi) */
+  #cover-wrap {
+    position: relative; width: 112px; height: 112px; flex-shrink: 0;
+    background: var(--duo-lo); overflow: hidden;
+  }
+  #cover {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    filter: grayscale(1) contrast(1.05);
+    mix-blend-mode: lighten;
+  }
+  #cover-wrap::after {
+    content: ''; position: absolute; inset: 0;
+    background: var(--duo-hi); mix-blend-mode: multiply; pointer-events: none;
+  }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
   #track-name { font-size: 21px; white-space: nowrap; line-height: 1.1;
                 overflow: hidden; text-overflow: ellipsis;
@@ -185,17 +200,19 @@
 
   /* ── Track tags row (inside now-playing) ── */
   #track-tags-row {
-    display: flex; align-items: center; gap: 5px; margin-top: 6px;
+    display: flex; align-items: baseline; gap: 0; margin-top: 7px;
     overflow-x: auto; -webkit-overflow-scrolling: touch;
     scrollbar-width: none; flex-wrap: nowrap;
   }
   #track-tags-row::-webkit-scrollbar { display: none; }
   .tag-chip {
-    padding: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-    color: var(--muted); font-weight: 600;
+    padding: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .01em;
+    color: var(--text); font-weight: 600; font-family: var(--font-head);
     white-space: nowrap; flex-shrink: 0;
   }
-  .tag-chip:not(:last-child)::after { content: "·"; margin-left: 10px; opacity: .5; }
+  .tag-chip:not(:first-child)::before {
+    content: "/"; margin: 0 9px; color: var(--eyebrow-color, var(--accent)); font-weight: 700;
+  }
   #track-ev {
     font-size: 12px; color: var(--muted); white-space: nowrap;
     flex-shrink: 0; padding-left: 10px;
@@ -385,7 +402,7 @@
 
 <!-- Now playing -->
 <div id="now-playing">
-  <img id="cover" src="" alt="">
+  <div id="cover-wrap"><img id="cover" src="" alt=""></div>
   <div id="track-info">
     <div id="track-name">—</div>
     <div id="artist-name">O2M Mood</div>
