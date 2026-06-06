@@ -138,14 +138,18 @@
     font-size: 11px; color: var(--muted); text-transform: uppercase;
     letter-spacing: .08em; margin-bottom: 8px;
   }
-  #boxes-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+  #boxes-wrap { display: flex; flex-direction: column; gap: 5px; }
   .box-btn {
-    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
-    border: 1px solid #ffffff28; background: none; color: var(--muted);
+    padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 500;
+    border: 1px solid #ffffff18; background: #ffffff08; color: var(--muted);
     cursor: pointer; transition: all .15s; text-align: left;
+    display: flex; align-items: center; gap: 7px; width: 100%;
   }
-  .box-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .box-btn:active { transform: scale(.95); }
+  .box-btn .box-icon { font-size: 13px; flex-shrink: 0; }
+  .box-btn.active { background: #e9456022; border-color: var(--accent); color: #fff; }
+  .box-btn.active .box-icon { color: var(--accent); }
+  .box-btn:active { transform: scale(.98); }
+  .box-btn:disabled { opacity: .5; cursor: wait; }
 
   @media (min-width: 600px) {
     #controls-matrix { flex-direction: row; align-items: flex-start; }
@@ -928,6 +932,54 @@ function hideMatrixTooltip() {
   document.getElementById('matrix-tooltip').style.display = 'none';
 }
 
+/* ── Boxes panel ── */
+const BOX_TYPE_ICON = {
+  normal: '▶', favorites: '⭐', new: '🆕', incoming: '📥',
+  hidden: '◎', trash: '🗑', podcast: '🎙', info: 'ℹ',
+};
+
+async function loadBoxes() {
+  const wrap = document.getElementById('boxes-wrap');
+  if (!wrap) return;
+  try {
+    const boxes = await fetch(API + '/box_favorites').then(r => r.json());
+    wrap.innerHTML = '';
+    boxes.forEach(box => {
+      const btn = document.createElement('button');
+      btn.className = 'box-btn';
+      const icon = BOX_TYPE_ICON[box.option_type] || '▶';
+      btn.innerHTML = `<span class="box-icon">${icon}</span> ${box.description}`;
+      btn.dataset.uid = box.uid;
+      btn.title = box.option_type;
+      btn.addEventListener('click', () => toggleBox(box.uid, btn));
+      wrap.appendChild(btn);
+      checkBoxActive(box.uid, btn);
+      // Refresh active state every 10min (same as o2m.js)
+      setInterval(() => checkBoxActive(box.uid, btn), 600000);
+    });
+  } catch(e) {}
+}
+
+async function checkBoxActive(uid, btn) {
+  try {
+    const text = await fetch(API + '/box_activated?uid=' + encodeURIComponent(uid)).then(r => r.text());
+    btn.classList.toggle('active', text.trim() === '1');
+  } catch(e) {}
+}
+
+async function toggleBox(uid, btn) {
+  btn.disabled = true;
+  try {
+    await fetch(API + '/box?uid=' + encodeURIComponent(uid) + '&mode=toogle');
+    await new Promise(r => setTimeout(r, 400));
+    await checkBoxActive(uid, btn);
+    // Refresh tracklist after box change
+    setTimeout(refreshNowPlaying, 1500);
+    setFeedback(btn.classList.contains('active') ? `▶ ${btn.textContent.trim()}` : `⏹ ${btn.textContent.trim()}`);
+  } catch(e) { setFeedback('Erreur box'); }
+  finally { btn.disabled = false; }
+}
+
 /* ── Track tags bar ── */
 async function fetchAndRenderTrackTags(uri) {
   const bar = document.getElementById('track-tags-bar');
@@ -1003,6 +1055,7 @@ async function init() {
   } catch(e) {}
 
   await loadGenres();
+  await loadBoxes();
   await refreshNowPlaying();
   await refreshVolume();
   setInterval(refreshNowPlaying, 10000);
