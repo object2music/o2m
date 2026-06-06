@@ -424,6 +424,16 @@ if __name__ == "__main__":
         from flask import jsonify
         return jsonify({'status': 'started', 'tracks_pending': pending})
 
+    @api.route('/api/track_tags')
+    def api_track_tags():
+        from flask import jsonify
+        uri = request.args.get('uri', '')
+        if not uri:
+            return jsonify([])
+        tags = o2mHandler.dbHandler.get_track_genres(uri)  # [(name, weight)]
+        return jsonify([{'name': name, 'weight': weight}
+                        for name, weight in sorted(tags, key=lambda x: -x[1])])
+
     @api.route('/api/warmup_retry_sentinels')
     def api_warmup_retry_sentinels():
         """Trigger full retry of all sentinel tracks via the complete Last.fm chain (background)."""
