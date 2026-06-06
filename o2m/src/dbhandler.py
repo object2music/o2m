@@ -525,6 +525,30 @@ class DatabaseHandler():
             print(f"get_sentinel_tracks_with_artist_genres error: {e}")
             return []
 
+    def get_all_sentinel_tracks(self, limit=50):
+        """Return [(uri, track_name, artist_name, album_name, album_id)] for ALL mood='_' tracks
+        with a name and artist — no filter on ArtistGenre existence."""
+        try:
+            rows = db.execute_sql("""
+                SELECT t.uri, t.name,
+                       COALESCE(a.name, al.artist_name) AS artist_name,
+                       al.name AS album_name,
+                       al.id   AS album_id
+                FROM track t
+                JOIN trackartist ta ON ta.track_uri = t.uri AND ta.position = 0
+                LEFT JOIN artist a ON a.id = ta.artist_id
+                LEFT JOIN album al ON al.id = t.album_id
+                WHERE t.mood = '_'
+                  AND t.name IS NOT NULL
+                  AND COALESCE(a.name, al.artist_name) IS NOT NULL
+                ORDER BY t.read_count_end DESC
+                LIMIT %s
+            """, (limit,))
+            return [(r[0], r[1], r[2], r[3], r[4]) for r in rows]
+        except Exception as e:
+            print(f"get_all_sentinel_tracks error: {e}")
+            return []
+
     def get_spotify_tracks_without_features(self, limit=100):
         """Return list of spotify:track: URIs where energy IS NULL or mood='_', ordered by play count."""
         try:

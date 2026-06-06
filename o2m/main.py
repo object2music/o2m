@@ -424,6 +424,19 @@ if __name__ == "__main__":
         from flask import jsonify
         return jsonify({'status': 'started', 'tracks_pending': pending})
 
+    @api.route('/api/warmup_retry_sentinels')
+    def api_warmup_retry_sentinels():
+        """Trigger full retry of all sentinel tracks via the complete Last.fm chain (background)."""
+        import threading
+        def _run():
+            try:
+                o2mHandler.spotifyHandler.warmup_retry_all_sentinels(batch_size=50, max_batches=200)
+            except Exception as e:
+                print(f"api_warmup_retry_sentinels error: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+        from flask import jsonify
+        return jsonify({'status': 'started'})
+
     @api.route('/api/warmup_spotify_features')
     def api_warmup_spotify_features():
         """Trigger Spotify audio_features warmup (background, up to 10k tracks per call)."""

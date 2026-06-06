@@ -969,7 +969,7 @@ class SpotifyHandler:
     # ─── Cache health ──────────────────────────────────────────────────────────
 
     # TTL (days) between warmup runs per entity type
-    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14, 'moods': 30, 'mood_retry': 1, 'spotify_features': 7}
+    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14, 'moods': 30, 'mood_retry': 1, 'mood_retry_all': 1, 'spotify_features': 7}
 
     _MOOD_TAGS = {
         'calm':      {'ambient', 'calm', 'chill', 'chillout', 'relaxing', 'peaceful', 'mellow',
@@ -1272,11 +1272,10 @@ class SpotifyHandler:
         if self._db:
             self._db.set_cache_meta('warmup_albums_at', count)
 
-    def _lastfm_get_top_tags(self, artist_name, max_tags=8):
+    def _lastfm_get_top_tags(self, artist_name, max_tags=8, min_count=5):
         """Fetch top tags for an artist from Last.fm API.
 
         Returns a list of tag name strings (up to max_tags), or None on error.
-        Tags with count < 10 are filtered out to avoid noise.
         """
         import requests as req
         if not self._lastfm_api_key:
@@ -1303,7 +1302,7 @@ class SpotifyHandler:
             for t in tags:
                 name = (t.get('name') or '').strip().lower()
                 count = int(t.get('count') or 0)
-                if name and count >= 10 and not self._is_noise_tag(name):
+                if name and count >= min_count and not self._is_noise_tag(name):
                     result.append(name)
                 if len(result) >= max_tags:
                     break
@@ -1570,7 +1569,7 @@ class SpotifyHandler:
                 raw_tags = [raw_tags]
             tags_wc = [(t['name'], int(t.get('count', 0)))
                        for t in raw_tags
-                       if int(t.get('count', 0)) >= 3
+                       if int(t.get('count', 0)) >= 2
                        and not self._is_noise_tag(t.get('name', ''))]
             if tags_wc:
                 if track_uri and self._db:
@@ -1606,7 +1605,7 @@ class SpotifyHandler:
                     raw_tags = [raw_tags]
                 tags_wc = [(t['name'], int(t.get('count', 0)))
                            for t in raw_tags
-                           if int(t.get('count', 0)) >= 5
+                           if int(t.get('count', 0)) >= 2
                            and not self._is_noise_tag(t.get('name', ''))]
                 if tags_wc:
                     if album_id and self._db:
@@ -1634,8 +1633,15 @@ class SpotifyHandler:
 
         # --- Fallback 3: artist.getTopTags direct Last.fm (poids égaux) ---
         try:
-            artist_tags = self._lastfm_get_top_tags(artist_name) or []
+            artist_tags = self._lastfm_get_top_tags(artist_name, min_count=5) or []
             if artist_tags:
+                # Store in ArtistGenre for future cache hits, regardless of mood result
+                try:
+                    a_id = self._resolve_artist_spotify_id(artist_name, allow_api=False)
+                    if a_id and self._db:
+                        self._db.save_artist_genres(a_id, artist_tags)
+                except Exception:
+                    pass
                 artist_wc = [(t, 1) for t in artist_tags]
                 energy, valence = _score_features(artist_wc)
                 mood = None if energy is not None else _score_mood(artist_wc)
@@ -1808,6 +1814,46 @@ class SpotifyHandler:
         print(f"warmup_retry_sentinels: done — {total} total resolved")
         return total
 
+    def warmup_retry_all_sentinels(self, batch_size=50, max_batches=5):
+        """Re-process ALL tracks with mood='_', not just those with cached artist genres.
+
+        Runs the full _lastfm_get_track_mood chain (track → album → artist cache → artist API).
+        Effective now that:
+        - thresholds are lower (count >= 2 for tracks/albums, >= 5 for artists)
+        - artist tags from Fallback 3 are stored in ArtistGenre for future hits
+        Tracks still unresolved keep mood='_'.
+        """
+        if not self._db or not self._lastfm_api_key:
+            return 0
+        total = 0
+        for batch_num in range(max_batches):
+            if self._is_rate_limited():
+                break
+            tracks = self._db.get_all_sentinel_tracks(limit=batch_size)
+            if not tracks:
+                print("warmup_retry_all_sentinels: no sentinel tracks remaining")
+                break
+            print(f"warmup_retry_all_sentinels: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks")
+            batch_assigned = 0
+            for uri, track_name, artist_name, album_name, album_id in tracks:
+                if self._is_rate_limited():
+                    break
+                try:
+                    mood, energy, valence = self._lastfm_get_track_mood(
+                        artist_name, track_name, album_name, track_uri=uri, album_id=album_id)
+                    if mood or energy is not None:
+                        self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
+                        batch_assigned += 1
+                        print(f"  resolved: {artist_name} – {track_name} → mood={mood} e={energy} v={valence}")
+                    # Do NOT re-mark as '_' here — leave sentinel as-is so we retry next run
+                    time.sleep(0.3)
+                except Exception as e:
+                    print(f"warmup_retry_all_sentinels error ({track_name}): {e}")
+            total += batch_assigned
+            print(f"warmup_retry_all_sentinels: batch done — {batch_assigned}/{len(tracks)} resolved")
+        print(f"warmup_retry_all_sentinels: done — {total} total resolved")
+        return total
+
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
         Designed to run in a background thread at startup."""
@@ -1821,7 +1867,8 @@ class SpotifyHandler:
             ('genres',            self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
             ('spotify_features',  lambda: self.warmup_spotify_features(batch_size=100, max_batches=5)),  # up to 500/startup via Spotify
             ('moods',             lambda: self.warmup_track_moods(batch_size=50, max_batches=5)),  # up to 250/startup via Last.fm fallback
-            ('mood_retry',        lambda: self.warmup_retry_sentinels(batch_size=50, max_batches=2)),  # retry '_' with artist genres
+            ('mood_retry',        lambda: self.warmup_retry_sentinels(batch_size=50, max_batches=2)),  # retry '_' with cached artist genres
+            ('mood_retry_all',    lambda: self.warmup_retry_all_sentinels(batch_size=50, max_batches=2)),  # broader: all sentinels via full chain
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")
