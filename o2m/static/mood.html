@@ -112,7 +112,7 @@
   .dial-svg text { fill: var(--dial-txt); }
 
   /* Marqueur éditorial devant les libellés de section */
-  #boxes-panel-label::before,
+  .panel-head::before,
   #genres-label::before,
   #tracklist-label > span:first-child::before {
     content: var(--eyebrow-mark, ""); color: var(--eyebrow-color, var(--accent));
@@ -288,10 +288,12 @@
   #main-cols { display: flex; flex-direction: column; }
   #left-panel { display: flex; flex-direction: column; }
   #boxes-panel { padding: 12px 14px; border-top: 1px solid var(--border); }
-  #boxes-panel-label {
-    font-size: 12px; color: var(--muted); text-transform: uppercase;
-    letter-spacing: .08em; margin-bottom: 10px;
+  .panel-head {
+    display: block; width: 100%; text-align: left;
+    background: none; border: none; color: var(--text);
+    margin-bottom: 10px; cursor: default;
   }
+  .panel-body { display: block; }
   #boxes-wrap { display: flex; flex-direction: column; gap: 6px; }
   .box-btn {
     padding: 8px 4px; border-radius: 0;
@@ -365,7 +367,7 @@
   #tracklist-count { font-size: 11px; color: var(--muted); }
 
   /* Harmonisation des titres de section (comme les tags sous le titre) */
-  #boxes-panel-label, .dial-label, #genres-label,
+  .panel-head, .dial-label, #genres-label,
   #tracklist-label > span:first-child {
     font-family: var(--font-head); font-weight: 700; font-size: 13px;
     text-transform: uppercase; letter-spacing: .02em; color: var(--text);
@@ -487,14 +489,18 @@
   <!-- 3 colonnes : Boxes | Matrice+Genres | Tracklist -->
   <div id="main-cols">
 
-  <!-- Col 1 : Boxes -->
-  <div id="boxes-panel">
-    <div id="boxes-panel-label">Boxes</div>
-    <div id="boxes-wrap"></div>
+  <!-- Col 1 : Boxes (repliable en mobile) -->
+  <div id="boxes-panel" class="col collapsible">
+    <button class="panel-head" id="boxes-panel-label">Boxes</button>
+    <div class="panel-body">
+      <div id="boxes-wrap"></div>
+    </div>
   </div>
 
-  <!-- Col 2 : Potentiomètres + Matrice + Genres -->
-  <div id="left-panel">
+  <!-- Col 2 : Réglages — potentiomètres + matrice + genres (repliable en mobile) -->
+  <div id="left-panel" class="col collapsible">
+  <button class="panel-head" id="settings-label">Réglages</button>
+  <div class="panel-body">
   <div id="dials">
     <div class="dial-wrap">
       <div class="dial-label">Énergie</div>
@@ -537,10 +543,11 @@
     <div id="genres-label">Genres</div>
     <div id="genres-wrap"></div>
   </div>
+  </div><!-- /panel-body -->
   </div><!-- /left-panel -->
 
-  <!-- Col 3 : Tracklist -->
-  <div id="tracklist-col">
+  <!-- Col 3 : Tracklist (prioritaire) -->
+  <div id="tracklist-col" class="col">
     <div id="tracklist-section">
       <div id="tracklist-label">
         <span>Tracklist</span>
@@ -638,8 +645,7 @@ function makeDraggable(id, onChange) {
 
 /* ── Apply ── */
 function shouldApplyMood() {
-  const hasActiveBox = !!document.querySelector('.box-btn.active');
-  return hasActiveBox || currentTracklistLength === 0;
+  return currentTracklistLength === 0;
 }
 
 function scheduleApply() {
@@ -649,6 +655,7 @@ function scheduleApply() {
 }
 
 async function applyMood() {
+  if (!shouldApplyMood()) return;
   setFeedback('Application…');
   try {
     const body = { energy: appState.energy, valence: appState.valence,
