@@ -150,6 +150,15 @@ fallback partially helps for energy/valence but `_GENRE_MOOD` doesn't cover tags
 - `GET /api/genres` — genre list with track counts
 - `GET /mood` — mood UI (served from `o2m/static/mood.html`)
 
+## UI Language Convention
+
+**All user-facing UI text is English by default** (labels, buttons, feedback messages,
+tooltips, placeholders). This applies across the whole project — the mood UI
+(`o2m/static/mood.html`), the SvelteKit frontend (`frontend/`), and any new interface.
+Write new strings in English; translate existing French strings to English when you
+touch surrounding code. Code comments may stay in French. Some user-facing concepts are
+renamed for clarity (e.g. the *valence* control is labelled **Ambiance**).
+
 ## Environment Variables
 
 All service configuration is via `.env` file (not committed). Key variables:
