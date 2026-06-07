@@ -159,6 +159,17 @@ Write new strings in English; translate existing French strings to English when 
 touch surrounding code. Code comments may stay in French. Some user-facing concepts are
 renamed for clarity (e.g. the *valence* control is labelled **Ambiance**).
 
+## Icon Convention
+
+**Never use emoji as icons.** Use the project's chosen B&W icon set:
+**Feather / Lucide-style inline SVG** — stroke-based, `viewBox="0 0 24 24"`,
+`fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+stroke-linejoin="round"`, sized via CSS (`width/height`). They inherit `currentColor`
+so they adapt to every theme automatically. This applies everywhere (mood UI, frontend,
+new interfaces): playback controls, footer links, the details-panel lock/heart, status
+glyphs, etc. When you touch code that still has emoji icons (e.g. 🔒 ♥ ⚡), replace them
+with the equivalent Feather/Lucide SVG.
+
 ## Environment Variables
 
 All service configuration is via `.env` file (not committed). Key variables:
