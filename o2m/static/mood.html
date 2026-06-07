@@ -608,22 +608,27 @@
   }
 
   /* — Overprint : titre en haut, contrôles superposés en bas de la pochette — */
+  /* Largeur DÉFINIE (vh/vw) : un % se résoudrait à 0 dans la grille → pochette effondrée */
+  [data-theme="overprint"] #top-zone { --ovp-w: min(54vh, 48vw); }
   [data-theme="overprint"] #cover-col {
-    position: relative; display: block; padding: 16px; justify-self: start;
+    position: relative; display: block; justify-self: start; overflow: hidden;
+    width: var(--ovp-w);
   }
   [data-theme="overprint"] #cover-wrap {
-    aspect-ratio: 1 / 1; height: auto; width: min(54vh, 100%); max-width: 540px;
+    aspect-ratio: 1 / 1; height: auto; width: 100%; max-width: none;
+    background: var(--card);  /* tuile visible même sans visuel */
   }
   [data-theme="overprint"] #hero-title {
-    top: 18px; left: 22px; right: 16px; bottom: auto;
-    font-size: clamp(40px, 7vw, 104px);
+    top: 14px; left: 16px; right: 16px; bottom: auto;
+    font-size: clamp(32px, 5vw, 84px);
     color: rgba(255, 90, 0, 0.92); mix-blend-mode: multiply;
   }
-  /* Bloc infos + contrôles + progression, posé en bas de la pochette avec dégradé */
+  /* Bloc infos + contrôles + progression, posé en bas de la pochette ; dégradé léger */
   [data-theme="overprint"] #top-right {
     align-self: end; justify-self: start; z-index: 4;
-    width: min(54vh, 100%); max-width: 540px; margin: 16px;
-    background: linear-gradient(to top, var(--surface), var(--surface) 42%, transparent);
+    width: var(--ovp-w); margin: 0; padding: 0 8px 8px;
+    background: linear-gradient(to top,
+      var(--surface) 0%, rgba(255,255,255,0.78) 38%, transparent 72%);
   }
   [data-theme="overprint"] #now-playing  { padding: 12px 6px 4px; }
   [data-theme="overprint"] #controls     { justify-content: flex-start; padding: 4px 6px; }
