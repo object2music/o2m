@@ -693,6 +693,28 @@ class SpotifyHandler:
             print(f"Error getting resource name for {uri}: {e}")
             return uri
 
+################### SAVED / LIKED TRACKS #################
+
+    def _track_id(self, track_uri):
+        return str(track_uri).split(':')[-1]
+
+    def is_track_saved(self, track_uri):
+        """True/False si le morceau est dans les titres likés du compte serveur, None si erreur."""
+        try:
+            return bool(self.sp.current_user_saved_tracks_contains([self._track_id(track_uri)])[0])
+        except Exception as e:
+            print(f"is_track_saved error: {e}")
+            return None
+
+    def set_track_saved(self, track_uri, saved):
+        """Ajoute/retire le morceau des titres likés du compte serveur."""
+        tid = [self._track_id(track_uri)]
+        if saved:
+            self.sp.current_user_saved_tracks_add(tid)
+        else:
+            self.sp.current_user_saved_tracks_delete(tid)
+        return True
+
 ################### PLAYLISTS #############################
 
     def add_tracks_playlist(self, username, playlist_uri, track_uris):

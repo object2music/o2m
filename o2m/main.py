@@ -611,6 +611,67 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    # ─── Édition des features d'un morceau (énergie/valence/mood) ───
+    @api.route('/api/track_features', methods=['POST'])
+    @require_edit_auth
+    def api_track_features_set():
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uri = (data.get('uri') or '').strip()
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        def _f01(x):
+            try:
+                return min(1.0, max(0.0, float(x)))
+            except (TypeError, ValueError):
+                return None
+        energy  = _f01(data['energy'])  if 'energy'  in data else None
+        valence = _f01(data['valence']) if 'valence' in data else None
+        mood    = (data.get('mood') or None) if 'mood' in data else None
+        try:
+            o2mHandler.dbHandler.upsert_track_features(uri, mood=mood, energy=energy, valence=valence)
+            return jsonify({'ok': True, 'uri': uri, 'energy': energy, 'valence': valence, 'mood': mood})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    # ─── Statut favori Spotify (compte serveur) pour affichage combiné ───
+    @api.route('/api/track_saved')
+    def api_track_saved():
+        from flask import jsonify
+        uri = (request.args.get('uri') or '').strip()
+        if not uri or not uri.startswith('spotify:track:'):
+            return jsonify({'saved': None})
+        try:
+            return jsonify({'saved': o2mHandler.spotifyHandler.is_track_saved(uri)})
+        except Exception as e:
+            return jsonify({'saved': None, 'error': str(e)})
+
+    # ─── Toggle favori : DB locale + Spotify (si morceau Spotify) ───
+    @api.route('/api/track_favorite', methods=['POST'])
+    @require_edit_auth
+    def api_track_favorite():
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uri = (data.get('uri') or '').strip()
+        favorite = bool(data.get('favorite'))
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        result = {'ok': True, 'uri': uri, 'favorite': favorite}
+        # Local DB
+        try:
+            o2mHandler.dbHandler.set_track_liked(uri, favorite)
+            result['liked_local'] = favorite
+        except Exception as e:
+            result['liked_local_error'] = str(e)
+        # Spotify (compte serveur), seulement pour les morceaux Spotify
+        if uri.startswith('spotify:track:'):
+            try:
+                o2mHandler.spotifyHandler.set_track_saved(uri, favorite)
+                result['liked_spotify'] = favorite
+            except Exception as e:
+                result['liked_spotify_error'] = str(e)
+        return jsonify(result)
+
     @api.route('/api/genres')
     def api_genres():
         from flask import jsonify
@@ -633,6 +694,7 @@ if __name__ == "__main__":
                 'mood':           str(stat.mood) if stat and stat.mood and stat.mood != '_' else None,
                 'energy':         round(float(stat.energy), 3) if stat and stat.energy is not None else None,
                 'valence':        round(float(stat.valence), 3) if stat and stat.valence is not None else None,
+                'liked':          bool(stat.liked) if stat else False,
                 'library':        library,
             })
         except Exception as e:

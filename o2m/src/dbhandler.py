@@ -605,6 +605,37 @@ class DatabaseHandler():
         if updates:
             Track.update(updates).where(Track.uri == uri).execute()
 
+    def upsert_track_features(self, uri, mood=None, energy=None, valence=None):
+        """Comme update_track_features mais crée la ligne si absente (édition manuelle)."""
+        updates = {}
+        if mood is not None:
+            updates['mood'] = mood
+        if energy is not None:
+            updates['energy'] = energy
+        if valence is not None:
+            updates['valence'] = valence
+        if not updates:
+            return
+        Track.insert({**updates, 'uri': uri}).on_conflict(
+            action='update', update=updates,
+        ).execute()
+
+    def set_track_liked(self, uri, liked):
+        """Pose/retire le flag favori local (crée la ligne si absente)."""
+        import datetime as _dt
+        updates = {'liked': 1 if liked else 0,
+                   'liked_at': _dt.datetime.utcnow() if liked else None}
+        Track.insert({**updates, 'uri': uri}).on_conflict(
+            action='update', update=updates,
+        ).execute()
+
+    def is_track_liked_local(self, uri):
+        try:
+            t = Track.get_or_none(Track.uri == uri)
+            return bool(t and t.liked)
+        except Exception:
+            return False
+
     def get_tracks_by_mood_features(self, energy_target, valence_target, radius, genre_names=None, limit=25):
         """Return shuffled URIs of tracks within [energy_target±radius, valence_target±radius].
 

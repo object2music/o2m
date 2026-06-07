@@ -211,6 +211,10 @@
     text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
   }
+  #td-fav { font-size: 16px; line-height: 1; user-select: none; }
+  #td-fav.on { color: #e0245e; }
+  body.edit-mode #td-fav { cursor: pointer; }
+  body.edit-mode #mood-matrix { box-shadow: inset 0 0 0 2px var(--accent); }
 
   /* ── Now Playing ── */
   #now-playing {
@@ -658,6 +662,7 @@
     </div>
     <dl class="td-list">
       <div><dt>Statut</dt><dd id="td-type">—</dd></div>
+      <div><dt>Favori</dt><dd id="td-fav" class="td-fav">—</dd></div>
       <div><dt>Énergie</dt><dd id="td-energy">—</dd></div>
       <div><dt>Valence</dt><dd id="td-valence">—</dd></div>
       <div><dt>Ambiance</dt><dd id="td-mood">—</dd></div>
@@ -1130,10 +1135,25 @@ function updateMediaSession(track, isPlaying, coverUrl) {
 }
 
 /* ── Colonne détails du morceau (read-only) ── */
+let detailsUri = null;            // uri actuellement affichée (détecte le changement)
+let favLocal = false, favSpotify = null;  // états favori courants
+
+function renderFav() {
+  const el = document.getElementById('td-fav');
+  if (!el) return;
+  const fav = favLocal || favSpotify === true;
+  el.textContent = fav ? '♥' : '♡';
+  el.classList.toggle('on', fav);
+  const src = [favLocal ? 'local' : null, favSpotify === true ? 'Spotify' : null].filter(Boolean).join(' + ');
+  el.title = (fav ? 'Favori' + (src ? ' (' + src + ')' : '') : 'Pas favori')
+           + (editUnlocked ? ' — clic pour basculer' : '');
+}
+
 async function renderTrackDetails(uri) {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   if (!uri) {
     ['td-type','td-energy','td-valence','td-mood','td-plays','td-library'].forEach(id => set(id, '—'));
+    detailsUri = null; favLocal = false; favSpotify = null; renderFav();
     return;
   }
   try {
@@ -1145,9 +1165,41 @@ async function renderTrackDetails(uri) {
     set('td-mood',    info.mood || '—');
     set('td-plays',   (info.read_count_end ?? 0) + '');
     set('td-library', info.library || '—');
+    favLocal = !!info.liked;
+    // Statut Spotify : seulement quand l'uri change, pour ne pas spammer l'API
+    if (uri !== detailsUri) {
+      favSpotify = null;
+      renderFav();
+      if (uri.startsWith('spotify:track:')) {
+        fetch(API + '/track_saved?uri=' + encodeURIComponent(uri))
+          .then(r => r.json()).then(d => { favSpotify = d.saved; renderFav(); })
+          .catch(() => {});
+      }
+    }
+    detailsUri = uri;
+    renderFav();
   } catch(e) {
     ['td-type','td-energy','td-valence','td-mood','td-plays','td-library'].forEach(id => set(id, '—'));
   }
+}
+
+async function toggleFavorite() {
+  if (!editUnlocked) { setFeedback('Active l\'édition (🔒)'); return; }
+  if (!detailsUri) return;
+  const next = !(favLocal || favSpotify === true);
+  try {
+    const r = await fetch(API + '/track_favorite', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ uri: detailsUri, favorite: next })
+    });
+    if (r.status === 401) { setFeedback('Édition non autorisée'); return; }
+    const d = await r.json();
+    if ('liked_local' in d) favLocal = d.liked_local;
+    if ('liked_spotify' in d) favSpotify = d.liked_spotify;
+    else if (!detailsUri.startsWith('spotify:track:')) favSpotify = null;
+    renderFav();
+    setFeedback(next ? 'Ajouté aux favoris' : 'Retiré des favoris');
+  } catch(e) { setFeedback('Erreur favori'); }
 }
 
 /* ── Édition : auth Spotify via proxy Iris (TEMPORAIRE — migrer en HTTPS) ── */
@@ -1297,6 +1349,7 @@ function initMatrix() {
     canvas.setPointerCapture(e.pointerId);
     matrixMode = detectMatrixMode(canvas, e);
     if (matrixMode === 'resize') matrixResize(canvas, e);
+    else if (matrixMode === 'edittrack') matrixEditTrack(canvas, e);
     else matrixMove(canvas, e);
   });
   canvas.addEventListener('pointermove', e => {
@@ -1308,9 +1361,13 @@ function initMatrix() {
     }
     e.preventDefault();
     if (matrixMode === 'resize') matrixResize(canvas, e);
+    else if (matrixMode === 'edittrack') matrixEditTrack(canvas, e);
     else matrixMove(canvas, e);
   });
-  canvas.addEventListener('pointerup',    () => scheduleApply());
+  canvas.addEventListener('pointerup',    () => {
+    if (matrixMode === 'edittrack') { saveCurrentTrackFeatures(); matrixMode = 'move'; }
+    else scheduleApply();
+  });
   canvas.addEventListener('pointerleave', () => hideMatrixTooltip());
 
   requestAnimationFrame(drawMatrix);
@@ -1319,6 +1376,13 @@ function initMatrix() {
 function detectMatrixMode(canvas, e) {
   const rect  = canvas.getBoundingClientRect();
   const inner = rect.width - 2 * PAD;
+  // Mode édition : priorité au point du morceau courant (draggable)
+  if (editUnlocked && matrixCurUri && matrixFeatures[matrixCurUri]) {
+    const f = matrixFeatures[matrixCurUri];
+    const cx = rect.left + PAD + f.energy * inner;
+    const cy = rect.top  + PAD + (1 - f.valence) * inner;
+    if (Math.hypot(e.clientX - cx, e.clientY - cy) < 16) return 'edittrack';
+  }
   const tx = rect.left + PAD + appState.energy * inner;
   const ty = rect.top  + PAD + (1 - appState.valence) * inner;
   const r  = (appState.dl / 20 + 0.05) * inner;
@@ -1336,6 +1400,30 @@ function matrixMove(canvas, e) {
   appState.valence = valence;
   setDial('energy', energy);
   setDial('valence', valence);
+}
+
+function matrixEditTrack(canvas, e) {
+  if (!matrixCurUri) return;
+  const rect  = canvas.getBoundingClientRect();
+  const inner = rect.width - 2 * PAD;
+  const energy  = Math.min(1, Math.max(0, (e.clientX - rect.left - PAD) / inner));
+  const valence = Math.min(1, Math.max(0, 1 - (e.clientY - rect.top  - PAD) / inner));
+  matrixFeatures[matrixCurUri] = { energy, valence };
+  const set = (id, x) => { const el = document.getElementById(id); if (el) el.textContent = Math.round(x * 10) + '/10'; };
+  set('td-energy', energy); set('td-valence', valence);
+}
+
+async function saveCurrentTrackFeatures() {
+  const f = matrixCurUri && matrixFeatures[matrixCurUri];
+  if (!f) return;
+  try {
+    const r = await fetch(API + '/track_features', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ uri: matrixCurUri, energy: f.energy, valence: f.valence })
+    });
+    if (r.status === 401) { setFeedback('Édition non autorisée'); return; }
+    setFeedback('Énergie / valence enregistrées');
+  } catch(e) { setFeedback('Erreur enregistrement'); }
 }
 
 function matrixResize(canvas, e) {
@@ -1725,6 +1813,7 @@ async function init() {
 
   initMediaSession();
   document.getElementById('btn-edit-lock')?.addEventListener('click', startEditAuth);
+  document.getElementById('td-fav')?.addEventListener('click', toggleFavorite);
   checkEditStatus();
   await loadGenres();
   await loadBoxes();
