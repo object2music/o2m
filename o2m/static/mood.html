@@ -132,6 +132,36 @@
   #cover-col { flex: 0 0 auto; display: flex; padding: 12px; }
   #top-right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
+  /* ── Colonne détails du morceau ── */
+  #track-details {
+    flex: 0 0 230px; min-width: 0; border-left: 1px solid var(--border);
+    padding: 12px 16px; display: flex; flex-direction: column; gap: 10px;
+    background: var(--surface);
+  }
+  #track-details .td-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--font-head); font-weight: 700; font-size: 13px;
+    text-transform: uppercase; letter-spacing: .02em; color: var(--text);
+  }
+  #btn-edit-lock {
+    background: none; border: none; cursor: pointer; font-size: 14px;
+    color: var(--muted); padding: 2px 4px; line-height: 1; transition: color .15s;
+  }
+  #btn-edit-lock.unlocked { color: var(--accent); }
+  #track-details .td-list { display: flex; flex-direction: column; gap: 7px; margin: 0; }
+  #track-details .td-list > div {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  }
+  #track-details dt {
+    font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .04em; flex-shrink: 0;
+  }
+  #track-details dd {
+    margin: 0; font-size: 13px; color: var(--text); font-weight: 600;
+    text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* ── Now Playing ── */
   #now-playing {
     display: flex; align-items: flex-start; gap: 14px;
@@ -326,6 +356,7 @@
     #cover-col { padding: 10px; }
     #cover-wrap { aspect-ratio: auto; width: 84px; height: 84px; }
     #now-playing { padding: 10px 12px; gap: 10px; }
+    #track-details { display: none; }  /* TODO: version mobile repliable */
     #track-name { font-size: 17px; }
     #controls { flex-wrap: wrap; gap: 16px; padding: 8px 12px; }
 
@@ -495,6 +526,22 @@
     </div>
 
   </div><!-- /top-right -->
+
+  <!-- Colonne détails du morceau courant (desktop) -->
+  <div id="track-details">
+    <div class="td-head">
+      <span>Détails</span>
+      <button id="btn-edit-lock" title="Activer l'édition">🔒</button>
+    </div>
+    <dl class="td-list">
+      <div><dt>Statut</dt><dd id="td-type">—</dd></div>
+      <div><dt>Énergie</dt><dd id="td-energy">—</dd></div>
+      <div><dt>Valence</dt><dd id="td-valence">—</dd></div>
+      <div><dt>Ambiance</dt><dd id="td-mood">—</dd></div>
+      <div><dt>Lectures</dt><dd id="td-plays">—</dd></div>
+      <div><dt>Bibliothèque</dt><dd id="td-library">—</dd></div>
+    </dl>
+  </div>
 </div><!-- /top-zone -->
 
 <!-- Scrollable area -->
@@ -906,9 +953,11 @@ async function refreshNowPlaying() {
     const coverEl = document.getElementById('cover');
     coverEl.src = coverUrl;
     updateMediaSession(track, playing, coverUrl);
+    renderTrackDetails(track.uri);
   } else {
     updateStatusBadge('');
     updateMediaSession(null, playing, '');
+    renderTrackDetails(null);
   }
 
   renderTracklist(tracks, tlid);
@@ -945,6 +994,27 @@ function updateMediaSession(track, isPlaying, coverUrl) {
       album:  track.album?.name || '',
       artwork: coverUrl ? [{ src: coverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
     });
+  }
+}
+
+/* ── Colonne détails du morceau (read-only) ── */
+async function renderTrackDetails(uri) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  if (!uri) {
+    ['td-type','td-energy','td-valence','td-mood','td-plays','td-library'].forEach(id => set(id, '—'));
+    return;
+  }
+  try {
+    const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
+    const ev = x => (x === null || x === undefined) ? '—' : Math.round(x * 10) + '/10';
+    set('td-type',    info.option_type || '—');
+    set('td-energy',  ev(info.energy));
+    set('td-valence', ev(info.valence));
+    set('td-mood',    info.mood || '—');
+    set('td-plays',   (info.read_count_end ?? 0) + '');
+    set('td-library', info.library || '—');
+  } catch(e) {
+    ['td-type','td-energy','td-valence','td-mood','td-plays','td-library'].forEach(id => set(id, '—'));
   }
 }
 
