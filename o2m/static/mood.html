@@ -900,13 +900,50 @@ async function refreshNowPlaying() {
     const imgR = await rpc('core.library.get_images', {uris: [track.uri]});
     const imgs = imgR?.result?.[track.uri] || [];
     const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+    const coverUrl = best ? imageUrl(best.uri || best) : '';
     const coverEl = document.getElementById('cover');
-    coverEl.src = best ? imageUrl(best.uri || best) : '';
+    coverEl.src = coverUrl;
+    updateMediaSession(track, playing, coverUrl);
   } else {
     updateStatusBadge('');
+    updateMediaSession(null, playing, '');
   }
 
   renderTracklist(tracks, tlid);
+}
+
+/* ── Media Session API (Bluetooth / notification controls) ── */
+function initMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  navigator.mediaSession.setActionHandler('play', async () => {
+    await rpc('core.playback.resume');
+    setTimeout(refreshNowPlaying, 300);
+  });
+  navigator.mediaSession.setActionHandler('pause', async () => {
+    await rpc('core.playback.pause');
+    setTimeout(refreshNowPlaying, 300);
+  });
+  navigator.mediaSession.setActionHandler('previoustrack', async () => {
+    await rpc('core.playback.previous');
+    setTimeout(refreshNowPlaying, 800);
+  });
+  navigator.mediaSession.setActionHandler('nexttrack', async () => {
+    await rpc('core.playback.next');
+    setTimeout(refreshNowPlaying, 800);
+  });
+}
+
+function updateMediaSession(track, isPlaying, coverUrl) {
+  if (!('mediaSession' in navigator)) return;
+  navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  if (track) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title:  track.name || '',
+      artist: (track.artists || []).map(a => a.name).join(', ') || '',
+      album:  track.album?.name || '',
+      artwork: coverUrl ? [{ src: coverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
+    });
+  }
 }
 
 /* ── Genres ── */
@@ -1400,6 +1437,7 @@ async function init() {
     setDial('dl', dl / 10);
   } catch(e) {}
 
+  initMediaSession();
   await loadGenres();
   await loadBoxes();
   await refreshNowPlaying();
