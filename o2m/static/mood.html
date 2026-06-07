@@ -1322,27 +1322,50 @@ function startEditAuth() {
   if (!popup) { setFeedback('Popup blocked — allow popups'); return; }
   setFeedback('Connecting to Spotify…');
 
-  function onMsg(event) {
-    if (event.origin !== IRIS_AUTH_ORIGIN) return;
-    let data;
-    try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; }
-    catch(e) { return; }
-    if (!data || data.origin !== 'auth_spotify') return;
+  let done = false;
+  function finish() {
+    done = true;
     window.removeEventListener('message', onMsg);
-    if (data.error) { setFeedback('Spotify: ' + data.error); return; }
-    if (!data.access_token) { setFeedback('No token received'); return; }
+    clearInterval(watch);
+  }
+
+  function sendToken(token) {
     fetch(API + '/edit_auth', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ access_token: data.access_token })
-    }).then(r => r.json().then(j => ({ ok: r.ok, j })))
-      .then(({ ok, j }) => {
-        if (ok && j.ok) { setEditUnlocked(true, j.id); setFeedback('Editing enabled'); }
-        else if (j.reason === 'not_in_allowlist')
-          setFeedback('Not authorized — your Spotify id: ' + (j.id || '?'));
-        else setFeedback('Auth failed: ' + (j.error || '?'));
-      }).catch(() => setFeedback('Auth network error'));
+      body: JSON.stringify({ access_token: token })
+    }).then(async r => {
+      let j = {};
+      try { j = await r.json(); } catch(e) {}
+      console.log('[edit-auth] /edit_auth', r.status, j);
+      if (r.status === 404) { setFeedback('Backend not deployed — restart o2m container'); return; }
+      if (r.ok && j.ok) { setEditUnlocked(true, j.id); setFeedback('Editing enabled'); }
+      else if (j.reason === 'not_in_allowlist')
+        setFeedback('Not authorized — your Spotify id: ' + (j.id || '?'));
+      else setFeedback('Auth failed: ' + (j.error || ('HTTP ' + r.status)));
+    }).catch(err => { console.log('[edit-auth] network error', err); setFeedback('Auth network error'); });
+  }
+
+  function onMsg(event) {
+    // Security relies on server-side re-verification (/v1/me), so we do NOT
+    // hard-drop on event.origin (which would fail silently); we just warn.
+    let data = event.data;
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) { return; } }
+    if (!data || typeof data !== 'object' || data.origin !== 'auth_spotify') return;
+    console.log('[edit-auth] message from', event.origin, 'keys:', Object.keys(data));
+    if (event.origin !== IRIS_AUTH_ORIGIN)
+      console.warn('[edit-auth] unexpected message origin:', event.origin);
+    finish();
+    if (data.error) { setFeedback('Spotify: ' + data.error); return; }
+    if (!data.access_token) { setFeedback('No token received'); return; }
+    sendToken(data.access_token);
   }
   window.addEventListener('message', onMsg);
+
+  // Watchdog: popup closed without posting a message
+  const watch = setInterval(() => {
+    if (done) { clearInterval(watch); return; }
+    if (popup.closed) { finish(); setFeedback('Auth cancelled (no token returned)'); }
+  }, 1000);
 }
 
 /* ── Genres ── */
