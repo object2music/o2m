@@ -97,23 +97,23 @@
   /* ════════════ THÈME : Overprint (affiche éditoriale, orange) ════════════ */
   [data-theme="overprint"] {
     --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
-    --accent: #ff3b00; --accent-soft: #ff3b001a;
+    --accent: #ff5a00; --accent-soft: #ff5a001a;
     --text: #000000; --muted: #9a9a9a;
     --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
     --track-bg: #e2e2e2;
-    --hero-accent: #ff3b00;
-    --c-energy: #111111; --c-valence: #888888; --c-dl: #ff3b00; --dial-txt: #000000;
+    --hero-accent: #ff5a00;
+    --c-energy: #111111; --c-valence: #888888; --c-dl: #ff5a00; --dial-txt: #000000;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
     --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
+    --eyebrow-mark: "↓ "; --eyebrow-color: #ff5a00;
     --mx-bg: #f4f4f4;
     --mx-q-calm: #00000005; --mx-q-happy: #0000000b;
     --mx-q-dark: #00000012; --mx-q-energetic: #00000008;
     --mx-line: #00000026; --mx-border: transparent;
     --mx-label: #00000033; --mx-axis: #00000055;
-    --mx-dl-fill: #ff3b0010; --mx-dl-stroke: #ff3b0099;
+    --mx-dl-fill: #ff5a0010; --mx-dl-stroke: #ff5a0099;
     --mx-dot-core: #ffffff; --mx-pulse: 0,0,0;
     --mood-happy: 60,60,60; --mood-energetic: 255,59,0;
     --mood-calm: 140,140,140; --mood-dark: 20,20,20;
@@ -582,16 +582,16 @@
   [data-theme="invert"]    #track-details {
     grid-area: details; height: 100%; border-left: 1px solid var(--border); border-top: none;
   }
-  [data-theme="overprint"] #cover-col { grid-area: cover; }
   [data-theme="invert"]    #cover-col { grid-area: cover; }
-  [data-theme="overprint"] #top-right { grid-area: right; }
   [data-theme="invert"]    #top-right { grid-area: right; }
 
-  /* Overprint : pochette+titre en haut à gauche, infos dessous, détails à droite */
+  /* Overprint : pochette = scène unique, titre (haut) + contrôles (bas) superposés */
+  [data-theme="overprint"] #cover-col { grid-area: stage; }
+  [data-theme="overprint"] #top-right { grid-area: stage; }
   [data-theme="overprint"] #top-zone {
     display: grid; align-items: start;
     grid-template-columns: 1fr minmax(190px, 240px);
-    grid-template-areas: "cover details" "right details";
+    grid-template-areas: "stage details";
   }
   /* Invert : bandeau pleine largeur en haut, infos + détails dessous */
   [data-theme="invert"] #top-zone {
@@ -607,20 +607,28 @@
     overflow-wrap: anywhere;
   }
 
-  /* — Overprint : pochette carrée + titre géant qui déborde — */
+  /* — Overprint : titre en haut, contrôles superposés en bas de la pochette — */
   [data-theme="overprint"] #cover-col {
-    position: relative; display: block; padding: 24px 24px 0;
+    position: relative; display: block; padding: 16px; justify-self: start;
   }
   [data-theme="overprint"] #cover-wrap {
-    aspect-ratio: 1 / 1; height: auto; width: min(46vh, 100%); max-width: 460px;
+    aspect-ratio: 1 / 1; height: auto; width: min(54vh, 100%); max-width: 540px;
   }
   [data-theme="overprint"] #hero-title {
-    left: 24px; right: 16px; bottom: -8px;
-    font-size: clamp(46px, 8.5vw, 120px);
-    color: var(--hero-accent, #ff3b00);
+    top: 18px; left: 22px; right: 16px; bottom: auto;
+    font-size: clamp(40px, 7vw, 104px);
+    color: rgba(255, 90, 0, 0.92); mix-blend-mode: multiply;
   }
-  [data-theme="overprint"] #now-playing { padding-top: 18px; }
-  [data-theme="overprint"] #artist-name { font-size: 16px; }
+  /* Bloc infos + contrôles + progression, posé en bas de la pochette avec dégradé */
+  [data-theme="overprint"] #top-right {
+    align-self: end; justify-self: start; z-index: 4;
+    width: min(54vh, 100%); max-width: 540px; margin: 16px;
+    background: linear-gradient(to top, var(--surface), var(--surface) 42%, transparent);
+  }
+  [data-theme="overprint"] #now-playing  { padding: 12px 6px 4px; }
+  [data-theme="overprint"] #controls     { justify-content: flex-start; padding: 4px 6px; }
+  [data-theme="overprint"] #progress-wrap { padding: 4px 6px 6px; }
+  [data-theme="overprint"] #artist-name  { font-size: 16px; }
 
   /* — Invert : pochette pleine largeur + titre en blend difference — */
   [data-theme="invert"] #cover-col {
@@ -648,6 +656,11 @@
     [data-theme="overprint"] #track-details,
     [data-theme="invert"]    #track-details { display: none; }
     [data-theme="overprint"] #cover-wrap { width: 72vw; max-width: 340px; }
+    /* Overprint mobile : pas de superposition, contrôles sous la pochette */
+    [data-theme="overprint"] #top-right {
+      width: 100%; margin: 0; background: none;
+    }
+    [data-theme="overprint"] #hero-title { font-size: clamp(34px, 12vw, 72px); }
   }
 </style>
 </head>
