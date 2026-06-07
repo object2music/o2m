@@ -561,12 +561,34 @@
   /* — commun aux deux affiches — */
   [data-theme="overprint"] #top-zone,
   [data-theme="invert"]    #top-zone {
-    display: block; position: relative; padding: 0;
+    position: relative; padding: 0;
   }
   [data-theme="overprint"] #top-right,
   [data-theme="invert"]    #top-right { width: 100%; }
   [data-theme="overprint"] #now-playing #track-name,
   [data-theme="invert"]    #now-playing #track-name { display: none; }
+  /* La colonne détails reste à droite du top zone (grille) */
+  [data-theme="overprint"] #track-details,
+  [data-theme="invert"]    #track-details {
+    grid-area: details; height: 100%; border-left: 1px solid var(--border); border-top: none;
+  }
+  [data-theme="overprint"] #cover-col { grid-area: cover; }
+  [data-theme="invert"]    #cover-col { grid-area: cover; }
+  [data-theme="overprint"] #top-right { grid-area: right; }
+  [data-theme="invert"]    #top-right { grid-area: right; }
+
+  /* Overprint : pochette+titre en haut à gauche, infos dessous, détails à droite */
+  [data-theme="overprint"] #top-zone {
+    display: grid; align-items: start;
+    grid-template-columns: 1fr minmax(190px, 240px);
+    grid-template-areas: "cover details" "right details";
+  }
+  /* Invert : bandeau pleine largeur en haut, infos + détails dessous */
+  [data-theme="invert"] #top-zone {
+    display: grid; align-items: start;
+    grid-template-columns: 1fr minmax(190px, 240px);
+    grid-template-areas: "cover cover" "right details";
+  }
   [data-theme="overprint"] #hero-title,
   [data-theme="invert"]    #hero-title {
     display: block; position: absolute; z-index: 3; pointer-events: none;
@@ -608,6 +630,15 @@
   }
   [data-theme="invert"] #now-playing { padding-top: 14px; }
   [data-theme="invert"] #artist-name { font-size: 16px; }
+
+  /* Affiches en mobile : grille → bloc, détails masqués (comme les autres thèmes) */
+  @media (max-width: 699px) {
+    [data-theme="overprint"] #top-zone,
+    [data-theme="invert"]    #top-zone { display: block; }
+    [data-theme="overprint"] #track-details,
+    [data-theme="invert"]    #track-details { display: none; }
+    [data-theme="overprint"] #cover-wrap { width: 72vw; max-width: 340px; }
+  }
 </style>
 </head>
 <body>
@@ -657,17 +688,17 @@
   <!-- Colonne détails du morceau courant (desktop) -->
   <div id="track-details">
     <div class="td-head">
-      <span>Détails</span>
-      <button id="btn-edit-lock" title="Activer l'édition">🔒</button>
+      <span>Details</span>
+      <button id="btn-edit-lock" title="Enable editing">🔒</button>
     </div>
     <dl class="td-list">
-      <div><dt>Statut</dt><dd id="td-type">—</dd></div>
-      <div><dt>Favori</dt><dd id="td-fav" class="td-fav">—</dd></div>
-      <div><dt>Énergie</dt><dd id="td-energy">—</dd></div>
+      <div><dt>Status</dt><dd id="td-type">—</dd></div>
+      <div><dt>Favorite</dt><dd id="td-fav" class="td-fav">—</dd></div>
+      <div><dt>Energy</dt><dd id="td-energy">—</dd></div>
       <div><dt>Valence</dt><dd id="td-valence">—</dd></div>
-      <div><dt>Ambiance</dt><dd id="td-mood">—</dd></div>
-      <div><dt>Lectures</dt><dd id="td-plays">—</dd></div>
-      <div><dt>Bibliothèque</dt><dd id="td-library">—</dd></div>
+      <div><dt>Mood</dt><dd id="td-mood">—</dd></div>
+      <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
+      <div><dt>Library</dt><dd id="td-library">—</dd></div>
     </dl>
   </div>
 </div><!-- /top-zone -->
@@ -1145,8 +1176,8 @@ function renderFav() {
   el.textContent = fav ? '♥' : '♡';
   el.classList.toggle('on', fav);
   const src = [favLocal ? 'local' : null, favSpotify === true ? 'Spotify' : null].filter(Boolean).join(' + ');
-  el.title = (fav ? 'Favori' + (src ? ' (' + src + ')' : '') : 'Pas favori')
-           + (editUnlocked ? ' — clic pour basculer' : '');
+  el.title = (fav ? 'Favorite' + (src ? ' (' + src + ')' : '') : 'Not a favorite')
+           + (editUnlocked ? ' — click to toggle' : '');
 }
 
 async function renderTrackDetails(uri) {
@@ -1184,7 +1215,7 @@ async function renderTrackDetails(uri) {
 }
 
 async function toggleFavorite() {
-  if (!editUnlocked) { setFeedback('Active l\'édition (🔒)'); return; }
+  if (!editUnlocked) { setFeedback('Enable editing (🔒)'); return; }
   if (!detailsUri) return;
   const next = !(favLocal || favSpotify === true);
   try {
@@ -1192,14 +1223,14 @@ async function toggleFavorite() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ uri: detailsUri, favorite: next })
     });
-    if (r.status === 401) { setFeedback('Édition non autorisée'); return; }
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     const d = await r.json();
     if ('liked_local' in d) favLocal = d.liked_local;
     if ('liked_spotify' in d) favSpotify = d.liked_spotify;
     else if (!detailsUri.startsWith('spotify:track:')) favSpotify = null;
     renderFav();
-    setFeedback(next ? 'Ajouté aux favoris' : 'Retiré des favoris');
-  } catch(e) { setFeedback('Erreur favori'); }
+    setFeedback(next ? 'Added to favorites' : 'Removed from favorites');
+  } catch(e) { setFeedback('Favorite error'); }
 }
 
 /* ── Édition : auth Spotify via proxy Iris (TEMPORAIRE — migrer en HTTPS) ── */
@@ -1213,8 +1244,8 @@ function setEditUnlocked(on, id) {
   if (btn) {
     btn.textContent = on ? '🔓' : '🔒';
     btn.classList.toggle('unlocked', on);
-    btn.title = on ? ('Édition activée' + (id ? ' (' + id + ')' : '') + ' — clic pour quitter')
-                   : "Activer l'édition";
+    btn.title = on ? ('Editing enabled' + (id ? ' (' + id + ')' : '') + ' — click to exit')
+                   : 'Enable editing';
   }
   document.body.classList.toggle('edit-mode', on);
 }
@@ -1229,15 +1260,15 @@ async function checkEditStatus() {
 function startEditAuth() {
   if (editUnlocked) {  // déjà déverrouillé → déconnexion
     fetch(API + '/edit_logout', {method: 'POST'}).then(() => {
-      setEditUnlocked(false); setFeedback('Édition désactivée');
+      setEditUnlocked(false); setFeedback('Editing disabled');
     });
     return;
   }
   const scope = encodeURIComponent('user-read-private');
   const popup = window.open(IRIS_AUTH_URL + '?action=authorize&scope=' + scope,
                             'o2m_spotify_auth', 'height=600,width=400');
-  if (!popup) { setFeedback('Popup bloquée — autorise les popups'); return; }
-  setFeedback('Connexion Spotify…');
+  if (!popup) { setFeedback('Popup blocked — allow popups'); return; }
+  setFeedback('Connecting to Spotify…');
 
   function onMsg(event) {
     if (event.origin !== IRIS_AUTH_ORIGIN) return;
@@ -1246,18 +1277,18 @@ function startEditAuth() {
     catch(e) { return; }
     if (!data || data.origin !== 'auth_spotify') return;
     window.removeEventListener('message', onMsg);
-    if (data.error) { setFeedback('Spotify : ' + data.error); return; }
-    if (!data.access_token) { setFeedback('Pas de token reçu'); return; }
+    if (data.error) { setFeedback('Spotify: ' + data.error); return; }
+    if (!data.access_token) { setFeedback('No token received'); return; }
     fetch(API + '/edit_auth', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ access_token: data.access_token })
     }).then(r => r.json().then(j => ({ ok: r.ok, j })))
       .then(({ ok, j }) => {
-        if (ok && j.ok) { setEditUnlocked(true, j.id); setFeedback('Édition activée'); }
+        if (ok && j.ok) { setEditUnlocked(true, j.id); setFeedback('Editing enabled'); }
         else if (j.reason === 'not_in_allowlist')
-          setFeedback('Non autorisé — ton id Spotify : ' + (j.id || '?'));
-        else setFeedback('Échec auth : ' + (j.error || '?'));
-      }).catch(() => setFeedback('Erreur réseau auth'));
+          setFeedback('Not authorized — your Spotify id: ' + (j.id || '?'));
+        else setFeedback('Auth failed: ' + (j.error || '?'));
+      }).catch(() => setFeedback('Auth network error'));
   }
   window.addEventListener('message', onMsg);
 }
@@ -1421,9 +1452,9 @@ async function saveCurrentTrackFeatures() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ uri: matrixCurUri, energy: f.energy, valence: f.valence })
     });
-    if (r.status === 401) { setFeedback('Édition non autorisée'); return; }
-    setFeedback('Énergie / valence enregistrées');
-  } catch(e) { setFeedback('Erreur enregistrement'); }
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
+    setFeedback('Energy / valence saved');
+  } catch(e) { setFeedback('Save error'); }
 }
 
 function matrixResize(canvas, e) {
