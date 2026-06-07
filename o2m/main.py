@@ -1,4 +1,4 @@
-import logging, subprocess, os, spotipy, json, threading
+import logging, subprocess, os, spotipy, json, threading, requests
 
 from mopidyapi import MopidyAPI
 from src import util
@@ -122,6 +122,103 @@ if __name__ == "__main__":
                 return ("No action")
                 
         else: return "no TAG"
+
+    # ─── Édition : auth par identité Spotify (proxy Iris public, TEMPORAIRE — migrer en HTTPS) ───
+    import functools
+    from itsdangerous import URLSafeTimedSerializer
+
+    _EDIT_COOKIE = 'o2m_edit'
+    _EDIT_MAX_AGE = 30 * 24 * 3600  # 30 jours
+
+    def _edit_secret():
+        """Secret de signature du cookie, auto-généré et persisté (pas de .env requis)."""
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.edit_cookie_secret')
+        try:
+            with open(path) as f:
+                s = f.read().strip()
+            if s:
+                return s
+        except Exception:
+            pass
+        import secrets
+        s = secrets.token_hex(32)
+        try:
+            with open(path, 'w') as f:
+                f.write(s)
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+        return s
+
+    _edit_serializer = URLSafeTimedSerializer(_edit_secret(), salt='o2m-edit')
+
+    def _edit_allowlist():
+        """IDs Spotify autorisés : O2M_EDIT_SPOTIFY_IDS (csv) + défaut SPOTIFY_USERNAME."""
+        ids = set()
+        for var in ('O2M_EDIT_SPOTIFY_IDS', 'SPOTIFY_USERNAME'):
+            for part in os.environ.get(var, '').replace(';', ',').split(','):
+                p = part.strip().lower()
+                if p:
+                    ids.add(p)
+        return ids
+
+    def _edit_current_user():
+        tok = request.cookies.get(_EDIT_COOKIE)
+        if not tok:
+            return None
+        try:
+            return _edit_serializer.loads(tok, max_age=_EDIT_MAX_AGE).get('id')
+        except Exception:
+            return None
+
+    def require_edit_auth(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            from flask import jsonify
+            if _edit_current_user() is None:
+                return jsonify({'error': 'edit_auth_required'}), 401
+            return fn(*args, **kwargs)
+        return wrapper
+
+    @api.route('/api/edit_auth', methods=['POST'])
+    def api_edit_auth():
+        """Reçoit un access_token Spotify (obtenu via le proxy Iris), revérifie l'identité
+        côté serveur via /v1/me, et pose un cookie signé si l'id est dans l'allowlist."""
+        from flask import jsonify, make_response
+        data = request.get_json(silent=True) or {}
+        token = (data.get('access_token') or '').strip()
+        if not token:
+            return jsonify({'ok': False, 'error': 'access_token required'}), 400
+        try:
+            r = requests.get('https://api.spotify.com/v1/me',
+                             headers={'Authorization': f'Bearer {token}'}, timeout=8)
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'spotify unreachable: {e}'}), 502
+        if r.status_code != 200:
+            return jsonify({'ok': False, 'error': 'invalid spotify token'}), 401
+        me = r.json()
+        uid = (me.get('id') or '').strip()
+        name = me.get('display_name') or uid
+        if uid.lower() not in _edit_allowlist():
+            return jsonify({'ok': False, 'id': uid, 'display_name': name,
+                            'reason': 'not_in_allowlist'}), 403
+        resp = make_response(jsonify({'ok': True, 'id': uid, 'display_name': name}))
+        resp.set_cookie(_EDIT_COOKIE, _edit_serializer.dumps({'id': uid}),
+                        max_age=_EDIT_MAX_AGE, httponly=True, samesite='Lax')
+        return resp
+
+    @api.route('/api/edit_status')
+    def api_edit_status():
+        from flask import jsonify
+        uid = _edit_current_user()
+        return jsonify({'unlocked': uid is not None, 'id': uid})
+
+    @api.route('/api/edit_logout', methods=['POST'])
+    def api_edit_logout():
+        from flask import jsonify, make_response
+        resp = make_response(jsonify({'ok': True}))
+        resp.delete_cookie(_EDIT_COOKIE)
+        return resp
 
     @api.route('/api/box')
     def api_box():

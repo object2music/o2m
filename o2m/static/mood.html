@@ -1040,6 +1040,66 @@ async function renderTrackDetails(uri) {
   }
 }
 
+/* ── Édition : auth Spotify via proxy Iris (TEMPORAIRE — migrer en HTTPS) ── */
+const IRIS_AUTH_URL = 'https://jamesbarnsley.co.nz/iris/auth_spotify.php';
+const IRIS_AUTH_ORIGIN = 'https://jamesbarnsley.co.nz';
+let editUnlocked = false;
+
+function setEditUnlocked(on, id) {
+  editUnlocked = on;
+  const btn = document.getElementById('btn-edit-lock');
+  if (btn) {
+    btn.textContent = on ? '🔓' : '🔒';
+    btn.classList.toggle('unlocked', on);
+    btn.title = on ? ('Édition activée' + (id ? ' (' + id + ')' : '') + ' — clic pour quitter')
+                   : "Activer l'édition";
+  }
+  document.body.classList.toggle('edit-mode', on);
+}
+
+async function checkEditStatus() {
+  try {
+    const s = await fetch(API + '/edit_status').then(r => r.json());
+    setEditUnlocked(!!s.unlocked, s.id);
+  } catch(e) {}
+}
+
+function startEditAuth() {
+  if (editUnlocked) {  // déjà déverrouillé → déconnexion
+    fetch(API + '/edit_logout', {method: 'POST'}).then(() => {
+      setEditUnlocked(false); setFeedback('Édition désactivée');
+    });
+    return;
+  }
+  const scope = encodeURIComponent('user-read-private');
+  const popup = window.open(IRIS_AUTH_URL + '?action=authorize&scope=' + scope,
+                            'o2m_spotify_auth', 'height=600,width=400');
+  if (!popup) { setFeedback('Popup bloquée — autorise les popups'); return; }
+  setFeedback('Connexion Spotify…');
+
+  function onMsg(event) {
+    if (event.origin !== IRIS_AUTH_ORIGIN) return;
+    let data;
+    try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; }
+    catch(e) { return; }
+    if (!data || data.origin !== 'auth_spotify') return;
+    window.removeEventListener('message', onMsg);
+    if (data.error) { setFeedback('Spotify : ' + data.error); return; }
+    if (!data.access_token) { setFeedback('Pas de token reçu'); return; }
+    fetch(API + '/edit_auth', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ access_token: data.access_token })
+    }).then(r => r.json().then(j => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (ok && j.ok) { setEditUnlocked(true, j.id); setFeedback('Édition activée'); }
+        else if (j.reason === 'not_in_allowlist')
+          setFeedback('Non autorisé — ton id Spotify : ' + (j.id || '?'));
+        else setFeedback('Échec auth : ' + (j.error || '?'));
+      }).catch(() => setFeedback('Erreur réseau auth'));
+  }
+  window.addEventListener('message', onMsg);
+}
+
 /* ── Genres ── */
 async function loadGenres() {
   try {
@@ -1538,6 +1598,8 @@ async function init() {
   } catch(e) {}
 
   initMediaSession();
+  document.getElementById('btn-edit-lock')?.addEventListener('click', startEditAuth);
+  checkEditStatus();
   await loadGenres();
   await loadBoxes();
   await refreshNowPlaying();
