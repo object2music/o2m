@@ -313,15 +313,36 @@
   .box-btn:disabled { opacity: .5; cursor: wait; }
 
   @media (min-width: 700px) {
-    #main-cols { flex-direction: row; align-items: flex-start; }
+    /* 3 colonnes scrollables indépendamment, footer fixe en bas */
+    #scroll-area { display: flex; flex-direction: column; overflow: hidden; }
+    #main-cols { flex-direction: row; align-items: stretch; flex: 1; min-height: 0; }
+    .col { overflow-y: auto; min-height: 0; }
+    #footer-links { flex-shrink: 0; }
     #boxes-panel { flex: 0 0 25%; border-top: none; border-right: 1px solid var(--border);
-                   padding: 14px 12px; min-height: 300px; }
+                   padding: 14px 12px; }
     #left-panel  { flex: 0 0 35%; border-right: 1px solid var(--border); min-width: 0; }
-    #tracklist-col { flex: 0 0 40%; overflow-y: auto; min-width: 0; }
+    #tracklist-col { flex: 0 0 40%; min-width: 0; }
     #dials { padding: 12px 10px 6px; }
     #matrix-section { padding: 4px 10px 8px; min-width: 0; }
     #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
     #tracklist-section { padding: 12px 12px 6px; }
+  }
+
+  @media (max-width: 699px) {
+    /* En-tête compact et lisible */
+    #cover-col { padding: 10px; }
+    #cover-wrap { aspect-ratio: auto; width: 84px; height: 84px; }
+    #now-playing { padding: 10px 12px; gap: 10px; }
+    #track-name { font-size: 17px; }
+    #controls { flex-wrap: wrap; gap: 16px; padding: 8px 12px; }
+
+    /* Panneaux Boxes / Réglages repliables — tracklist prioritaire */
+    .collapsible .panel-head { cursor: pointer; position: relative; padding-right: 22px; }
+    .collapsible .panel-head::after {
+      content: '▸'; position: absolute; right: 2px; top: 0; color: var(--muted); font-size: 11px;
+    }
+    .collapsible.open .panel-head::after { content: '▾'; }
+    .collapsible:not(.open) .panel-body { display: none; }
   }
 
   /* ── Matrix ── */
@@ -1344,9 +1365,15 @@ function setupThemeSwitcher() {
   applyTheme(current);
 }
 
+function setupCollapsibles() {
+  document.querySelectorAll('.collapsible .panel-head').forEach(h =>
+    h.addEventListener('click', () => h.closest('.collapsible').classList.toggle('open')));
+}
+
 async function init() {
   readThemeColors();
   setupThemeSwitcher();
+  setupCollapsibles();
   ['energy', 'valence', 'dl'].forEach(setupDial);
   makeDraggable('energy', v => { appState.energy = v; });
   makeDraggable('valence', v => { appState.valence = v; });
