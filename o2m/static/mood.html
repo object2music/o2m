@@ -6,7 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-title" content="O2M">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <title>O2M Mood</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -564,6 +568,10 @@
   .footer-link { display: inline-flex; align-items: center; gap: 5px; }
   .footer-link svg { width: 13px; height: 13px; flex-shrink: 0; }
   #btn-fullscreen.on { background: var(--accent); color: #fff; }
+  /* App installée (PWA) : le bouton Fullscreen ne sert plus */
+  @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+    #btn-fullscreen { display: none; }
+  }
 
   /* ════════════ Styles AFFICHE : Overprint & Invert ════════════ */
   #hero-title { display: none; }
@@ -1886,7 +1894,6 @@ async function init() {
   setInterval(refreshVolume, 15000);
   setInterval(updateProgress, 1000);
   autoConnectSnapIfNeeded();
-  autoFullscreenOnGesture();
 }
 
 async function updateProgress() {
@@ -1916,18 +1923,10 @@ function exitFullscreen() {
   (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
 }
 function toggleFullscreen() {
-  if (isFullscreen()) { localStorage.setItem('fs-off', '1'); exitFullscreen(); }
-  else { localStorage.removeItem('fs-off'); enterFullscreen(); }
+  if (isFullscreen()) exitFullscreen(); else enterFullscreen();
 }
 function updateFsBtn() {
   document.getElementById('btn-fullscreen')?.classList.toggle('on', isFullscreen());
-}
-function autoFullscreenOnGesture() {
-  if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) return;
-  if (localStorage.getItem('fs-off')) return;
-  const go = () => { if (!isFullscreen()) enterFullscreen(); };
-  document.addEventListener('click',    go, { once: true });
-  document.addEventListener('touchend', go, { once: true, passive: true });
 }
 
 init();
