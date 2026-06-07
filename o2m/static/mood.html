@@ -92,6 +92,56 @@
     --mood-calm: 140,140,140; --mood-dark: 20,20,20;
   }
 
+  /* ════════════ THÈME : Overprint (affiche éditoriale, orange) ════════════ */
+  [data-theme="overprint"] {
+    --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
+    --accent: #ff3b00; --accent-soft: #ff3b001a;
+    --text: #000000; --muted: #9a9a9a;
+    --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
+    --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
+    --track-bg: #e2e2e2;
+    --hero-accent: #ff3b00;
+    --c-energy: #111111; --c-valence: #888888; --c-dl: #ff3b00; --dial-txt: #000000;
+    --font: 'Archivo', system-ui, sans-serif;
+    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
+    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
+    --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
+    --mx-bg: #f4f4f4;
+    --mx-q-calm: #00000005; --mx-q-happy: #0000000b;
+    --mx-q-dark: #00000012; --mx-q-energetic: #00000008;
+    --mx-line: #00000026; --mx-border: transparent;
+    --mx-label: #00000033; --mx-axis: #00000055;
+    --mx-dl-fill: #ff3b0010; --mx-dl-stroke: #ff3b0099;
+    --mx-dot-core: #ffffff; --mx-pulse: 0,0,0;
+    --mood-happy: 60,60,60; --mood-energetic: 255,59,0;
+    --mood-calm: 140,140,140; --mood-dark: 20,20,20;
+  }
+
+  /* ════════════ THÈME : Invert (cinématique, couleur dynamique) ════════════ */
+  [data-theme="invert"] {
+    --bg: #0c0c0c; --surface: #0c0c0c; --card: #1c1c1c;
+    --accent: var(--hero-accent, #ff3b00); --accent-soft: #ffffff1a;
+    --text: #ffffff; --muted: #777777;
+    --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff33;
+    --fill-1: #ffffff06; --fill-2: #ffffff0f; --fill-3: #ffffff16;
+    --track-bg: #2a2a2a;
+    --hero-accent: #ff3b00;
+    --c-energy: #ffffff; --c-valence: #888888; --c-dl: var(--hero-accent, #ff3b00); --dial-txt: #ffffff;
+    --font: 'Archivo', system-ui, sans-serif;
+    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
+    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
+    --eyebrow-mark: "↓ "; --eyebrow-color: var(--hero-accent, #ff3b00);
+    --mx-bg: #161616;
+    --mx-q-calm: #ffffff04; --mx-q-happy: #ffffff09;
+    --mx-q-dark: #ffffff0f; --mx-q-energetic: #ffffff07;
+    --mx-line: #ffffff26; --mx-border: transparent;
+    --mx-label: #ffffff33; --mx-axis: #ffffff55;
+    --mx-dl-fill: #ffffff12; --mx-dl-stroke: var(--hero-accent, #ff3b00);
+    --mx-dot-core: #ffffff; --mx-pulse: 255,255,255;
+    --mood-happy: 210,210,210; --mood-energetic: 255,59,0;
+    --mood-calm: 150,150,150; --mood-dark: 90,90,90;
+  }
+
   html, body { height: 100%; }
   body { background: var(--bg); color: var(--text); font-family: var(--font);
          display: flex; flex-direction: column; overflow: hidden; height: 100dvh;
@@ -500,6 +550,60 @@
   /* ── Footer link SVG icons ── */
   .footer-link { display: inline-flex; align-items: center; gap: 5px; }
   .footer-link svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+  /* ════════════ Styles AFFICHE : Overprint & Invert ════════════ */
+  #hero-title { display: none; }
+
+  /* — commun aux deux affiches — */
+  [data-theme="overprint"] #top-zone,
+  [data-theme="invert"]    #top-zone {
+    display: block; position: relative; padding: 0;
+  }
+  [data-theme="overprint"] #top-right,
+  [data-theme="invert"]    #top-right { width: 100%; }
+  [data-theme="overprint"] #now-playing #track-name,
+  [data-theme="invert"]    #now-playing #track-name { display: none; }
+  [data-theme="overprint"] #hero-title,
+  [data-theme="invert"]    #hero-title {
+    display: block; position: absolute; z-index: 3; pointer-events: none;
+    font-family: var(--font-head); font-weight: 900;
+    line-height: 0.82; letter-spacing: -0.025em; text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+
+  /* — Overprint : pochette carrée + titre géant qui déborde — */
+  [data-theme="overprint"] #cover-col {
+    position: relative; display: block; padding: 24px 24px 0;
+  }
+  [data-theme="overprint"] #cover-wrap {
+    aspect-ratio: 1 / 1; height: auto; width: min(46vh, 100%); max-width: 460px;
+  }
+  [data-theme="overprint"] #hero-title {
+    left: 24px; right: 16px; bottom: -8px;
+    font-size: clamp(46px, 8.5vw, 120px);
+    color: var(--hero-accent, #ff3b00);
+  }
+  [data-theme="overprint"] #now-playing { padding-top: 18px; }
+  [data-theme="overprint"] #artist-name { font-size: 16px; }
+
+  /* — Invert : pochette pleine largeur + titre en blend difference — */
+  [data-theme="invert"] #cover-col {
+    position: relative; display: block; padding: 0; width: 100%; flex: none;
+  }
+  [data-theme="invert"] #cover-wrap {
+    aspect-ratio: 16 / 9; height: auto; width: 100%; max-height: 54vh;
+    background: #000;
+  }
+  [data-theme="invert"] #cover { filter: grayscale(1) contrast(1.1); }
+  [data-theme="invert"] #cover-wrap:hover #cover { filter: grayscale(0) contrast(1.05); }
+  [data-theme="invert"] #hero-title {
+    left: 22px; right: 22px; bottom: 18px;
+    font-size: clamp(40px, 7vw, 104px);
+    color: var(--hero-accent, #ffffff);
+    mix-blend-mode: difference;
+  }
+  [data-theme="invert"] #now-playing { padding-top: 14px; }
+  [data-theme="invert"] #artist-name { font-size: 16px; }
 </style>
 </head>
 <body>
@@ -508,6 +612,7 @@
 <div id="top-zone">
   <div id="cover-col">
     <div id="cover-wrap"><img id="cover" src="" alt=""></div>
+    <div id="hero-title"></div>
   </div>
   <div id="top-right">
 
@@ -655,6 +760,8 @@
       <button class="theme-chip" data-theme-set="dark">Dark</button>
       <button class="theme-chip" data-theme-set="creme">Crème</button>
       <button class="theme-chip" data-theme-set="mono">Mono</button>
+      <button class="theme-chip" data-theme-set="overprint">Overprint</button>
+      <button class="theme-chip" data-theme-set="invert">Invert</button>
     </div>
   </div>
 
@@ -957,6 +1064,8 @@ async function refreshNowPlaying() {
 
   if (track) {
     document.getElementById('track-name').textContent  = track.name || '—';
+    document.getElementById('hero-title').textContent   = track.name || '';
+    updateHeroAccent(track.uri);
     document.getElementById('artist-name').textContent =
       (track.artists || []).map(a => a.name).join(', ') || '—';
 
@@ -977,6 +1086,7 @@ async function refreshNowPlaying() {
     updateMediaSession(track, playing, coverUrl);
     renderTrackDetails(track.uri);
   } else {
+    document.getElementById('hero-title').textContent = '';
     updateStatusBadge('');
     updateMediaSession(null, playing, '');
     renderTrackDetails(null);
@@ -1546,6 +1656,20 @@ function autoConnectSnapIfNeeded() {
   document.addEventListener('touchstart', onGesture, { once: true, passive: true });
 }
 
+/* ── Hero accent (couleur dynamique du style Invert) ── */
+const HERO_PALETTE = ['#ff3b00','#1e6bff','#ff0091','#00c878','#ffc400','#8b5cff','#00d4d4'];
+function heroAccentForUri(uri) {
+  let h = 0;
+  const s = uri || '';
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return HERO_PALETTE[h % HERO_PALETTE.length];
+}
+function updateHeroAccent(uri) {
+  if (document.documentElement.getAttribute('data-theme') !== 'invert') return;
+  document.documentElement.style.setProperty('--hero-accent', heroAccentForUri(uri));
+  readThemeColors();
+}
+
 /* ── Init ── */
 /* ── Thèmes ── */
 function applyTheme(name) {
@@ -1553,6 +1677,8 @@ function applyTheme(name) {
   localStorage.setItem('o2m-theme', name);
   document.querySelectorAll('.theme-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.themeSet === name));
+  if (name === 'invert') updateHeroAccent(matrixCurUri);
+  else document.documentElement.style.removeProperty('--hero-accent');
   readThemeColors();
 }
 function setupThemeSwitcher() {
