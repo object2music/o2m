@@ -2,9 +2,11 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1a1a2e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
 <title>O2M Mood</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -524,7 +526,8 @@
 
   /* ── Footer links ── */
   #footer-links {
-    padding: 12px 14px 20px; border-top: 1px solid var(--border);
+    padding: 7px 14px; padding-bottom: max(7px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
   }
   .footer-link {
@@ -536,11 +539,17 @@
   .footer-link:hover { background: var(--border); color: var(--text); }
   button.footer-link { cursor: pointer; }
 
-  /* ── Feedback ── */
+  /* ── Feedback (toast flottant, ne réserve plus de ligne) ── */
   #feedback {
-    flex-shrink: 0; padding: 6px 14px 8px;
-    font-size: 11px; color: var(--muted); text-align: center; min-height: 22px;
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%) translateY(8px);
+    z-index: 250; pointer-events: none; max-width: 90vw;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border-strong); box-shadow: 0 6px 24px #00000055;
+    font-size: 12px; padding: 9px 16px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; visibility: hidden; transition: opacity .2s, transform .2s, visibility .2s;
   }
+  #feedback.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
 
   /* ── Clear tracklist button ── */
   #btn-clear-tl {
@@ -554,6 +563,7 @@
   /* ── Footer link SVG icons ── */
   .footer-link { display: inline-flex; align-items: center; gap: 5px; }
   .footer-link svg { width: 13px; height: 13px; flex-shrink: 0; }
+  #btn-fullscreen.on { background: var(--accent); color: #fff; }
 
   /* ════════════ Styles AFFICHE : Overprint & Invert ════════════ */
   #hero-title { display: none; }
@@ -792,6 +802,7 @@
     <button class="footer-link" onclick="triggerWarmup('moods')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Warmup moods</button>
     <button class="footer-link" onclick="triggerWarmup('retry_sentinels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Retry</button>
     <button class="footer-link" onclick="triggerWarmup('genres')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Warmup genres</button>
+    <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
       <button class="theme-chip" data-theme-set="creme">Crème</button>
@@ -1824,6 +1835,9 @@ async function init() {
 
   document.getElementById('btn-clear-tl').addEventListener('click', clearTracklist);
   document.getElementById('btn-snapcast').addEventListener('click', toggleSnapcast);
+  document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', updateFsBtn);
+  document.addEventListener('webkitfullscreenchange', updateFsBtn);
 
   // Fetch client config (snap WebSocket URL)
   try {
@@ -1854,6 +1868,7 @@ async function init() {
   setInterval(refreshVolume, 15000);
   setInterval(updateProgress, 1000);
   autoConnectSnapIfNeeded();
+  autoFullscreenOnGesture();
 }
 
 async function updateProgress() {
@@ -1866,8 +1881,35 @@ async function updateProgress() {
 }
 
 function setFeedback(msg) {
-  document.getElementById('feedback').textContent = msg;
-  setTimeout(() => { document.getElementById('feedback').textContent = ''; }, 3000);
+  const el = document.getElementById('feedback');
+  el.textContent = msg || '';
+  el.classList.toggle('show', !!msg);
+  clearTimeout(el._t);
+  if (msg) el._t = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* ── Fullscreen ── */
+function isFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function enterFullscreen() {
+  const el = document.documentElement;
+  (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el).catch(() => {});
+}
+function exitFullscreen() {
+  (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+}
+function toggleFullscreen() {
+  if (isFullscreen()) { localStorage.setItem('fs-off', '1'); exitFullscreen(); }
+  else { localStorage.removeItem('fs-off'); enterFullscreen(); }
+}
+function updateFsBtn() {
+  document.getElementById('btn-fullscreen')?.classList.toggle('on', isFullscreen());
+}
+function autoFullscreenOnGesture() {
+  if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) return;
+  if (localStorage.getItem('fs-off')) return;
+  const go = () => { if (!isFullscreen()) enterFullscreen(); };
+  document.addEventListener('click',    go, { once: true });
+  document.addEventListener('touchend', go, { once: true, passive: true });
 }
 
 init();
