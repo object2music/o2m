@@ -28,19 +28,17 @@
     --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff33;
     --fill-1: #ffffff06; --fill-2: #ffffff0f; --fill-3: #ffffff16;
     --track-bg: #2a2a2a;
-    --duo-lo: #000000; --duo-hi: #ff3b00;
     --c-energy: #ffffff; --c-valence: #888888; --c-dl: #ff3b00; --dial-txt: #ffffff;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
     --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
     --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
-    /* matrice */
     --mx-bg: #202020;
-    --mx-q-calm: #ffffff07; --mx-q-happy: #ffffff0f;
-    --mx-q-dark: #ffffff17; --mx-q-energetic: #ff3b0010;
+    --mx-q-calm: #ffffff04; --mx-q-happy: #ffffff09;
+    --mx-q-dark: #ffffff0f; --mx-q-energetic: #ffffff07;
     --mx-line: #ffffff26; --mx-border: transparent;
     --mx-label: #ffffff33; --mx-axis: #ffffff55;
-    --mx-dl-fill: #ffffff08; --mx-dl-stroke: #ffffffaa;
+    --mx-dl-fill: #ff3b0012; --mx-dl-stroke: #ff3b0099;
     --mx-dot-core: #ffffff; --mx-pulse: 255,255,255;
     --mood-happy: 210,210,210; --mood-energetic: 255,59,0;
     --mood-calm: 150,150,150; --mood-dark: 90,90,90;
@@ -54,18 +52,17 @@
     --border: #1a1a1a1f; --border-soft: #1a1a1a12; --border-strong: #1a1a1a2e;
     --fill-1: #1a1a1a08; --fill-2: #1a1a1a10; --fill-3: #1a1a1a1a;
     --track-bg: #d8d2c4;
-    --duo-lo: #2a1a12; --duo-hi: #e8462a;
     --c-energy: #e8462a; --c-valence: #2e8b8b; --c-dl: #7c4dbe; --dial-txt: #1a1a1a;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
     --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
     --eyebrow-mark: "↓ "; --eyebrow-color: var(--accent);
     --mx-bg: #ece7db;
-    --mx-q-calm: #7c4dbe14; --mx-q-happy: #d9a40022;
-    --mx-q-dark: #2c4a7016; --mx-q-energetic: #e8462a14;
+    --mx-q-calm: #00000006; --mx-q-happy: #0000000d;
+    --mx-q-dark: #00000015; --mx-q-energetic: #0000000a;
     --mx-line: #1a1a1a26; --mx-border: transparent;
     --mx-label: #1a1a1a3a; --mx-axis: #1a1a1a55;
-    --mx-dl-fill: #2e8b8b14; --mx-dl-stroke: #2e8b8b66;
+    --mx-dl-fill: #7c4dbe12; --mx-dl-stroke: #7c4dbe99;
     --mx-dot-core: #ffffff; --mx-pulse: 26,26,26;
     --mood-happy: 217,164,0; --mood-energetic: 232,70,42;
     --mood-calm: 124,77,190; --mood-dark: 44,74,112;
@@ -79,18 +76,17 @@
     --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
     --track-bg: #e2e2e2;
-    --duo-lo: #111111; --duo-hi: #ff3b00;
     --c-energy: #111111; --c-valence: #888888; --c-dl: #ff3b00; --dial-txt: #000000;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
     --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
     --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
     --mx-bg: #f4f4f4;
-    --mx-q-calm: #00000007; --mx-q-happy: #0000000f;
-    --mx-q-dark: #00000017; --mx-q-energetic: #ff3b0010;
+    --mx-q-calm: #00000005; --mx-q-happy: #0000000b;
+    --mx-q-dark: #00000012; --mx-q-energetic: #00000008;
     --mx-line: #00000026; --mx-border: transparent;
     --mx-label: #00000033; --mx-axis: #00000055;
-    --mx-dl-fill: #00000008; --mx-dl-stroke: #000000aa;
+    --mx-dl-fill: #ff3b0010; --mx-dl-stroke: #ff3b0099;
     --mx-dot-core: #ffffff; --mx-pulse: 0,0,0;
     --mood-happy: 60,60,60; --mood-energetic: 255,59,0;
     --mood-calm: 140,140,140; --mood-dark: 20,20,20;
@@ -142,21 +138,16 @@
     padding: 12px 16px; background: var(--surface);
     flex-shrink: 0;
   }
-  /* Pochette duotone (ombres → --duo-lo, lumières → --duo-hi) */
   #cover-wrap {
     position: relative; aspect-ratio: 1 / 1; height: 100%;
-    background: var(--duo-lo); overflow: hidden;
+    background: var(--surface); overflow: hidden;
   }
   #cover {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; display: block;
-    filter: grayscale(1) contrast(1.05);
-    mix-blend-mode: lighten;
+    filter: grayscale(1); transition: filter .4s;
   }
-  #cover-wrap::after {
-    content: ''; position: absolute; inset: 0;
-    background: var(--duo-hi); mix-blend-mode: multiply; pointer-events: none;
-  }
+  #cover-wrap:hover #cover { filter: grayscale(0); }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
   #track-name { font-size: 21px; white-space: nowrap; line-height: 1.1;
                 overflow: hidden; text-overflow: ellipsis; color: var(--eyebrow-color, var(--accent));
@@ -164,9 +155,6 @@
                 text-transform: var(--head-transform); letter-spacing: var(--head-spacing); }
   #artist-name { font-size: 14px; color: var(--muted); margin-top: 3px;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #status-dot { width: 8px; height: 8px; border-radius: 50%;
-                background: var(--muted); flex-shrink: 0; transition: background .3s; }
-  #status-dot.playing { background: #4caf50; }
 
   /* track status badge — texte plat lisible, avec carré de couleur en tête */
   #track-status-badge {
@@ -187,19 +175,13 @@
   #track-status-badge.s-hidden::before     { background: #9c27b0; }
   #track-status-badge.s-podcast::before    { background: #607d8b; }
 
-  /* tracklist count pill */
-  #tl-count-pill {
-    font-size: 11px; color: var(--muted); background: var(--fill-2);
-    padding: 2px 8px; border-radius: 0; flex-shrink: 0;
-    white-space: nowrap;
-  }
-
   /* volume row */
   #volume-row {
     display: flex; align-items: center; gap: 8px;
     width: 100%; padding: 2px 14px 0;
   }
-  #volume-icon { font-size: 16px; flex-shrink: 0; color: var(--muted); }
+  #volume-icon { flex-shrink: 0; color: var(--muted); display: flex; align-items: center; }
+  #volume-icon svg { width: 16px; height: 16px; display: block; }
   #volume-slider {
     flex: 1; -webkit-appearance: none; appearance: none;
     height: 4px; border-radius: 0; outline: none; cursor: pointer;
@@ -239,11 +221,22 @@
   }
   .ctrl-btn {
     background: none; border: none; color: var(--text); cursor: pointer;
-    font-size: 30px; line-height: 1; padding: 8px; border-radius: 0;
-    transition: background .15s, transform .1s;
+    line-height: 1; padding: 8px; border-radius: 0;
+    transition: background .15s, transform .1s; display: flex; align-items: center;
   }
+  .ctrl-btn svg { width: 24px; height: 24px; display: block; }
   .ctrl-btn:active { background: var(--fill-3); transform: scale(.92); }
-  #btn-play { font-size: 40px; color: var(--accent); }
+  #btn-play { color: var(--accent); }
+  #btn-play svg { width: 32px; height: 32px; }
+
+  /* Snapcast inline dans la volume-row */
+  #btn-snapcast {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    padding: 0 0 0 6px; display: flex; align-items: center; flex-shrink: 0;
+    transition: color .15s;
+  }
+  #btn-snapcast svg { width: 18px; height: 18px; display: block; }
+  #btn-snapcast.playing { color: var(--accent); }
 
   /* ── Progress bar ── */
   #progress-wrap {
@@ -449,13 +442,15 @@
   /* ── Clear tracklist button ── */
   #btn-clear-tl {
     background: none; border: none; color: var(--muted); cursor: pointer;
-    font-size: 13px; padding: 2px 6px; border-radius: 0; line-height: 1;
-    transition: color .15s, background .15s; flex-shrink: 0;
+    padding: 2px; border-radius: 0; display: flex; align-items: center;
+    transition: color .15s; flex-shrink: 0;
   }
-  #btn-clear-tl:hover { color: var(--accent); background: var(--fill-2); }
+  #btn-clear-tl svg { width: 13px; height: 13px; display: block; }
+  #btn-clear-tl:hover { color: var(--accent); }
 
-  /* ── Snapcast button active ── */
-  #btn-snapcast.playing { background: var(--accent); color: #fff; }
+  /* ── Footer link SVG icons ── */
+  .footer-link { display: inline-flex; align-items: center; gap: 5px; }
+  .footer-link svg { width: 13px; height: 13px; flex-shrink: 0; }
 </style>
 </head>
 <body>
@@ -471,24 +466,22 @@
     <div id="now-playing">
       <div id="track-info">
         <div id="track-name">—</div>
-        <div id="artist-name">O2M Mood</div>
+        <div id="artist-name">O2M</div>
         <div id="track-status-badge"></div>
         <div id="track-tags-row"><span id="track-ev"></span></div>
       </div>
-      <button id="btn-clear-tl" title="Vider la tracklist">⊘</button>
-      <span id="tl-count-pill"></span>
-      <div id="status-dot"></div>
     </div>
 
     <!-- Playback controls -->
     <div id="controls">
-      <button class="ctrl-btn" id="btn-prev">⏮</button>
-      <button class="ctrl-btn" id="btn-play">▶</button>
-      <button class="ctrl-btn" id="btn-next">⏭</button>
+      <button class="ctrl-btn" id="btn-prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="4" x2="5" y2="20"/></svg></button>
+      <button class="ctrl-btn" id="btn-play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+      <button class="ctrl-btn" id="btn-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="4" x2="19" y2="20"/></svg></button>
       <div id="volume-row">
-        <span id="volume-icon">🔈</span>
+        <span id="volume-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
         <input type="range" id="volume-slider" min="0" max="100" value="50">
         <span id="volume-val">50%</span>
+        <button id="btn-snapcast" title="Snapcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></button>
       </div>
     </div>
 
@@ -513,6 +506,7 @@
   <!-- Col 1 : Boxes (repliable en mobile) -->
   <div id="boxes-panel" class="col collapsible">
     <button class="panel-head" id="boxes-panel-label">Boxes</button>
+
     <div class="panel-body">
       <div id="boxes-wrap"></div>
     </div>
@@ -520,11 +514,11 @@
 
   <!-- Col 2 : Réglages — potentiomètres + matrice + genres (repliable en mobile) -->
   <div id="left-panel" class="col collapsible">
-  <button class="panel-head" id="settings-label">Réglages</button>
+  <button class="panel-head" id="settings-label">Settings</button>
   <div class="panel-body">
   <div id="dials">
     <div class="dial-wrap">
-      <div class="dial-label">Énergie</div>
+      <div class="dial-label">Energy</div>
       <svg class="dial-svg" id="dial-energy" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
         <circle class="dial-fill" id="fill-energy" cx="55" cy="55" r="42"
@@ -532,10 +526,10 @@
         <circle id="knob-energy" cx="55" cy="13" r="7" fill="#e94560"/>
         <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-energy">5</text>
       </svg>
-      <div class="dial-sub">calme ↔ intense</div>
+      <div class="dial-sub">calm ↔ intense</div>
     </div>
     <div class="dial-wrap">
-      <div class="dial-label">Valence</div>
+      <div class="dial-label">Ambiance</div>
       <svg class="dial-svg" id="dial-valence" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
         <circle class="dial-fill" id="fill-valence" cx="55" cy="55" r="42"
@@ -543,10 +537,10 @@
         <circle id="knob-valence" cx="55" cy="13" r="7" fill="#7c4dff"/>
         <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-valence">5</text>
       </svg>
-      <div class="dial-sub">sombre ↔ joyeux</div>
+      <div class="dial-sub">dark ↔ bright</div>
     </div>
     <div class="dial-wrap">
-      <div class="dial-label">Découverte</div>
+      <div class="dial-label">Discovery</div>
       <svg class="dial-svg" id="dial-dl" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
         <circle class="dial-fill" id="fill-dl" cx="55" cy="55" r="42"
@@ -554,7 +548,7 @@
         <circle id="knob-dl" cx="55" cy="13" r="7" fill="#00bcd4"/>
         <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-dl">5</text>
       </svg>
-      <div class="dial-sub">précis ↔ aventurier</div>
+      <div class="dial-sub">focused ↔ adventurous</div>
     </div>
   </div>
   <div id="matrix-section">
@@ -562,6 +556,7 @@
   </div>
   <div id="genres-section">
     <div id="genres-label">Genres</div>
+
     <div id="genres-wrap"></div>
   </div>
   </div><!-- /panel-body -->
@@ -572,7 +567,10 @@
     <div id="tracklist-section">
       <div id="tracklist-label">
         <span>Tracklist</span>
-        <span id="tracklist-count"></span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="tracklist-count"></span>
+          <button id="btn-clear-tl" title="Clear tracklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
       </div>
       <div id="tracklist-wrap"></div>
     </div>
@@ -582,15 +580,14 @@
 
   <!-- Footer links -->
   <div id="footer-links">
-    <a class="footer-link" href="/stats">📊 Stats</a>
-    <a class="footer-link" href="/tag_features">🏷 Tag features</a>
-    <a class="footer-link" href="/mood">🎛 Mood</a>
-    <button class="footer-link" id="btn-snapcast">📻 Snapcast</button>
-    <button class="footer-link" onclick="triggerWarmup('moods')">⚡ Warmup moods</button>
-    <button class="footer-link" onclick="triggerWarmup('retry_sentinels')">🔁 Retry sentinels</button>
-    <button class="footer-link" onclick="triggerWarmup('genres')">🎸 Warmup genres</button>
+    <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
+    <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
+    <a class="footer-link" href="/mood"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Mood</a>
+    <button class="footer-link" onclick="triggerWarmup('moods')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Warmup moods</button>
+    <button class="footer-link" onclick="triggerWarmup('retry_sentinels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Retry</button>
+    <button class="footer-link" onclick="triggerWarmup('genres')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Warmup genres</button>
     <div id="theme-switcher">
-      <button class="theme-chip" data-theme-set="dark">Sombre</button>
+      <button class="theme-chip" data-theme-set="dark">Dark</button>
       <button class="theme-chip" data-theme-set="creme">Crème</button>
       <button class="theme-chip" data-theme-set="mono">Mono</button>
     </div>
@@ -677,7 +674,7 @@ function scheduleApply() {
 
 async function applyMood() {
   if (!shouldApplyMood()) return;
-  setFeedback('Application…');
+  setFeedback('Applying…');
   try {
     const body = { energy: appState.energy, valence: appState.valence,
                    discover_level: appState.dl, genres: appState.genres };
@@ -686,9 +683,9 @@ async function applyMood() {
       body: JSON.stringify(body)
     });
     const d = await r.json();
-    setFeedback(d.tracks_added > 0 ? `${d.tracks_added} titres chargés` : 'Aucun titre correspondant');
+    setFeedback(d.tracks_added > 0 ? `${d.tracks_added} tracks loaded` : 'No matching tracks');
     setTimeout(refreshNowPlaying, 600);
-  } catch(e) { setFeedback('Erreur réseau'); }
+  } catch(e) { setFeedback('Network error'); }
 }
 
 /* ── Mopidy RPC ── */
@@ -706,7 +703,7 @@ async function rpc(method, params = {}) {
 let currentDurationMs = 0;
 
 document.getElementById('btn-play').addEventListener('click', async () => {
-  const isPlaying = document.getElementById('btn-play').textContent === '⏸';
+  const isPlaying = document.getElementById('btn-play').dataset.state === 'playing';
   if (isPlaying) {
     await rpc('core.playback.pause');
   } else {
@@ -741,7 +738,7 @@ function renderTracklist(tracks, activeTlid) {
   const count = document.getElementById('tracklist-count');
   wrap.innerHTML = '';
   currentTracklistLength = tracks.length;
-  count.textContent = tracks.length ? `${tracks.length} titres` : '';
+  count.textContent = tracks.length ? `${tracks.length} tracks` : '';
   let scrollTarget = null;
   tracks.forEach(({tlid, track}, i) => {
     const item = document.createElement('div');
@@ -850,7 +847,12 @@ async function refreshVolume() {
   slider.value = vol;
   slider.style.setProperty('--vol-pct', vol + '%');
   val.textContent = vol + '%';
-  document.getElementById('volume-icon').textContent = vol === 0 ? '🔇' : vol < 50 ? '🔈' : '🔊';
+  const volSvg = vol === 0
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`
+    : vol < 50
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+  document.getElementById('volume-icon').innerHTML = volSvg;
 }
 
 async function refreshNowPlaying() {
@@ -878,11 +880,11 @@ async function refreshNowPlaying() {
   fetchTrackFeatures([matrixCurUri, ...matrixTlItems.map(i => i.uri)].filter(Boolean));
   fetchAndRenderTrackTags(matrixCurUri);
 
-  document.getElementById('status-dot').className = playing ? 'playing' : '';
-  document.getElementById('btn-play').textContent  = playing ? '⏸' : '▶';
-
-  // Tracklist count pill
-  document.getElementById('tl-count-pill').textContent = tracks.length ? `${tracks.length} ♫` : '';
+  const playBtn = document.getElementById('btn-play');
+  playBtn.dataset.state = playing ? 'playing' : 'paused';
+  playBtn.innerHTML = playing
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
 
   if (track) {
     document.getElementById('track-name').textContent  = track.name || '—';
@@ -972,7 +974,12 @@ document.getElementById('volume-slider').addEventListener('input', e => {
   const vol = parseInt(e.target.value);
   e.target.style.setProperty('--vol-pct', vol + '%');
   document.getElementById('volume-val').textContent = vol + '%';
-  document.getElementById('volume-icon').textContent = vol === 0 ? '🔇' : vol < 50 ? '🔈' : '🔊';
+  const volSvg = vol === 0
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>`
+    : vol < 50
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
+  document.getElementById('volume-icon').innerHTML = volSvg;
   clearTimeout(volumeTimer);
   volumeTimer = setTimeout(() => rpc('core.mixer.set_volume', {volume: vol}), 200);
 });
@@ -1053,10 +1060,8 @@ function detectMatrixMode(canvas, e) {
   const tx = rect.left + PAD + appState.energy * inner;
   const ty = rect.top  + PAD + (1 - appState.valence) * inner;
   const r  = (appState.dl / 20 + 0.05) * inner;
-  const dx = Math.abs(e.clientX - tx);
-  const dy = Math.abs(e.clientY - ty);
-  const dist = Math.max(dx, dy);           // Chebyshev = square metric
-  const HANDLE = 14;                       // px tolerance around border
+  const dist = Math.hypot(e.clientX - tx, e.clientY - ty);
+  const HANDLE = 14;
   return Math.abs(dist - r) < HANDLE ? 'resize' : 'move';
 }
 
@@ -1076,9 +1081,7 @@ function matrixResize(canvas, e) {
   const inner = rect.width - 2 * PAD;
   const tx = rect.left + PAD + appState.energy * inner;
   const ty = rect.top  + PAD + (1 - appState.valence) * inner;
-  const dx = Math.abs(e.clientX - tx);
-  const dy = Math.abs(e.clientY - ty);
-  const radius01 = Math.max(dx, dy) / inner;
+  const radius01 = Math.hypot(e.clientX - tx, e.clientY - ty) / inner;
   const dl = Math.min(10, Math.max(0, Math.round((radius01 - 0.05) * 20)));
   appState.dl = dl;
   setDial('dl', dl / 10);
@@ -1129,18 +1132,18 @@ function drawMatrix(ts) {
 
   /* Quadrant labels */
   ctx.font = '600 13px ' + MX_FONT; ctx.fillStyle = themeColors.label; ctx.textAlign = 'center';
-  ctx.fillText('CALM',       PAD + inner * 0.25, PAD + 17);
-  ctx.fillText('HAPPY',      PAD + inner * 0.75, PAD + 17);
-  ctx.fillText('DARK',       PAD + inner * 0.25, PAD + inner - 6);
-  ctx.fillText('ENERGETIC',  PAD + inner * 0.75, PAD + inner - 6);
+  ctx.fillText('CALM',      PAD + inner * 0.25, PAD + 17);
+  ctx.fillText('HAPPY',     PAD + inner * 0.75, PAD + 17);
+  ctx.fillText('INTENSE',   PAD + inner * 0.25, PAD + inner - 6);
+  ctx.fillText('ENERGETIC', PAD + inner * 0.75, PAD + inner - 6);
 
   /* Axis labels */
   ctx.font = '11px ' + MX_FONT; ctx.fillStyle = themeColors.axis;
-  ctx.textAlign = 'left';   ctx.fillText('◀ Calme',   2, my + 4);
+  ctx.textAlign = 'left';   ctx.fillText('◀ Calm',  2, my + 4);
   ctx.textAlign = 'right';  ctx.fillText('Intense ▶', W - 2, my + 4);
   ctx.textAlign = 'center';
-  ctx.fillText('▲ Joyeux', mx, 12);
-  ctx.fillText('▼ Sombre', mx, PAD + inner + PAD - 2);
+  ctx.fillText('▲ Bright', mx, 12);
+  ctx.fillText('▼ Dark',   mx, PAD + inner + PAD - 2);
 
   /* Tracklist dots */
   matrixTlItems.forEach(({ uri, tlid }) => {
@@ -1167,16 +1170,18 @@ function drawMatrix(ts) {
     ctx.lineWidth = 2.5; ctx.stroke();
   }
 
-  /* DL area — dashed rectangle matching actual query shape */
+  /* DL area — dashed circle */
   const { energy, valence, dl } = appState;
   const r  = (dl / 20 + 0.05) * inner;
   const tx = ex(energy), ty = vy(valence);
-  const rx = Math.max(PAD, tx - r),           ry = Math.max(PAD, ty - r);
-  const rw = Math.min(PAD + inner, tx + r) - rx;
-  const rh = Math.min(PAD + inner, ty + r) - ry;
-  ctx.fillStyle = themeColors.dlFill; ctx.fillRect(rx, ry, rw, rh);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(PAD, PAD, inner, inner); ctx.clip();
+  ctx.beginPath(); ctx.arc(tx, ty, r, 0, Math.PI * 2);
+  ctx.fillStyle = themeColors.dlFill; ctx.fill();
+  ctx.beginPath(); ctx.arc(tx, ty, r, 0, Math.PI * 2);
   ctx.strokeStyle = themeColors.dlStroke; ctx.lineWidth = 1.5;
-  ctx.setLineDash([5, 4]); ctx.strokeRect(rx, ry, rw, rh); ctx.setLineDash([]);
+  ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
 
   /* Target dot */
   ctx.beginPath(); ctx.arc(tx, ty, 11, 0, Math.PI * 2);
@@ -1211,7 +1216,7 @@ function showMatrixTooltip(canvas, e) {
     const d  = Math.hypot(e.clientX - sx, e.clientY - sy);
     if (d < HIT + 4) {
       const curItem = matrixTlItems.find(i => i.uri === matrixCurUri);
-      candidates.push({ item: curItem || { name: '♪ En cours', artist: '' }, f: curF, d });
+      candidates.push({ item: curItem || { name: '♪ Playing', artist: '' }, f: curF, d });
     }
   }
 
@@ -1279,8 +1284,9 @@ async function toggleBox(uid, btn) {
     await checkBoxActive(uid, btn);
     // Refresh tracklist after box change
     setTimeout(refreshNowPlaying, 1500);
-    setFeedback(btn.classList.contains('active') ? `▶ ${btn.textContent.trim()}` : `⏹ ${btn.textContent.trim()}`);
-  } catch(e) { setFeedback('Erreur box'); }
+    const boxName = btn.querySelector('.box-name')?.textContent || '';
+    setFeedback(btn.classList.contains('active') ? `▶ ${boxName}` : `⏹ ${boxName}`);
+  } catch(e) { setFeedback('Box error'); }
   finally { btn.disabled = false; }
 }
 
@@ -1329,8 +1335,8 @@ async function triggerWarmup(type) {
   if (!url) return;
   try {
     const d = await fetch(API.replace('/api', '') + url).then(r => r.json());
-    setFeedback(`Warmup ${type} lancé — ${d.tracks_pending ?? ''} tracks en attente`);
-  } catch(e) { setFeedback('Erreur warmup'); }
+    setFeedback(`Warmup ${type} started — ${d.tracks_pending ?? ''} tracks pending`);
+  } catch(e) { setFeedback('Warmup error'); }
 }
 
 async function fetchTrackFeatures(uris) {
@@ -1348,31 +1354,33 @@ async function clearTracklist() {
   await rpc('core.tracklist.clear');
   currentTracklistLength = 0;
   setTimeout(refreshNowPlaying, 400);
-  setFeedback('Tracklist vidée');
+  setFeedback('Tracklist cleared');
 }
 
 /* ── Snapcast — wrapper autour de SnapStream (bundle Iris/snapstream.ts) ── */
+const SNAP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>`;
+
 function _snapBtnOff() {
   const btn = document.getElementById('btn-snapcast');
-  btn.textContent = '📻 Snapcast'; btn.classList.remove('playing');
+  btn.innerHTML = SNAP_SVG; btn.classList.remove('playing');
 }
 
 function _snapStart() {
   if (snapPlayer || !snapWsUrl || !window.SnapStream) return;
   snapPlayer = new window.SnapStream(snapWsUrl);
   const btn = document.getElementById('btn-snapcast');
-  btn.textContent = '📻 ●'; btn.classList.add('playing');
-  setFeedback('📻 Connexion…');
+  btn.innerHTML = SNAP_SVG; btn.classList.add('playing');
+  setFeedback('Connecting…');
 }
 
 function toggleSnapcast() {
   if (snapPlayer) {
     snapPlayer.stop(); snapPlayer = null;
-    _snapBtnOff(); setFeedback('📻 Arrêté');
+    _snapBtnOff(); setFeedback('Snapcast stopped');
     localStorage.removeItem('snap-autoconnect');
   } else {
-    if (!snapWsUrl) { setFeedback('Snapcast non configuré'); return; }
-    if (!window.SnapStream) { setFeedback('Module Snapcast non chargé'); return; }
+    if (!snapWsUrl) { setFeedback('Snapcast not configured'); return; }
+    if (!window.SnapStream) { setFeedback('Snapcast module not loaded'); return; }
     _snapStart();
     localStorage.setItem('snap-autoconnect', '1');
   }
