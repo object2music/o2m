@@ -1261,52 +1261,37 @@ function updateMediaSession(track, isPlaying, coverUrl) {
   }
 }
 
-/* ── Pont Snapcast → élément <audio> ──────────────────────────────────────────
-   Snapcast joue via WebAudio pur (gainNode → ctx.destination). Le navigateur
-   n'attache une session média à l'OS (Android/Linux) qu'à un élément <audio>.
-   On reroute donc la sortie gainNode vers un MediaStreamDestination lu par un
-   <audio> caché → un seul chemin audio, et l'OS voit un média actif. */
-let snapSinkEl = null, snapBridgedGain = null, snapBridgeTimer = null;
+/* ── Ancre Media Session ───────────────────────────────────────────────────────
+   Snapcast joue via WebAudio (gainNode → ctx.destination, inchangé). WebAudio seul
+   ne crée PAS de session média OS, et un <audio srcObject=MediaStream> est traité
+   comme de l'audio « communication » → pas de notification sur Android.
+   On joue donc un fichier silencieux réel en boucle dans un <audio> : Chrome/Android
+   le reconnaît comme média « contenu » actif → métadonnées + contrôles remontent. */
+let mediaAnchorEl = null;
 
-function _ensureSnapSink() {
-  if (!snapSinkEl) {
-    snapSinkEl = document.createElement('audio');
-    snapSinkEl.id = 'snap-sink';
-    snapSinkEl.setAttribute('aria-hidden', 'true');
-    snapSinkEl.style.display = 'none';
-    document.body.appendChild(snapSinkEl);
+function _ensureMediaAnchor() {
+  if (!mediaAnchorEl) {
+    mediaAnchorEl = document.createElement('audio');
+    mediaAnchorEl.id = 'media-anchor';
+    mediaAnchorEl.src = '/static/silence.wav';
+    mediaAnchorEl.loop = true;
+    mediaAnchorEl.preload = 'auto';
+    mediaAnchorEl.setAttribute('aria-hidden', 'true');
+    mediaAnchorEl.style.display = 'none';
+    document.body.appendChild(mediaAnchorEl);
   }
-  return snapSinkEl;
+  return mediaAnchorEl;
 }
 
-function _applySnapBridge() {
-  if (!snapPlayer || !snapPlayer.ctx || !snapPlayer.gainNode) return;
-  const gain = snapPlayer.gainNode;
-  if (gain === snapBridgedGain) return;          // déjà branché sur ce gainNode
-  try {
-    const dest = snapPlayer.ctx.createMediaStreamDestination();
-    gain.disconnect();                            // retire gainNode → ctx.destination
-    gain.connect(dest);                           // gainNode → MediaStream
-    const el = _ensureSnapSink();
-    el.srcObject = dest.stream;
-    el.play().catch(() => {});
-    snapBridgedGain = gain;
-    console.log('[snap-bridge] media element bridged');
-  } catch(e) { console.warn('[snap-bridge] failed', e); }
+function startMediaAnchor() {
+  const el = _ensureMediaAnchor();
+  // Doit être appelé dans un geste utilisateur (cas via _snapStart)
+  el.play().then(() => console.log('[media-anchor] playing'))
+           .catch(e => console.warn('[media-anchor] play blocked', e));
 }
 
-function startSnapBridge() {
-  clearInterval(snapBridgeTimer);
-  // Le ctx/gainNode n'existent qu'après réception du codec ; on re-tente, et on
-  // re-branche si Snapcast recrée son AudioContext (changement de samplerate).
-  snapBridgeTimer = setInterval(_applySnapBridge, 1000);
-  _applySnapBridge();
-}
-
-function stopSnapBridge() {
-  clearInterval(snapBridgeTimer); snapBridgeTimer = null;
-  snapBridgedGain = null;
-  if (snapSinkEl) { try { snapSinkEl.pause(); } catch(e) {} snapSinkEl.srcObject = null; }
+function stopMediaAnchor() {
+  if (mediaAnchorEl) { try { mediaAnchorEl.pause(); } catch(e) {} }
 }
 
 /* ── Colonne détails du morceau (read-only) ── */
@@ -1970,7 +1955,9 @@ function _snapBtnOff() {
 function _snapStart() {
   if (snapPlayer || !snapWsUrl || !window.SnapStream) return;
   snapPlayer = new window.SnapStream(snapWsUrl);
-  startSnapBridge();
+  startMediaAnchor();
+  // Pousse les métadonnées une fois la session média devenue active
+  setTimeout(refreshNowPlaying, 600);
   const btn = document.getElementById('btn-snapcast');
   btn.innerHTML = SNAP_SVG; btn.classList.add('playing');
   setFeedback('Connecting…');
@@ -1979,7 +1966,7 @@ function _snapStart() {
 function toggleSnapcast() {
   if (snapPlayer) {
     snapPlayer.stop(); snapPlayer = null;
-    stopSnapBridge();
+    stopMediaAnchor();
     _snapBtnOff(); setFeedback('Snapcast stopped');
     localStorage.removeItem('snap-autoconnect');
   } else {
