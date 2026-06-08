@@ -1218,10 +1218,11 @@ async function refreshNowPlaying() {
     const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
     const coverUrl = best ? imageUrl(best.uri || best) : '';
     const coverEl = document.getElementById('cover');
-    coverEl.src = coverUrl;
+    coverEl.src = coverUrl || placeholderForUri(track.uri);   // pochette de remplacement si pas de visuel
     updateMediaSession(track, playing, coverUrl);
     renderTrackDetails(track.uri);
   } else {
+    document.getElementById('cover').src = placeholderForUri(null);
     document.getElementById('hero-title').textContent = '';
     fitHeroTitle();
     updateStatusBadge('');
@@ -2000,6 +2001,21 @@ function autoInitPlaybackIfMobile() {
   }, 1500);
 }
 
+/* ── Pochette de remplacement (quand un morceau n'a pas de visuel) ── */
+/* Pour utiliser tes propres images : remplace/complète cette liste par tes URLs. */
+const PLACEHOLDER_COVERS = [
+  '/static/covers/cover1.png',  '/static/covers/cover2.png',
+  '/static/covers/cover3.png',  '/static/covers/cover4.png',
+  '/static/covers/cover5.png',  '/static/covers/cover6.png',
+  '/static/covers/cover7.png',  '/static/covers/cover8.png',
+  '/static/covers/cover9.png',  '/static/covers/cover10.png',
+];
+function placeholderForUri(uri) {            // déterministe : même morceau → même pochette (pas de scintillement)
+  let h = 0; const s = uri || 'o2m';
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return PLACEHOLDER_COVERS[h % PLACEHOLDER_COVERS.length];
+}
+
 /* ── Hero accent (couleur dynamique du style Invert) ── */
 const HERO_PALETTE = ['#ff3b00','#1e6bff','#ff0091','#00c878','#ffc400','#8b5cff','#00d4d4'];
 function heroAccentForUri(uri) {
@@ -2077,6 +2093,14 @@ function setupCollapsibles() {
 }
 
 async function init() {
+  // Pochette de remplacement dès le chargement (évite l'image vide) + repli si un visuel casse
+  const coverEl = document.getElementById('cover');
+  coverEl.src = placeholderForUri(null);
+  coverEl.addEventListener('error', () => {
+    const ph = placeholderForUri(matrixCurUri);
+    if (coverEl.src.indexOf(ph) === -1) coverEl.src = ph;   // évite la boucle si le placeholder lui-même échoue
+  });
+
   readThemeColors();
   setupThemeSwitcher();
   setupCollapsibles();
