@@ -1286,13 +1286,27 @@ function _ensureMediaAnchor() {
 
 function startMediaAnchor() {
   const el = _ensureMediaAnchor();
-  // Doit être appelé dans un geste utilisateur (cas via _snapStart)
+  // Doit être appelé dans un geste utilisateur (cas via _snapStart / armMediaAnchor)
+  if (!el.paused) return;
   el.play().then(() => console.log('[media-anchor] playing'))
            .catch(e => console.warn('[media-anchor] play blocked', e));
 }
 
 function stopMediaAnchor() {
   if (mediaAnchorEl) { try { mediaAnchorEl.pause(); } catch(e) {} }
+}
+
+/* Arme l'ancre dès le 1er geste utilisateur, indépendamment de Snapcast :
+   la session média OS (titre/pochette/contrôles BT) doit remonter aussi en
+   mode « télécommande » desktop (comme Iris), même sans flux Snapcast local. */
+function armMediaAnchor() {
+  const onGesture = () => {
+    startMediaAnchor();
+    setTimeout(refreshNowPlaying, 400);  // pousse les métadonnées une fois la session active
+  };
+  document.addEventListener('click',      onGesture, { once: true });
+  document.addEventListener('touchstart', onGesture, { once: true, passive: true });
+  document.addEventListener('keydown',    onGesture, { once: true });
 }
 
 /* ── Colonne détails du morceau (read-only) ── */
@@ -2148,6 +2162,7 @@ async function init() {
   setInterval(refreshVolume, 15000);
   setInterval(updateProgress, 1000);
   autoConnectSnapIfNeeded();
+  armMediaAnchor();
   autoInitPlaybackIfMobile();
 
   let fitTimer = null;
@@ -2200,6 +2215,14 @@ function updateFsBtn() {
 }
 
 init();
+
+// PWA : enregistre le service worker (uniquement en contexte sécurisé HTTPS).
+// En HTTP, navigator.serviceWorker est absent ou register() échoue → ignoré.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 </script>
 <script src="/static/snapstream.bundle.js"></script>
 </body>
