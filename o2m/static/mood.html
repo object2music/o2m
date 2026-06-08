@@ -442,8 +442,22 @@
     #cover-col { padding: 10px; }
     #cover-wrap { aspect-ratio: auto; width: 84px; height: 84px; }
     #now-playing { padding: 10px 12px; gap: 10px; }
-    #track-details { display: none; }  /* TODO: version mobile repliable */
     #track-name { font-size: 17px; }
+
+    /* Colonne détails → bloc repliable pleine largeur sous l'en-tête */
+    #top-zone { flex-wrap: wrap; }
+    #track-details {
+      flex: 1 1 100%; border-left: none; border-top: 1px solid var(--border);
+      padding: 8px 12px; gap: 0;
+    }
+    #track-details .td-head { cursor: pointer; padding-right: 22px; position: relative; }
+    #track-details .td-head::after {
+      content: '▸'; position: absolute; right: 26px; top: 50%; transform: translateY(-50%);
+      color: var(--muted); font-size: 11px;
+    }
+    #track-details.open .td-head::after { content: '▾'; }
+    #track-details:not(.open) .td-body { display: none; }
+    #track-details .td-body { margin-top: 8px; }
     #controls { flex-wrap: wrap; gap: 16px; padding: 8px 12px; }
 
     /* Panneaux Boxes / Réglages repliables — tracklist prioritaire */
@@ -744,16 +758,18 @@
       <span>Details</span>
       <button id="btn-edit-lock" title="Enable editing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
     </div>
-    <dl class="td-list">
-      <div><dt>Status</dt><dd id="td-type">—</dd></div>
-      <div><dt>Favorite</dt><dd id="td-fav" class="td-fav">—</dd></div>
-      <div><dt>Energy</dt><dd id="td-energy">—</dd></div>
-      <div><dt>Valence</dt><dd id="td-valence">—</dd></div>
-      <div><dt>Mood</dt><dd id="td-mood">—</dd></div>
-      <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
-      <div><dt>Library</dt><dd id="td-library">—</dd></div>
-    </dl>
-    <div id="td-playlists" class="td-playlists"></div>
+    <div class="td-body">
+      <dl class="td-list">
+        <div><dt>Status</dt><dd id="td-type">—</dd></div>
+        <div><dt>Favorite</dt><dd id="td-fav" class="td-fav">—</dd></div>
+        <div><dt>Energy</dt><dd id="td-energy">—</dd></div>
+        <div><dt>Valence</dt><dd id="td-valence">—</dd></div>
+        <div><dt>Mood</dt><dd id="td-mood">—</dd></div>
+        <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
+        <div><dt>Library</dt><dd id="td-library">—</dd></div>
+      </dl>
+      <div id="td-playlists" class="td-playlists"></div>
+    </div>
   </div>
 </div><!-- /top-zone -->
 
@@ -2038,7 +2054,10 @@ async function init() {
   } catch(e) {}
 
   initMediaSession();
-  document.getElementById('btn-edit-lock')?.addEventListener('click', startEditAuth);
+  document.getElementById('btn-edit-lock')?.addEventListener('click', (e) => { e.stopPropagation(); startEditAuth(); });
+  document.querySelector('#track-details .td-head')?.addEventListener('click', () => {
+    document.getElementById('track-details')?.classList.toggle('open');
+  });
   document.getElementById('td-fav')?.addEventListener('click', toggleFavorite);
   checkEditStatus();
   await loadGenres();
