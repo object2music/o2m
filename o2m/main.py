@@ -672,6 +672,55 @@ if __name__ == "__main__":
                 result['liked_spotify_error'] = str(e)
         return jsonify(result)
 
+    # ─── Playlists : liste éditable + appartenance + add/remove ───
+    @api.route('/api/playlists')
+    def api_playlists():
+        from flask import jsonify
+        owner = getattr(o2mHandler, 'username', None)
+        try:
+            return jsonify(o2mHandler.dbHandler.get_playlists_for_select(owner_id=owner))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/track_playlists')
+    def api_track_playlists():
+        from flask import jsonify
+        uri = (request.args.get('uri') or '').strip()
+        if not uri:
+            return jsonify([])
+        try:
+            return jsonify(o2mHandler.dbHandler.get_playlists_with_track(uri))
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/track_playlist', methods=['POST'])
+    @require_edit_auth
+    def api_track_playlist():
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uri = (data.get('uri') or '').strip()
+        pid = (data.get('playlist_id') or '').strip()
+        action = (data.get('action') or '').strip()
+        if not uri or not pid or action not in ('add', 'remove'):
+            return jsonify({'error': 'uri, playlist_id, action(add|remove) required'}), 400
+        playlist_uri = f'spotify:playlist:{pid}'
+        try:
+            if action == 'add':
+                o2mHandler.spotifyHandler.add_tracks_playlist(
+                    getattr(o2mHandler, 'username', None), playlist_uri, [uri])
+                o2mHandler.dbHandler.save_playlist_track(pid, uri)
+            else:
+                o2mHandler.spotifyHandler.remove_tracks_playlist(playlist_uri, [uri])
+                o2mHandler.dbHandler.remove_playlist_track(pid, uri)
+            try:
+                o2mHandler.dbHandler.create_playlist_log(
+                    uri, playlist_uri, action, username=getattr(o2mHandler, 'username', None))
+            except Exception:
+                pass
+            return jsonify({'ok': True, 'uri': uri, 'playlist_id': pid, 'action': action})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/genres')
     def api_genres():
         from flask import jsonify

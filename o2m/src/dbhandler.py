@@ -1024,6 +1024,36 @@ class DatabaseHandler():
                 .group_by(PlaylistTrack.playlist_id))
         return [r.playlist_id for r in rows]
 
+    def get_playlists_for_select(self, owner_id=None):
+        """Cached playlists for the edition picker. owned=True if owner_id matches."""
+        rows = list(Playlist.select(Playlist.id, Playlist.name, Playlist.uri, Playlist.owner_id)
+                    .order_by(Playlist.name))
+        out = []
+        for p in rows:
+            out.append({
+                'id':   p.id,
+                'name': p.name or p.id,
+                'uri':  p.uri or f'spotify:playlist:{p.id}',
+                'owned': bool(owner_id) and p.owner_id == owner_id,
+            })
+        return out
+
+    def get_playlists_with_track(self, track_uri):
+        """Names/ids of cached playlists currently containing the track."""
+        rows = list(PlaylistTrack.select(PlaylistTrack.playlist_id)
+                    .where(PlaylistTrack.track_uri == track_uri))
+        ids = [r.playlist_id for r in rows]
+        if not ids:
+            return []
+        names = {p.id: (p.name or p.id)
+                 for p in Playlist.select(Playlist.id, Playlist.name).where(Playlist.id.in_(ids))}
+        return [{'id': i, 'name': names.get(i, i)} for i in ids]
+
+    def remove_playlist_track(self, playlist_id, track_uri):
+        PlaylistTrack.delete().where(
+            (PlaylistTrack.playlist_id == playlist_id) & (PlaylistTrack.track_uri == track_uri)
+        ).execute()
+
     def get_random_played_track_uris(self, limit):
         """Last-resort fallback: random spotify tracks from play history."""
         rows = list(Track.select(Track.uri)
