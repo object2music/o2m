@@ -321,10 +321,9 @@
   .tag-chip:not(:first-child)::before {
     content: "/"; margin: 0 9px; color: var(--eyebrow-color, var(--accent)); font-weight: 700;
   }
-  #track-ev {
-    font-size: 12px; color: var(--muted); white-space: nowrap;
-    flex-shrink: 0; padding-left: 10px;
-  }
+  /* Énergie/valence retirées d'à côté des tags : déjà présentes dans le status,
+     les dials et le panneau détails (info redondante) */
+  #track-ev { display: none; }
   #track-ev svg, #matrix-tooltip .tt-ev svg {
     width: 12px; height: 12px; vertical-align: -2px;
   }
@@ -468,11 +467,16 @@
     .collapsible.open .panel-head::after { content: '▾'; }
     .collapsible:not(.open) .panel-body { display: none; }
 
-    /* En-têtes de menu (Boxes / Settings / Tracklist) épinglés en haut au scroll */
-    .panel-head, #tracklist-label {
+    /* Settings (#left-panel) aligné à la même marge gauche que Boxes/Tracklist */
+    #left-panel { padding: 12px 14px; }
+
+    /* En-têtes de menu (Boxes / Settings / Tracklist) épinglés en haut au scroll.
+       NB : on cible .collapsible .panel-head pour battre la règle position:relative
+       (même spécificité, déclarée plus haut) qui empêchait le sticky. */
+    .collapsible .panel-head, #tracklist-label {
       position: sticky; top: 0; z-index: 6; background: var(--bg);
     }
-    .panel-head { padding: 9px 0; margin-bottom: 4px; }
+    .collapsible .panel-head { padding: 9px 0; margin-bottom: 4px; }
     #tracklist-label { padding: 9px 0 6px; margin-bottom: 0; }
     .collapsible .panel-head::after { top: 50%; transform: translateY(-50%); }
   }
@@ -720,29 +724,23 @@
       margin: 0; height: auto; font-size: clamp(32px, 11vw, 78px);
     }
 
-    /* Overprint mobile : artiste/tags à gauche, prev/play/next + volume sur la
-       MÊME ligne à droite (gain de place vertical) */
-    [data-theme="overprint"] #top-right {
-      display: flex; align-items: center; gap: 10px;
-    }
-    [data-theme="overprint"] #now-playing {
-      flex: 0 1 auto; min-width: 0; padding: 2px 0; gap: 0;
-    }
+    /* Overprint mobile : tous les éléments empilés et alignés à gauche sur une
+       même colonne (petite marge, comme les en-têtes Boxes/Tracklist) */
+    [data-theme="overprint"] #top-right { display: block; padding: 6px 14px 10px; }
+    [data-theme="overprint"] #now-playing { padding: 0; gap: 0; }
+    [data-theme="overprint"] #track-info { width: 100%; min-width: 0; padding: 0; }
     [data-theme="overprint"] #artist-name {
       font-size: 14px; margin: 0;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    [data-theme="overprint"] #track-tags-row { margin-top: 2px; }
+    [data-theme="overprint"] #track-status-badge { margin-top: 4px; }
+    [data-theme="overprint"] #track-tags-row { margin-top: 6px; }
     [data-theme="overprint"] #controls {
-      flex: 1 1 auto; flex-wrap: nowrap; justify-content: flex-end;
-      gap: 6px; padding: 2px 0; background: none;
+      justify-content: flex-start; gap: 20px; padding: 8px 0 0; background: none;
     }
     [data-theme="overprint"] #controls .ctrl-btn { padding: 4px; }
-    [data-theme="overprint"] #controls .ctrl-btn svg { width: 22px; height: 22px; }
-    [data-theme="overprint"] #btn-play svg { width: 26px; height: 26px; }
-    [data-theme="overprint"] #volume-row { width: auto; flex: 1 1 70px; min-width: 54px; padding: 0; }
-    [data-theme="overprint"] #volume-val { display: none; }   /* gagne de la place */
-    [data-theme="overprint"] #progress-wrap { padding: 4px 0 6px; }
+    [data-theme="overprint"] #volume-row { width: 100%; padding: 8px 0 0; }
+    [data-theme="overprint"] #progress-wrap { padding: 8px 0 2px; }
   }
 </style>
 </head>
