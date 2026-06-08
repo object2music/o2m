@@ -681,7 +681,7 @@
   [data-theme="overprint"] #now-playing  { padding: 10px 6px 4px; }
   [data-theme="overprint"] #controls     { justify-content: flex-start; padding: 4px 6px; }
   [data-theme="overprint"] #progress-wrap { padding: 4px 6px 6px; }
-  [data-theme="overprint"] #artist-name  { font-size: 16px; }
+  [data-theme="overprint"] #artist-name  { font-size: 22px; font-weight: 600; color: var(--text); }
 
   /* ===== Invert : bandeau pleine largeur, titre superposé en bas ===== */
   [data-theme="invert"] #top-zone {
@@ -736,10 +736,14 @@
     [data-theme="overprint"] #track-status-badge { margin-top: 4px; }
     [data-theme="overprint"] #track-tags-row { margin-top: 6px; }
     [data-theme="overprint"] #controls {
-      justify-content: flex-start; gap: 20px; padding: 8px 0 0; background: none;
+      justify-content: flex-start; flex-wrap: nowrap; gap: 14px; padding: 8px 0 0;
+      background: none;
     }
     [data-theme="overprint"] #controls .ctrl-btn { padding: 4px; }
-    [data-theme="overprint"] #volume-row { width: 100%; padding: 8px 0 0; }
+    /* volume à droite des boutons, sur la même ligne (gagne une ligne) */
+    [data-theme="overprint"] #volume-row {
+      flex: 1 1 auto; width: auto; min-width: 0; padding: 0; margin-left: 4px;
+    }
     [data-theme="overprint"] #progress-wrap { padding: 8px 0 2px; }
   }
 </style>
