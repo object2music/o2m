@@ -607,8 +607,6 @@
   [data-theme="invert"]    #top-zone {
     position: relative; padding: 0;
   }
-  [data-theme="overprint"] #top-right,
-  [data-theme="invert"]    #top-right { width: 100%; }
   [data-theme="overprint"] #now-playing #track-name,
   [data-theme="invert"]    #now-playing #track-name { display: none; }
   /* La colonne détails reste à droite du top zone (grille) */
@@ -616,90 +614,83 @@
   [data-theme="invert"]    #track-details {
     grid-area: details; height: 100%; border-left: 1px solid var(--border); border-top: none;
   }
-  [data-theme="invert"]    #cover-col { grid-area: cover; }
-  [data-theme="invert"]    #top-right { grid-area: right; }
-
-  /* Overprint : pochette = scène unique, titre (haut) + contrôles (bas) superposés */
-  [data-theme="overprint"] #cover-col { grid-area: stage; }
-  [data-theme="overprint"] #top-right { grid-area: stage; }
-  [data-theme="overprint"] #top-zone {
-    display: grid; align-items: start;
-    grid-template-columns: 1fr minmax(190px, 240px);
-    grid-template-areas: "stage details";
-  }
-  /* Invert : bandeau pleine largeur en haut, infos + détails dessous */
-  [data-theme="invert"] #top-zone {
-    display: grid; align-items: start;
-    grid-template-columns: 1fr minmax(190px, 240px);
-    grid-template-areas: "cover cover" "right details";
-  }
+  /* Titre : pleine largeur dispo ; taille ajustée en JS (fitHeroTitle), coupe à la fin si trop long */
   [data-theme="overprint"] #hero-title,
   [data-theme="invert"]    #hero-title {
-    display: block; position: absolute; z-index: 3; pointer-events: none;
+    display: block; z-index: 3; pointer-events: none; text-align: left;
     font-family: var(--font-head); font-weight: 900;
-    line-height: 0.82; letter-spacing: -0.025em; text-transform: uppercase;
-    overflow-wrap: anywhere;
+    line-height: 0.86; letter-spacing: -0.03em; text-transform: uppercase;
+    white-space: nowrap; overflow: hidden; text-overflow: clip;
   }
 
-  /* — Overprint : titre en haut, contrôles superposés en bas de la pochette — */
-  /* Largeur DÉFINIE (vh/vw) : un % se résoudrait à 0 dans la grille → pochette effondrée */
-  [data-theme="overprint"] #top-zone { --ovp-w: min(54vh, 48vw); }
+  /* ===== Overprint : pochette à gauche, titre pleine largeur en haut, contrôles centre-bas ===== */
+  /* Largeur pochette DÉFINIE (vh/vw) : un % se résoudrait à 0 dans la grille → effondrement */
+  [data-theme="overprint"] #top-zone {
+    --ovp-w: min(54vh, 48vw);
+    display: grid; align-items: start;
+    grid-template-columns: auto 1fr minmax(190px, 240px);
+    grid-template-areas: "cover mid details";
+  }
   [data-theme="overprint"] #cover-col {
-    position: relative; display: block; justify-self: start; overflow: hidden;
+    grid-area: cover; position: relative; display: block; overflow: hidden;
     width: var(--ovp-w);
   }
   [data-theme="overprint"] #cover-wrap {
     aspect-ratio: 1 / 1; height: auto; width: 100%; max-width: none;
     background: var(--card);  /* tuile visible même sans visuel */
   }
+  /* Titre superposé en haut, débordant de la pochette sur l'espace central */
   [data-theme="overprint"] #hero-title {
-    top: 14px; left: 16px; right: 16px; bottom: auto;
-    font-size: clamp(32px, 5vw, 84px);
+    grid-column: 1 / 3; grid-row: 1; align-self: start; justify-self: stretch;
+    margin: 12px 16px 0;
     color: rgba(255, 90, 0, 0.92); mix-blend-mode: multiply;
   }
-  /* Bloc infos + contrôles + progression, posé en bas de la pochette ; dégradé léger */
+  /* Contrôles + infos dans l'espace central vide, alignés en bas */
   [data-theme="overprint"] #top-right {
-    align-self: end; justify-self: start; z-index: 4;
-    width: var(--ovp-w); margin: 0; padding: 0 8px 8px;
-    background: linear-gradient(to top,
-      var(--surface) 0%, rgba(255,255,255,0.78) 38%, transparent 72%);
+    grid-area: mid; align-self: end; justify-self: stretch;
+    width: auto; margin: 0; padding: 0 14px 14px; background: none;
   }
-  [data-theme="overprint"] #now-playing  { padding: 12px 6px 4px; }
+  [data-theme="overprint"] #now-playing  { padding: 10px 6px 4px; }
   [data-theme="overprint"] #controls     { justify-content: flex-start; padding: 4px 6px; }
   [data-theme="overprint"] #progress-wrap { padding: 4px 6px 6px; }
   [data-theme="overprint"] #artist-name  { font-size: 16px; }
 
-  /* — Invert : pochette pleine largeur + titre en blend difference — */
-  [data-theme="invert"] #cover-col {
-    position: relative; display: block; padding: 0; width: 100%; flex: none;
+  /* ===== Invert : bandeau pleine largeur, titre superposé en bas ===== */
+  [data-theme="invert"] #top-zone {
+    display: grid; align-items: start;
+    grid-template-columns: 1fr minmax(190px, 240px);
+    grid-template-areas: "cover cover" "right details";
   }
+  [data-theme="invert"] #cover-col {
+    grid-area: cover; position: relative; display: block; padding: 0; width: 100%;
+  }
+  [data-theme="invert"] #top-right { grid-area: right; width: 100%; }
   [data-theme="invert"] #cover-wrap {
     aspect-ratio: 16 / 9; height: auto; width: 100%; max-height: 54vh;
     background: #000;
   }
   [data-theme="invert"] #cover { filter: grayscale(1) contrast(1.1); }
   [data-theme="invert"] #cover-wrap:hover #cover { filter: grayscale(0) contrast(1.05); }
+  /* Titre superposé en bas du bandeau (même cellule que la pochette) */
   [data-theme="invert"] #hero-title {
-    left: 22px; right: 22px; bottom: 18px;
-    font-size: clamp(40px, 7vw, 104px);
-    color: var(--hero-accent, #ffffff);
-    mix-blend-mode: difference;
+    grid-column: 1 / 3; grid-row: 1; align-self: end; justify-self: stretch;
+    margin: 0 22px 18px;
+    color: var(--hero-accent, #ffffff); mix-blend-mode: difference;
   }
   [data-theme="invert"] #now-playing { padding-top: 14px; }
   [data-theme="invert"] #artist-name { font-size: 16px; }
 
-  /* Affiches en mobile : grille → bloc, détails masqués (comme les autres thèmes) */
+  /* Affiches en mobile : grille → bloc, détails masqués (titre en haut, pleine largeur) */
   @media (max-width: 699px) {
     [data-theme="overprint"] #top-zone,
     [data-theme="invert"]    #top-zone { display: block; }
     [data-theme="overprint"] #track-details,
     [data-theme="invert"]    #track-details { display: none; }
-    [data-theme="overprint"] #cover-wrap { width: 72vw; max-width: 340px; }
-    /* Overprint mobile : pas de superposition, contrôles sous la pochette */
-    [data-theme="overprint"] #top-right {
-      width: 100%; margin: 0; background: none;
-    }
-    [data-theme="overprint"] #hero-title { font-size: clamp(34px, 12vw, 72px); }
+    [data-theme="overprint"] #cover-col { width: 72vw; max-width: 340px; }
+    [data-theme="overprint"] #top-right,
+    [data-theme="invert"]    #top-right { width: 100%; margin: 0; padding: 8px 12px; background: none; }
+    [data-theme="overprint"] #hero-title,
+    [data-theme="invert"]    #hero-title { margin: 10px 12px 4px; }
   }
 </style>
 </head>
@@ -707,9 +698,9 @@
 
 <!-- Top zone : grande pochette à gauche, infos + contrôles à droite -->
 <div id="top-zone">
+  <div id="hero-title"></div>
   <div id="cover-col">
     <div id="cover-wrap"><img id="cover" src="" alt=""></div>
-    <div id="hero-title"></div>
   </div>
   <div id="top-right">
 
@@ -1175,6 +1166,7 @@ async function refreshNowPlaying() {
     document.getElementById('track-name').textContent  = track.name || '—';
     document.getElementById('hero-title').textContent   = track.name || '';
     updateHeroAccent(track.uri);
+    fitHeroTitle();
     document.getElementById('artist-name').textContent =
       (track.artists || []).map(a => a.name).join(', ') || '—';
 
@@ -1196,6 +1188,7 @@ async function refreshNowPlaying() {
     renderTrackDetails(track.uri);
   } else {
     document.getElementById('hero-title').textContent = '';
+    fitHeroTitle();
     updateStatusBadge('');
     updateMediaSession(null, playing, '');
     renderTrackDetails(null);
@@ -1938,6 +1931,21 @@ function updateHeroAccent(uri) {
   readThemeColors();
 }
 
+/* Ajuste la taille du titre pour remplir la largeur dispo (affiches) ; coupe si trop long */
+function fitHeroTitle() {
+  const el = document.getElementById('hero-title');
+  if (!el) return;
+  const theme = document.documentElement.getAttribute('data-theme');
+  if ((theme !== 'overprint' && theme !== 'invert') || !el.textContent) return;
+  const avail = el.clientWidth;
+  if (avail <= 0) return;
+  el.style.fontSize = '100px';
+  const w = el.scrollWidth;          // largeur du texte à 100px (nowrap)
+  if (w <= 0) return;
+  const size = Math.max(22, Math.min(170, Math.floor(100 * avail / w)));
+  el.style.fontSize = size + 'px';   // si plafonné au min et encore trop long → ellipsis/clip
+}
+
 /* ── Init ── */
 /* ── Thèmes ── */
 function applyTheme(name) {
@@ -1948,6 +1956,7 @@ function applyTheme(name) {
   if (name === 'invert') updateHeroAccent(matrixCurUri);
   else document.documentElement.style.removeProperty('--hero-accent');
   readThemeColors();
+  requestAnimationFrame(fitHeroTitle);
 }
 function setupThemeSwitcher() {
   document.querySelectorAll('.theme-chip').forEach(c =>
@@ -2006,6 +2015,12 @@ async function init() {
   setInterval(refreshVolume, 15000);
   setInterval(updateProgress, 1000);
   autoConnectSnapIfNeeded();
+
+  let fitTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(fitTimer); fitTimer = setTimeout(fitHeroTitle, 150);
+  });
+  fitHeroTitle();
 }
 
 async function updateProgress() {
