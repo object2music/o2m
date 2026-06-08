@@ -1229,28 +1229,66 @@ async function refreshNowPlaying() {
 }
 
 /* ── Media Session API (Bluetooth / notification controls) ── */
+/* Le navigateur n'expose une session média à l'OS (Android/Linux) que si un
+   élément <audio>/<video> joue réellement. O2M lit l'audio côté serveur
+   (Mopidy/Snapcast), donc on maintient une piste silencieuse en boucle qui
+   « tient » la session active ; nos handlers pilotent ensuite Mopidy. */
+let msAudio = null;
+
+function makeSilentWavUrl(seconds = 1, rate = 8000) {
+  const n = seconds * rate, bytes = 44 + n * 2;
+  const v = new DataView(new ArrayBuffer(bytes));
+  const wr = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  wr(0, 'RIFF'); v.setUint32(4, bytes - 8, true); wr(8, 'WAVE'); wr(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  wr(36, 'data'); v.setUint32(40, n * 2, true);
+  // amplitude minuscule (±1) → techniquement audible mais inaudible, pour que
+  // le navigateur considère la piste comme du média actif
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, (i % 2) ? 1 : -1, true);
+  return URL.createObjectURL(new Blob([v.buffer], { type: 'audio/wav' }));
+}
+
+function msStartKeepAlive() {
+  if (!('mediaSession' in navigator)) return;
+  if (!msAudio) {
+    msAudio = new Audio(makeSilentWavUrl());
+    msAudio.loop = true;
+    msAudio.setAttribute('aria-hidden', 'true');
+  }
+  if (msAudio.paused) msAudio.play().catch(() => {});
+}
+
 function initMediaSession() {
   if (!('mediaSession' in navigator)) return;
-  navigator.mediaSession.setActionHandler('play', async () => {
-    await rpc('core.playback.resume');
-    setTimeout(refreshNowPlaying, 300);
+  const setH = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch(e) {} };
+  setH('play', async () => {
+    await rpc('core.playback.resume'); msStartKeepAlive(); setTimeout(refreshNowPlaying, 300);
   });
-  navigator.mediaSession.setActionHandler('pause', async () => {
-    await rpc('core.playback.pause');
-    setTimeout(refreshNowPlaying, 300);
+  setH('pause', async () => {
+    await rpc('core.playback.pause'); setTimeout(refreshNowPlaying, 300);
   });
-  navigator.mediaSession.setActionHandler('previoustrack', async () => {
-    await rpc('core.playback.previous');
-    setTimeout(refreshNowPlaying, 800);
+  setH('previoustrack', async () => {
+    await rpc('core.playback.previous'); setTimeout(refreshNowPlaying, 800);
   });
-  navigator.mediaSession.setActionHandler('nexttrack', async () => {
-    await rpc('core.playback.next');
-    setTimeout(refreshNowPlaying, 800);
+  setH('nexttrack', async () => {
+    await rpc('core.playback.next'); setTimeout(refreshNowPlaying, 800);
   });
+  setH('seekto', async (d) => {
+    if (d && d.seekTime != null) {
+      await rpc('core.playback.seek', { time_position: Math.round(d.seekTime * 1000) });
+      setTimeout(refreshNowPlaying, 300);
+    }
+  });
+  // Démarre la piste keep-alive au premier geste (politique autoplay des navigateurs)
+  const onGesture = () => msStartKeepAlive();
+  document.addEventListener('click',      onGesture, { once: true });
+  document.addEventListener('touchstart', onGesture, { once: true, passive: true });
 }
 
 function updateMediaSession(track, isPlaying, coverUrl) {
   if (!('mediaSession' in navigator)) return;
+  if (isPlaying) msStartKeepAlive();   // garantit une session active pendant la lecture
   navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
   if (track) {
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -2083,6 +2121,15 @@ async function updateProgress() {
   const pct = Math.min(100, (pos / currentDurationMs) * 100);
   document.getElementById('progress-fill').style.width = pct + '%';
   document.getElementById('prog-elapsed').textContent = msToMin(pos);
+  if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: currentDurationMs / 1000,
+        position: Math.min(pos, currentDurationMs) / 1000,
+        playbackRate: 1,
+      });
+    } catch(e) {}
+  }
 }
 
 function setFeedback(msg) {
