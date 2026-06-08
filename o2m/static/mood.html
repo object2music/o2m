@@ -640,14 +640,16 @@
   /* ===== Overprint : pochette à gauche, titre pleine largeur en haut, contrôles centre-bas ===== */
   /* Largeur pochette DÉFINIE (vh/vw) : un % se résoudrait à 0 dans la grille → effondrement */
   [data-theme="overprint"] #top-zone {
-    --ovp-w: min(46vh, 41vw);   /* -15% vs 54vh/48vw */
+    --ovp-w: min(39vh, 35vw);   /* -15% supplémentaire (était 46vh/41vw) */
     display: grid; align-items: start;
     grid-template-columns: auto 1fr minmax(190px, 240px);
     grid-template-areas: "cover mid details";
   }
+  /* align-self:start → la colonne épouse la hauteur du carré (plus de bande vide
+     sous la pochette) ; padding:0 → la pochette touche les bords */
   [data-theme="overprint"] #cover-col {
     grid-area: cover; position: relative; display: block; overflow: hidden;
-    width: var(--ovp-w);
+    width: var(--ovp-w); align-self: start; padding: 0;
   }
   [data-theme="overprint"] #cover-wrap {
     aspect-ratio: 1 / 1; height: auto; width: 100%; max-width: none;
@@ -1983,7 +1985,7 @@ function toggleSnapcast() {
     snapPlayer.stop(); snapPlayer = null;
     stopMediaAnchor();
     _snapBtnOff(); setFeedback('Snapcast stopped');
-    localStorage.removeItem('snap-autoconnect');
+    localStorage.setItem('snap-autoconnect', '0');  // arrêt explicite (≠ « jamais décidé »)
   } else {
     if (!snapWsUrl) { setFeedback('Snapcast not configured'); return; }
     if (!window.SnapStream) { setFeedback('Snapcast module not loaded'); return; }

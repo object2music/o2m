@@ -754,6 +754,17 @@ if __name__ == "__main__":
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
+    @api.route('/sw.js')
+    def service_worker():
+        # Servi depuis la racine pour que le scope du service worker couvre tout
+        # le site (/mood inclus). Ne s'enregistrera qu'en HTTPS (cf. sw.js).
+        from flask import send_from_directory
+        resp = send_from_directory('static', 'sw.js')
+        resp.headers['Content-Type'] = 'application/javascript'
+        resp.headers['Service-Worker-Allowed'] = '/'
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
     @api.route('/api/client_config')
     def api_client_config():
         from flask import jsonify, request as req
