@@ -1995,7 +1995,10 @@ function toggleSnapcast() {
 }
 
 function autoConnectSnapIfNeeded() {
-  if (!localStorage.getItem('snap-autoconnect') || !snapWsUrl) return;
+  const pref = localStorage.getItem('snap-autoconnect');
+  // '1' = activé ; '0' = coupé explicitement ; null = jamais décidé → défaut mobile = ON
+  const shouldConnect = pref === '1' || (pref === null && isMobileDevice());
+  if (!shouldConnect || !snapWsUrl) return;
   // Connexion au premier geste utilisateur (obligation navigateur pour AudioContext)
   const onGesture = () => { _snapStart(); };
   document.addEventListener('click',      onGesture, { once: true });
