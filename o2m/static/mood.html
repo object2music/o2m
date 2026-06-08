@@ -1985,6 +1985,21 @@ function autoConnectSnapIfNeeded() {
   document.addEventListener('touchstart', onGesture, { once: true, passive: true });
 }
 
+/* Mobile : lance le box par défaut si configuré (comme o2m.js / Iris sur smartphone) */
+function isMobileDevice() {
+  return (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
+       || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+function autoInitPlaybackIfMobile() {
+  if (!isMobileDevice()) return;
+  setTimeout(() => {
+    fetch(API + '/initialize_playback')
+      .then(r => r.text())
+      .then(t => { if (t && t !== 'no_action') setTimeout(refreshNowPlaying, 800); })
+      .catch(() => {});
+  }, 1500);
+}
+
 /* ── Hero accent (couleur dynamique du style Invert) ── */
 const HERO_PALETTE = ['#ff3b00','#1e6bff','#ff0091','#00c878','#ffc400','#8b5cff','#00d4d4'];
 function heroAccentForUri(uri) {
@@ -2109,6 +2124,7 @@ async function init() {
   setInterval(refreshVolume, 15000);
   setInterval(updateProgress, 1000);
   autoConnectSnapIfNeeded();
+  autoInitPlaybackIfMobile();
 
   let fitTimer = null;
   window.addEventListener('resize', () => {
