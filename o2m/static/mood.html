@@ -1073,10 +1073,20 @@ function renderTracklist(tracks, activeTlid) {
   fetchTracklistStatuses(tracks);
 }
 
-/* Centre le titre courant dans la colonne tracklist (no-op si la colonne ne scrolle pas, ex. mobile) */
+/* Remonte jusqu'au premier ancêtre réellement scrollable (desktop = .col,
+   mobile = #scroll-area). */
+function scrollableAncestor(el) {
+  for (let n = el && el.parentElement; n && n !== document.body; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 4) return n;
+  }
+  return null;
+}
+
+/* Centre le titre courant dans son conteneur scrollable (no-op si rien ne scrolle) */
 function scrollTracklistToCurrent(item) {
-  const container = item && item.closest('.col');
-  if (!container || container.scrollHeight <= container.clientHeight + 4) return;
+  const container = scrollableAncestor(item);
+  if (!container) return;
   const cRect = container.getBoundingClientRect();
   const iRect = item.getBoundingClientRect();
   const offset = (iRect.top - cRect.top) - (container.clientHeight - item.offsetHeight) / 2;
