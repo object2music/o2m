@@ -223,6 +223,26 @@
   #td-fav svg { width: 16px; height: 16px; display: block; }
   #td-fav.on { color: #e0245e; }
   body.edit-mode #td-fav { cursor: pointer; }
+  .td-playlists { display: none; }
+  body.edit-mode .td-playlists {
+    display: block; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
+  }
+  .td-playlists .pl-head {
+    font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .04em; margin-bottom: 6px;
+  }
+  .td-playlists .pl-list {
+    display: flex; flex-direction: column; gap: 5px; max-height: 168px; overflow-y: auto;
+  }
+  .td-playlists label {
+    display: flex; align-items: center; gap: 8px; font-size: 12px;
+    color: var(--text); cursor: pointer; min-width: 0;
+  }
+  .td-playlists label span {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .td-playlists input { accent-color: var(--accent); flex-shrink: 0; }
+  .td-playlists .pl-empty { font-size: 11px; color: var(--muted); line-height: 1.4; }
   body.edit-mode #mood-matrix { box-shadow: inset 0 0 0 2px var(--accent); }
 
   /* ── Now Playing ── */
@@ -742,6 +762,7 @@
       <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
       <div><dt>Library</dt><dd id="td-library">—</dd></div>
     </dl>
+    <div id="td-playlists" class="td-playlists"></div>
   </div>
 </div><!-- /top-zone -->
 
@@ -1220,6 +1241,56 @@ function updateMediaSession(track, isPlaying, coverUrl) {
 /* ── Colonne détails du morceau (read-only) ── */
 let detailsUri = null;            // uri actuellement affichée (détecte le changement)
 let favLocal = false, favSpotify = null;  // états favori courants
+let editablePlaylists = null;     // cache des playlists possédées (éditables)
+
+async function loadEditablePlaylists() {
+  if (editablePlaylists) return editablePlaylists;
+  try {
+    const all = await fetch(API + '/playlists').then(r => r.json());
+    editablePlaylists = Array.isArray(all) ? all.filter(p => p.owned) : [];
+  } catch(e) { editablePlaylists = []; }
+  return editablePlaylists;
+}
+
+async function renderPlaylistEditor(uri) {
+  const box = document.getElementById('td-playlists');
+  if (!box) return;
+  if (!editUnlocked || !uri) { box.innerHTML = ''; return; }
+  const pls = await loadEditablePlaylists();
+  const inSet = new Set();
+  try {
+    const inPls = await fetch(API + '/track_playlists?uri=' + encodeURIComponent(uri)).then(r => r.json());
+    if (Array.isArray(inPls)) inPls.forEach(p => inSet.add(p.id));
+  } catch(e) {}
+  if (!pls.length) {
+    box.innerHTML = '<div class="pl-head">Playlists</div>'
+      + '<div class="pl-empty">No editable playlists cached. Open backoffice → cache playlists first.</div>';
+    return;
+  }
+  const esc = s => String(s).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+  const rows = pls.map(p =>
+    '<label><input type="checkbox" data-pid="' + esc(p.id) + '"' + (inSet.has(p.id) ? ' checked' : '') + '>'
+    + '<span>' + esc(p.name || p.id) + '</span></label>').join('');
+  box.innerHTML = '<div class="pl-head">Playlists</div><div class="pl-list">' + rows + '</div>';
+  box.querySelectorAll('input[type=checkbox]').forEach(cb =>
+    cb.addEventListener('change', () => togglePlaylistMembership(cb, uri)));
+}
+
+async function togglePlaylistMembership(cb, uri) {
+  const pid = cb.dataset.pid, add = cb.checked;
+  cb.disabled = true;
+  try {
+    const r = await fetch(API + '/track_playlist', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ uri, playlist_id: pid, action: add ? 'add' : 'remove' })
+    });
+    if (r.status === 401) { setFeedback('Editing not authorized'); cb.checked = !add; return; }
+    const j = await r.json().catch(() => ({}));
+    if (j.error) { setFeedback('Playlist: ' + j.error); cb.checked = !add; return; }
+    setFeedback(add ? 'Added to playlist' : 'Removed from playlist');
+  } catch(e) { setFeedback('Playlist error'); cb.checked = !add; }
+  finally { cb.disabled = false; }
+}
 
 function renderFav() {
   const el = document.getElementById('td-fav');
@@ -1258,6 +1329,7 @@ async function renderTrackDetails(uri) {
           .then(r => r.json()).then(d => { favSpotify = d.saved; renderFav(); })
           .catch(() => {});
       }
+      if (editUnlocked) renderPlaylistEditor(uri);
     }
     detailsUri = uri;
     renderFav();
@@ -1300,6 +1372,8 @@ function setEditUnlocked(on, id) {
                    : 'Enable editing';
   }
   document.body.classList.toggle('edit-mode', on);
+  if (typeof renderPlaylistEditor === 'function') renderPlaylistEditor(on ? detailsUri : null);
+  if (typeof renderFav === 'function') renderFav();
 }
 
 async function checkEditStatus() {
