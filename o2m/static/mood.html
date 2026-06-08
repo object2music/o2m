@@ -703,9 +703,11 @@
     [data-theme="overprint"] #cover-col { width: 72vw; max-width: 340px; }
     [data-theme="overprint"] #top-right,
     [data-theme="invert"]    #top-right { width: 100%; margin: 0; padding: 8px 12px; background: none; }
+    /* Titre superposé sur la pochette (en haut) — effet overprint conservé en mobile */
     [data-theme="overprint"] #hero-title,
     [data-theme="invert"]    #hero-title {
-      margin: 10px 12px 4px; font-size: clamp(32px, 11vw, 78px); height: auto;
+      position: absolute; top: 10px; left: 14px; right: 14px; z-index: 3;
+      margin: 0; height: auto; font-size: clamp(32px, 11vw, 78px);
     }
   }
 </style>
