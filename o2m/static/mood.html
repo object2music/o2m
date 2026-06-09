@@ -736,14 +736,18 @@
     [data-theme="overprint"] #track-status-badge { margin-top: 4px; }
     [data-theme="overprint"] #track-tags-row { margin-top: 6px; }
     [data-theme="overprint"] #controls {
-      justify-content: flex-start; flex-wrap: nowrap; gap: 14px; padding: 8px 0 0;
+      justify-content: flex-start; flex-wrap: nowrap; gap: 12px; padding: 8px 0 0;
       background: none;
     }
     [data-theme="overprint"] #controls .ctrl-btn { padding: 4px; }
-    /* volume à droite des boutons, sur la même ligne (gagne une ligne) */
+    /* volume à droite des boutons, sur la même ligne (gagne une ligne). On masque
+       le % et on laisse le slider se compresser pour que le bouton snapcast
+       (dernier enfant) reste visible à droite de la ligne. */
     [data-theme="overprint"] #volume-row {
-      flex: 1 1 auto; width: auto; min-width: 0; padding: 0; margin-left: 4px;
+      flex: 1 1 auto; width: auto; min-width: 0; padding: 0; margin-left: 4px; gap: 6px;
     }
+    [data-theme="overprint"] #volume-val { display: none; }
+    [data-theme="overprint"] #btn-snapcast { flex-shrink: 0; }
     [data-theme="overprint"] #progress-wrap { padding: 8px 0 2px; }
   }
 </style>
