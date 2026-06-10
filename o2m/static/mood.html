@@ -487,6 +487,21 @@
                  touch-action: none; cursor: crosshair; border-radius: 0; }
   #mood-matrix.cursor-resize { cursor: ew-resize; }
 
+  /* ── Auto toggle (mood en direct) ── */
+  #auto-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  #btn-auto {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 11px; border-radius: 0; cursor: pointer;
+    font-size: 12px; font-weight: 600; letter-spacing: .04em;
+    border: 1px solid var(--muted); background: transparent; color: var(--muted);
+    text-transform: uppercase; transition: color .15s, border-color .15s, background .15s;
+  }
+  #btn-auto svg { width: 14px; height: 14px; display: block; }
+  #btn-auto.active {
+    color: var(--bg); background: var(--accent); border-color: var(--accent);
+  }
+  #auto-hint { font-size: 11px; color: var(--muted); }
+
   /* ── Matrix tooltip ── */
   #matrix-tooltip {
     position: fixed; display: none; pointer-events: none; z-index: 200;
@@ -872,6 +887,13 @@
     </div>
   </div>
   <div id="matrix-section">
+    <div id="auto-bar">
+      <button id="btn-auto" type="button" title="Auto: les réglages rafraîchissent le mix en direct">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        <span>Auto</span>
+      </button>
+      <span id="auto-hint">live</span>
+    </div>
     <canvas id="mood-matrix"></canvas>
   </div>
   <div id="genres-section">
@@ -946,6 +968,14 @@ let currentTracklistLength = 0;
 let snapWsUrl = null;
 let snapPlayer = null;
 
+/* Mode mood/auto : un changement de réglage rafraîchit le mix en direct
+   - autoToggle      : interrupteur manuel "Auto" (persisté)
+   - moodSessionActive : actif dès qu'un mix mood a été généré (potards/matrice)
+   - autoBoxActive   : une box active contient le mot "auto" */
+let autoToggle = false;
+let moodSessionActive = false;
+let autoBoxActive = false;
+
 /* ── Dial geometry ── */
 const R = 42, CX = 55, CY = 55;
 const CIRC = 2 * Math.PI * R;
@@ -994,9 +1024,23 @@ function makeDraggable(id, onChange) {
   svg.addEventListener('pointerup', () => { active = false; scheduleApply(); });
 }
 
+/* ── Mode mood/auto ── */
+function isAutoMode() {
+  return autoToggle || moodSessionActive || autoBoxActive;
+}
+function updateAutoBtn() {
+  document.getElementById('btn-auto')?.classList.toggle('active', isAutoMode());
+}
+function setAutoToggle(on) {
+  autoToggle = on;
+  localStorage.setItem('mood-auto', on ? '1' : '0');
+  updateAutoBtn();
+}
+
 /* ── Apply ── */
 function shouldApplyMood() {
-  return currentTracklistLength === 0;
+  // Rafraîchit le mix si la tracklist est vide OU si on est en mode mood/auto.
+  return currentTracklistLength === 0 || isAutoMode();
 }
 
 function scheduleApply() {
@@ -1017,6 +1061,8 @@ async function applyMood() {
     });
     const d = await r.json();
     setFeedback(d.tracks_added > 0 ? `${d.tracks_added} tracks loaded` : 'No matching tracks');
+    moodSessionActive = true;   // on est désormais dans un mix mood → potards en direct
+    updateAutoBtn();
     setTimeout(refreshNowPlaying, 600);
   } catch(e) { setFeedback('Network error'); }
 }
@@ -1925,13 +1971,23 @@ async function checkBoxActive(uid, btn) {
   try {
     const text = await fetch(API + '/box_activated?uid=' + encodeURIComponent(uid)).then(r => r.text());
     btn.classList.toggle('active', text.trim() === '1');
+    // Une box dont le nom/type contient "auto" → engage le mode auto
+    const label = (btn.querySelector('.box-name')?.textContent || '') + ' ' + (btn.title || '');
+    btn.dataset.auto = /auto/i.test(label) ? '1' : '0';
+    recomputeAutoBox();
   } catch(e) {}
+}
+
+function recomputeAutoBox() {
+  autoBoxActive = !!document.querySelector('.box-btn.active[data-auto="1"]');
+  updateAutoBtn();
 }
 
 async function toggleBox(uid, btn) {
   btn.disabled = true;
   try {
     await fetch(API + '/box?uid=' + encodeURIComponent(uid) + '&mode=toogle');
+    moodSessionActive = false;   // lancer une box termine la session mood implicite
     await new Promise(r => setTimeout(r, 400));
     await checkBoxActive(uid, btn);
     // Refresh tracklist after box change
@@ -2181,6 +2237,9 @@ async function init() {
   document.getElementById('btn-clear-tl').addEventListener('click', clearTracklist);
   document.getElementById('btn-snapcast')?.addEventListener('click', toggleSnapcast);
   document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+  autoToggle = localStorage.getItem('mood-auto') === '1';
+  document.getElementById('btn-auto')?.addEventListener('click', () => setAutoToggle(!autoToggle));
+  updateAutoBtn();
   document.addEventListener('fullscreenchange', updateFsBtn);
   document.addEventListener('webkitfullscreenchange', updateFsBtn);
 
