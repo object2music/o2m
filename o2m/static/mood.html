@@ -2044,8 +2044,9 @@ function toggleSnapcast() {
 
 function autoConnectSnapIfNeeded() {
   const pref = localStorage.getItem('snap-autoconnect');
-  // '1' = activé ; '0' = coupé explicitement ; null = jamais décidé → défaut mobile = ON
-  const shouldConnect = pref === '1' || (pref === null && isMobileDevice());
+  // Mobile : connexion forcée. Desktop : on restaure l'état de la dernière
+  // ouverture locale ('1' = était connecté → reconnecte ; '0'/null = reste coupé).
+  const shouldConnect = isMobileDevice() || pref === '1';
   if (!shouldConnect || !snapWsUrl) return;
   // Connexion au premier geste utilisateur (obligation navigateur pour AudioContext)
   const onGesture = () => { _snapStart(); };
@@ -2178,7 +2179,7 @@ async function init() {
   initMatrix();
 
   document.getElementById('btn-clear-tl').addEventListener('click', clearTracklist);
-  document.getElementById('btn-snapcast').addEventListener('click', toggleSnapcast);
+  document.getElementById('btn-snapcast')?.addEventListener('click', toggleSnapcast);
   document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
   document.addEventListener('fullscreenchange', updateFsBtn);
   document.addEventListener('webkitfullscreenchange', updateFsBtn);
@@ -2188,6 +2189,8 @@ async function init() {
     const cfg = await fetch(API + '/client_config').then(r => r.json());
     snapWsUrl = cfg.snap_ws_url || null;
   } catch(e) {}
+  // Pas de bouton Snapcast si non configuré côté serveur (.env)
+  if (!snapWsUrl) { document.getElementById('btn-snapcast')?.remove(); }
 
   try {
     const s  = await fetch(API + '/mood').then(r => r.json());
