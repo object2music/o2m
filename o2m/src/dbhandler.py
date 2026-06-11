@@ -166,7 +166,11 @@ class DatabaseHandler():
             stat = Track.create(uri=uri)
             return stat
         except IntegrityError as err:
+            # Course (stat_exists/create concurrents, ex. paused+ended du même
+            # podcast) : la ligne vient d'être insérée ailleurs → on la récupère
+            # au lieu de renvoyer None (ce None faisait crasher le thread WSListener)
             self.log.error(err)
+            return self.get_stat_by_uri(uri)
     
     def get_all_stats(self):
         query = Track.select()

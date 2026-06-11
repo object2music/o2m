@@ -1595,6 +1595,12 @@ class O2mToMopidy:
             new_stat = True
             stat = self.dbHandler.create_stat(uri)
 
+        # Garde-fou : si la stat n'a pu être ni récupérée ni créée, on sort
+        # proprement plutôt que de crasher le thread d'événements Mopidy
+        if stat is None:
+            print(f"update_stat_track: no stat for {uri}, skipping")
+            return None
+
         #Using rate reading average instead of bool
         track_finished = False
         rate = 0.5
