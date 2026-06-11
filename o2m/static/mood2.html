@@ -807,32 +807,18 @@
     --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
   }
 
-  /* Top bar : brand mark + "Mood" eyebrow + segmented light/dark toggle. */
-  #o2m-topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    height: 52px; flex-shrink: 0; padding: 0 var(--sp-4);
-    background: var(--surface); border-bottom: 1px solid var(--border);
-  }
-  .tb-brand { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; }
+  /* Brand (O2M + "Mood" eyebrow) merged into the footer bar, on the left. */
+  #footer-links .tb-brand { display: flex; align-items: baseline; gap: 9px; margin-right: var(--sp-3); }
   .tb-mark {
-    font-family: var(--font-head); font-weight: 900; font-size: 20px;
+    font-family: var(--font-head); font-weight: 900; font-size: 15px; line-height: 1;
     letter-spacing: -.02em; text-transform: uppercase; color: var(--text);
   }
   .tb-eyebrow {
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em;
     text-transform: uppercase; color: var(--muted);
-    display: inline-flex; align-items: center; gap: 7px;
+    display: inline-flex; align-items: center; gap: 6px;
   }
-  .tb-eyebrow::before { content: ''; width: 7px; height: 7px; background: var(--accent); flex-shrink: 0; }
-  /* segmented control (o2m-seg) */
-  .tb-seg { display: flex; border: 1px solid var(--border); }
-  .tb-seg .theme-chip {
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em;
-    text-transform: uppercase; padding: 6px 14px; background: none; color: var(--muted);
-    border: none; border-right: 1px solid var(--border); border-radius: 0;
-  }
-  .tb-seg .theme-chip:last-child { border-right: none; }
-  .tb-seg .theme-chip.active { background: var(--accent); color: var(--on-accent, #190E04); }
+  .tb-eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--accent); flex-shrink: 0; }
 
   /* Genre chips → o2m-chip : square, hairline border, mono, active = solid orange. */
   #genres-wrap { gap: var(--sp-2); }
@@ -857,25 +843,11 @@
   .tl-item:last-child { border-bottom: none; }
 
   @media (max-width: 699px) {
-    #o2m-topbar { height: 46px; padding: 0 var(--sp-3); }
-    .tb-mark { font-size: 17px; }
-    .tb-seg .theme-chip { padding: 6px 11px; }
+    #footer-links .tb-brand { margin-right: 8px; }
   }
 </style>
 </head>
 <body>
-
-<!-- Design system top bar: brand mark + Mood eyebrow + light/dark segmented toggle -->
-<header id="o2m-topbar">
-  <div class="tb-brand">
-    <span class="tb-mark">O2M</span>
-    <span class="tb-eyebrow">Mood</span>
-  </div>
-  <div class="tb-seg">
-    <button class="theme-chip" data-theme-set="dark">Dark</button>
-    <button class="theme-chip" data-theme-set="creme">Light</button>
-  </div>
-</header>
 
 <!-- Top zone: large cover on the left, info + controls on the right -->
 <div id="top-zone">
@@ -1030,6 +1002,10 @@
 
   <!-- Footer links -->
   <div id="footer-links">
+    <div class="tb-brand">
+      <span class="tb-mark">O2M</span>
+      <span class="tb-eyebrow">Mood</span>
+    </div>
     <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
     <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
     <a class="footer-link" href="/mood"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Mood</a>
