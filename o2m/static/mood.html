@@ -2115,8 +2115,20 @@ function isMobileDevice() {
   return (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
        || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
 }
-function autoInitPlaybackIfMobile() {
-  if (!isMobileDevice()) return;
+/* Téléphone uniquement (exclut tablette + desktop). Astuce UA : les téléphones
+   Android ont "Mobile" dans l'UA, pas les tablettes ; iPad n'a pas iPhone/iPod. */
+function isPhoneDevice() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPod/.test(ua)) return true;
+  if (/Android/.test(ua) && /Mobile/.test(ua)) return true;
+  if (/Windows Phone|BlackBerry|Opera Mini|IEMobile/.test(ua)) return true;
+  // Repli : écran tactile avec petit côté ≤ 480px (téléphone), exclut tablettes/desktop
+  const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  const minSide = Math.min(window.screen?.width || 9999, window.screen?.height || 9999);
+  return touch && minSide <= 480;
+}
+function autoInitPlaybackIfPhone() {
+  if (!isPhoneDevice()) return;
   setTimeout(() => {
     fetch(API + '/initialize_playback')
       .then(r => r.text())
@@ -2278,7 +2290,7 @@ async function init() {
   setInterval(updateProgress, 1000);
   autoConnectSnapIfNeeded();
   armMediaAnchor();
-  autoInitPlaybackIfMobile();
+  autoInitPlaybackIfPhone();
 
   let fitTimer = null;
   window.addEventListener('resize', () => {
