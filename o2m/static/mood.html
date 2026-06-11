@@ -359,13 +359,22 @@
     flex-shrink: 0;
   }
   #progress-bar {
-    height: 3px; background: var(--track-bg); border-radius: 0;
-    cursor: pointer; position: relative;
+    height: 5px; background: var(--track-bg); border-radius: 0;
+    cursor: pointer; position: relative; touch-action: none;
   }
   #progress-fill {
     height: 100%; background: var(--accent); border-radius: 0;
-    width: 0%; transition: width 1s linear;
+    width: 0%; transition: width 1s linear; position: relative;
   }
+  /* poignée de glisser-déposer : visible au survol / pendant le seek */
+  #progress-fill::after {
+    content: ''; position: absolute; right: -6px; top: 50%;
+    width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+    transform: translateY(-50%) scale(0); transition: transform .14s var(--ease, ease);
+  }
+  #progress-wrap:hover #progress-fill::after,
+  #progress-bar.seeking #progress-fill::after { transform: translateY(-50%) scale(1); }
+  #progress-bar.seeking #progress-fill { transition: none; }
   #progress-time {
     display: flex; justify-content: space-between;
     font-size: 10px; color: var(--muted); margin-top: 3px;
@@ -427,13 +436,20 @@
     .col { overflow-y: auto; min-height: 0; }
     #footer-links { flex-shrink: 0; }
     #boxes-panel { flex: 0 0 25%; border-top: none; border-right: 1px solid var(--border);
-                   padding: 14px 12px; }
+                   padding: 0; }
     #left-panel  { flex: 0 0 35%; border-right: 1px solid var(--border); min-width: 0; }
     #tracklist-col { flex: 0 0 40%; min-width: 0; }
-    #dials { padding: 12px 10px 6px; }
+    /* En-têtes de colonnes : alignés (même top/left) et statiques au scroll */
+    #boxes-panel-label, #settings-label, #tracklist-label {
+      position: sticky; top: 0; z-index: 6; background: var(--bg);
+      padding: 13px 12px 10px; margin: 0;
+    }
+    #boxes-panel .panel-body { padding: 0 12px 14px; }
+    #dials { padding: 8px 10px 6px; }
     #matrix-section { padding: 4px 10px 8px; min-width: 0; }
     #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
-    #tracklist-section { padding: 12px 12px 6px; }
+    #tracklist-section { padding: 0; }
+    #tracklist-wrap { padding: 0 12px 10px; }
 
     /* En-têtes de menu (Boxes / Settings / Tracklist) figés en haut de chaque
        colonne scrollable — toujours visibles au défilement, comme en mobile. */
@@ -675,7 +691,7 @@
   /* ===== Overprint : pochette à gauche, titre pleine largeur en haut, contrôles centre-bas ===== */
   /* Largeur pochette DÉFINIE (vh/vw) : un % se résoudrait à 0 dans la grille → effondrement */
   [data-theme="overprint"] #top-zone {
-    --ovp-w: min(39vh, 35vw);   /* -15% supplémentaire (était 46vh/41vw) */
+    --ovp-w: min(33vh, 29vw);   /* réduit pour dégager la matrice (était 39vh/35vw) */
     display: grid; align-items: start;
     grid-template-columns: auto 1fr minmax(190px, 240px);
     grid-template-areas: "cover mid details";
@@ -2248,6 +2264,7 @@ async function init() {
   readThemeColors();
   setupThemeSwitcher();
   setupCollapsibles();
+  setupProgressSeek();
   ['energy', 'valence', 'dl'].forEach(setupDial);
   makeDraggable('energy', v => { appState.energy = v; });
   makeDraggable('valence', v => { appState.valence = v; });
@@ -2307,8 +2324,45 @@ async function init() {
   fitHeroTitle();
 }
 
+let seekDragging = false;
+function setupProgressSeek() {
+  const bar = document.getElementById('progress-bar');
+  const fill = document.getElementById('progress-fill');
+  const elapsed = document.getElementById('prog-elapsed');
+  if (!bar) return;
+  const pctFromEvent = (e) => {
+    const rect = bar.getBoundingClientRect();
+    if (rect.width <= 0) return 0;
+    return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  };
+  const preview = (p) => {
+    fill.style.width = (p * 100) + '%';
+    if (currentDurationMs) elapsed.textContent = msToMin(p * currentDurationMs);
+  };
+  bar.addEventListener('pointerdown', (e) => {
+    seekDragging = true;
+    bar.classList.add('seeking');
+    try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+    preview(pctFromEvent(e));
+    e.preventDefault();
+  });
+  bar.addEventListener('pointermove', (e) => { if (seekDragging) preview(pctFromEvent(e)); });
+  const end = async (e) => {
+    if (!seekDragging) return;
+    seekDragging = false;
+    bar.classList.remove('seeking');
+    const p = pctFromEvent(e);
+    if (currentDurationMs) {
+      await rpc('core.playback.seek', { time_position: Math.round(p * currentDurationMs) });
+      setTimeout(updateProgress, 300);
+    }
+  };
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', () => { seekDragging = false; bar.classList.remove('seeking'); });
+}
+
 async function updateProgress() {
-  if (!currentDurationMs) return;
+  if (seekDragging || !currentDurationMs) return;   // ne pas écraser pendant un seek
   const r = await rpc('core.playback.get_time_position');
   const pos = r?.result ?? 0;
   const pct = Math.min(100, (pos / currentDurationMs) * 100);
