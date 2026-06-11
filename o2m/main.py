@@ -775,10 +775,12 @@ if __name__ == "__main__":
     def api_client_config():
         from flask import jsonify, request as req
         snap_port = os.environ.get('PORT_SNAPSERVER_HTTP', '6693')
+        mopidy_port = os.environ.get('PORT_MOPIDY', '6680')
         host = req.host.split(':')[0]
         return jsonify({
             'snap_url': f'http://{host}:{snap_port}',
             'snap_ws_url': f'ws://{host}:{snap_port}',
+            'mopidy_ws_url': f'ws://{host}:{mopidy_port}/mopidy/ws',
         })
 
     @api.route('/tag_features')

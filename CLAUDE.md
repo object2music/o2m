@@ -156,8 +156,13 @@ fallback partially helps for energy/valence but `_GENRE_MOOD` doesn't cover tags
 tooltips, placeholders). This applies across the whole project — the mood UI
 (`o2m/static/mood.html`), the SvelteKit frontend (`frontend/`), and any new interface.
 Write new strings in English; translate existing French strings to English when you
-touch surrounding code. Code comments may stay in French. Some user-facing concepts are
+touch surrounding code. Some user-facing concepts are
 renamed for clarity (e.g. the *valence* control is labelled **Ambiance**).
+
+**Code and code comments are also English by default.** Write all new code,
+identifiers and comments in English. When editing a file that still has French
+comments, translate the ones you touch. (Chat/explanations to the user stay in the
+language the user writes in — this rule is about what lands in the codebase.)
 
 ## Icon Convention
 

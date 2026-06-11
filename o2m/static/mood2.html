@@ -1103,7 +1103,43 @@ async function applyMood() {
 }
 
 /* ── Mopidy RPC ── */
+// ─── Mopidy WebSocket (real-time, Iris-style) ───────────────────────────────
+// RPCs go over the WS when it's open → no more POST /api/mopidy_rpc (quieter
+// logs) and Mopidy events arrive via push (no more 1/s polling). Automatic
+// fallback to the HTTP proxy /api/mopidy_rpc when the WS is unavailable.
+let mopidyWsUrl = null, mopidyWS = null, wsReqId = 1;
+const wsPending = new Map();
+function connectMopidyWS() {
+  if (!mopidyWsUrl) return;
+  let ws;
+  try { ws = new WebSocket(mopidyWsUrl); } catch (e) { return; }
+  mopidyWS = ws;
+  ws.addEventListener('message', (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+    if (m.id != null && wsPending.has(m.id)) {
+      const p = wsPending.get(m.id); wsPending.delete(m.id); clearTimeout(p.t); p.resolve(m);
+    } else if (m.event) { onMopidyEvent(m); }
+  });
+  ws.addEventListener('close', () => {
+    if (mopidyWS === ws) mopidyWS = null;
+    setTimeout(connectMopidyWS, 3000);          // auto-reconnect
+  });
+  ws.addEventListener('error', () => { try { ws.close(); } catch (_) {} });
+}
+function wsRpc(method, params) {
+  return new Promise((resolve) => {
+    const id = wsReqId++;
+    const t = setTimeout(() => { if (wsPending.has(id)) { wsPending.delete(id); resolve(null); } }, 5000);
+    wsPending.set(id, { resolve, t });
+    try { mopidyWS.send(JSON.stringify({ jsonrpc: '2.0', id, method, params })); }
+    catch (e) { wsPending.delete(id); clearTimeout(t); resolve(null); }
+  });
+}
 async function rpc(method, params = {}) {
+  if (mopidyWS && mopidyWS.readyState === 1) {        // 1 = OPEN
+    const r = await wsRpc(method, params);
+    if (r) return r;                                  // otherwise HTTP fallback below
+  }
   try {
     const r = await fetch(API + '/mopidy_rpc', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -1319,8 +1355,12 @@ async function refreshNowPlaying() {
     name:   t?.name || '',
     artist: (t?.artists || []).map(a => a.name).join(', '),
   }));
+  const trackChanged = matrixCurUri !== lastNpUri;
+  lastNpUri = matrixCurUri;
+  setClock((await rpc('core.playback.get_time_position'))?.result ?? 0, playing);
+
   fetchTrackFeatures([matrixCurUri, ...matrixTlItems.map(i => i.uri)].filter(Boolean));
-  fetchAndRenderTrackTags(matrixCurUri);
+  if (trackChanged) fetchAndRenderTrackTags(matrixCurUri);
 
   const playBtn = document.getElementById('btn-play');
   playBtn.dataset.state = playing ? 'playing' : 'paused';
@@ -1336,22 +1376,23 @@ async function refreshNowPlaying() {
     document.getElementById('artist-name').textContent =
       (track.artists || []).map(a => a.name).join(', ') || '—';
 
-    // o2m track status badge
-    try {
-      const statusText = await fetch(API + '/track_status?uri=' + encodeURIComponent(track.uri))
-        .then(r => r.ok ? r.text() : '');
-      updateStatusBadge(statusText);
-    } catch(e) { updateStatusBadge(''); }
+    // O2M metadata (status badge, cover, details): only on track change —
+    // avoids /track_status and /track_info being refetched every 10s.
+    if (trackChanged) {
+      try {
+        const statusText = await fetch(API + '/track_status?uri=' + encodeURIComponent(track.uri))
+          .then(r => r.ok ? r.text() : '');
+        updateStatusBadge(statusText);
+      } catch(e) { updateStatusBadge(''); }
 
-    // Fetch album art via get_images
-    const imgR = await rpc('core.library.get_images', {uris: [track.uri]});
-    const imgs = imgR?.result?.[track.uri] || [];
-    const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
-    const coverUrl = best ? imageUrl(best.uri || best) : '';
-    const coverEl = document.getElementById('cover');
-    coverEl.src = coverUrl || placeholderForUri(track.uri);   // pochette de remplacement si pas de visuel
-    updateMediaSession(track, playing, coverUrl);
-    renderTrackDetails(track.uri);
+      const imgR = await rpc('core.library.get_images', {uris: [track.uri]});
+      const imgs = imgR?.result?.[track.uri] || [];
+      const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+      lastCoverUrl = best ? imageUrl(best.uri || best) : '';
+      document.getElementById('cover').src = lastCoverUrl || placeholderForUri(track.uri);
+      renderTrackDetails(track.uri);
+    }
+    updateMediaSession(track, playing, lastCoverUrl);
   } else {
     document.getElementById('cover').src = placeholderForUri(null);
     document.getElementById('hero-title').textContent = '';
@@ -2297,9 +2338,11 @@ async function init() {
   try {
     const cfg = await fetch(API + '/client_config').then(r => r.json());
     snapWsUrl = cfg.snap_ws_url || null;
+    mopidyWsUrl = cfg.mopidy_ws_url || null;
   } catch(e) {}
   // Pas de bouton Snapcast si non configuré côté serveur (.env)
   if (!snapWsUrl) { document.getElementById('btn-snapcast')?.remove(); }
+  connectMopidyWS();   // real-time + RPC over WebSocket (automatic HTTP fallback)
 
   try {
     const s  = await fetch(API + '/mood').then(r => r.json());
@@ -2323,9 +2366,9 @@ async function init() {
   await loadBoxes();
   await refreshNowPlaying();
   await refreshVolume();
-  setInterval(refreshNowPlaying, 10000);
+  setInterval(refreshNowPlaying, 10000);   // safety net + clock resync (WS events drive real-time)
   setInterval(refreshVolume, 15000);
-  setInterval(updateProgress, 1000);
+  setInterval(tickProgress, 250);          // local display, NO network
   autoConnectSnapIfNeeded();
   armMediaAnchor();
   autoInitPlaybackIfPhone();
@@ -2374,21 +2417,53 @@ function setupProgressSeek() {
   bar.addEventListener('pointercancel', () => { seekDragging = false; bar.classList.remove('seeking'); });
 }
 
-async function updateProgress() {
-  if (seekDragging || !currentDurationMs) return;   // ne pas écraser pendant un seek
-  const r = await rpc('core.playback.get_time_position');
-  const pos = r?.result ?? 0;
-  const pct = Math.min(100, (pos / currentDurationMs) * 100);
-  document.getElementById('progress-fill').style.width = pct + '%';
+// ─── Local progress clock (no per-second RPC, Iris-style) ────────────────────
+// We know the position at an instant (10s resync + seeked/started events) and
+// then advance it in the browser. tickProgress() does NO network call.
+let progBaseMs = 0, progBaseAt = 0, progPlaying = false, lastNpUri = null, lastCoverUrl = '';
+function setClock(posMs, playing) {
+  progBaseMs = Math.max(0, posMs || 0); progBaseAt = Date.now(); progPlaying = !!playing;
+}
+function clockPosMs() {
+  return progPlaying ? progBaseMs + (Date.now() - progBaseAt) : progBaseMs;
+}
+function tickProgress() {
+  if (seekDragging || !currentDurationMs) return;
+  const pos = Math.min(clockPosMs(), currentDurationMs);
+  document.getElementById('progress-fill').style.width =
+    Math.min(100, (pos / currentDurationMs) * 100) + '%';
   document.getElementById('prog-elapsed').textContent = msToMin(pos);
   if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
     try {
       navigator.mediaSession.setPositionState({
         duration: currentDurationMs / 1000,
-        position: Math.min(pos, currentDurationMs) / 1000,
-        playbackRate: 1,
+        position: pos / 1000, playbackRate: progPlaying ? 1 : 0,
       });
     } catch(e) {}
+  }
+}
+async function updateProgress() {          // one-off network resync (not a 1s loop)
+  if (seekDragging) return;
+  const r = await rpc('core.playback.get_time_position');
+  if (r && r.result != null) setClock(r.result, progPlaying);
+}
+
+// ─── Mopidy events received via push on the WebSocket ────────────────────────
+function onMopidyEvent(m) {
+  switch (m.event) {
+    case 'track_playback_started':
+    case 'track_playback_ended':
+    case 'tracklist_changed':
+    case 'playback_state_changed':
+      refreshNowPlaying(); break;          // reseed track + state + clock
+    case 'track_playback_paused':
+      if (m.time_position != null) setClock(m.time_position, false); else progPlaying = false; break;
+    case 'track_playback_resumed':
+      if (m.time_position != null) setClock(m.time_position, true); else progPlaying = true; break;
+    case 'seeked':
+      if (m.time_position != null) setClock(m.time_position, progPlaying); break;
+    case 'volume_changed':
+      refreshVolume(); break;
   }
 }
 
