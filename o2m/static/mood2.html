@@ -1109,11 +1109,15 @@ async function applyMood() {
 // fallback to the HTTP proxy /api/mopidy_rpc when the WS is unavailable.
 let mopidyWsUrl = null, mopidyWS = null, wsReqId = 1;
 const wsPending = new Map();
+let _wsReadyResolve = null;
+const wsReady = new Promise(res => { _wsReadyResolve = res; });   // résolu à la 1re ouverture (ou si pas de WS)
+function _markWsReady() { if (_wsReadyResolve) { _wsReadyResolve(); _wsReadyResolve = null; } }
 function connectMopidyWS() {
-  if (!mopidyWsUrl) return;
+  if (!mopidyWsUrl) { _markWsReady(); return; }   // pas de WS configuré → ne bloque pas l'init
   let ws;
-  try { ws = new WebSocket(mopidyWsUrl); } catch (e) { return; }
+  try { ws = new WebSocket(mopidyWsUrl); } catch (e) { _markWsReady(); return; }
   mopidyWS = ws;
+  ws.addEventListener('open', _markWsReady);
   ws.addEventListener('message', (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
     if (m.id != null && wsPending.has(m.id)) {
@@ -2364,6 +2368,8 @@ async function init() {
   checkEditStatus();
   await loadGenres();
   await loadBoxes();
+  // Laisse au WS le temps de s'ouvrir (≤1.5s) → évite un fallback HTTP /mopidy_rpc au chargement
+  await Promise.race([wsReady, new Promise(r => setTimeout(r, 1500))]);
   await refreshNowPlaying();
   await refreshVolume();
   setInterval(refreshNowPlaying, 10000);   // safety net + clock resync (WS events drive real-time)
