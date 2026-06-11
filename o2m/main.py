@@ -44,15 +44,6 @@ if __name__ == "__main__":
     api=create_api()
     api.app_context().push()
 
-    # Filtre les logs d'accès Werkzeug pour les endpoints de polling bruyants
-    # (ex: /api/mopidy_rpc appelé chaque seconde par l'UI mood) — ajouter ici au besoin.
-    _SILENCED_LOG_PATHS = ('/api/mopidy_rpc',)
-    class _SilencePollingFilter(logging.Filter):
-        def filter(self, record):
-            msg = record.getMessage()
-            return not any(p in msg for p in _SILENCED_LOG_PATHS)
-    logging.getLogger('werkzeug').addFilter(_SilencePollingFilter())
-
     while True:
         strer = 1
         try:
