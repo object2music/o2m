@@ -754,6 +754,12 @@ if __name__ == "__main__":
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
+    @api.route('/mood2')
+    def mood2_ui():
+        # Vue de test re-skinnée avec le design system (à comparer avec /mood)
+        from flask import send_from_directory
+        return send_from_directory('static', 'mood2.html')
+
     @api.route('/sw.js')
     def service_worker():
         # Servi depuis la racine pour que le scope du service worker couvre tout
