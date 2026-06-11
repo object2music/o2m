@@ -81,7 +81,7 @@
   /* ════════════ THÈME : Mono (brut N&B) ════════════ */
   [data-theme="mono"] {
     --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
-    --accent: #111111; --accent-soft: #1111111a;
+    --accent: #111111; --accent-soft: #1111111a; --on-accent: #ffffff;
     --text: #000000; --muted: #9a9a9a;
     --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
@@ -105,7 +105,7 @@
   /* ════════════ THÈME : Overprint (affiche éditoriale, orange) ════════════ */
   [data-theme="overprint"] {
     --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
-    --accent: #ff5a00; --accent-soft: #ff5a001a;
+    --accent: #ff5a00; --accent-soft: #ff5a001a; --on-accent: #190E04;
     --text: #000000; --muted: #9a9a9a;
     --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
@@ -130,7 +130,7 @@
   /* ════════════ THÈME : Invert (cinématique, couleur dynamique) ════════════ */
   [data-theme="invert"] {
     --bg: #0c0c0c; --surface: #0c0c0c; --card: #1c1c1c;
-    --accent: var(--hero-accent, #ff3b00); --accent-soft: #ffffff1a;
+    --accent: var(--hero-accent, #ff3b00); --accent-soft: #ffffff1a; --on-accent: #ffffff;
     --text: #ffffff; --muted: #777777;
     --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff33;
     --fill-1: #ffffff06; --fill-2: #ffffff0f; --fill-3: #ffffff16;
@@ -800,11 +800,84 @@
     [data-theme="overprint"] #btn-snapcast { flex-shrink: 0; }
     [data-theme="overprint"] #progress-wrap { padding: 8px 0 2px; }
   }
+
+  /* ════════════ Design System — component layer (.o2m-* look) ════════════ */
+  /* Spacing scale from the handoff (used by the component overrides below). */
+  :root {
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  }
+
+  /* Top bar : brand mark + "Mood" eyebrow + segmented light/dark toggle. */
+  #o2m-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 52px; flex-shrink: 0; padding: 0 var(--sp-4);
+    background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .tb-brand { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; }
+  .tb-mark {
+    font-family: var(--font-head); font-weight: 900; font-size: 20px;
+    letter-spacing: -.02em; text-transform: uppercase; color: var(--text);
+  }
+  .tb-eyebrow {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .tb-eyebrow::before { content: ''; width: 7px; height: 7px; background: var(--accent); flex-shrink: 0; }
+  /* segmented control (o2m-seg) */
+  .tb-seg { display: flex; border: 1px solid var(--border); }
+  .tb-seg .theme-chip {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase; padding: 6px 14px; background: none; color: var(--muted);
+    border: none; border-right: 1px solid var(--border); border-radius: 0;
+  }
+  .tb-seg .theme-chip:last-child { border-right: none; }
+  .tb-seg .theme-chip.active { background: var(--accent); color: var(--on-accent, #190E04); }
+
+  /* Genre chips → o2m-chip : square, hairline border, mono, active = solid orange. */
+  #genres-wrap { gap: var(--sp-2); }
+  .genre-chip {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; padding: 6px 12px; font-weight: 500;
+    background: none; border: 1px solid var(--border); color: var(--muted);
+  }
+  .genre-chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #190E04); }
+
+  /* Status badge → o2m-badge : mono label, leading colour square (kept). */
+  #track-status-badge {
+    font-family: var(--font-mono); font-weight: 500; letter-spacing: .14em; font-size: 10px;
+  }
+
+  /* Footer links → o2m-btn--ghost : square, hairline border. */
+  .footer-link { border: 1px solid var(--border); padding: 5px 11px; background: none; }
+  .footer-link:hover { border-color: var(--text); background: var(--fill-2); }
+
+  /* Tracklist rows → o2m-row-item : hairline separators. */
+  .tl-item { border-bottom: 1px solid var(--border-soft); }
+  .tl-item:last-child { border-bottom: none; }
+
+  @media (max-width: 699px) {
+    #o2m-topbar { height: 46px; padding: 0 var(--sp-3); }
+    .tb-mark { font-size: 17px; }
+    .tb-seg .theme-chip { padding: 6px 11px; }
+  }
 </style>
 </head>
 <body>
 
-<!-- Top zone : grande pochette à gauche, infos + contrôles à droite -->
+<!-- Design system top bar: brand mark + Mood eyebrow + light/dark segmented toggle -->
+<header id="o2m-topbar">
+  <div class="tb-brand">
+    <span class="tb-mark">O2M</span>
+    <span class="tb-eyebrow">Mood</span>
+  </div>
+  <div class="tb-seg">
+    <button class="theme-chip" data-theme-set="dark">Dark</button>
+    <button class="theme-chip" data-theme-set="creme">Light</button>
+  </div>
+</header>
+
+<!-- Top zone: large cover on the left, info + controls on the right -->
 <div id="top-zone">
   <div id="hero-title"></div>
   <div id="cover-col">
