@@ -434,6 +434,14 @@
     #matrix-section { padding: 4px 10px 8px; min-width: 0; }
     #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
     #tracklist-section { padding: 12px 12px 6px; }
+
+    /* En-têtes de menu (Boxes / Settings / Tracklist) figés en haut de chaque
+       colonne scrollable — toujours visibles au défilement, comme en mobile. */
+    .col > .panel-head,
+    #tracklist-label {
+      position: sticky; top: 0; z-index: 6;
+      background: var(--bg); padding-top: 4px; padding-bottom: 8px; margin-bottom: 2px;
+    }
   }
 
   @media (max-width: 699px) {
