@@ -474,10 +474,18 @@ try {
   console.error('o2m: mobile audio overlay error', e);
 }
 
-// Initialize playback on smartphone devices (one-time on load)
+// Initialize playback on phone devices only (one-time on load).
+// Téléphone uniquement : pas d'alimentation auto (resume + lancement de box/tag)
+// sur desktop ni tablette. iPad n'a pas iPhone/iPod ; les tablettes Android n'ont
+// pas "Mobile" dans l'UA ; repli = écran tactile petit côté <= 480px.
 try {
-  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
-  if (isSmartphone) {
+  const _ua = navigator.userAgent;
+  const isPhone = /iPhone|iPod/.test(_ua)
+    || (/Android/.test(_ua) && /Mobile/.test(_ua))
+    || /Windows Phone|BlackBerry|Opera Mini|IEMobile/.test(_ua)
+    || (((('ontouchstart' in window)) || navigator.maxTouchPoints > 0)
+        && Math.min(window.screen ? window.screen.width : 9999, window.screen ? window.screen.height : 9999) <= 480);
+  if (isPhone) {
     
     setTimeout(() => {
       fetch(base_url + "initialize_playback")
