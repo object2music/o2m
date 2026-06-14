@@ -314,12 +314,12 @@ class DatabaseHandler():
         #Track unfinished
         #pattern="%podcast+%"
         date_now = datetime.datetime.utcnow().timestamp()
-        #query = Track.select().where( ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))& (Track.read_end <= 0.9)& (Track.read_position > 30000)& (Track.option_type != "info")& (Track.option_type != "normal")).order_by(Track.last_read_date.desc()).limit(limit)
+        #query = Track.select().where( ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))& (Track.read_end <= 0.9)& (Track.read_position > 30000)& (Track.option_type != "info")& (Track.option_type != "library")).order_by(Track.last_read_date.desc()).limit(limit)
         #query = Track.select().where( ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))
         query = Track.select().where( ((Track.uri % '%podcast+%')| (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))& (Track.read_end < 0.9)& (Track.read_position > 0)& (Track.read_count_end == 0)
             & (
-            #((Track.option_type != "info")& (Track.option_type != "normal")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
-            ((Track.option_type != "normal")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
+            #((Track.option_type != "info")& (Track.option_type != "library")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
+            ((Track.option_type != "library")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
             |((Track.option_type == "podcast")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level*2)) 
             )).order_by(Track.last_read_date.desc()).limit(limit)
         results = self.transform_query_to_list(query)

@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS `box` (
   `data_alt`             text          DEFAULT NULL,
   `read_count`           smallint(6)   DEFAULT NULL,
   `last_read_date`       bigint(20)    DEFAULT NULL,
-  `option_type`          varchar(16)   DEFAULT 'normal'     COMMENT 'normal | new | favorites | hidden | trash | podcast | info | incoming',
+  `option_type`          varchar(16)   DEFAULT 'library'     COMMENT 'library | new | favorites | hidden | trash | podcast | info | incoming',
   `option_sort`          varchar(16)   DEFAULT NULL         COMMENT 'shuffle | asc | desc',
   `option_duration`      int(16)       DEFAULT NULL         COMMENT 'max duration in seconds',
   `option_max_results`   int(16)       DEFAULT NULL         COMMENT 'max tracks to return',
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS `track` (
   `skipped_count`    int(11)       NOT NULL DEFAULT 0,
   `in_library`       text          DEFAULT NULL               COMMENT 'Container URI if track is in library',
   `day_time_average` tinyint(2)    DEFAULT NULL               COMMENT 'Average hour of play (1-24)',
-  `option_type`      varchar(16)   NOT NULL DEFAULT 'new'     COMMENT 'new | normal | favorites | hidden | trash | podcast | info | incoming',
+  `option_type`      varchar(16)   NOT NULL DEFAULT 'new'     COMMENT 'new | library | favorites | hidden | trash | podcast | info | incoming',
   `username`         varchar(255)  DEFAULT NULL,
   -- Spotify metadata cache
   `name`             text          DEFAULT NULL               COMMENT 'Track title',
@@ -225,11 +225,11 @@ CREATE TABLE IF NOT EXISTS `cachemeta` (
 INSERT INTO `box` (`uid`, `description`, `favorite`, `public`, `data`, `data_alt`, `read_count`, `last_read_date`, `option_type`, `option_sort`, `option_duration`, `option_max_results`, `option_discover_level`, `user`) VALUES
 ('mopidy_box',              'mopidy_box',            0, 1, 'mopidy_box',                                                      NULL, 0,   1621086457, 'new_mopidy', NULL,      NULL, 30, 3, '1181464119'),
 ('trash_demo',              'Trash',                 0, 0, 'spotify:playlist:4CAjrciXNfqiDdr757UwBx',                         NULL, 0,   1608365810, 'trash',      NULL,      NULL, 15, 5, '1181464119'),
-('albums_spotify',          'Auto albums',           1, 1, 'albums:spotify',                                                  '',   1,   1686401887, 'normal',     'asc',     NULL, 50, 5, '1181464119'),
-('04AD43D2204B80',          'Auto',                  1, 1, 'auto:library\r\ninfos:library',                                   'spotify:playlist:7wkPrsy6n3ydZ3KxZhOtDU', 942, 1686401887, 'normal', 'shuffle', NULL, 50, 5, '1181464119'),
+('albums_spotify',          'Auto albums',           1, 1, 'albums:spotify',                                                  '',   1,   1686401887, 'library',     'asc',     NULL, 50, 5, '1181464119'),
+('04AD43D2204B80',          'Auto',                  1, 1, 'auto:library\r\ninfos:library',                                   'spotify:playlist:7wkPrsy6n3ydZ3KxZhOtDU', 942, 1686401887, 'library', 'shuffle', NULL, 50, 5, '1181464119'),
 ('discover_demo',           'C1 Nouveautés',         1, 0, 'newnotcompleted:library\r\nspotify:playlist:2YndOajMlJlkj7x6WyevW6', NULL, 0, 1621086457, 'new_mopidy', NULL, NULL, 30, 3, '1181464119'),
 ('incoming_demo',           'C2 Incoming',           1, 0, 'spotify:playlist:0zM5DUb7FYRVvVjBg3ULp3',                         NULL, 1,   1686824105, 'incoming',   'shuffle', NULL, 15, 5, '1181464119'),
 ('favorites_demo',          'C3 Favorites',          1, 0, 'spotify:playlist:4oXELBuV9B6QtxYwMdzsoE',                         '',   281, 1686472653, 'favorites',  'shuffle', 0,   30, 4, '1181464119'),
-('045340D2204B80',          'Radio France Inter',    1, 1, 'tunein:station:s24875',                                           '',   261, 1603522595, 'normal',     '',        0,   NULL, 5, '1181464119'),
+('045340D2204B80',          'Radio France Inter',    1, 1, 'tunein:station:s24875',                                           '',   261, 1603522595, 'library',     '',        0,   NULL, 5, '1181464119'),
 ('podcast_unfinished',      'Podcasts unfinished',   1, 0, 'podcasts:unfinished',                                             '',   171, 1682678797, 'podcast',    'asc',     0,   30, 5, '1181464119'),
-('recommandation_genre_demo','Radio genre jazz',     1, 0, 'spotify:recommendation:seeds:genres:jazz',                        '',   64,  1606308740, 'normal',     '',        0,   NULL, 5, '1181464119');
+('recommandation_genre_demo','Radio genre jazz',     1, 0, 'spotify:recommendation:seeds:genres:jazz',                        '',   64,  1606308740, 'library',     '',        0,   NULL, 5, '1181464119');

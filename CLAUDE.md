@@ -67,7 +67,7 @@ Config is read from `/etc/mopidy/o2m.conf` (Linux) or `~/.config/mopidy/o2m.conf
 5. Mopidy events (`track_playback_ended`, `track_playback_paused`) trigger stat updates and dynamic tracklist refilling
 
 ### Box `option_type` values
-`normal`, `favorites`, `new`, `incoming`, `hidden`, `trash`, `podcast`, `info`
+`library`, `favorites`, `new`, `incoming`, `hidden`, `trash`, `podcast`, `info`
 
 ## Frontend (`frontend/`)
 

@@ -72,7 +72,7 @@ class Box(BaseModel):
     description = TextField(null=True)  # description text
     read_count = IntegerField(default=0)  # Increment each time a tag is used
     last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date
-    option_type = CharField(default='normal')  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
+    option_type = CharField(default='library')  # option card type : library (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
     option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
     option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
     option_max_results = IntegerField(null=True)  # Max results associated to tag
@@ -461,7 +461,16 @@ def _migration_v9(migrator):
     _add_column_safe(migrator, 'box', 'option_valence', FloatField(null=True))
 
 
-SCHEMA_VERSION = 9
+def _migration_v10(migrator):
+    # Rename the 'normal' option_type value to 'library' (clearer) on existing rows
+    for table in ('box', 'track'):
+        try:
+            db.execute_sql(f"UPDATE {table} SET option_type='library' WHERE option_type='normal'")
+        except Exception as e:
+            print(f"migration_v10 {table}: {e}")
+
+
+SCHEMA_VERSION = 10
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -473,6 +482,7 @@ _MIGRATIONS = [
     (7, "track_album_genre_tables", _migration_v7),
     (8, "tagfeature_table", _migration_v8),
     (9, "box_energy_valence_options", _migration_v9),
+    (10, "option_type_normal_to_library", _migration_v10),
 ]
 
 

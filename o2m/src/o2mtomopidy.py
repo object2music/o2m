@@ -112,7 +112,7 @@ class O2mToMopidy:
 
     def stats_average(self):
         stats = {}
-        for i in {'new','normal','incoming','favorites','hidden'}:
+        for i in {'new','library','incoming','favorites','hidden'}:
             stats2 = {}
             for j in {'read_end','read_count','read_count_end'}:
                 stats2[j]=self.dbHandler.get_avg_stat(option_type=i,column=j)
@@ -331,7 +331,7 @@ class O2mToMopidy:
         if box == None:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
-        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results, "normal","o2m:history")
+        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results, "library","o2m:history")
         #go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info","o2m:info")
         if go > 0:
             self.play_or_resume()
@@ -421,7 +421,7 @@ class O2mToMopidy:
                                 stat = self.dbHandler.get_stat_by_uri(t.track.uri)
                                 # When track skipped or too many counts we remove them
                                 if (stat.skipped_count > 0
-                                    or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'normal' or stat.option_type == 'incoming')
+                                    or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'library' or stat.option_type == 'incoming')
                                     or self.threshold_playing_count_new(stat.read_count_end-1,self.discover_level) == True
                                     #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
                                 ): 
@@ -630,7 +630,7 @@ class O2mToMopidy:
                 print(f"\nAUTO : Common {base_counts['common']} tracks\n")
                 common = self.get_common_tracks(datetime.datetime.now().hour,window,_pool(base_counts['common']))
                 common = self._mood_pick(common, base_counts['common'], energy, valence, radius)
-                self.add_tracks(active_box, common, base_counts['common'], "normal","o2m:history")
+                self.add_tracks(active_box, common, base_counts['common'], "library","o2m:history")
 
             #Incoming
             if base_counts.get('incoming', 0) > 0:
@@ -672,12 +672,12 @@ class O2mToMopidy:
                     print(f"\nAUTO : Albums {base_counts['albums_artists']} tracks\n")
                     aa = self.spotifyHandler.get_my_albums_tracks(_pool(base_counts['albums_artists']),discover_level)
                     aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius)
-                    self.add_tracks(active_box, aa, base_counts['albums_artists'], "normal","spotify:album")
+                    self.add_tracks(active_box, aa, base_counts['albums_artists'], "library","spotify:album")
                 else:
                     print(f"\nAUTO : Artists {base_counts['albums_artists']} tracks\n")
                     aa = self.spotifyHandler.get_my_artists_tracks(_pool(base_counts['albums_artists']),discover_level)
                     aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius)
-                    self.add_tracks(active_box, aa, base_counts['albums_artists'], "normal","spotify:artist")
+                    self.add_tracks(active_box, aa, base_counts['albums_artists'], "library","spotify:artist")
 
             #Playlists
             if base_counts.get('playlists', 0) > 0:
@@ -687,7 +687,7 @@ class O2mToMopidy:
                 pl_tracks = self._mood_pick(pl_tracks, base_counts['playlists'], energy, valence, radius)
                 print(f"\nAUTO : Playlist {base_counts['playlists']} tracks and {len(pl_tracks)} size \n")
                 for u in pl_tracks:
-                    self.add_tracks(active_box, uris=[u], max_results=1, force_option_type="normal", library_link=link_by_uri.get(u, ''))
+                    self.add_tracks(active_box, uris=[u], max_results=1, force_option_type="library", library_link=link_by_uri.get(u, ''))
 
             #News
             if base_counts.get('news', 0) > 0:
@@ -1622,7 +1622,7 @@ class O2mToMopidy:
 
     # Box DB Regulation (tmp)
     def reg_box_db(self, box):
-        if box.option_type == '': box.option_type='normal'
+        if box.option_type == '': box.option_type='library'
         box.update()
         box.save()
 
@@ -1700,9 +1700,9 @@ class O2mToMopidy:
 
         #Avoid downgrade of option types in DB
         #Due to many possibilities of change, we remove it and follow the flow !
-        if not(option_type == 'new' and (stat.option_type == 'normal' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
-            #if not(option_type == 'normal' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
-            if not(option_type == 'incoming' and (stat.option_type == 'normal' or stat.option_type == 'favorites')):
+        if not(option_type == 'new' and (stat.option_type == 'library' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
+            #if not(option_type == 'library' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+            if not(option_type == 'incoming' and (stat.option_type == 'library' or stat.option_type == 'favorites')):
                 stat.option_type = option_type
         #stat.option_type = option_type
         
@@ -1766,10 +1766,10 @@ class O2mToMopidy:
                     if library_link !='':
                         print(f"Autofilling Library : {library_link}")
                         result = self.autofill_spotify_playlist(library_link,uri)
-                        if result: stat.option_type = 'normal'
-                        if result and result != 'already in': self._log_playlist_change(uri[0], library_link, 'add', _from_option_type, 'normal', _track_name)
+                        if result: stat.option_type = 'library'
+                        if result and result != 'already in': self._log_playlist_change(uri[0], library_link, 'add', _from_option_type, 'library', _track_name)
 
-                    if stat.option_type != 'normal' :
+                    if stat.option_type != 'library' :
                         box_incoming = self.dbHandler.get_box_by_option_type('incoming')
                         print(f"Autofilling Incoming : {box_incoming}")
                         if box_incoming:
@@ -1791,19 +1791,19 @@ class O2mToMopidy:
                         '''for box in self.activeboxs:
                             #Need to loop on the playlists IN the box/card
                             discover_level_box = self.get_option_for_box(box, "option_discover_level")
-                            if box.option_type == 'normal' and self.threshold_playing_count_new(stat.read_count_end,discover_level_box)==True :
+                            if box.option_type == 'library' and self.threshold_playing_count_new(stat.read_count_end,discover_level_box)==True :
                                 if 'spotify:playlist' in box.data :
                                     result = self.autofill_spotify_playlist(box.data,uri)
-                                    if result: stat.option_type = 'normal'
+                                    if result: stat.option_type = 'library'
                                 if 'm3u' in box.data :
                                     playlist = self.mopidyHandler.playlists.lookup(box.data)
                                     #for track in playlist.tracks:
                                     #    if 'spotify:playlist' in track.uri :
                                     #        result = self.autofill_spotify_playlist(track.uri,uri)
-                                    #        if result: stat.option_type = 'normal'
+                                    #        if result: stat.option_type = 'library'
                                     if 'spotify:playlist' in playlist.tracks[0].uri :
                                         result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
-                                        if result: stat.option_type = 'normal'
+                                        if result: stat.option_type = 'library'
                         '''
 
                 #NORMAL > FAVORITES : Adding any track to favorites if played many times
@@ -1872,15 +1872,15 @@ class O2mToMopidy:
                     print(f"Removing Favorites")
                     if self.username !=None:
                         result3 = self.spotifyHandler.sp.current_user_saved_tracks_delete(tracks=uri)
-                        if result3: stat.option_type = 'normal'
-                        if result3: self._log_playlist_change(uri[0], 'spotify:saved', 'remove', _from_option_type, 'normal', _track_name)
+                        if result3: stat.option_type = 'library'
+                        if result3: self._log_playlist_change(uri[0], 'spotify:saved', 'remove', _from_option_type, 'library', _track_name)
                     else:
                         box_favorites = self.dbHandler.get_box_by_option_type('favorites')
                         if box_favorites:
                             if 'spotify:playlist' in box_favorites.data:
                                 result4 = self.remove_spotify_playlist(box_favorites.data,uri)
-                                if result4: stat.option_type = 'normal'
-                                if result4: self._log_playlist_change(uri[0], box_favorites.data, 'remove', _from_option_type, 'normal', _track_name)
+                                if result4: stat.option_type = 'library'
+                                if result4: self._log_playlist_change(uri[0], box_favorites.data, 'remove', _from_option_type, 'library', _track_name)
                             if 'm3u' in box_favorites.data :
                                 playlist = self.mopidyHandler.playlists.lookup(box_favorites.data)
                                 #for track in playlist.tracks:
@@ -1889,8 +1889,8 @@ class O2mToMopidy:
                                 #        if result: stat.option_type = 'favorites'
                                 if 'spotify:playlist' in playlist.tracks[0].uri :
                                     result5 = self.remove_spotify_playlist(playlist.tracks[0].uri,uri)
-                                    if result5: stat.option_type = 'normal'
-                                    if result5: self._log_playlist_change(uri[0], playlist.tracks[0].uri, 'remove', _from_option_type, 'normal', _track_name)
+                                    if result5: stat.option_type = 'library'
+                                    if result5: self._log_playlist_change(uri[0], playlist.tracks[0].uri, 'remove', _from_option_type, 'library', _track_name)
 
         # Deferred mood enrichment — three cases handled:
         # 1. mood=NULL : never attempted
@@ -1998,8 +1998,8 @@ class O2mToMopidy:
         result = False
         ratio = 1+(1-discover_level/20)
         print (f"Favorite test Ratio:{ratio}")
-        #if stat.option_type=="normal" and (stat.read_end > self.avg_stats['favorites']['read_end']) and (stat.read_count >= self.avg_stats['favorites']['read_count']): 
-        if (stat.option_type=="normal" 
+        #if stat.option_type=="library" and (stat.read_end > self.avg_stats['favorites']['read_end']) and (stat.read_count >= self.avg_stats['favorites']['read_count']): 
+        if (stat.option_type=="library" 
             and (stat.read_end*stat.read_count > ratio*float(self.avg_stats['favorites']['read_end'])*float(self.avg_stats['favorites']['read_count'])) 
             and (stat.read_end > ratio*float(self.avg_stats['favorites']['read_end'])) 
             and (stat.read_count > ratio*float(self.avg_stats['favorites']['read_count'])) 
@@ -2019,8 +2019,8 @@ class O2mToMopidy:
     #if (float(stat.skipped_count) > ((5)*(stat.read_count_end + 1)*0.7)) : 
     def threshold_remove_track_playlist(self,stat,discover_level):
         result = False
-        if stat.option_type=="normal":
-            if (stat.read_end < self.avg_stats['normal']['read_end']) and (stat.read_count >= self.avg_stats['normal']['read_count']): result=True
+        if stat.option_type=="library":
+            if (stat.read_end < self.avg_stats['library']['read_end']) and (stat.read_count >= self.avg_stats['library']['read_count']): result=True
         elif stat.option_type=="incoming":
             if (stat.read_end < self.avg_stats['incoming']['read_end']) and (stat.read_count >= self.avg_stats['incoming']['read_count']): result=True
         elif stat.option_type=="hidden":

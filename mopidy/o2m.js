@@ -40,10 +40,9 @@ window.onload = function() {
     try {
       if ((update_text.includes('podcast')) || (el.innerHTML.includes('podcast+'))){
         el.style.backgroundColor = "Gainsboro";
-        update_text = update_text.replace("normal","podcast");
+        update_text = update_text.replace("library","podcast");
       }
-      else if (update_text.includes('normal')){
-        update_text=update_text.replace("normal", "library");
+      else if (update_text.includes('library')){
         el.style.backgroundColor = "LightSkyBlue";
       }
       else if (update_text.includes('favorites')){
