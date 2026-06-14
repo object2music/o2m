@@ -61,9 +61,9 @@ class O2mToMopidy:
         #Wether discover_level is on from the outside (api) or not
         self.discover_level_on = False
 
-        # Mood interface settings (None = inactive)
-        self.mood_energy = None    # float 0.0-1.0 target energy
-        self.mood_valence = None   # float 0.0-1.0 target valence
+        # Mood interface settings — global context defaults (0.5 = neutral/mean "5/5")
+        self.mood_energy = 0.5     # float 0.0-1.0 target energy
+        self.mood_valence = 0.5    # float 0.0-1.0 target valence (ambiance)
         self.mood_genres = []      # list of genre name strings
 
         if "podcast_newest_first" in self.configO2M:
@@ -572,6 +572,17 @@ class O2mToMopidy:
             window = int(round(discover_level / 2))
             tracklist_uris= []
 
+            # Effective mood criteria: box option overrides else global context (default 0.5/0.5).
+            # Applied to every entry below to bias selection towards energy/ambiance.
+            energy = getattr(active_box, 'option_energy', None)
+            if energy is None: energy = self.mood_energy
+            valence = getattr(active_box, 'option_valence', None)
+            if valence is None: valence = self.mood_valence
+            radius = discover_level / 20.0 + 0.05   # DL=0 → 0.05, DL=10 → 0.55 (same as apply_mood_settings)
+            OVERSAMPLE, POOL_CAP = 3, 60
+            def _pool(c): return min(c * OVERSAMPLE, POOL_CAP)   # oversampled fetch size for an entry
+            print(f"AUTO mood criteria: energy={energy} valence={valence} radius={round(radius,2)}")
+
             # Calculate track counts based on linear formulas that respect the limits
             # Base values for discover_level 0 and 10, with linear interpolation
             # favorites: 10 → 2 (linear: -0.8*dl + 10)
@@ -617,14 +628,18 @@ class O2mToMopidy:
             #Common tracks
             if base_counts.get('common', 0) > 0:
                 print(f"\nAUTO : Common {base_counts['common']} tracks\n")
-                self.add_tracks(active_box, self.get_common_tracks(datetime.datetime.now().hour,window,base_counts['common']), base_counts['common'], "normal","o2m:history")
+                common = self.get_common_tracks(datetime.datetime.now().hour,window,_pool(base_counts['common']))
+                common = self._mood_pick(common, base_counts['common'], energy, valence, radius)
+                self.add_tracks(active_box, common, base_counts['common'], "normal","o2m:history")
 
             #Incoming
             if base_counts.get('incoming', 0) > 0:
                 print(f"\nAUTO : Incoming {base_counts['incoming']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('incoming')
                 library_link = self.get_spotify_playlist_from_box(box1)
-                self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['incoming']), base_counts['incoming'], "incoming",library_link)
+                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']))
+                incoming = self._mood_pick(incoming, base_counts['incoming'], energy, valence, radius)
+                self.add_tracks(active_box, incoming, base_counts['incoming'], "incoming",library_link)
 
             #Favorites
             if base_counts.get('favorites', 0) > 0:
@@ -632,12 +647,14 @@ class O2mToMopidy:
                 box1 = self.dbHandler.get_box_by_option_type('favorites')
                 #Using spotify favs
                 if self.username !=None:
-                    fav = self.spotifyHandler.get_library_favorite_tracks(base_counts['favorites'])
+                    fav = self.spotifyHandler.get_library_favorite_tracks(_pool(base_counts['favorites']))
+                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius)
                     library_link = 'o2m:favorites'
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #Using specific playlist (normaly elif)
                 if box1 != None:
-                    fav= self.tracklistappend_box(box1,base_counts['favorites'])
+                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']))
+                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius)
                     library_link = self.get_spotify_playlist_from_box(box1)
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #if fav != None: self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
@@ -653,25 +670,32 @@ class O2mToMopidy:
             if base_counts.get('albums_artists', 0) > 0:
                 if (random.choice([1,2])) == 1:
                     print(f"\nAUTO : Albums {base_counts['albums_artists']} tracks\n")
-                    self.add_tracks(active_box, self.spotifyHandler.get_my_albums_tracks(base_counts['albums_artists'],discover_level), base_counts['albums_artists'], "normal","spotify:album")
+                    aa = self.spotifyHandler.get_my_albums_tracks(_pool(base_counts['albums_artists']),discover_level)
+                    aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius)
+                    self.add_tracks(active_box, aa, base_counts['albums_artists'], "normal","spotify:album")
                 else:
                     print(f"\nAUTO : Artists {base_counts['albums_artists']} tracks\n")
-                    self.add_tracks(active_box, self.spotifyHandler.get_my_artists_tracks(base_counts['albums_artists'],discover_level), base_counts['albums_artists'], "normal","spotify:artist")
+                    aa = self.spotifyHandler.get_my_artists_tracks(_pool(base_counts['albums_artists']),discover_level)
+                    aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius)
+                    self.add_tracks(active_box, aa, base_counts['albums_artists'], "normal","spotify:artist")
 
             #Playlists
             if base_counts.get('playlists', 0) > 0:
-                pl_tracks,lib_link = self.spotifyHandler.get_playlists_tracks(base_counts['playlists'],discover_level)
+                pl_tracks,lib_link = self.spotifyHandler.get_playlists_tracks(_pool(base_counts['playlists']),discover_level)
+                # Mood-bias the playlist pool while keeping each uri paired with its library link
+                link_by_uri = dict(zip(pl_tracks, lib_link))
+                pl_tracks = self._mood_pick(pl_tracks, base_counts['playlists'], energy, valence, radius)
                 print(f"\nAUTO : Playlist {base_counts['playlists']} tracks and {len(pl_tracks)} size \n")
-                for i in range(len(pl_tracks)):
-                    print(f"\nAUTO : Playlist {base_counts['playlists']} tracks and {len(pl_tracks[i])} size \n")
-                    uris = [pl_tracks[i]]
-                    self.add_tracks(active_box, uris=uris, max_results=1, force_option_type="normal", library_link=lib_link[i])
+                for u in pl_tracks:
+                    self.add_tracks(active_box, uris=[u], max_results=1, force_option_type="normal", library_link=link_by_uri.get(u, ''))
 
             #News
             if base_counts.get('news', 0) > 0:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('new')
-                self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['news']), base_counts['news'], "new","o2m:new")
+                news = self.tracklistappend_box(box1,_pool(base_counts['news']))
+                news = self._mood_pick(news, base_counts['news'], energy, valence, radius)
+                self.add_tracks(active_box, news, base_counts['news'], "new","o2m:new")
     
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
@@ -1038,48 +1062,63 @@ class O2mToMopidy:
             print(f"play_or_resume: already playing or unknown state, no action")
 
     def apply_mood_settings(self):
-        """Rebuild the tracklist tail using mood_energy/mood_valence/discover_level.
+        """Apply a mood change coming from the interface.
 
-        Keeps the currently playing track; replaces everything after it.
-        Returns the number of tracks added, or -1 if mood settings are not set.
+        Converges with the auto pipeline:
+        - If real (user) boxes are active → no rebuild here; their mood impact via
+          recommendations is handled later. Returns 0.
+        - Otherwise → (re)activate the auto box, biased by the global mood context
+          (mood_energy / mood_valence / discover_level). Uses the DB box whose data
+          contains 'auto:library' if it exists, else a simulated auto fill.
+
+        Returns the number of tracks added.
         """
-        if self.mood_energy is None or self.mood_valence is None:
-            return -1
-
-        radius = self.discover_level / 20.0 + 0.05  # DL=0 → 0.05, DL=10 → 0.55
-
-        uris = self.dbHandler.get_tracks_by_mood_features(
-            energy_target=self.mood_energy,
-            valence_target=self.mood_valence,
-            radius=radius,
-            genre_names=self.mood_genres or None,
-            limit=self.max_results,
-        )
-
-        if not uris:
-            print(f"apply_mood_settings: no tracks found (e={self.mood_energy} v={self.mood_valence} r={radius})")
+        # Real user boxes active (anything that isn't the self-activated auto box)
+        user_boxes = [b for b in self.activeboxs
+                      if 'auto:library' not in (getattr(b, 'data', '') or '')]
+        if user_boxes:
+            print("apply_mood_settings: user box(es) active → no rebuild (reco impact handled later)")
             return 0
 
-        # Remove tracks after current position
-        current_tlid = self.mopidyHandler.playback.get_current_tlid()
-        all_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
-        if current_tlid:
-            current_idx = next((i for i, t in enumerate(all_tracks) if t.tlid == current_tlid), None)
-            if current_idx is not None:
-                to_remove = [t.tlid for t in all_tracks[current_idx + 1:]]
-                if to_remove:
-                    self.mopidyHandler.tracklist.remove({'tlid': to_remove})
+        # Drop any previously self-activated auto box so we can refresh it cleanly
+        self.activeboxs = [b for b in self.activeboxs
+                           if 'auto:library' not in (getattr(b, 'data', '') or '')]
 
-        added = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris))
-        print(f"apply_mood_settings: added {len(added)} tracks (e={self.mood_energy} v={self.mood_valence} r={radius:.2f})")
+        # Keep the currently playing track, drop the rest, then refill via the auto pipeline
+        try:
+            self.clear_tracklist_except_current_song()
+        except Exception as e:
+            print(f"apply_mood_settings: clear error: {e}")
 
-        state = self.mopidyHandler.playback.get_state()
-        if state == "stopped":
-            tl_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
-            if tl_tracks:
-                self.mopidyHandler.playback.play(tlid=tl_tracks[0].tlid)
+        base_len = self.mopidyHandler.tracklist.get_length()
 
-        return len(added)
+        box = self.dbHandler.get_box_by_data_contains('auto:library')
+        if box is not None:
+            # Real auto box: box_action runs tracklistfill_auto with its options + global mood
+            self.activeboxs.append(box)
+            self.box_action(box)
+        else:
+            # Simulated auto: run the auto fill on a fallback box (like quicklaunch_auto)
+            fallback = self.dbHandler.get_box_by_option_type('new_mopidy')
+            if fallback is None:
+                fallback = Box(uid='auto_sim', option_type='new_mopidy',
+                               data='auto:library', option_sort=None)
+            self.tracklistfill_auto(fallback, self.max_results, self.discover_level)
+
+        added = self.mopidyHandler.tracklist.get_length() - base_len
+
+        # Start playback if stopped
+        try:
+            if self.mopidyHandler.playback.get_state() == "stopped":
+                tl = self.mopidyHandler.tracklist.get_tl_tracks()
+                if tl:
+                    self.mopidyHandler.playback.play(tlid=tl[0].tlid)
+        except Exception as e:
+            print(f"apply_mood_settings: play error: {e}")
+
+        print(f"apply_mood_settings: auto refill added {added} "
+              f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
+        return max(0, added)
 
     def initialize_playback(self, window=1):
         """
@@ -1455,6 +1494,43 @@ class O2mToMopidy:
         if not self.local and self.username != None: pattern = "spotify:track"
         if self.local and self.username == None : pattern = "local:local"
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)
+
+    def _mood_pick(self, uris, n, energy, valence, radius):
+        """Bias a candidate list towards (energy, valence) without ever dropping tracks.
+
+        Tracks whose energy/valence are known AND within the radius come first
+        (shuffled); the remaining slots are filled with the rest (NULL values or
+        out-of-radius) preserving their order. So when the radius is wide (high
+        discover level, central target) we effectively cover everything, and
+        tracks without mood data are kept as fallback rather than excluded.
+        """
+        if not uris:
+            return []
+        n = min(n, len(uris))
+        if energy is None or valence is None:
+            return uris[:n]
+        # Fetch known energy/valence for this batch in a single query
+        feat = {}
+        try:
+            for t in (Track.select(Track.uri, Track.energy, Track.valence)
+                          .where(Track.uri << list(uris)).namedtuples()):
+                if t.energy is not None and t.valence is not None:
+                    feat[t.uri] = (t.energy, t.valence)
+        except Exception as e:
+            print(f"_mood_pick lookup error: {e}")
+            return uris[:n]
+        in_range, rest = [], []
+        for u in uris:
+            f = feat.get(u)
+            if f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius:
+                in_range.append(u)
+            else:
+                rest.append(u)
+        random.shuffle(in_range)
+        result = in_range[:n]
+        if len(result) < n:
+            result += rest[:n - len(result)]
+        return result
 
     def get_new_tracks_notread(self, limit):
         return self.dbHandler.get_uris_new_notread(limit)

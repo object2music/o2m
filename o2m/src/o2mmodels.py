@@ -77,7 +77,9 @@ class Box(BaseModel):
     option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
     option_max_results = IntegerField(null=True)  # Max results associated to tag
     option_discover_level = IntegerField(default=5)  # Discover level (0-10) associated to tag
-    favorite= IntegerField(default=0) #Bool (is the box pinned or not)	
+    option_energy = FloatField(null=True)   # Target energy 0.0-1.0 (NULL = inherit global mood context)
+    option_valence = FloatField(null=True)  # Target valence/ambiance 0.0-1.0 (NULL = inherit global mood context)
+    favorite= IntegerField(default=0) #Bool (is the box pinned or not)
     public= IntegerField(default=0) #Bool (is the content shared or not)
 
     '''def __str__(self):
@@ -454,7 +456,12 @@ def _migration_v8(migrator):
     db.create_tables([TagFeature], safe=True)
 
 
-SCHEMA_VERSION = 8
+def _migration_v9(migrator):
+    _add_column_safe(migrator, 'box', 'option_energy', FloatField(null=True))
+    _add_column_safe(migrator, 'box', 'option_valence', FloatField(null=True))
+
+
+SCHEMA_VERSION = 9
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -465,6 +472,7 @@ _MIGRATIONS = [
     (6, "track_energy_valence_columns", _migration_v6),
     (7, "track_album_genre_tables", _migration_v7),
     (8, "tagfeature_table", _migration_v8),
+    (9, "box_energy_valence_options", _migration_v9),
 ]
 
 

@@ -142,6 +142,14 @@ class DatabaseHandler():
             r = random.randint(0, len(results)-1)
             return results[r]
 
+    def get_box_by_data_contains(self, needle):
+        """Return the first box whose data field contains `needle` (e.g. 'auto:library')."""
+        query = Box.select().where(Box.data.contains(needle))
+        results = self.transform_query_to_list(query)
+        if len(results) > 0:
+            return results[0]
+        return None
+
     def get_media_box(self, uid):
         results = self.get_box_by_uid(uid)
         if len(results > 0):
