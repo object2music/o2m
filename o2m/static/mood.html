@@ -872,6 +872,25 @@
   }
   .td-playlists .pl-more:hover { border-color: var(--text); color: var(--text); }
 
+  /* Inline editing of the current track's energy / valence / mood (edit mode). */
+  body.edit-mode #td-energy, body.edit-mode #td-valence, body.edit-mode #td-mood {
+    cursor: pointer; border-bottom: 1px dotted var(--border-strong);
+  }
+  body.edit-mode #td-energy:hover, body.edit-mode #td-valence:hover,
+  body.edit-mode #td-mood:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  .td-edit-input, .td-edit-select {
+    font: inherit; font-family: var(--font-mono); width: 56px;
+    background: var(--card); color: var(--text); border: 1px solid var(--accent);
+    padding: 0 4px; border-radius: 0; text-align: right;
+  }
+  .td-edit-select { width: auto; text-align: left; }
+  .td-hint {
+    display: none; font-size: 11px; color: var(--muted); line-height: 1.4;
+    margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;
+  }
+  body.edit-mode .td-hint.show { display: block; }
+  .td-hint b { color: var(--accent); font-weight: 600; }
+
   @media (max-width: 699px) {
     /* Opener button inside now-playing (right side). */
     #btn-details {
@@ -979,6 +998,7 @@
         <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
         <div><dt>Library</dt><dd id="td-library">—</dd></div>
       </dl>
+      <div id="td-edit-hint" class="td-hint"></div>
       <div id="td-playlists" class="td-playlists"></div>
     </div>
   </div>
@@ -1688,11 +1708,19 @@ function renderFav() {
            + (editUnlocked ? ' — click to toggle' : '');
 }
 
+function updateEditHint(noFeat) {
+  const h = document.getElementById('td-edit-hint');
+  if (!h) return;
+  h.classList.toggle('show', !!noFeat);
+  if (noFeat) h.innerHTML = 'No energy/valence yet — click the values above, or click the <b>matrix</b> to set them.';
+}
+
 async function renderTrackDetails(uri) {
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  // Skip elements that currently hold an open inline editor.
+  const set = (id, v) => { const el = document.getElementById(id); if (el && !el.querySelector('input,select')) el.textContent = v; };
   if (!uri) {
     ['td-type','td-energy','td-valence','td-mood','td-plays','td-library'].forEach(id => set(id, '—'));
-    detailsUri = null; favLocal = false; favSpotify = null; renderFav();
+    detailsUri = null; favLocal = false; favSpotify = null; renderFav(); updateEditHint(false);
     return;
   }
   try {
@@ -1704,6 +1732,7 @@ async function renderTrackDetails(uri) {
     set('td-mood',    info.mood || '—');
     set('td-plays',   (info.read_count_end ?? 0) + '');
     set('td-library', info.library || '—');
+    updateEditHint(info.energy == null || info.valence == null);
     favLocal = !!info.liked;
     // Statut Spotify : seulement quand l'uri change, pour ne pas spammer l'API
     if (uri !== detailsUri) {
@@ -1954,7 +1983,10 @@ function detectMatrixMode(canvas, e) {
   const r  = (appState.dl / 20 + 0.05) * inner;
   const dist = Math.hypot(e.clientX - tx, e.clientY - ty);
   const HANDLE = 14;
-  return Math.abs(dist - r) < HANDLE ? 'resize' : 'move';
+  if (Math.abs(dist - r) < HANDLE) return 'resize';
+  // Edit mode + current track has no energy/valence yet → click the matrix to set them.
+  if (editUnlocked && matrixCurUri && !matrixFeatures[matrixCurUri]) return 'edittrack';
+  return 'move';
 }
 
 function matrixMove(canvas, e) {
@@ -1989,7 +2021,80 @@ async function saveCurrentTrackFeatures() {
     });
     if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     setFeedback('Energy / valence saved');
+    updateEditHint(false);
   } catch(e) { setFeedback('Save error'); }
+}
+
+/* ── Inline editing of the current track's energy / valence / mood (edit mode) ── */
+const MOOD_EDIT_OPTIONS = [['calm','Calm'],['energetic','Energetic'],['dark','Intense'],['happy','Happy']];
+
+async function saveTrackFeature(patch) {
+  if (!matrixCurUri) return false;
+  try {
+    const r = await fetch(API + '/track_features', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(Object.assign({ uri: matrixCurUri }, patch))
+    });
+    if (r.status === 401) { setFeedback('Editing not authorized'); return false; }
+    const d = await r.json().catch(() => ({}));
+    if (d.error) { setFeedback('Save error'); return false; }
+    setFeedback('Saved');
+    return true;
+  } catch (e) { setFeedback('Save error'); return false; }
+}
+
+function editTrackNumber(kind) {            // kind = 'energy' | 'valence'
+  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+  if (!matrixCurUri) return;
+  const dd = document.getElementById('td-' + kind);
+  if (!dd || dd.querySelector('input')) return;
+  const f = matrixFeatures[matrixCurUri] || {};
+  const start = f[kind] != null ? Math.round(f[kind] * 10) : 5;
+  dd.innerHTML = '<input class="td-edit-input" type="number" min="0" max="10" step="1" value="' + start + '">';
+  const inp = dd.querySelector('input');
+  inp.focus(); inp.select();
+  let done = false;
+  const commit = async () => {
+    if (done) return; done = true;
+    let v = parseInt(inp.value, 10);
+    if (isNaN(v)) { renderTrackDetails(matrixCurUri); return; }
+    v = Math.min(10, Math.max(0, v));
+    const cur = matrixFeatures[matrixCurUri] || {};
+    const energy  = kind === 'energy'  ? v / 10 : (cur.energy  ?? 0.5);
+    const valence = kind === 'valence' ? v / 10 : (cur.valence ?? 0.5);
+    matrixFeatures[matrixCurUri] = { energy, valence };
+    document.getElementById('td-energy').textContent  = Math.round(energy * 10)  + '/10';
+    document.getElementById('td-valence').textContent = Math.round(valence * 10) + '/10';
+    updateEditHint(false);
+    await saveTrackFeature({ energy, valence });
+  };
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') inp.blur();
+    else if (e.key === 'Escape') { done = true; renderTrackDetails(matrixCurUri); }
+  });
+}
+
+function editTrackMood() {
+  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+  if (!matrixCurUri) return;
+  const dd = document.getElementById('td-mood');
+  if (!dd || dd.querySelector('select')) return;
+  const cur = (dd.textContent || '').trim().toLowerCase();
+  const opts = MOOD_EDIT_OPTIONS.map(([v, l]) =>
+    '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('');
+  dd.innerHTML = '<select class="td-edit-select">' + opts + '</select>';
+  const sel = dd.querySelector('select');
+  sel.focus();
+  let done = false;
+  const commit = async () => {
+    if (done) return; done = true;
+    const v = sel.value;
+    dd.textContent = v || '—';
+    await saveTrackFeature({ mood: v });
+  };
+  sel.addEventListener('change', commit);
+  sel.addEventListener('blur', commit);
 }
 
 function matrixResize(canvas, e) {
@@ -2518,6 +2623,10 @@ async function init() {
   document.getElementById('btn-details-close')?.addEventListener('click', closeDetails);
   document.getElementById('details-backdrop')?.addEventListener('click', closeDetails);
   document.getElementById('td-fav')?.addEventListener('click', toggleFavorite);
+  // Inline editing of the current track's mood/energy/valence (edit mode).
+  document.getElementById('td-energy')?.addEventListener('click', () => editTrackNumber('energy'));
+  document.getElementById('td-valence')?.addEventListener('click', () => editTrackNumber('valence'));
+  document.getElementById('td-mood')?.addEventListener('click', editTrackMood);
   checkEditStatus();
   await loadGenres();
   await loadBoxes();
