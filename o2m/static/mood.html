@@ -499,13 +499,14 @@
        open at a time, its body fills the remaining height and scrolls internally. */
     #scroll-area { display: flex; flex-direction: column; overflow: hidden; }
     #main-cols { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-    #left-panel { padding: 0; }
+    /* padding:0 on every panel so the 3 headers align on the same left margin */
     #boxes-panel, #left-panel, #tracklist-col {
-      display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; min-height: 0; padding: 0;
+      border-top: 1px solid var(--border);
     }
     #tracklist-section { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0; }
 
-    /* Headers = fixed accordion rows (always visible). */
+    /* Headers = fixed accordion rows (always visible, aligned). */
     #boxes-panel-label, #settings-label, #tracklist-label {
       position: relative; flex-shrink: 0; cursor: pointer; margin: 0;
       padding: 13px 14px; background: var(--surface);
@@ -519,14 +520,17 @@
     #left-panel.open #settings-label::before,
     #tracklist-col.open #tracklist-label > span:first-child::before { content: '▾'; }
 
-    /* Bodies: hidden unless open; the open body fills the rest and scrolls. */
-    #boxes-panel .panel-body, #left-panel .panel-body, #tracklist-wrap { display: none; }
+    /* Bodies: hidden when collapsed. :not(.open) raises specificity so it beats the
+       base `#tracklist-wrap { display:flex }` rule declared later in the stylesheet. */
+    #boxes-panel:not(.open) .panel-body,
+    #left-panel:not(.open) .panel-body,
+    #tracklist-col:not(.open) #tracklist-wrap { display: none; }
     #main-cols .collapsible:not(.open) { flex: 0 0 auto; }
     #main-cols .collapsible.open { flex: 1 1 auto; min-height: 0; }
     #boxes-panel.open .panel-body,
     #left-panel.open .panel-body,
     #tracklist-col.open #tracklist-wrap {
-      display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px 14px;
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px 14px;
     }
   }
 
@@ -781,11 +785,14 @@
     [data-theme="overprint"] #cover-col { width: 72vw; max-width: 340px; }
     [data-theme="overprint"] #top-right,
     [data-theme="invert"]    #top-right { width: 100%; margin: 0; padding: 8px 12px; background: none; }
-    /* Titre superposé sur la pochette (en haut) — effet overprint conservé en mobile */
+    /* Title overlaid on the cover (top). Clamp to a few lines and clip so a long
+       title can never overflow the cover and bleed over everything. */
     [data-theme="overprint"] #hero-title,
     [data-theme="invert"]    #hero-title {
       position: absolute; top: 10px; left: 14px; right: 14px; z-index: 3;
-      margin: 0; height: auto; font-size: clamp(32px, 11vw, 78px);
+      margin: 0; font-size: clamp(28px, 10vw, 70px);
+      max-height: 64vw; overflow: hidden; overflow-wrap: anywhere; line-height: 0.95;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4;
     }
 
     /* Overprint mobile : tous les éléments empilés et alignés à gauche sur une
