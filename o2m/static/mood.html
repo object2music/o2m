@@ -1220,6 +1220,7 @@ async function applyMood() {
     moodSessionActive = true;   // on est désormais dans un mix mood → potards en direct
     updateAutoBtn();
     setTimeout(refreshNowPlaying, 600);
+    setTimeout(refreshBoxStates, 700);   // allume tout de suite la box auto activée côté serveur
   } catch(e) { setFeedback('Network error'); }
 }
 
@@ -2199,6 +2200,14 @@ async function checkBoxActive(uid, btn) {
 function recomputeAutoBox() {
   autoBoxActive = !!document.querySelector('.box-btn.active[data-auto="1"]');
   updateAutoBtn();
+}
+
+// Resync immédiat de l'état actif de toutes les boxes (ex: la box auto que le
+// backend vient d'activer suite à un réglage mood) — sans attendre le poll 10min.
+function refreshBoxStates() {
+  document.querySelectorAll('#boxes-wrap .box-btn').forEach(btn => {
+    if (btn.dataset.uid) checkBoxActive(btn.dataset.uid, btn);
+  });
 }
 
 async function toggleBox(uid, btn) {
