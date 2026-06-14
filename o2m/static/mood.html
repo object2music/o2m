@@ -494,26 +494,40 @@
     #track-details .td-body { margin-top: 8px; }
     #controls { flex-wrap: wrap; gap: 16px; padding: 8px 12px; }
 
-    /* Panneaux Boxes / Réglages repliables — tracklist prioritaire */
-    .collapsible .panel-head { cursor: pointer; position: relative; padding-right: 22px; }
-    .collapsible .panel-head::after {
-      content: '▸'; position: absolute; right: 2px; top: 0; color: var(--muted); font-size: 11px;
+    /* ── Mobile accordion: Boxes / Mood / Tracklist ──
+       The 3 headers are always-visible fixed rows that never move; one section is
+       open at a time, its body fills the remaining height and scrolls internally. */
+    #scroll-area { display: flex; flex-direction: column; overflow: hidden; }
+    #main-cols { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+    #left-panel { padding: 0; }
+    #boxes-panel, #left-panel, #tracklist-col {
+      display: flex; flex-direction: column; min-height: 0; border-top: 1px solid var(--border);
     }
-    .collapsible.open .panel-head::after { content: '▾'; }
-    .collapsible:not(.open) .panel-body { display: none; }
+    #tracklist-section { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0; }
 
-    /* Settings (#left-panel) aligné à la même marge gauche que Boxes/Tracklist */
-    #left-panel { padding: 12px 14px; }
-
-    /* En-têtes de menu (Boxes / Settings / Tracklist) épinglés en haut au scroll.
-       NB : on cible .collapsible .panel-head pour battre la règle position:relative
-       (même spécificité, déclarée plus haut) qui empêchait le sticky. */
-    .collapsible .panel-head, #tracklist-label {
-      position: sticky; top: 0; z-index: 6; background: var(--bg);
+    /* Headers = fixed accordion rows (always visible). */
+    #boxes-panel-label, #settings-label, #tracklist-label {
+      position: relative; flex-shrink: 0; cursor: pointer; margin: 0;
+      padding: 13px 14px; background: var(--surface);
+      border-bottom: 1px solid var(--border-soft);
     }
-    .collapsible .panel-head { padding: 9px 0; margin-bottom: 4px; }
-    #tracklist-label { padding: 9px 0 6px; margin-bottom: 0; }
-    .collapsible .panel-head::after { top: 50%; transform: translateY(-50%); }
+    #boxes-panel-label::before, #settings-label::before,
+    #tracklist-label > span:first-child::before {
+      content: '▸'; color: var(--muted); font-size: 11px; margin-right: 9px;
+    }
+    #boxes-panel.open #boxes-panel-label::before,
+    #left-panel.open #settings-label::before,
+    #tracklist-col.open #tracklist-label > span:first-child::before { content: '▾'; }
+
+    /* Bodies: hidden unless open; the open body fills the rest and scrolls. */
+    #boxes-panel .panel-body, #left-panel .panel-body, #tracklist-wrap { display: none; }
+    #main-cols .collapsible:not(.open) { flex: 0 0 auto; }
+    #main-cols .collapsible.open { flex: 1 1 auto; min-height: 0; }
+    #boxes-panel.open .panel-body,
+    #left-panel.open .panel-body,
+    #tracklist-col.open #tracklist-wrap {
+      display: block; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px 14px;
+    }
   }
 
   /* ── Matrix ── */
@@ -1028,7 +1042,7 @@
 
   <!-- Col 2 : Réglages — potentiomètres + matrice + genres (repliable en mobile) -->
   <div id="left-panel" class="col collapsible">
-  <button class="panel-head" id="settings-label">Settings</button>
+  <button class="panel-head" id="settings-label">Mood</button>
   <div class="panel-body">
   <div id="dials">
     <div class="dial-wrap">
@@ -1077,7 +1091,7 @@
   </div><!-- /left-panel -->
 
   <!-- Col 3 : Tracklist (prioritaire) -->
-  <div id="tracklist-col" class="col">
+  <div id="tracklist-col" class="col collapsible open">
     <div id="tracklist-section">
       <div id="tracklist-label">
         <span>Tracklist</span>
@@ -2558,8 +2572,18 @@ function setupThemeSwitcher() {
 }
 
 function setupCollapsibles() {
-  document.querySelectorAll('.collapsible .panel-head').forEach(h =>
-    h.addEventListener('click', () => h.closest('.collapsible').classList.toggle('open')));
+  // Single-open accordion (mobile): opening one section closes the others, so the
+  // 3 headers stay visible. On desktop the .open class has no effect (all shown).
+  const heads = document.querySelectorAll(
+    '#boxes-panel .panel-head, #left-panel .panel-head, #tracklist-col #tracklist-label');
+  heads.forEach(h => h.addEventListener('click', (e) => {
+    if (e.target.closest('#btn-clear-tl')) return;   // don't toggle when clearing the tracklist
+    const panel = h.closest('.collapsible');
+    if (!panel) return;
+    const willOpen = !panel.classList.contains('open');
+    document.querySelectorAll('#main-cols .collapsible').forEach(p =>
+      p.classList.toggle('open', p === panel && willOpen));
+  }));
 }
 
 async function init() {
