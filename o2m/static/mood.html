@@ -504,7 +504,10 @@
       display: flex; flex-direction: column; min-height: 0; padding: 0;
       border-top: 1px solid var(--border);
     }
-    #tracklist-section { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0; }
+    /* 2-id selectors so these beat the base #tracklist-section / #tracklist-label
+       rules declared later in the stylesheet (which kept the tracklist indented). */
+    #tracklist-col #tracklist-section { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0; }
+    #tracklist-col #tracklist-label { margin: 0; }
 
     /* Headers = fixed accordion rows (always visible, aligned). */
     #boxes-panel-label, #settings-label, #tracklist-label {
