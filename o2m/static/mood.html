@@ -851,6 +851,7 @@
   #btn-details { display: none; }
   #details-backdrop { display: none; }
   #btn-details-close { display: none; }
+  .td-head-actions { display: flex; align-items: center; gap: 6px; }
 
   /* Playlists: collapsible, active-first (kept short). */
   .td-playlists .pl-toggle {
@@ -1670,6 +1671,7 @@ async function togglePlaylistMembership(cb, uri) {
     const j = await r.json().catch(() => ({}));
     if (j.error) { setFeedback('Playlist: ' + j.error); cb.checked = !add; return; }
     setFeedback(add ? 'Added to playlist' : 'Removed from playlist');
+    renderPlaylistEditor(uri);   // refresh active list + count
   } catch(e) { setFeedback('Playlist error'); cb.checked = !add; }
   finally { cb.disabled = false; }
 }
