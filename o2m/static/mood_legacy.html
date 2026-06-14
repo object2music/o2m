@@ -1070,7 +1070,7 @@ function shouldApplyMood() {
 function scheduleApply() {
   if (!shouldApplyMood()) return;
   clearTimeout(applyTimer);
-  applyTimer = setTimeout(applyMood, 1800);
+  applyTimer = setTimeout(applyMood, 4500);   // débounce : laisse régler plusieurs potards avant d'appliquer
 }
 
 async function applyMood() {
