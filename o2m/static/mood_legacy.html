@@ -11,77 +11,73 @@
 <link rel="manifest" href="/static/manifest.json">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
-<title>O2M Mood 2 — Design System</title>
+<title>O2M Mood</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&display=swap" rel="stylesheet">
 <script>
-  /* Applique le thème avant le rendu pour éviter le flash.
-     mood2 utilise une clé de stockage séparée (o2m2-theme) et part en dark
-     (palette chaude du design system) par défaut. */
+  /* Applique le thème avant le rendu pour éviter le flash */
   (function () {
     var t = new URLSearchParams(location.search).get('theme')
-          || localStorage.getItem('o2m2-theme') || 'dark';
+          || localStorage.getItem('o2m-theme') || 'mono';
     document.documentElement.setAttribute('data-theme', t);
   })();
 </script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-  /* ════════════ THÈME : Dark — Design System (near-black chaud, accent orange) ════════════ */
+  /* ════════════ THÈME : Sombre (inverse du Mono) ════════════ */
   :root, [data-theme="dark"] {
-    --bg: #15120E; --surface: #1C1812; --card: #241F18; --raised: #2D2719;
-    --accent: #FF5A00; --accent-press: #E64E00; --accent-soft: #FF5A0014; --on-accent: #190E04;
-    --text: #F3EEE3; --muted: #9C9486; --faint: #6E665A;
-    --border: rgba(243,238,227,.13); --border-soft: rgba(243,238,227,.07); --border-strong: rgba(243,238,227,.30);
-    --fill-1: rgba(243,238,227,.04); --fill-2: rgba(243,238,227,.08); --fill-3: rgba(243,238,227,.15);
-    --track-bg: #2D2719;
-    --c-energy: var(--text); --c-valence: var(--muted); --c-dl: var(--accent); --dial-txt: var(--text);
+    --bg: #181818; --surface: #181818; --card: #262626;
+    --accent: #ffffff; --accent-soft: #ffffff1a;
+    --text: #ffffff; --muted: #777777;
+    --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff33;
+    --fill-1: #ffffff06; --fill-2: #ffffff0f; --fill-3: #ffffff16;
+    --track-bg: #2a2a2a;
+    --c-energy: #ffffff; --c-valence: #888888; --c-dl: #ff3b00; --dial-txt: #ffffff;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
-    --head-transform: uppercase; --head-weight: 800; --head-spacing: -.015em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: #FF5A00;
-    --mx-bg: #1C1812;
-    --mx-q-calm: rgba(243,238,227,.03); --mx-q-happy: rgba(243,238,227,.06);
-    --mx-q-dark: rgba(243,238,227,.10); --mx-q-energetic: rgba(243,238,227,.05);
-    --mx-line: rgba(243,238,227,.15); --mx-border: transparent;
-    --mx-label: rgba(243,238,227,.22); --mx-axis: rgba(243,238,227,.40);
-    --mx-dl-fill: rgba(255,90,0,.08); --mx-dl-stroke: rgba(255,90,0,.60);
-    --mx-dot-core: #F3EEE3; --mx-pulse: 255,90,0;
-    --mood-happy: 243,238,227; --mood-energetic: 255,90,0;
-    --mood-calm: 156,148,134; --mood-dark: 110,102,90;
+    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
+    --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
+    --mx-bg: #202020;
+    --mx-q-calm: #ffffff04; --mx-q-happy: #ffffff09;
+    --mx-q-dark: #ffffff0f; --mx-q-energetic: #ffffff07;
+    --mx-line: #ffffff26; --mx-border: transparent;
+    --mx-label: #ffffff33; --mx-axis: #ffffff55;
+    --mx-dl-fill: #ff3b0012; --mx-dl-stroke: #ff3b0099;
+    --mx-dot-core: #ffffff; --mx-pulse: 255,255,255;
+    --mood-happy: 210,210,210; --mood-energetic: 255,59,0;
+    --mood-calm: 150,150,150; --mood-dark: 90,90,90;
   }
 
-  /* ════════════ THÈME : Light — Design System (crème papier chaude, accent orange) ════════════ */
+  /* ════════════ THÈME : Crème (éditorial) ════════════ */
   [data-theme="creme"] {
-    --bg: #EFEADF; --surface: #E6E0D2; --card: #F7F3EA; --raised: #FCF9F2;
-    --accent: #FF5A00; --accent-press: #E64E00; --accent-soft: #FF5A0016; --on-accent: #190E04;
-    --text: #181410; --muted: #7A7264; --faint: #A89F8E;
-    --border: rgba(24,20,16,.16); --border-soft: rgba(24,20,16,.08); --border-strong: rgba(24,20,16,.34);
-    --fill-1: rgba(24,20,16,.04); --fill-2: rgba(24,20,16,.07); --fill-3: rgba(24,20,16,.12);
-    --track-bg: #E0D9C9;
-    --c-energy: var(--text); --c-valence: var(--muted); --c-dl: var(--accent); --dial-txt: var(--text);
+    --bg: #f3efe6; --surface: #ece7db; --card: #e2dccb;
+    --accent: #e8462a; --accent-soft: #e8462a1f;
+    --text: #1a1a1a; --muted: #8a8578;
+    --border: #1a1a1a1f; --border-soft: #1a1a1a12; --border-strong: #1a1a1a2e;
+    --fill-1: #1a1a1a08; --fill-2: #1a1a1a10; --fill-3: #1a1a1a1a;
+    --track-bg: #d8d2c4;
+    --c-energy: #e8462a; --c-valence: #2e8b8b; --c-dl: #7c4dbe; --dial-txt: #1a1a1a;
     --font: 'Archivo', system-ui, sans-serif;
     --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
-    --head-transform: uppercase; --head-weight: 800; --head-spacing: -.015em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: #FF5A00;
-    --mx-bg: #E6E0D2;
-    --mx-q-calm: rgba(24,20,16,.04); --mx-q-happy: rgba(24,20,16,.08);
-    --mx-q-dark: rgba(24,20,16,.14); --mx-q-energetic: rgba(24,20,16,.06);
-    --mx-line: rgba(24,20,16,.16); --mx-border: transparent;
-    --mx-label: rgba(24,20,16,.26); --mx-axis: rgba(24,20,16,.42);
-    --mx-dl-fill: rgba(255,90,0,.10); --mx-dl-stroke: rgba(255,90,0,.65);
-    --mx-dot-core: #ffffff; --mx-pulse: 255,90,0;
-    --mood-happy: 24,20,16; --mood-energetic: 255,90,0;
-    --mood-calm: 122,114,100; --mood-dark: 60,50,40;
+    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
+    --eyebrow-mark: "↓ "; --eyebrow-color: var(--accent);
+    --mx-bg: #ece7db;
+    --mx-q-calm: #00000006; --mx-q-happy: #0000000d;
+    --mx-q-dark: #00000015; --mx-q-energetic: #0000000a;
+    --mx-line: #1a1a1a26; --mx-border: transparent;
+    --mx-label: #1a1a1a3a; --mx-axis: #1a1a1a55;
+    --mx-dl-fill: #7c4dbe12; --mx-dl-stroke: #7c4dbe99;
+    --mx-dot-core: #ffffff; --mx-pulse: 26,26,26;
+    --mood-happy: 217,164,0; --mood-energetic: 232,70,42;
+    --mood-calm: 124,77,190; --mood-dark: 44,74,112;
   }
 
   /* ════════════ THÈME : Mono (brut N&B) ════════════ */
   [data-theme="mono"] {
     --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
-    --accent: #111111; --accent-soft: #1111111a; --on-accent: #ffffff;
+    --accent: #111111; --accent-soft: #1111111a;
     --text: #000000; --muted: #9a9a9a;
     --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
@@ -105,7 +101,7 @@
   /* ════════════ THÈME : Overprint (affiche éditoriale, orange) ════════════ */
   [data-theme="overprint"] {
     --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
-    --accent: #ff5a00; --accent-soft: #ff5a001a; --on-accent: #190E04;
+    --accent: #ff5a00; --accent-soft: #ff5a001a;
     --text: #000000; --muted: #9a9a9a;
     --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
     --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
@@ -130,7 +126,7 @@
   /* ════════════ THÈME : Invert (cinématique, couleur dynamique) ════════════ */
   [data-theme="invert"] {
     --bg: #0c0c0c; --surface: #0c0c0c; --card: #1c1c1c;
-    --accent: var(--hero-accent, #ff3b00); --accent-soft: #ffffff1a; --on-accent: #ffffff;
+    --accent: var(--hero-accent, #ff3b00); --accent-soft: #ffffff1a;
     --text: #ffffff; --muted: #777777;
     --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff33;
     --fill-1: #ffffff06; --fill-2: #ffffff0f; --fill-3: #ffffff16;
@@ -151,21 +147,6 @@
     --mood-happy: 210,210,210; --mood-energetic: 255,59,0;
     --mood-calm: 150,150,150; --mood-dark: 90,90,90;
   }
-
-  /* ════════════ mood2 : couche technique JetBrains Mono (design system) ════════════
-     Durées, timecodes, specs, compteurs, liens utilitaires — tout l'affichage
-     "technique" passe en mono trackée, signature du design system O2M. */
-  :root { --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace; }
-  .tl-dur, #progress-time, #prog-elapsed, #prog-duration, #tracklist-count,
-  .dial-sub, #volume-val, .footer-link, #track-status-badge, .tl-status, #td-type,
-  .td-list dt, #track-ev {
-    font-family: var(--font-mono);
-    font-feature-settings: "tnum" 1;
-  }
-  .dial-sub, #tracklist-count, .footer-link, #track-status-badge {
-    text-transform: uppercase; letter-spacing: .14em;
-  }
-  .tl-dur, #progress-time { letter-spacing: .04em; }
 
   html, body { height: 100%; }
   body { background: var(--bg); color: var(--text); font-family: var(--font);
@@ -469,6 +450,14 @@
     #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
     #tracklist-section { padding: 0; }
     #tracklist-wrap { padding: 0 12px 10px; }
+
+    /* En-têtes de menu (Boxes / Settings / Tracklist) figés en haut de chaque
+       colonne scrollable — toujours visibles au défilement, comme en mobile. */
+    .col > .panel-head,
+    #tracklist-label {
+      position: sticky; top: 0; z-index: 6;
+      background: var(--bg); padding-top: 4px; padding-bottom: 8px; margin-bottom: 2px;
+    }
   }
 
   @media (max-width: 699px) {
@@ -800,56 +789,11 @@
     [data-theme="overprint"] #btn-snapcast { flex-shrink: 0; }
     [data-theme="overprint"] #progress-wrap { padding: 8px 0 2px; }
   }
-
-  /* ════════════ Design System — component layer (.o2m-* look) ════════════ */
-  /* Spacing scale from the handoff (used by the component overrides below). */
-  :root {
-    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
-  }
-
-  /* Brand (O2M + "Mood" eyebrow) merged into the footer bar, on the left. */
-  #footer-links .tb-brand { display: flex; align-items: baseline; gap: 9px; margin-right: var(--sp-3); }
-  .tb-mark {
-    font-family: var(--font-head); font-weight: 900; font-size: 15px; line-height: 1;
-    letter-spacing: -.02em; text-transform: uppercase; color: var(--text);
-  }
-  .tb-eyebrow {
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em;
-    text-transform: uppercase; color: var(--muted);
-    display: inline-flex; align-items: center; gap: 6px;
-  }
-  .tb-eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--accent); flex-shrink: 0; }
-
-  /* Genre chips → o2m-chip : square, hairline border, mono, active = solid orange. */
-  #genres-wrap { gap: var(--sp-2); }
-  .genre-chip {
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
-    text-transform: uppercase; padding: 6px 12px; font-weight: 500;
-    background: none; border: 1px solid var(--border); color: var(--muted);
-  }
-  .genre-chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #190E04); }
-
-  /* Status badge → o2m-badge : mono label, leading colour square (kept). */
-  #track-status-badge {
-    font-family: var(--font-mono); font-weight: 500; letter-spacing: .14em; font-size: 10px;
-  }
-
-  /* Footer links → o2m-btn--ghost : square, hairline border. */
-  .footer-link { border: 1px solid var(--border); padding: 5px 11px; background: none; }
-  .footer-link:hover { border-color: var(--text); background: var(--fill-2); }
-
-  /* Tracklist rows → o2m-row-item : hairline separators. */
-  .tl-item { border-bottom: 1px solid var(--border-soft); }
-  .tl-item:last-child { border-bottom: none; }
-
-  @media (max-width: 699px) {
-    #footer-links .tb-brand { margin-right: 8px; }
-  }
 </style>
 </head>
 <body>
 
-<!-- Top zone: large cover on the left, info + controls on the right -->
+<!-- Top zone : grande pochette à gauche, infos + contrôles à droite -->
 <div id="top-zone">
   <div id="hero-title"></div>
   <div id="cover-col">
@@ -1002,10 +946,6 @@
 
   <!-- Footer links -->
   <div id="footer-links">
-    <div class="tb-brand">
-      <span class="tb-mark">O2M</span>
-      <span class="tb-eyebrow">Mood</span>
-    </div>
     <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
     <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
     <a class="footer-link" href="/mood"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Mood</a>
@@ -1015,7 +955,7 @@
     <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
-      <button class="theme-chip" data-theme-set="creme">Light</button>
+      <button class="theme-chip" data-theme-set="creme">Crème</button>
       <button class="theme-chip" data-theme-set="mono">Mono</button>
       <button class="theme-chip" data-theme-set="overprint">Overprint</button>
       <button class="theme-chip" data-theme-set="invert">Invert</button>
@@ -2268,14 +2208,12 @@ function autoInitPlaybackIfPhone() {
 
 /* ── Pochette de remplacement (quand un morceau n'a pas de visuel) ── */
 /* Pour utiliser tes propres images : remplace/complète cette liste par tes URLs. */
-// Pochettes "maison" du design system (orange + neutres, géométrie plate)
 const PLACEHOLDER_COVERS = [
-  '/static/ds/covers/o2m-cover1.png',  '/static/ds/covers/o2m-cover2.png',
-  '/static/ds/covers/o2m-cover3.png',  '/static/ds/covers/o2m-cover4.png',
-  '/static/ds/covers/o2m-cover5.png',  '/static/ds/covers/o2m-cover6.png',
-  '/static/ds/covers/o2m-cover7.png',  '/static/ds/covers/o2m-cover8.png',
-  '/static/ds/covers/o2m-cover9.png',  '/static/ds/covers/o2m-cover10.png',
-  '/static/ds/covers/o2m-cover11.png', '/static/ds/covers/o2m-cover12.png',
+  '/static/covers/cover1.png',  '/static/covers/cover2.png',
+  '/static/covers/cover3.png',  '/static/covers/cover4.png',
+  '/static/covers/cover5.png',  '/static/covers/cover6.png',
+  '/static/covers/cover7.png',  '/static/covers/cover8.png',
+  '/static/covers/cover9.png',  '/static/covers/cover10.png',
 ];
 function placeholderForUri(uri) {            // déterministe : même morceau → même pochette (pas de scintillement)
   let h = 0; const s = uri || 'o2m';
@@ -2339,7 +2277,7 @@ function fitHeroTitle() {
 /* ── Thèmes ── */
 function applyTheme(name) {
   document.documentElement.setAttribute('data-theme', name);
-  localStorage.setItem('o2m2-theme', name);   // clé séparée : mood2 n'écrase pas mood
+  localStorage.setItem('o2m-theme', name);
   document.querySelectorAll('.theme-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.themeSet === name));
   if (name === 'invert') updateHeroAccent(matrixCurUri);
@@ -2350,7 +2288,7 @@ function applyTheme(name) {
 function setupThemeSwitcher() {
   document.querySelectorAll('.theme-chip').forEach(c =>
     c.addEventListener('click', () => applyTheme(c.dataset.themeSet)));
-  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const current = document.documentElement.getAttribute('data-theme') || 'mono';
   applyTheme(current);
 }
 

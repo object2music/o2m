@@ -751,14 +751,22 @@ if __name__ == "__main__":
 
     @api.route('/mood')
     def mood_ui():
+        # Primary mood UI (design-system version, formerly mood2.html).
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
     @api.route('/mood2')
     def mood2_ui():
-        # Vue de test re-skinnée avec le design system (à comparer avec /mood)
+        # Transitional alias → same as /mood (kept so existing test links don't 404).
         from flask import send_from_directory
-        return send_from_directory('static', 'mood2.html')
+        return send_from_directory('static', 'mood.html')
+
+    @api.route('/mood_legacy')
+    def mood_legacy_ui():
+        # Archived pre-design-system UI, unplugged from the default route but kept
+        # reachable here if ever needed.
+        from flask import send_from_directory
+        return send_from_directory('static', 'mood_legacy.html')
 
     @api.route('/sw.js')
     def service_worker():
