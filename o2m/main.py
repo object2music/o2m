@@ -782,9 +782,18 @@ if __name__ == "__main__":
     @api.route('/api/client_config')
     def api_client_config():
         from flask import jsonify, request as req
+        # Derrière Caddy (HTTPS) : on route les WebSockets via le domaine en wss
+        # (Mopidy sous /mopidy/ws, Snapcast sous /snapcast) → évite le mixed-content.
+        # En accès direct LAN (HTTP) : on garde les ports directs.
+        host = (req.headers.get('X-Forwarded-Host') or req.host).split(':')[0]
+        if req.headers.get('X-Forwarded-Proto', '') == 'https':
+            return jsonify({
+                'snap_url':      f'https://{host}/snapcast',
+                'snap_ws_url':   f'wss://{host}/snapcast',
+                'mopidy_ws_url': f'wss://{host}/mopidy/ws',
+            })
         snap_port = os.environ.get('PORT_SNAPSERVER_HTTP', '6693')
         mopidy_port = os.environ.get('PORT_MOPIDY', '6680')
-        host = req.host.split(':')[0]
         return jsonify({
             'snap_url': f'http://{host}:{snap_port}',
             'snap_ws_url': f'ws://{host}:{snap_port}',
