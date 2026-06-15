@@ -657,6 +657,11 @@
     border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
   }
+  /* Order: brand, then styles (themes) on the left; the function buttons are pushed
+     to the right (margin-right:auto on the themes absorbs the free space). */
+  #footer-links .tb-brand     { order: 0; }
+  #footer-links #theme-switcher { order: 1; margin-left: 0; margin-right: auto; }
+  #footer-links .footer-link  { order: 2; }
   /* Mobile: keep the footer on a single line, swipe horizontally to reach all items. */
   @media (max-width: 699px) {
     #footer-links {
