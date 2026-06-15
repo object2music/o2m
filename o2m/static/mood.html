@@ -657,6 +657,16 @@
     border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
   }
+  /* Mobile: keep the footer on a single line, swipe horizontally to reach all items. */
+  @media (max-width: 699px) {
+    #footer-links {
+      flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    #footer-links::-webkit-scrollbar { display: none; }
+    #footer-links > * { flex-shrink: 0; }
+    #footer-links #theme-switcher { margin-left: 0; }
+  }
   .footer-link {
     font-size: 11px; color: var(--muted); text-decoration: none;
     padding: 3px 10px; border-radius: 0;
