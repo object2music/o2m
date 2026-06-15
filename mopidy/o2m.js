@@ -10,8 +10,13 @@ window.onload = function() {
   
   list = document.getElementsByClassName('sidebar__menu')[0];
   //host = window.location.host;
-  base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
-  base_url += ':6681/api/'
+  // Behind a reverse proxy (HTTPS, single 443 port) use same-origin /api/ which the
+  // proxy routes to the o2m API; on direct LAN access keep the explicit :6681 port.
+  if (window.location.protocol === 'https:') {
+    base_url = window.location.origin + '/api/';
+  } else {
+    base_url = window.location.protocol + '//' + window.location.hostname + ':6681/api/';
+  }
   backoffice_uri = 'http://localhost:5011'
   //backoffice_uri += 'sql.php?table=box&sql_query=SELECT+%2A+FROM+%60box%60++%0AORDER+BY+%60box%60.%60favorite%60++DESC&session_max_rows=100&is_browse_distinct=0'
   //alert(base_url)
@@ -429,7 +434,10 @@ function enableSnapcastAndPlay() {
   }
 
   // Auto-play: start playback if tracklist non-empty and not already playing
-  const mopidyRpc = window.location.protocol + '//' + window.location.hostname + ':6680/mopidy/rpc';
+  // Behind a reverse proxy (HTTPS) use same-origin /mopidy/rpc; on LAN keep :6680.
+  const mopidyRpc = (window.location.protocol === 'https:')
+    ? window.location.origin + '/mopidy/rpc'
+    : window.location.protocol + '//' + window.location.hostname + ':6680/mopidy/rpc';
   const rpc = (method) => fetch(mopidyRpc, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
