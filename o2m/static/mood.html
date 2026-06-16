@@ -2471,14 +2471,22 @@ function toggleSnapcast() {
 
 function autoConnectSnapIfNeeded() {
   const pref = localStorage.getItem('snap-autoconnect');
-  // Mobile : connexion forcée. Desktop : on restaure l'état de la dernière
-  // ouverture locale ('1' = était connecté → reconnecte ; '0'/null = reste coupé).
+  // Mobile: auto-connect. Desktop: only restore the last local state
+  // ('1' = was connected → reconnect; '0'/null = stay off).
   const shouldConnect = isMobileDevice() || pref === '1';
   if (!shouldConnect || !snapWsUrl) return;
-  // Connexion au premier geste utilisateur (obligation navigateur pour AudioContext)
-  const onGesture = () => { _snapStart(); };
-  document.addEventListener('click',      onGesture, { once: true });
-  document.addEventListener('touchstart', onGesture, { once: true, passive: true });
+  // Connect on the first user gesture (browsers require it for AudioContext).
+  // Don't use {once}: if the SnapStream bundle isn't loaded yet, _snapStart() is a
+  // no-op — keep the listeners until a player is actually created, then detach.
+  const onGesture = () => {
+    _snapStart();
+    if (snapPlayer) {
+      document.removeEventListener('click', onGesture);
+      document.removeEventListener('touchstart', onGesture);
+    }
+  };
+  document.addEventListener('click',      onGesture);
+  document.addEventListener('touchstart', onGesture, { passive: true });
 }
 
 /* Mobile : lance le box par défaut si configuré (comme o2m.js / Iris sur smartphone) */

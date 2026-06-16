@@ -786,19 +786,24 @@ if __name__ == "__main__":
         # (Mopidy under /mopidy/ws, Snapcast under /snapcast) to avoid mixed-content.
         # On direct LAN access (HTTP): keep the direct ports.
         host = (req.headers.get('X-Forwarded-Host') or req.host).split(':')[0]
+        # Snapcast is only relevant when Mopidy's audio output is routed to the
+        # snap fifo (AUDIO_OUTPUT contains 'snapfifo'/'snapcast'). Otherwise we omit
+        # the snap_* URLs so the client hides the Snapcast button.
+        audio_output = os.environ.get('AUDIO_OUTPUT', '').lower()
+        snap_enabled = ('snapfifo' in audio_output) or ('snapcast' in audio_output)
         if req.headers.get('X-Forwarded-Proto', '') == 'https':
-            return jsonify({
-                'snap_url':      f'https://{host}/snapcast',
-                'snap_ws_url':   f'wss://{host}/snapcast',
-                'mopidy_ws_url': f'wss://{host}/mopidy/ws',
-            })
+            cfg = {'mopidy_ws_url': f'wss://{host}/mopidy/ws'}
+            if snap_enabled:
+                cfg['snap_url']    = f'https://{host}/snapcast'
+                cfg['snap_ws_url'] = f'wss://{host}/snapcast'
+            return jsonify(cfg)
         snap_port = os.environ.get('PORT_SNAPSERVER_HTTP', '6693')
         mopidy_port = os.environ.get('PORT_MOPIDY', '6680')
-        return jsonify({
-            'snap_url': f'http://{host}:{snap_port}',
-            'snap_ws_url': f'ws://{host}:{snap_port}',
-            'mopidy_ws_url': f'ws://{host}:{mopidy_port}/mopidy/ws',
-        })
+        cfg = {'mopidy_ws_url': f'ws://{host}:{mopidy_port}/mopidy/ws'}
+        if snap_enabled:
+            cfg['snap_url']    = f'http://{host}:{snap_port}'
+            cfg['snap_ws_url'] = f'ws://{host}:{snap_port}'
+        return jsonify(cfg)
 
     @api.route('/tag_features')
     def tag_features_ui():
@@ -855,6 +860,14 @@ if __name__ == "__main__":
             return jsonify(o2mHandler.dbHandler.get_stats_tracks())
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/stats/breakdown')
+    def api_stats_breakdown():
+        from flask import jsonify
+        try:
+            return jsonify(o2mHandler.dbHandler.get_stats_breakdown())
+        except Exception as e:
+            return jsonify({'error': str(e), 'categories': [], 'totals': {}}), 500
 
     @api.route('/stats')
     def stats_ui():
