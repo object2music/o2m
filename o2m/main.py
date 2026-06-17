@@ -362,6 +362,12 @@ if __name__ == "__main__":
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
             read_end = float(stat.read_end) if stat else 0.0
 
+            # Inline metric shown in the badge: read_end·popularity (both /10).
+            # Popularity is appended only when scored (music tracks).
+            _re10 = int(round(read_end, 1) * 10)
+            _pop10 = round(float(stat.popularity) * 10) if (stat and stat.popularity is not None) else None
+            metric = f"{_re10}·{_pop10}" if _pop10 is not None else str(_re10)
+
             def mood_suffix(s):
                 if not s:
                     return ''
@@ -380,7 +386,7 @@ if __name__ == "__main__":
             # Fast path: library_display from _track_info, option_type from DB
             if info and info.get('library_display'):
                 option_type = str(stat.option_type) if stat else 'new'
-                status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + info['library_display'] + mood_suffix(stat)
+                status = option_type + " - " + metric + " - " + info['library_display'] + mood_suffix(stat)
                 return status
 
             # Slow path: stat must exist for full DB-based resolution
@@ -423,7 +429,7 @@ if __name__ == "__main__":
                                 if not _looks_like_spotify_id(normalized_id):
                                     resolved = f"{prefix}:{value}"
                                     library_name = resolved
-                                    status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name + mood_suffix(stat)
+                                    status = option_type + " - " + metric + " - " + library_name + mood_suffix(stat)
                                     return status
                                 value = normalized_id
 
@@ -469,7 +475,7 @@ if __name__ == "__main__":
                     print(f"Error getting library name: {e}")
                     library_name = stored
 
-            status = option_type + " - " + str(int(round(read_end,1)*10)) + " - " + library_name + mood_suffix(stat)
+            status = option_type + " - " + metric + " - " + library_name + mood_suffix(stat)
         except Exception as val_e:
             status = 'new'
         return status
