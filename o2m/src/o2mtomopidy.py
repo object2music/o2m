@@ -310,11 +310,11 @@ class O2mToMopidy:
 
                 #Shuffle if new tracks were added — regardless of direct vs. indirect add in tracklistappend_box
                 current_tl_length = self.mopidyHandler.tracklist.get_length()
-                if ((self.shuffle == "true" and box.option_sort != "desc" and box.option_sort != "asc") or box.option_sort == "shuffle") and (current_tl_length > prev_tl_length):
+                if ((self.shuffle == "true" and box.option_sort != "desc" and box.option_sort != "asc") or box.option_sort == "shuffle" or box.option_sort == "smart") and (current_tl_length > prev_tl_length):
                     index = 0
                     if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
                     if current_tl_length > index + 1:
-                        self.shuffle_tracklist(index+1, current_tl_length)
+                        self.smart_shuffle_tracklist(index+1, current_tl_length)
                 self.queue = 0
 
         # Next option
@@ -454,10 +454,10 @@ class O2mToMopidy:
                     #print(f"Length {new_length}")
 
                     # Shuffle new tracks if necessary : global shuffle or box option : now in card 
-                    if (self.shuffle == "true" and active_box.option_sort != "desc" and active_box.option_sort != "asc") or active_box.option_sort == "shuffle":
+                    if (self.shuffle == "true" and active_box.option_sort != "desc" and active_box.option_sort != "asc") or active_box.option_sort == "shuffle" or active_box.option_sort == "smart":
                         if new_length > prev_length:
                             print(f"Shuffling")
-                            self.shuffle_tracklist(prev_length, new_length)
+                            self.smart_shuffle_tracklist(prev_length, new_length)
                     
                     #if (active_box.option_sort == "asc") :
                     #    self.mopidyHandler.tracklist.slice
@@ -548,10 +548,10 @@ class O2mToMopidy:
                     
                     # Shuffle complete computed tracklist if more than two boxs
                     #self.shuffle_tracklist(current_index + 1, new_length)
-                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle") and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1)):
+                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle" or active_box.option_sort=="smart") and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1)):
                         if new_length > current_index + 1:
                             print ("shuffling")
-                            self.shuffle_tracklist(current_index + 1, new_length)
+                            self.smart_shuffle_tracklist(current_index + 1, new_length)
                    
                     #Move at next place the lastinfo content
                     if ((option_type == "info") and (new_length - prev_length==1)):
@@ -1062,6 +1062,49 @@ class O2mToMopidy:
                 self.mopidyHandler.tracklist.shuffle(0, stop_index)
         except:
             print(f"error")
+
+    def smart_shuffle_tracklist(self, start_index, stop_index):
+        """Default ordering: popularity-weighted reorder of the tracklist slice
+        [start,stop). Temperature follows discover_level — low DL surfaces popular
+        tracks first, DL=10 → uniform (identical to a plain random shuffle). Before
+        the first popularity recompute (all scores NULL) weights are uniform, so
+        behaviour matches the previous shuffle. Any failure falls back to it."""
+        try:
+            s = start_index if start_index is not None else 0
+            tl = self.mopidyHandler.tracklist.get_tl_tracks()
+            slice_tl = tl[s:stop_index]
+            if len(slice_tl) <= 1:
+                return
+            uris = [t.track.uri for t in slice_tl]
+            pop = {}
+            try:
+                for r in (Track.select(Track.uri, Track.popularity)
+                              .where(Track.uri << uris).namedtuples()):
+                    if r.popularity is not None:
+                        pop[r.uri] = r.popularity
+            except Exception as e:
+                print(f"smart_shuffle lookup error: {e}")
+            # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1, DL=10 → 0 (uniform)
+            k = max(0.0, (10 - self.discover_level) / 5.0)
+            # Efraimidis-Spirakis weighted order over tl_tracks (NULL → neutral 0.5)
+            keyed = []
+            for t in slice_tl:
+                w = pop.get(t.track.uri, 0.5) ** k
+                if w <= 0:
+                    w = 1e-9
+                keyed.append((random.random() ** (1.0 / w), t.tlid))
+            keyed.sort(reverse=True)
+            ordered = [tlid for _, tlid in keyed]
+            # Apply the permutation with selection-style moves, mirroring locally
+            cur = [t.tlid for t in slice_tl]
+            for p, desired in enumerate(ordered):
+                c = cur.index(desired, p)
+                if c != p:
+                    self.mopidyHandler.tracklist.move(s + c, s + c + 1, s + p)
+                    cur.insert(p, cur.pop(c))
+        except Exception as e:
+            print(f"smart_shuffle error: {e}; falling back to plain shuffle")
+            self.shuffle_tracklist(start_index, stop_index)
  
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
