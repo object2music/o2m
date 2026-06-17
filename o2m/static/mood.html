@@ -277,9 +277,8 @@
   #cover {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; display: block;
-    filter: grayscale(1); transition: filter .4s;
+    filter: none; transition: filter .4s;   /* dark / light / mono: original colour */
   }
-  #cover-wrap:hover #cover { filter: grayscale(0); }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
   #track-name { font-size: 21px; white-space: nowrap; line-height: 1.1;
                 overflow: hidden; text-overflow: ellipsis; color: var(--eyebrow-color, var(--accent));
@@ -758,6 +757,14 @@
     aspect-ratio: 1 / 1; height: auto; width: 100%; max-width: none;
     background: var(--card);  /* tuile visible même sans visuel */
   }
+  /* Overprint: cover stays monochrome; on hover (rollover) or click it is
+     recolorized — and the overlaid title then switches to grey. */
+  [data-theme="overprint"] #cover { filter: grayscale(1); }
+  [data-theme="overprint"] #cover-wrap:hover #cover,
+  [data-theme="overprint"] #top-zone.cover-lit #cover { filter: grayscale(0); }
+  [data-theme="overprint"] #top-zone:has(#cover-wrap:hover) #hero-title,
+  [data-theme="overprint"] #top-zone.cover-lit #hero-title { color: var(--muted); }
+  [data-theme="overprint"] #cover-wrap { cursor: pointer; }
   /* Titre superposé en haut, débordant de la pochette sur l'espace central */
   [data-theme="overprint"] #hero-title {
     grid-column: 1 / 3; grid-row: 1; align-self: start; justify-self: stretch;
@@ -2675,6 +2682,7 @@ function applyTheme(name) {
     c.classList.toggle('active', c.dataset.themeSet === name));
   if (name === 'invert') updateHeroAccent(matrixCurUri);
   else document.documentElement.style.removeProperty('--hero-accent');
+  document.getElementById('top-zone')?.classList.remove('cover-lit');  // reset overprint recolor toggle
   readThemeColors();
   requestAnimationFrame(fitHeroTitle);
 }
@@ -2721,6 +2729,9 @@ async function init() {
 
   document.getElementById('btn-clear-tl').addEventListener('click', clearTracklist);
   document.getElementById('btn-clear-boxes')?.addEventListener('click', (e) => { e.stopPropagation(); clearAllBoxes(); });
+  // Overprint: tap/click the cover to toggle its recolorization (rollover does it on desktop).
+  document.getElementById('cover-wrap')?.addEventListener('click', () =>
+    document.getElementById('top-zone')?.classList.toggle('cover-lit'));
   document.getElementById('btn-snapcast')?.addEventListener('click', toggleSnapcast);
   document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
   autoToggle = localStorage.getItem('mood-auto') === '1';
