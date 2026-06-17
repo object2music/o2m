@@ -1611,16 +1611,19 @@ class O2mToMopidy:
 
     def _expand_pick(self, uris, n, energy, valence, discover_level):
         """FILTER (not reorder) a tapped object's cached tracks (album/playlist/
-        artist) by mood+popularity, proportionally to discover_level. The returned
-        subset keeps the SOURCE ORDER — sequencing stays the job of box.option_sort.
+        artist) by mood+popularity. Always fills up to n slots (max_results) when
+        the pool allows — DL changes WHICH tracks are kept, never how many. The
+        returned subset keeps the SOURCE ORDER (sequencing stays box.option_sort's
+        job). The count only drops below n when the source itself has fewer tracks
+        (e.g. a short album).
 
-        DL=0  → no filtering: keep all (capped at n), source order untouched.
-        DL↑   → keep fewer tracks, retaining the best mood/popularity matches.
+        DL=0  → keep the first n in source order (object played faithfully).
+        DL↑   → keep the best n by mood/popularity (a wider mood window admits more
+                candidates), dropping weaker tracks in favour of better matches
+                drawn from deeper in the source.
 
         A track in the current mood window (energy/valence within radius) gets a
-        large bonus so on-mood tracks survive first; ties and the rest are ranked
-        by popularity. EXPAND_FILTER_MAX sets how aggressively high DL prunes."""
-        EXPAND_FILTER_MAX = 0.5  # at DL=10, keep ~50% of the natural slot count
+        large bonus so on-mood tracks rank first; ties and the rest go by popularity."""
         if not uris:
             return []
         m = min(n, len(uris))
@@ -1648,8 +1651,8 @@ class O2mToMopidy:
                 s += 1.0  # on-mood bonus dominates popularity
             return s
 
-        keep_count = max(1, int(round(m * (1.0 - EXPAND_FILTER_MAX * discover_level / 10.0))))
-        best = set(sorted(uris, key=score, reverse=True)[:keep_count])
+        # Fill all available slots: keep the best m, never prune below max_results.
+        best = set(sorted(uris, key=score, reverse=True)[:m])
         return [u for u in uris if u in best]  # source order preserved
 
     def _weighted_sample(self, uris, pop, k, n, default=0.5):
