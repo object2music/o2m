@@ -1070,6 +1070,7 @@
         <div><dt>Energy</dt><dd id="td-energy">—</dd></div>
         <div><dt>Valence</dt><dd id="td-valence">—</dd></div>
         <div><dt>Mood</dt><dd id="td-mood">—</dd></div>
+        <div><dt>Popularity</dt><dd id="td-popularity">—</dd></div>
         <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
         <div><dt>Library</dt><dd id="td-library">—</dd></div>
       </dl>
@@ -1800,7 +1801,7 @@ async function renderTrackDetails(uri) {
   // Skip elements that currently hold an open inline editor.
   const set = (id, v) => { const el = document.getElementById(id); if (el && !el.querySelector('input,select')) el.textContent = v; };
   if (!uri) {
-    ['td-type','td-energy','td-valence','td-mood','td-plays','td-library'].forEach(id => set(id, '—'));
+    ['td-type','td-energy','td-valence','td-mood','td-popularity','td-plays','td-library'].forEach(id => set(id, '—'));
     detailsUri = null; favLocal = false; favSpotify = null; renderFav(); updateEditHint(false);
     return;
   }
@@ -1811,6 +1812,7 @@ async function renderTrackDetails(uri) {
     set('td-energy',  ev(info.energy));
     set('td-valence', ev(info.valence));
     set('td-mood',    info.mood || '—');
+    set('td-popularity', ev(info.popularity));
     set('td-plays',   (info.read_count_end ?? 0) + '');
     set('td-library', info.library || '—');
     updateEditHint(info.energy == null || info.valence == null);
@@ -1829,7 +1831,7 @@ async function renderTrackDetails(uri) {
     detailsUri = uri;
     renderFav();
   } catch(e) {
-    ['td-type','td-energy','td-valence','td-mood','td-plays','td-library'].forEach(id => set(id, '—'));
+    ['td-type','td-energy','td-valence','td-mood','td-popularity','td-plays','td-library'].forEach(id => set(id, '—'));
   }
 }
 

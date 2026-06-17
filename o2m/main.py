@@ -765,6 +765,7 @@ if __name__ == "__main__":
                 'mood':           str(stat.mood) if stat and stat.mood and stat.mood != '_' else None,
                 'energy':         round(float(stat.energy), 3) if stat and stat.energy is not None else None,
                 'valence':        round(float(stat.valence), 3) if stat and stat.valence is not None else None,
+                'popularity':     round(float(stat.popularity), 3) if stat and stat.popularity is not None else None,
                 'liked':          bool(stat.liked) if stat else False,
                 'library':        library,
             })
