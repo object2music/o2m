@@ -897,6 +897,30 @@
   #btn-details-close { display: none; }
   .td-head-actions { display: flex; align-items: center; gap: 6px; }
 
+  /* Mobile "tap to start audio" splash overlay. */
+  #audio-tap-overlay {
+    position: fixed; inset: 0; z-index: 9999; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: rgba(10, 8, 6, 0.92);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+    transition: opacity .3s var(--ease, ease);
+  }
+  #audio-tap-overlay.hide { opacity: 0; }
+  #audio-tap-overlay .tap-icon {
+    width: 84px; height: 84px; border: 2px solid var(--accent); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; color: var(--accent);
+    animation: tap-pulse 1.8s ease-in-out infinite;
+  }
+  #audio-tap-overlay .tap-icon svg { width: 34px; height: 34px; margin-left: 4px; }
+  #audio-tap-overlay .tap-label {
+    color: #F3EEE3; font-family: var(--font-mono); text-transform: uppercase;
+    letter-spacing: .18em; font-size: 13px;
+  }
+  @keyframes tap-pulse {
+    0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 rgba(255,90,0,.4); }
+    50%      { transform: scale(1.06); box-shadow: 0 0 0 14px rgba(255,90,0,0); }
+  }
+
   /* Playlists: collapsible, active-first (kept short). */
   .td-playlists .pl-toggle {
     display: flex; align-items: center; gap: 7px; width: 100%;
@@ -2546,6 +2570,33 @@ function autoInitPlaybackIfPhone() {
   }, 1500);
 }
 
+/* Mobile "tap to start audio" splash — a deliberate single tap that reliably
+   satisfies the browser's user-gesture requirement (more robust than catching a
+   random click). On tap: unlock Web Audio, connect Snapcast, start playback. */
+function showAudioTapOverlay() {
+  if (!isMobileDevice() || !snapWsUrl) return;          // only when the browser is the speaker (Snapcast)
+  if (document.getElementById('audio-tap-overlay')) return;
+  const ov = document.createElement('div');
+  ov.id = 'audio-tap-overlay';
+  ov.innerHTML =
+    '<div class="tap-icon"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 4 20 12 6 20 6 4"/></svg></div>'
+    + '<div class="tap-label">Tap to start audio</div>';
+  const go = () => {
+    ov.removeEventListener('click', go);
+    // 1. Unlock the Web Audio API for the whole page (resumes suspended contexts).
+    try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) { const t = new AC(); t.resume().then(() => t.close()).catch(() => {}); } } catch (e) {}
+    // 2. Connect Snapcast (the phone becomes the speaker).
+    _snapStart();
+    localStorage.setItem('snap-autoconnect', '1');
+    // 3. Make sure something is playing.
+    fetch(API + '/initialize_playback').then(() => setTimeout(refreshNowPlaying, 800)).catch(() => {});
+    ov.classList.add('hide');
+    setTimeout(() => ov.remove(), 320);
+  };
+  ov.addEventListener('click', go);
+  document.body.appendChild(ov);
+}
+
 /* ── Pochette de remplacement (quand un morceau n'a pas de visuel) ── */
 /* Pour utiliser tes propres images : remplace/complète cette liste par tes URLs. */
 // Pochettes "maison" du design system (orange + neutres, géométrie plate)
@@ -2725,9 +2776,15 @@ async function init() {
   setInterval(refreshNowPlaying, 10000);   // safety net + clock resync (WS events drive real-time)
   setInterval(refreshVolume, 15000);
   setInterval(tickProgress, 250);          // local display, NO network
-  autoConnectSnapIfNeeded();
+  // Mobile with Snapcast → "tap to start audio" splash (handles the gesture, snap
+  // connect and playback). Otherwise: desktop snap-state restore + phone auto-init.
+  if (isMobileDevice() && snapWsUrl) {
+    showAudioTapOverlay();
+  } else {
+    autoConnectSnapIfNeeded();
+    autoInitPlaybackIfPhone();
+  }
   armMediaAnchor();
-  autoInitPlaybackIfPhone();
 
   let fitTimer = null;
   window.addEventListener('resize', () => {
