@@ -955,6 +955,19 @@ class DatabaseHandler():
             pass
         return None
 
+    def get_artist_track_uris(self, artist_id):
+        """Return cached track URIs linked to artist_id via TrackArtist (cache-only)."""
+        if not artist_id:
+            return None
+        try:
+            rows = list(TrackArtist.select(TrackArtist.track_uri)
+                        .where(TrackArtist.artist_id == artist_id))
+            if rows:
+                return [r.track_uri for r in rows]
+        except Exception as e:
+            print(f"get_artist_track_uris error: {e}")
+        return None
+
     # ─── Track (stats) cache ───────────────────────────────────────────────────
 
     def get_track(self, uri):

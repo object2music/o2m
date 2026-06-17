@@ -714,6 +714,12 @@ class O2mToMopidy:
             if not(self.discover_level_on) and (self.get_option_for_box(box, "option_discover_level")!=None) :
                 discover_level = self.get_option_for_box(box, "option_discover_level")
 
+            # Effective mood criteria for cache-expansion filtering (box option else global context)
+            energy = getattr(box, 'option_energy', None)
+            if energy is None: energy = self.mood_energy
+            valence = getattr(box, 'option_valence', None)
+            if valence is None: valence = self.mood_valence
+
             #DB Regulation (tmp)
             #self.reg_box_db(box)
             content = 0
@@ -888,13 +894,29 @@ class O2mToMopidy:
                     #self.update_stat_raw([data])
                     media_parts = content.split(":")
                     if media_parts[1] == "artist":
-                        tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
-                        #self.add_tracks(box, tracks_uris, max_results)
-                        tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
+                        # Cache-first: expand the artist's known tracks and mood/pop-filter them.
+                        cached = self.dbHandler.get_artist_track_uris(media_parts[2])
+                        if cached:
+                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
+                        else:
+                            # Fallback (cache miss): legacy top + all tracks (may hit the API)
+                            tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
+                            tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
+                    elif media_parts[1] == "album":
+                        # Cache-first: expand album sub-tracks from AlbumTrack and mood/pop-filter them.
+                        cached = self.dbHandler.get_album_tracks(media_parts[2])
+                        if cached:
+                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
+                        else:
+                            tracklist_uris.append(content)  # fallback: raw URI, Mopidy resolves the whole album
                     elif media_parts[1] == "playlist":
-                        tracklist_uris.append(content)
                         # Cache playlist content if not already fresh (cache-first, 1 API call max)
                         self.spotifyHandler.cache_playlist_by_id(media_parts[2])
+                        cached = self.dbHandler.get_playlist_track_uris(media_parts[2])
+                        if cached:
+                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
+                        else:
+                            tracklist_uris.append(content)  # fallback: raw URI, Mopidy resolves the whole playlist
                     else:
                         tracklist_uris.append(content)
 
@@ -1543,6 +1565,49 @@ class O2mToMopidy:
         if len(result) < n:
             result += self._weighted_sample(rest, pop, k, n - len(result))
         return result
+
+    def _expand_pick(self, uris, n, energy, valence, discover_level):
+        """FILTER (not reorder) a tapped object's cached tracks (album/playlist/
+        artist) by mood+popularity, proportionally to discover_level. The returned
+        subset keeps the SOURCE ORDER — sequencing stays the job of box.option_sort.
+
+        DL=0  → no filtering: keep all (capped at n), source order untouched.
+        DL↑   → keep fewer tracks, retaining the best mood/popularity matches.
+
+        A track in the current mood window (energy/valence within radius) gets a
+        large bonus so on-mood tracks survive first; ties and the rest are ranked
+        by popularity. EXPAND_FILTER_MAX sets how aggressively high DL prunes."""
+        EXPAND_FILTER_MAX = 0.5  # at DL=10, keep ~50% of the natural slot count
+        if not uris:
+            return []
+        m = min(n, len(uris))
+        if discover_level <= 0 or energy is None or valence is None:
+            return list(uris[:m])
+
+        feat, pop = {}, {}
+        try:
+            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity)
+                          .where(Track.uri << list(uris)).namedtuples()):
+                if t.energy is not None and t.valence is not None:
+                    feat[t.uri] = (t.energy, t.valence)
+                if t.popularity is not None:
+                    pop[t.uri] = t.popularity
+        except Exception as e:
+            print(f"_expand_pick lookup error: {e}")
+            return list(uris[:m])
+
+        radius = discover_level / 20.0 + 0.05
+
+        def score(u):
+            s = pop.get(u, 0.5)
+            f = feat.get(u)
+            if f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius:
+                s += 1.0  # on-mood bonus dominates popularity
+            return s
+
+        keep_count = max(1, int(round(m * (1.0 - EXPAND_FILTER_MAX * discover_level / 10.0))))
+        best = set(sorted(uris, key=score, reverse=True)[:keep_count])
+        return [u for u in uris if u in best]  # source order preserved
 
     def _weighted_sample(self, uris, pop, k, n, default=0.5):
         """Sample up to n uris without replacement, weighted by popularity**k.
