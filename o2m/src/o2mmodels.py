@@ -125,6 +125,7 @@ class Track(BaseModel):
     mood = TextField(null=True)          # Last.fm mood: calm/energetic/dark/happy
     energy = FloatField(null=True)       # 0.0 (calm/sleep) → 1.0 (intense/metal)
     valence = FloatField(null=True)      # 0.0 (dark/sad) → 1.0 (joyful/euphoric)
+    popularity = FloatField(null=True)   # composite popularity score [0,1], recomputed in batch (stats_v2)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -470,7 +471,11 @@ def _migration_v10(migrator):
             print(f"migration_v10 {table}: {e}")
 
 
-SCHEMA_VERSION = 10
+def _migration_v11(migrator):
+    _add_column_safe(migrator, 'track', 'popularity', FloatField(null=True))
+
+
+SCHEMA_VERSION = 11
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -483,6 +488,7 @@ _MIGRATIONS = [
     (8, "tagfeature_table", _migration_v8),
     (9, "box_energy_valence_options", _migration_v9),
     (10, "option_type_normal_to_library", _migration_v10),
+    (11, "track_popularity_column", _migration_v11),
 ]
 
 

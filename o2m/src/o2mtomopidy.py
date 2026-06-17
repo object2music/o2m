@@ -629,7 +629,7 @@ class O2mToMopidy:
             if base_counts.get('common', 0) > 0:
                 print(f"\nAUTO : Common {base_counts['common']} tracks\n")
                 common = self.get_common_tracks(datetime.datetime.now().hour,window,_pool(base_counts['common']))
-                common = self._mood_pick(common, base_counts['common'], energy, valence, radius)
+                common = self._mood_pick(common, base_counts['common'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, common, base_counts['common'], "library","o2m:history")
 
             #Incoming
@@ -638,7 +638,7 @@ class O2mToMopidy:
                 box1 = self.dbHandler.get_box_by_option_type('incoming')
                 library_link = self.get_spotify_playlist_from_box(box1)
                 incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']))
-                incoming = self._mood_pick(incoming, base_counts['incoming'], energy, valence, radius)
+                incoming = self._mood_pick(incoming, base_counts['incoming'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, incoming, base_counts['incoming'], "incoming",library_link)
 
             #Favorites
@@ -648,13 +648,13 @@ class O2mToMopidy:
                 #Using spotify favs
                 if self.username !=None:
                     fav = self.spotifyHandler.get_library_favorite_tracks(_pool(base_counts['favorites']))
-                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius)
+                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius, discover_level)
                     library_link = 'o2m:favorites'
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #Using specific playlist (normaly elif)
                 if box1 != None:
                     fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']))
-                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius)
+                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius, discover_level)
                     library_link = self.get_spotify_playlist_from_box(box1)
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #if fav != None: self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
@@ -671,12 +671,12 @@ class O2mToMopidy:
                 if (random.choice([1,2])) == 1:
                     print(f"\nAUTO : Albums {base_counts['albums_artists']} tracks\n")
                     aa = self.spotifyHandler.get_my_albums_tracks(_pool(base_counts['albums_artists']),discover_level)
-                    aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius)
+                    aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius, discover_level)
                     self.add_tracks(active_box, aa, base_counts['albums_artists'], "library","spotify:album")
                 else:
                     print(f"\nAUTO : Artists {base_counts['albums_artists']} tracks\n")
                     aa = self.spotifyHandler.get_my_artists_tracks(_pool(base_counts['albums_artists']),discover_level)
-                    aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius)
+                    aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius, discover_level)
                     self.add_tracks(active_box, aa, base_counts['albums_artists'], "library","spotify:artist")
 
             #Playlists
@@ -684,7 +684,7 @@ class O2mToMopidy:
                 pl_tracks,lib_link = self.spotifyHandler.get_playlists_tracks(_pool(base_counts['playlists']),discover_level)
                 # Mood-bias the playlist pool while keeping each uri paired with its library link
                 link_by_uri = dict(zip(pl_tracks, lib_link))
-                pl_tracks = self._mood_pick(pl_tracks, base_counts['playlists'], energy, valence, radius)
+                pl_tracks = self._mood_pick(pl_tracks, base_counts['playlists'], energy, valence, radius, discover_level)
                 print(f"\nAUTO : Playlist {base_counts['playlists']} tracks and {len(pl_tracks)} size \n")
                 for u in pl_tracks:
                     self.add_tracks(active_box, uris=[u], max_results=1, force_option_type="library", library_link=link_by_uri.get(u, ''))
@@ -694,7 +694,7 @@ class O2mToMopidy:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('new')
                 news = self.tracklistappend_box(box1,_pool(base_counts['news']))
-                news = self._mood_pick(news, base_counts['news'], energy, valence, radius)
+                news = self._mood_pick(news, base_counts['news'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, news, base_counts['news'], "new","o2m:new")
     
         except Exception as val_e: 
@@ -1495,42 +1495,76 @@ class O2mToMopidy:
         if self.local and self.username == None : pattern = "local:local"
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)
 
-    def _mood_pick(self, uris, n, energy, valence, radius):
-        """Bias a candidate list towards (energy, valence) without ever dropping tracks.
+    def _mood_pick(self, uris, n, energy, valence, radius, discover_level=5):
+        """Bias a candidate list towards (energy, valence) AND track popularity.
 
-        Tracks whose energy/valence are known AND within the radius come first
-        (shuffled); the remaining slots are filled with the rest (NULL values or
-        out-of-radius) preserving their order. So when the radius is wide (high
-        discover level, central target) we effectively cover everything, and
-        tracks without mood data are kept as fallback rather than excluded.
+        Two orthogonal axes, both modulated by discover_level, without ever
+        dropping tracks:
+          - mood: tracks whose energy/valence are known AND within `radius` of the
+            target come first; the rest (NULL or out-of-radius) are fallback.
+          - popularity: within each group, tracks are drawn weighted by their
+            popularity score raised to a temperature k(DL). Low DL sharpens toward
+            popular/comfort tracks; high DL flattens toward uniform discovery.
+
+        Before the first popularity recompute (all scores NULL) the weights are
+        uniform, so behaviour is identical to the previous random shuffle.
         """
         if not uris:
             return []
         n = min(n, len(uris))
-        if energy is None or valence is None:
-            return uris[:n]
-        # Fetch known energy/valence for this batch in a single query
-        feat = {}
+        # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1 (proportional), DL=10 → 0 (uniform)
+        k = max(0.0, (10 - discover_level) / 5.0)
+
+        # Single query for energy/valence + popularity over the batch
+        feat, pop = {}, {}
         try:
-            for t in (Track.select(Track.uri, Track.energy, Track.valence)
+            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity)
                           .where(Track.uri << list(uris)).namedtuples()):
                 if t.energy is not None and t.valence is not None:
                     feat[t.uri] = (t.energy, t.valence)
+                if t.popularity is not None:
+                    pop[t.uri] = t.popularity
         except Exception as e:
             print(f"_mood_pick lookup error: {e}")
             return uris[:n]
-        in_range, rest = [], []
-        for u in uris:
-            f = feat.get(u)
-            if f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius:
-                in_range.append(u)
-            else:
-                rest.append(u)
-        random.shuffle(in_range)
-        result = in_range[:n]
+
+        if energy is None or valence is None:
+            in_range, rest = list(uris), []
+        else:
+            in_range, rest = [], []
+            for u in uris:
+                f = feat.get(u)
+                if f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius:
+                    in_range.append(u)
+                else:
+                    rest.append(u)
+
+        result = self._weighted_sample(in_range, pop, k, n)
         if len(result) < n:
-            result += rest[:n - len(result)]
+            result += self._weighted_sample(rest, pop, k, n - len(result))
         return result
+
+    def _weighted_sample(self, uris, pop, k, n, default=0.5):
+        """Sample up to n uris without replacement, weighted by popularity**k.
+
+        Uses the Efraimidis-Spirakis A-Res method (key = rand**(1/weight), keep
+        the largest keys). NULL/unscored tracks fall back to `default` so they
+        still participate. k<=0 degrades to a plain shuffle (uniform)."""
+        n = min(n, len(uris))
+        if n <= 0:
+            return []
+        if k <= 0:
+            pool = list(uris)
+            random.shuffle(pool)
+            return pool[:n]
+        keyed = []
+        for u in uris:
+            w = pop.get(u, default) ** k
+            if w <= 0:
+                w = 1e-9
+            keyed.append((random.random() ** (1.0 / w), u))
+        keyed.sort(reverse=True)
+        return [u for _, u in keyed[:n]]
 
     def get_new_tracks_notread(self, limit):
         return self.dbHandler.get_uris_new_notread(limit)

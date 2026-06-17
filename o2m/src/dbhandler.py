@@ -227,6 +227,69 @@ class DatabaseHandler():
         #results = self.transform_query_to_list(query)
         return query
 
+    # ── Popularity score (stats_v2) ──────────────────────────────────────────────
+    def get_completion_prior(self):
+        """Cohort completion mean over *played* tracks (read_count_end >= 1).
+
+        Used as the Bayesian prior in the popularity score. Restricting to played
+        tracks avoids the 0.5-default contamination from never-played tracks, which
+        otherwise drags the global AVG(read_end) toward the median."""
+        try:
+            val = (Track.select(fn.AVG(Track.read_end))
+                   .where(Track.read_count_end >= 1).scalar())
+            return float(val) if val is not None else None
+        except Exception as e:
+            print(f"get_completion_prior error: {e}")
+            return None
+
+    def recompute_popularity(self, chunk_size=500):
+        """Recompute Track.popularity for every track and persist it in batch.
+
+        Pure scoring lives in src.popularity; this method only wires the cohort
+        prior, iterates the table and bulk-updates rows whose score changed.
+        Non-music content (podcasts/infos/radios) is left unscored (NULL).
+        Returns the number of tracks updated. Cheap enough to run on demand or
+        on a periodic TTL."""
+        from src.popularity import compute_popularity, is_scorable, DEFAULT_PRIOR_COMPLETION
+        prior = self.get_completion_prior() or DEFAULT_PRIOR_COMPLETION
+        now = datetime.datetime.utcnow()
+        updated = 0
+        batch = []
+
+        def _flush(rows):
+            if not rows:
+                return 0
+            try:
+                Track.bulk_update(rows, fields=[Track.popularity])
+                return len(rows)
+            except Exception as e:
+                print(f"recompute_popularity flush error: {e}")
+                return 0
+
+        for t in Track.select():
+            if is_scorable(t.uri, t.option_type):
+                new = round(compute_popularity(
+                    t.read_end, t.read_count, t.read_count_end, t.skipped_count,
+                    last_read_date=t.last_read_date, liked=t.liked,
+                    option_type=t.option_type, prior_completion=prior, now=now), 4)
+            else:
+                new = None  # non-music: leave unscored
+            # Only persist rows whose score actually changed (cheap re-runs).
+            if new != t.popularity:
+                t.popularity = new
+                batch.append(t)
+            if len(batch) >= chunk_size:
+                updated += _flush(batch)
+                batch = []
+        updated += _flush(batch)
+
+        try:
+            self.set_cache_meta('popularity_at', updated or 1)
+        except Exception:
+            pass
+        print(f"recompute_popularity: {updated} tracks scored (prior={round(prior, 3)})")
+        return updated
+
     #STATS_RAW
     def clear_lasthour_stats_raw(self):
         one_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)

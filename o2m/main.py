@@ -530,6 +530,19 @@ if __name__ == "__main__":
         from flask import jsonify
         return jsonify({'status': 'started', 'tracks_pending': pending})
 
+    @api.route('/api/recompute_popularity')
+    def api_recompute_popularity():
+        """Recompute the composite popularity score for all tracks (background, stats_v2)."""
+        import threading
+        from flask import jsonify
+        def _run():
+            try:
+                o2mHandler.dbHandler.recompute_popularity()
+            except Exception as e:
+                print(f"api_recompute_popularity error: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+        return jsonify({'status': 'started'})
+
     @api.route('/api/track_tags')
     def api_track_tags():
         from flask import jsonify
