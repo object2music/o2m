@@ -44,6 +44,15 @@ if __name__ == "__main__":
     api=create_api()
     api.app_context().push()
 
+    # Silence noisy Werkzeug access logs for high-frequency polling endpoints
+    # (status badges / track features) so the logs stay readable. Extend the list as needed.
+    _SILENCED_LOG_PATHS = ('/api/track_features', '/api/track_status')
+    class _SilencePollingFilter(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            return not any(p in msg for p in _SILENCED_LOG_PATHS)
+    logging.getLogger('werkzeug').addFilter(_SilencePollingFilter())
+
     while True:
         strer = 1
         try:
