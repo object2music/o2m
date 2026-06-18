@@ -549,6 +549,20 @@ if __name__ == "__main__":
         threading.Thread(target=_run, daemon=True).start()
         return jsonify({'status': 'started'})
 
+    @api.route('/api/expand_pick_mode')
+    def api_expand_pick_mode():
+        """Get or set the _expand_pick selection variant (A/B testing, in-memory).
+        ?mode=hybrid|weighted|topm sets it; no arg returns the current value."""
+        from flask import jsonify
+        valid = ('hybrid', 'weighted', 'topm')
+        mode = request.args.get('mode')
+        if mode:
+            if mode not in valid:
+                return jsonify({'error': 'invalid mode', 'valid': list(valid)}), 400
+            o2mHandler.expand_pick_mode = mode
+        return jsonify({'mode': getattr(o2mHandler, 'expand_pick_mode', 'hybrid'),
+                        'valid': list(valid)})
+
     @api.route('/api/track_tags')
     def api_track_tags():
         from flask import jsonify

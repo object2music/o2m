@@ -31,6 +31,7 @@ class O2mToMopidy:
     discover_level = 5  # 0-10
     podcast_newest_first = False
     option_sort = "desc"
+    expand_pick_mode = "hybrid"  # _expand_pick variant: hybrid (V2) | weighted (V1) | topm (V0)
 
     avg_stats = {}
 
@@ -1611,19 +1612,20 @@ class O2mToMopidy:
 
     def _expand_pick(self, uris, n, energy, valence, discover_level):
         """FILTER (not reorder) a tapped object's cached tracks (album/playlist/
-        artist) by mood+popularity. Always fills up to n slots (max_results) when
-        the pool allows — DL changes WHICH tracks are kept, never how many. The
-        returned subset keeps the SOURCE ORDER (sequencing stays box.option_sort's
-        job). The count only drops below n when the source itself has fewer tracks
-        (e.g. a short album).
+        artist) by mood+popularity. Fills up to n slots (max_results); DL changes
+        WHICH tracks are kept, never how many. The returned subset keeps the SOURCE
+        ORDER (sequencing stays box.option_sort's job). Count drops below n only
+        when the source has fewer tracks (short album).
 
-        DL=0  → keep the first n in source order (object played faithfully).
-        DL↑   → keep the best n by mood/popularity (a wider mood window admits more
-                candidates), dropping weaker tracks in favour of better matches
-                drawn from deeper in the source.
+        DL=0 → first n in source order (object played faithfully). DL↑ → curated.
 
-        A track in the current mood window (energy/valence within radius) gets a
-        large bonus so on-mood tracks rank first; ties and the rest go by popularity."""
+        Selection mode is self.expand_pick_mode (runtime-switchable for A/B testing):
+          - 'topm'     V0: deterministic top-m by pop + mood bonus (pure exploit).
+          - 'weighted' V1: temperature-weighted sample (pop**k, k=(10-DL)/5) in the
+                       mood window — popularity bias fades as DL rises.
+          - 'hybrid'   V2 (default): n*(1-DL/10) exploit (top pop) + n*DL/10 explore
+                       (random from the rest) — strongest, most intuitive risk dial.
+        """
         if not uris:
             return []
         m = min(n, len(uris))
@@ -1643,17 +1645,41 @@ class O2mToMopidy:
             return list(uris[:m])
 
         radius = discover_level / 20.0 + 0.05
+        mode = getattr(self, 'expand_pick_mode', 'hybrid')
+
+        def in_mood(u):
+            f = feat.get(u)
+            return f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius
 
         def score(u):
-            s = pop.get(u, 0.5)
-            f = feat.get(u)
-            if f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius:
-                s += 1.0  # on-mood bonus dominates popularity
-            return s
+            return pop.get(u, 0.5) + (1.0 if in_mood(u) else 0.0)
 
-        # Fill all available slots: keep the best m, never prune below max_results.
-        best = set(sorted(uris, key=score, reverse=True)[:m])
-        return [u for u in uris if u in best]  # source order preserved
+        if mode == 'topm':
+            sel = sorted(uris, key=score, reverse=True)[:m]
+        elif mode == 'weighted':
+            k = max(0.0, (10 - discover_level) / 5.0)
+            in_r = [u for u in uris if in_mood(u)]
+            s = set(in_r)
+            rest = [u for u in uris if u not in s]
+            sel = self._weighted_sample(in_r, pop, k, m)
+            if len(sel) < m:
+                sel += self._weighted_sample(rest, pop, k, m - len(sel))
+        else:  # 'hybrid' (default)
+            n_explore = int(round(m * discover_level / 10.0))
+            ranked = sorted(uris, key=score, reverse=True)
+            exploit = ranked[:m - n_explore]
+            remaining = ranked[m - n_explore:]
+            random.shuffle(remaining)
+            sel = exploit + remaining[:n_explore]
+
+        sel_set = set(sel)
+        try:
+            ps = [pop.get(u, 0.5) for u in sel_set]
+            print(f"_expand_pick[{mode}] DL={discover_level} pool={len(uris)} "
+                  f"-> {len(sel_set)} tracks, avg_pop={round(sum(ps)/len(ps), 3) if ps else 0}")
+        except Exception:
+            pass
+        return [u for u in uris if u in sel_set]  # source order preserved
 
     def _weighted_sample(self, uris, pop, k, n, default=0.5):
         """Sample up to n uris without replacement, weighted by popularity**k.
