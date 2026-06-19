@@ -1669,8 +1669,14 @@ class O2mToMopidy:
             ranked = sorted(uris, key=score, reverse=True)
             exploit = ranked[:m - n_explore]
             remaining = ranked[m - n_explore:]
-            random.shuffle(remaining)
-            sel = exploit + remaining[:n_explore]
+            # Explore lesser-known tracks, but prefer ones that carry mood features
+            # so they stay plottable on the matrix (and are on-vibe deep cuts rather
+            # than data-less dregs). Feature-less tracks only fill leftover slots.
+            feat_rest = [u for u in remaining if u in feat]
+            bare_rest = [u for u in remaining if u not in feat]
+            random.shuffle(feat_rest)
+            random.shuffle(bare_rest)
+            sel = exploit + (feat_rest + bare_rest)[:n_explore]
 
         sel_set = set(sel)
         try:
