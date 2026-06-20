@@ -1577,22 +1577,32 @@ class O2mToMopidy:
         """
         if not uris:
             return []
-        n = min(n, len(uris))
         # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1 (proportional), DL=10 → 0 (uniform)
         k = max(0.0, (10 - discover_level) / 5.0)
 
-        # Single query for energy/valence + popularity over the batch
-        feat, pop = {}, {}
+        # Single query for energy/valence + popularity; drop hidden/trash from the pool
+        # so explicitly rejected tracks never resurface.
+        feat, pop, excluded = {}, {}, set()
         try:
-            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity)
+            for t in (Track.select(Track.uri, Track.energy, Track.valence,
+                                   Track.popularity, Track.option_type)
                           .where(Track.uri << list(uris)).namedtuples()):
+                if t.option_type in ('hidden', 'trash'):
+                    excluded.add(t.uri)
+                    continue
                 if t.energy is not None and t.valence is not None:
                     feat[t.uri] = (t.energy, t.valence)
                 if t.popularity is not None:
                     pop[t.uri] = t.popularity
         except Exception as e:
             print(f"_mood_pick lookup error: {e}")
-            return uris[:n]
+            return uris[:min(n, len(uris))]
+
+        if excluded:
+            uris = [u for u in uris if u not in excluded]
+        if not uris:
+            return []
+        n = min(n, len(uris))
 
         if energy is None or valence is None:
             in_range, rest = list(uris), []
@@ -1633,20 +1643,31 @@ class O2mToMopidy:
         """
         if not uris:
             return []
-        m = min(n, len(uris))
-        if discover_level <= 0 or energy is None or valence is None:
-            return list(uris[:m])
-
-        feat, pop = {}, {}
+        # Pull mood/popularity/option_type and drop hidden/trash up front, so
+        # explicitly rejected tracks never resurface — even at DL=0 (source order)
+        # or via high-DL exploration (which samples the bottom of the ranking).
+        feat, pop, excluded = {}, {}, set()
         try:
-            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity)
+            for t in (Track.select(Track.uri, Track.energy, Track.valence,
+                                   Track.popularity, Track.option_type)
                           .where(Track.uri << list(uris)).namedtuples()):
+                if t.option_type in ('hidden', 'trash'):
+                    excluded.add(t.uri)
+                    continue
                 if t.energy is not None and t.valence is not None:
                     feat[t.uri] = (t.energy, t.valence)
                 if t.popularity is not None:
                     pop[t.uri] = t.popularity
         except Exception as e:
             print(f"_expand_pick lookup error: {e}")
+            return list(uris[:min(n, len(uris))])
+
+        if excluded:
+            uris = [u for u in uris if u not in excluded]
+        if not uris:
+            return []
+        m = min(n, len(uris))
+        if discover_level <= 0 or energy is None or valence is None:
             return list(uris[:m])
 
         radius = discover_level / 20.0 + 0.05
