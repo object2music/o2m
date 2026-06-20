@@ -834,15 +834,18 @@ if __name__ == "__main__":
         # the snap_* URLs so the client hides the Snapcast button.
         audio_output = os.environ.get('AUDIO_OUTPUT', '').lower()
         snap_enabled = ('snapfifo' in audio_output) or ('snapcast' in audio_output)
+        # Same env var the Iris sidebar uses (mopidy/entrypoint.sh O2M_BACKOFFICE_URI),
+        # so the mood UI's footer link stays in sync with whatever this instance points to.
+        backoffice_url = os.environ.get('O2M_BACKOFFICE_URI') or None
         if req.headers.get('X-Forwarded-Proto', '') == 'https':
-            cfg = {'mopidy_ws_url': f'wss://{host}/mopidy/ws'}
+            cfg = {'mopidy_ws_url': f'wss://{host}/mopidy/ws', 'backoffice_url': backoffice_url}
             if snap_enabled:
                 cfg['snap_url']    = f'https://{host}/snapcast'
                 cfg['snap_ws_url'] = f'wss://{host}/snapcast'
             return jsonify(cfg)
         snap_port = os.environ.get('PORT_SNAPSERVER_HTTP', '6693')
         mopidy_port = os.environ.get('PORT_MOPIDY', '6680')
-        cfg = {'mopidy_ws_url': f'ws://{host}:{mopidy_port}/mopidy/ws'}
+        cfg = {'mopidy_ws_url': f'ws://{host}:{mopidy_port}/mopidy/ws', 'backoffice_url': backoffice_url}
         if snap_enabled:
             cfg['snap_url']    = f'http://{host}:{snap_port}'
             cfg['snap_ws_url'] = f'ws://{host}:{snap_port}'

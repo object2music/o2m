@@ -652,15 +652,21 @@
 
   /* ── Footer links ── */
   #footer-links {
+    position: relative;
     padding: 7px 14px; padding-bottom: max(7px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
   }
   /* Order: brand · styles (themes) · nav buttons all on the LEFT; the 3 warmups are
-     grouped and glued to the RIGHT (margin-left:auto absorbs the free space). */
+     grouped and glued to the RIGHT (margin-left:auto absorbs the free space).
+     .footer-extra wraps "Clear last hour" + the warmups group; display:contents on
+     desktop/mobile keeps them as plain flex children of #footer-links (no visual
+     change) — only the tablet breakpoint below turns it into a collapsible panel. */
   #footer-links .tb-brand       { order: 0; }
   #footer-links #theme-switcher { order: 1; margin-left: 0; }
   #footer-links .footer-link    { order: 2; }
+  #footer-links .footer-extra   { display: contents; }
+  #footer-links .footer-more-toggle { display: none; }
   #footer-links .footer-warmups { order: 3; margin-left: auto; display: flex; align-items: center; gap: 7px; }
   #footer-links .footer-pick { display: inline-flex; align-items: center; gap: 5px; opacity: .85; }
   #footer-links .footer-pick svg { width: 15px; height: 15px; }
@@ -675,6 +681,24 @@
     #footer-links::-webkit-scrollbar { display: none; }
     #footer-links > * { flex-shrink: 0; }
     #footer-links #theme-switcher { margin-left: 0; }
+  }
+  /* Tablet: too many items to fit (or wrap) gracefully on one line → fold the
+     secondary actions (Clear last hour, pick-mode, warmups) into a "More" dropdown
+     so the bar stays a single row. */
+  @media (min-width: 700px) and (max-width: 1024px) {
+    #footer-links { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+    #footer-links > * { flex-shrink: 0; }
+    #footer-links .footer-more-toggle { display: inline-flex; order: 3; margin-left: auto; }
+    #footer-links .footer-extra { display: none; }
+    #footer-links .footer-extra.open {
+      display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+      position: absolute; right: 14px; bottom: 100%; margin-bottom: 7px;
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 10px; min-width: 220px; z-index: 50;
+    }
+    #footer-links .footer-extra.open .footer-warmups {
+      margin-left: 0; flex-direction: column; align-items: stretch; gap: 8px;
+    }
   }
   .footer-link {
     font-size: 11px; color: var(--muted); text-decoration: none;
@@ -1191,20 +1215,24 @@
     <a class="footer-link" href="/iris/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>Iris</a>
     <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
     <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
-    <button class="footer-link" onclick="clearLastHour(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Clear last hour</button>
+    <a class="footer-link" id="footer-backoffice" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>Backoffice</a>
     <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
-    <div class="footer-warmups">
-      <label class="footer-pick" title="Tapped object filter variant (A/B test)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-        <select id="pick-mode" onchange="setPickMode(this.value)">
-          <option value="hybrid">Pick: Hybrid</option>
-          <option value="weighted">Pick: Weighted</option>
-          <option value="topm">Pick: Top-m</option>
-        </select>
-      </label>
-      <button class="footer-link" onclick="triggerWarmup('moods')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Warmup moods</button>
-      <button class="footer-link" onclick="triggerWarmup('genres')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Warmup genres</button>
-      <button class="footer-link" onclick="triggerWarmup('retry_sentinels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Warmup retry</button>
+    <button class="footer-link footer-more-toggle" id="footer-more-toggle" title="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>More</button>
+    <div class="footer-extra" id="footer-extra">
+      <button class="footer-link" onclick="clearLastHour(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Clear last hour</button>
+      <div class="footer-warmups">
+        <label class="footer-pick" title="Tapped object filter variant (A/B test)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          <select id="pick-mode" onchange="setPickMode(this.value)">
+            <option value="hybrid">Pick: Hybrid</option>
+            <option value="weighted">Pick: Weighted</option>
+            <option value="topm">Pick: Top-m</option>
+          </select>
+        </label>
+        <button class="footer-link" onclick="triggerWarmup('moods')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Warmup moods</button>
+        <button class="footer-link" onclick="triggerWarmup('genres')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Warmup genres</button>
+        <button class="footer-link" onclick="triggerWarmup('retry_sentinels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Warmup retry</button>
+      </div>
     </div>
   </div>
 
@@ -1237,6 +1265,7 @@ let lastScrolledTlid = null;
 let currentTracklistLength = 0;
 let snapWsUrl = null;
 let snapPlayer = null;
+let backofficeUrl = null;
 
 /* Mode mood/auto : un changement de réglage rafraîchit le mix en direct
    - autoToggle      : interrupteur manuel "Auto" (persisté)
@@ -2562,9 +2591,9 @@ function toggleSnapcast() {
 
 function autoConnectSnapIfNeeded() {
   const pref = localStorage.getItem('snap-autoconnect');
-  // Mobile: auto-connect. Desktop: only restore the last local state
-  // ('1' = was connected → reconnect; '0'/null = stay off).
-  const shouldConnect = isMobileDevice() || pref === '1';
+  // Phone: auto-connect (it's the designated speaker). Tablet/desktop: only
+  // restore the last local state ('1' = was connected → reconnect; '0'/null = stay off).
+  const shouldConnect = isPhoneDevice() || pref === '1';
   if (!shouldConnect || !snapWsUrl) return;
   // Connect on the first user gesture (browsers require it for AudioContext).
   // Don't use {once}: if the SnapStream bundle isn't loaded yet, _snapStart() is a
@@ -2580,21 +2609,21 @@ function autoConnectSnapIfNeeded() {
   document.addEventListener('touchstart', onGesture, { passive: true });
 }
 
-/* Mobile : lance le box par défaut si configuré (comme o2m.js / Iris sur smartphone) */
-function isMobileDevice() {
-  return (window.matchMedia && window.matchMedia('(max-width: 768px)').matches)
-       || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
-}
-/* Téléphone uniquement (exclut tablette + desktop). Astuce UA : les téléphones
-   Android ont "Mobile" dans l'UA, pas les tablettes ; iPad n'a pas iPhone/iPod. */
+/* Téléphone uniquement (exclut tablette + desktop) — utilisé pour tout ce qui
+   doit rester "tablette ne fait rien d'auto" (auto-connect Snapcast, auto-lecture).
+   Astuce UA : iPad se déclare "iPad" et n'a jamais iPhone/iPod dans l'UA. Certaines
+   petites tablettes Android (≤ 7-8") gardent "Mobile" dans l'UA même si ce n'est pas
+   un téléphone : on confirme donc toujours avec la taille d'écran (≤ 600px de petit
+   côté) plutôt que de se fier à "Mobile" seul. */
 function isPhoneDevice() {
   const ua = navigator.userAgent;
+  const minSide = Math.min(window.screen?.width || 9999, window.screen?.height || 9999);
+  if (/iPad/.test(ua)) return false;
   if (/iPhone|iPod/.test(ua)) return true;
-  if (/Android/.test(ua) && /Mobile/.test(ua)) return true;
+  if (/Android/.test(ua) && /Mobile/.test(ua)) return minSide <= 600;
   if (/Windows Phone|BlackBerry|Opera Mini|IEMobile/.test(ua)) return true;
   // Repli : écran tactile avec petit côté ≤ 480px (téléphone), exclut tablettes/desktop
   const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-  const minSide = Math.min(window.screen?.width || 9999, window.screen?.height || 9999);
   return touch && minSide <= 480;
 }
 function autoInitPlaybackIfPhone() {
@@ -2611,7 +2640,7 @@ function autoInitPlaybackIfPhone() {
    satisfies the browser's user-gesture requirement (more robust than catching a
    random click). On tap: unlock Web Audio, connect Snapcast, start playback. */
 function showAudioTapOverlay() {
-  if (!isMobileDevice() || !snapWsUrl) return;          // only when the browser is the speaker (Snapcast)
+  if (!isPhoneDevice() || !snapWsUrl) return;           // only when the browser is the speaker (Snapcast)
   if (document.getElementById('audio-tap-overlay')) return;
   const ov = document.createElement('div');
   ov.id = 'audio-tap-overlay';
@@ -2764,6 +2793,21 @@ async function init() {
     document.getElementById('top-zone')?.classList.toggle('cover-lit'));
   document.getElementById('btn-snapcast')?.addEventListener('click', toggleSnapcast);
   document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+  // Tablet "More" dropdown (Clear last hour / pick-mode / warmups folded out of the
+  // single-line footer — see the (min-width:700px) and (max-width:1024px) CSS rule).
+  document.getElementById('footer-more-toggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const extra = document.getElementById('footer-extra');
+    const open = extra?.classList.toggle('open');
+    document.getElementById('footer-more-toggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  document.addEventListener('click', (e) => {
+    const extra = document.getElementById('footer-extra');
+    if (extra?.classList.contains('open') && !extra.contains(e.target) && e.target.id !== 'footer-more-toggle') {
+      extra.classList.remove('open');
+      document.getElementById('footer-more-toggle')?.setAttribute('aria-expanded', 'false');
+    }
+  });
   autoToggle = localStorage.getItem('mood-auto') === '1';
   document.getElementById('btn-auto')?.addEventListener('click', () => setAutoToggle(!autoToggle));
   updateAutoBtn();
@@ -2775,9 +2819,13 @@ async function init() {
     const cfg = await fetch(API + '/client_config').then(r => r.json());
     snapWsUrl = cfg.snap_ws_url || null;
     mopidyWsUrl = cfg.mopidy_ws_url || null;
+    backofficeUrl = cfg.backoffice_url || null;
   } catch(e) {}
   // Pas de bouton Snapcast si non configuré côté serveur (.env)
   if (!snapWsUrl) { document.getElementById('btn-snapcast')?.remove(); }
+  const backofficeLink = document.getElementById('footer-backoffice');
+  if (backofficeUrl) { backofficeLink.href = backofficeUrl; }
+  else { backofficeLink?.remove(); }
   connectMopidyWS();   // real-time + RPC over WebSocket (automatic HTTP fallback)
 
   try {
@@ -2819,7 +2867,7 @@ async function init() {
   setInterval(tickProgress, 250);          // local display, NO network
   // Mobile with Snapcast → "tap to start audio" splash (handles the gesture, snap
   // connect and playback). Otherwise: desktop snap-state restore + phone auto-init.
-  if (isMobileDevice() && snapWsUrl) {
+  if (isPhoneDevice() && snapWsUrl) {
     showAudioTapOverlay();
   } else {
     autoConnectSnapIfNeeded();

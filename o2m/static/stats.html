@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -25,6 +25,7 @@
     font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
     color: var(--muted); margin-bottom: 12px;
   }
+  .section-note { font-size: 11px; color: var(--muted); margin: -6px 0 12px; }
   .card {
     background: var(--surface); border-radius: 10px; padding: 16px;
     border: 1px solid var(--border);
@@ -35,6 +36,21 @@
 
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 500px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Comparative table */
+  .table-scroll { overflow-x: auto; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 640px; }
+  table.cmp th, table.cmp td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
+  table.cmp thead th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  table.cmp tbody td { border-bottom: 1px solid var(--border); }
+  table.cmp tbody tr:last-child td { border-bottom: none; }
+  table.cmp tr.totals td { font-weight: 700; border-top: 2px solid var(--border); color: var(--text); }
+  .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: baseline; }
+  .num-muted { color: var(--muted); }
 
   /* Mood bars */
   .mood-list { display: flex; flex-direction: column; gap: 10px; }
@@ -51,23 +67,65 @@
 <body>
 
 <h1>O2M Stats</h1>
-<p class="subtitle">Bibliothèque musicale &mdash; <a href="/mood">&#8592; Mood</a></p>
+<p class="subtitle">Music library &mdash; <a href="/mood">&#8592; Mood</a></p>
 
 <div id="error-msg"></div>
+
+<!-- 0. Library vs adjacent comparison -->
+<div class="section">
+  <div class="section-title">Library vs adjacent tracks</div>
+  <div class="section-note">
+    Library-side categories (library / favorites / incoming) are the tracks really kept in
+    albums &amp; playlists. <em>New</em> holds adjacent tracks fed by history and album/artist
+    warmups. Provenance is resolved as playlist&nbsp;&gt;&nbsp;album&nbsp;&gt;&nbsp;artist.
+  </div>
+  <div class="card table-scroll">
+    <table class="cmp" id="cmp-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Tracks</th>
+          <th>Popularity<br>(avg read_end)</th>
+          <th>Avg plays<br>(read_count)</th>
+          <th>Avg full<br>(read_count_end)</th>
+          <th>Avg skips</th>
+          <th>Liked</th>
+          <th>Mood</th>
+          <th>Provenance<br>(pl / al / ar)</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="9" style="color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 0b. Charts derived from the breakdown -->
+<div class="section">
+  <div class="two-col">
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Provenance by category (track count)</div>
+      <div class="chart-wrap"><canvas id="chart-provenance"></canvas></div>
+    </div>
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Popularity by category (avg read_end)</div>
+      <div class="chart-wrap"><canvas id="chart-popularity"></canvas></div>
+    </div>
+  </div>
+</div>
 
 <!-- 1. Mood tags -->
 <div class="section">
   <div class="section-title">Mood tags</div>
   <div class="card">
     <div class="mood-list" id="mood-list">
-      <div style="color:var(--muted);font-size:13px">Chargement…</div>
+      <div style="color:var(--muted);font-size:13px">Loading…</div>
     </div>
   </div>
 </div>
 
 <!-- 2. Scatter Energy × Valence -->
 <div class="section">
-  <div class="section-title">Matrice Energy &times; Valence</div>
+  <div class="section-title">Energy &times; Valence matrix</div>
   <div class="card chart-wide">
     <div class="chart-wrap">
       <canvas id="chart-scatter"></canvas>
@@ -77,7 +135,7 @@
 
 <!-- 3. Distribution read_end -->
 <div class="section">
-  <div class="section-title">Distribution taux de fin d&rsquo;écoute (read_end)</div>
+  <div class="section-title">Listen-completion rate distribution (read_end)</div>
   <div class="card">
     <div class="chart-wrap">
       <canvas id="chart-read-end"></canvas>
@@ -87,7 +145,7 @@
 
 <!-- 4. read_count + read_count_end -->
 <div class="section">
-  <div class="section-title">Distribution écoutes totales vs. complètes</div>
+  <div class="section-title">Total vs. complete plays distribution</div>
   <div class="two-col">
     <div class="card">
       <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">read_count</div>
@@ -100,9 +158,9 @@
   </div>
 </div>
 
-<!-- 5. last_read_date par mois -->
+<!-- 5. last_read_date by month -->
 <div class="section">
-  <div class="section-title">Dernières écoutes par mois (12 mois)</div>
+  <div class="section-title">Plays by month (last 12 months)</div>
   <div class="card chart-wide">
     <div class="chart-wrap">
       <canvas id="chart-last-read"></canvas>
@@ -125,18 +183,115 @@ const MOOD_COLORS = {
 
 const MOOD_LABELS = {
   calm: 'Calm', energetic: 'Energetic', dark: 'Dark',
-  happy: 'Happy', '_': 'Non classé', 'null': 'NULL', unknown: 'Unknown',
+  happy: 'Happy', '_': 'Unclassified', 'null': 'NULL', unknown: 'Unknown',
 };
 
-const CHART_DEFAULTS = {
-  color: '#eaeaea',
-  plugins: { legend: { labels: { color: '#eaeaea', font: { size: 11 } } } },
+/* ── Category metadata (breakdown) ── */
+const CAT_LABELS = {
+  library: 'Library', favorites: 'Favorites', incoming: 'Incoming',
+  new: 'New (adjacent)', hidden_trash: 'Hidden / Trash',
+  podcast_info: 'Podcast / Info', other: 'Other', all: 'All',
 };
+const CAT_COLORS = {
+  library: '#4caf50', favorites: '#e94560', incoming: '#ff9800',
+  new: '#4fc3f7', hidden_trash: '#607d8b', podcast_info: '#9c27b0',
+  other: '#795548', all: '#eaeaea',
+};
+const PROV_LABELS = { playlist: 'Playlist', album: 'Album', artist: 'Artist', unknown: 'Unknown' };
+const PROV_COLORS = { playlist: '#4fc3f7', album: '#7c4dff', artist: '#ffb300', unknown: '#455a64' };
 
 function showError(msg) {
   const el = document.getElementById('error-msg');
   el.textContent = msg;
   el.style.display = 'block';
+}
+
+const fmtPct = v => (v * 100).toFixed(0) + '%';
+const fmtInt = v => Number(v).toLocaleString();
+
+/* ── Comparative table ── */
+function renderBreakdownTable(data) {
+  const tbody = document.querySelector('#cmp-table tbody');
+  const rows = (data.categories || []).slice();
+  tbody.innerHTML = '';
+
+  const rowHtml = (r, isTotal) => {
+    const color = CAT_COLORS[r.category] || '#888';
+    const label = CAT_LABELS[r.category] || r.category;
+    const p = r.provenance || {};
+    const provStr = `${fmtInt(p.playlist || 0)} / ${fmtInt(p.album || 0)} / ${fmtInt(p.artist || 0)}`;
+    return `<tr class="${isTotal ? 'totals' : ''}">
+      <td><span class="cat-dot" style="background:${color}"></span>${label}</td>
+      <td>${fmtInt(r.count)}</td>
+      <td>${fmtPct(r.avg_read_end)}</td>
+      <td>${r.avg_read_count}</td>
+      <td>${r.avg_read_count_end}</td>
+      <td>${r.avg_skipped}</td>
+      <td>${fmtInt(r.liked)} <span class="num-muted">(${r.liked_pct}%)</span></td>
+      <td>${r.mood_pct}%</td>
+      <td class="num-muted">${provStr}</td>
+    </tr>`;
+  };
+
+  rows.forEach(r => { tbody.innerHTML += rowHtml(r, false); });
+  if (data.totals && data.totals.count) tbody.innerHTML += rowHtml(data.totals, true);
+}
+
+/* ── Provenance stacked bar (per category) ── */
+function renderProvenanceChart(data) {
+  const cats = data.categories || [];
+  const labels = cats.map(c => CAT_LABELS[c.category] || c.category);
+  const provKeys = ['playlist', 'album', 'artist', 'unknown'];
+  const datasets = provKeys.map(k => ({
+    label: PROV_LABELS[k],
+    data: cats.map(c => (c.provenance || {})[k] || 0),
+    backgroundColor: PROV_COLORS[k] + 'cc',
+    borderColor: PROV_COLORS[k],
+    borderWidth: 1,
+  }));
+  new Chart(document.getElementById('chart-provenance'), {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, animation: false,
+      plugins: { legend: { labels: { color: '#eaeaea', font: { size: 11 }, boxWidth: 10 } } },
+      scales: {
+        x: { stacked: true, ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' } },
+        y: { stacked: true, ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' },
+             title: { display: true, text: 'tracks', color: '#8892a4' } },
+      },
+    },
+  });
+}
+
+/* ── Popularity per category (avg read_end) ── */
+function renderPopularityChart(data) {
+  const cats = data.categories || [];
+  const labels = cats.map(c => CAT_LABELS[c.category] || c.category);
+  new Chart(document.getElementById('chart-popularity'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: cats.map(c => c.avg_read_end),
+        backgroundColor: cats.map(c => (CAT_COLORS[c.category] || '#888') + 'cc'),
+        borderColor: cats.map(c => CAT_COLORS[c.category] || '#888'),
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => 'read_end ' + (ctx.parsed.y * 100).toFixed(0) + '%' } },
+      },
+      scales: {
+        x: { ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' } },
+        y: { min: 0, max: 1, ticks: { color: '#8892a4', font: { size: 10 }, callback: v => (v * 100) + '%' },
+             grid: { color: '#ffffff12' } },
+      },
+    },
+  });
 }
 
 /* ── Mood bars ── */
@@ -249,7 +404,7 @@ function barChart(id, labels, data, color, xLabel) {
 function renderReadEnd(hist) {
   const labels = hist.map(b => `${Math.round(b[0] * 100)}%`);
   const data = hist.map(b => b[2]);
-  barChart('chart-read-end', labels, data, '#4fc3f7', 'Taux de fin d\'écoute');
+  barChart('chart-read-end', labels, data, '#4fc3f7', 'Listen-completion rate');
 }
 
 /* ── Count histograms ── */
@@ -299,10 +454,17 @@ async function init() {
   Chart.defaults.color = '#8892a4';
   Chart.defaults.borderColor = '#ffffff18';
   try {
-    const [moodData, trackData] = await Promise.all([
+    const [breakdown, moodData, trackData] = await Promise.all([
+      fetch(API + '/stats/breakdown').then(r => r.json()),
       fetch(API + '/stats/mood').then(r => r.json()),
       fetch(API + '/stats/tracks').then(r => r.json()),
     ]);
+
+    if (breakdown.categories && breakdown.categories.length > 0) {
+      renderBreakdownTable(breakdown);
+      renderProvenanceChart(breakdown);
+      renderPopularityChart(breakdown);
+    }
 
     renderMoodBars(moodData.mood_distribution || {});
     if (moodData.scatter && moodData.scatter.length > 0) {
@@ -322,7 +484,7 @@ async function init() {
       renderLastRead(trackData.last_read_hist);
     }
   } catch (e) {
-    showError('Erreur de chargement : ' + e.message);
+    showError('Loading error: ' + e.message);
   }
 }
 

@@ -1379,6 +1379,124 @@ class DatabaseHandler():
 
         return result
 
+    # Map every raw Track.option_type onto a display category bucket.
+    # Library-side (real tracks) vs adjacent/new vs sidelined vs media.
+    _STATS_CATEGORY_MAP = {
+        'library':     'library',
+        'normal':      'library',
+        'favorites':   'favorites',
+        'incoming':    'incoming',
+        'new':         'new',
+        '':            'new',
+        'new_mopidy':  'new',
+        'hidden':      'hidden_trash',
+        'trash':       'hidden_trash',
+        'podcast':     'podcast_info',
+        'info':        'podcast_info',
+    }
+    # Display order of categories in the comparative dashboard.
+    _STATS_CATEGORY_ORDER = [
+        'library', 'favorites', 'incoming', 'new', 'hidden_trash', 'podcast_info', 'other',
+    ]
+
+    def get_stats_breakdown(self):
+        """Comparative track stats split by option_type category and by provenance.
+
+        Library-side categories (library/favorites/incoming) hold the tracks really
+        kept in the user's albums & playlists; `new` holds the adjacent tracks fed by
+        history and album/artist warmups. For every category we expose popularity
+        (read_end), play counts (read_count / read_count_end), skips, liked & mood
+        fill rates, plus a provenance split (playlist > album > artist > unknown).
+        """
+        # One pass over `track`, grouped by (option_type, provenance). We aggregate
+        # SUM + COUNT (not AVG) so several option_types can be merged into one display
+        # bucket with correct weighted averages afterwards. Provenance priority:
+        #   playlist (in a PlaylistTrack) > album (album_id set) > artist (TrackArtist) > unknown.
+        # CASE / EXISTS are standard SQL → works on both MySQL and SQLite.
+        sql = """
+            SELECT t.option_type AS otype,
+                   CASE
+                     WHEN EXISTS (SELECT 1 FROM playlisttrack pt WHERE pt.track_uri = t.uri) THEN 'playlist'
+                     WHEN t.album_id IS NOT NULL AND t.album_id <> '' THEN 'album'
+                     WHEN EXISTS (SELECT 1 FROM trackartist ta WHERE ta.track_uri = t.uri) THEN 'artist'
+                     ELSE 'unknown'
+                   END AS prov,
+                   COUNT(*)                                                     AS cnt,
+                   SUM(t.read_end)                                              AS s_read_end,
+                   SUM(t.read_count)                                            AS s_read_count,
+                   SUM(t.read_count_end)                                        AS s_read_count_end,
+                   SUM(t.skipped_count)                                         AS s_skipped,
+                   SUM(CASE WHEN t.liked = 1 THEN 1 ELSE 0 END)                 AS n_liked,
+                   SUM(CASE WHEN t.mood IS NOT NULL AND t.mood <> '_' THEN 1 ELSE 0 END) AS n_mood
+            FROM track t
+            GROUP BY t.option_type, prov
+        """
+
+        # Accumulator per category bucket.
+        def _blank():
+            return {
+                'count': 0, 's_read_end': 0.0, 's_read_count': 0, 's_read_count_end': 0,
+                's_skipped': 0, 'liked': 0, 'mood_filled': 0,
+                'provenance': {'playlist': 0, 'album': 0, 'artist': 0, 'unknown': 0},
+            }
+
+        cats = {}
+        try:
+            for row in db.execute_sql(sql):
+                otype, prov, cnt = (row[0] or ''), row[1], int(row[2] or 0)
+                cat = self._STATS_CATEGORY_MAP.get(otype, 'other')
+                acc = cats.setdefault(cat, _blank())
+                acc['count']            += cnt
+                acc['s_read_end']       += float(row[3] or 0)
+                acc['s_read_count']     += int(row[4] or 0)
+                acc['s_read_count_end'] += int(row[5] or 0)
+                acc['s_skipped']        += int(row[6] or 0)
+                acc['liked']            += int(row[7] or 0)
+                acc['mood_filled']      += int(row[8] or 0)
+                if prov not in acc['provenance']:
+                    prov = 'unknown'
+                acc['provenance'][prov] += cnt
+        except Exception as e:
+            print(f"get_stats_breakdown error: {e}")
+            return {'categories': [], 'totals': {}}
+
+        def _finalize(cat, acc):
+            n = acc['count'] or 1
+            return {
+                'category':         cat,
+                'count':            acc['count'],
+                'avg_read_end':     round(acc['s_read_end'] / n, 3),
+                'avg_read_count':   round(acc['s_read_count'] / n, 2),
+                'avg_read_count_end': round(acc['s_read_count_end'] / n, 2),
+                'avg_skipped':      round(acc['s_skipped'] / n, 2),
+                'liked':            acc['liked'],
+                'liked_pct':        round(100 * acc['liked'] / n, 1),
+                'mood_filled':      acc['mood_filled'],
+                'mood_pct':         round(100 * acc['mood_filled'] / n, 1),
+                'provenance':       acc['provenance'],
+            }
+
+        categories = []
+        for cat in self._STATS_CATEGORY_ORDER:
+            if cat in cats:
+                categories.append(_finalize(cat, cats[cat]))
+        # Any unexpected bucket not in the predefined order.
+        for cat in cats:
+            if cat not in self._STATS_CATEGORY_ORDER:
+                categories.append(_finalize(cat, cats[cat]))
+
+        # Grand totals (all tracks combined).
+        grand = _blank()
+        for acc in cats.values():
+            for k in ('count', 's_read_end', 's_read_count', 's_read_count_end',
+                      's_skipped', 'liked', 'mood_filled'):
+                grand[k] += acc[k]
+            for p in grand['provenance']:
+                grand['provenance'][p] += acc['provenance'][p]
+        totals = _finalize('all', grand)
+
+        return {'categories': categories, 'totals': totals}
+
 
 if __name__ == "__main__":
 
