@@ -261,7 +261,7 @@ class DatabaseHandler():
         first_seen, pl_count = {}, {}
         try:
             for r in db.execute_sql("SELECT uri, MIN(read_date) FROM stats_raw "
-                                    "WHERE uri LIKE 'spotify:track:%' GROUP BY uri"):
+                                    "WHERE uri LIKE %s GROUP BY uri", ('spotify:track:%',)):
                 first_seen[r[0]] = r[1]
         except Exception as e:
             print(f"recompute_popularity first_seen error: {e}")
