@@ -1619,8 +1619,13 @@ class O2mToMopidy:
 
         DL=0 → first n in source order (object played faithfully). DL↑ → curated.
 
+        Popularity is the main driver; mood adds only a small bonus to tracks that
+        carry energy/valence within the target window. Tracks without mood data are
+        NEUTRAL (scored on popularity alone), never penalised — mood coverage is
+        still partial/uncertain, so it must not exclude the feature-less majority.
+
         Selection mode is self.expand_pick_mode (runtime-switchable for A/B testing):
-          - 'topm'     V0: deterministic top-m by pop + mood bonus (pure exploit).
+          - 'topm'     V0: deterministic top-m by pop + small mood bonus.
           - 'weighted' V1: temperature-weighted sample (pop**k, k=(10-DL)/5) in the
                        mood window — popularity bias fades as DL rises.
           - 'hybrid'   V2 (default): n*(1-DL/10) exploit (top pop) + n*DL/10 explore
@@ -1647,12 +1652,18 @@ class O2mToMopidy:
         radius = discover_level / 20.0 + 0.05
         mode = getattr(self, 'expand_pick_mode', 'hybrid')
 
+        # Mood is a SOFT bias on top of popularity, and only when the track actually
+        # carries energy/valence: an unknown mood is treated as NEUTRAL (no bonus, no
+        # penalty), never buried — popularity stays the main driver. Mood coverage is
+        # still incomplete/uncertain, so the bonus is intentionally small.
+        MOOD_BONUS = 0.15
+
         def in_mood(u):
             f = feat.get(u)
             return f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius
 
         def score(u):
-            return pop.get(u, 0.5) + (1.0 if in_mood(u) else 0.0)
+            return pop.get(u, 0.5) + (MOOD_BONUS if in_mood(u) else 0.0)
 
         if mode == 'topm':
             sel = sorted(uris, key=score, reverse=True)[:m]
@@ -1669,14 +1680,10 @@ class O2mToMopidy:
             ranked = sorted(uris, key=score, reverse=True)
             exploit = ranked[:m - n_explore]
             remaining = ranked[m - n_explore:]
-            # Explore lesser-known tracks, but prefer ones that carry mood features
-            # so they stay plottable on the matrix (and are on-vibe deep cuts rather
-            # than data-less dregs). Feature-less tracks only fill leftover slots.
-            feat_rest = [u for u in remaining if u in feat]
-            bare_rest = [u for u in remaining if u not in feat]
-            random.shuffle(feat_rest)
-            random.shuffle(bare_rest)
-            sel = exploit + (feat_rest + bare_rest)[:n_explore]
+            # Neutral exploration: random lesser-known tracks, no bias on whether
+            # they carry mood features (a feature-less track is unknown, not worse).
+            random.shuffle(remaining)
+            sel = exploit + remaining[:n_explore]
 
         sel_set = set(sel)
         try:
