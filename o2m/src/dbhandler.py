@@ -256,6 +256,22 @@ class DatabaseHandler():
         updated = 0
         batch = []
 
+        # Aux signals computed once (not per-row): first-play anchor (novelty) from
+        # stats_raw, and playlist-membership count (endorsement).
+        first_seen, pl_count = {}, {}
+        try:
+            for r in db.execute_sql("SELECT uri, MIN(read_date) FROM stats_raw "
+                                    "WHERE uri LIKE 'spotify:track:%' GROUP BY uri"):
+                first_seen[r[0]] = r[1]
+        except Exception as e:
+            print(f"recompute_popularity first_seen error: {e}")
+        try:
+            for r in db.execute_sql("SELECT track_uri, COUNT(DISTINCT playlist_id) "
+                                    "FROM playlisttrack GROUP BY track_uri"):
+                pl_count[r[0]] = r[1]
+        except Exception as e:
+            print(f"recompute_popularity playlist_count error: {e}")
+
         def _flush(rows):
             if not rows:
                 return 0
@@ -271,7 +287,9 @@ class DatabaseHandler():
                 new = round(compute_popularity(
                     t.read_end, t.read_count, t.read_count_end, t.skipped_count,
                     last_read_date=t.last_read_date, liked=t.liked,
-                    option_type=t.option_type, prior_completion=prior, now=now), 4)
+                    option_type=t.option_type, prior_completion=prior,
+                    first_played_at=first_seen.get(t.uri),
+                    playlist_count=pl_count.get(t.uri, 0), now=now), 4)
             else:
                 new = None  # non-music: leave unscored
             # Only persist rows whose score actually changed (cheap re-runs).

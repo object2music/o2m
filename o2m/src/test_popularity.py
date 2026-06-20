@@ -97,6 +97,40 @@ class TestPopularity(unittest.TestCase):
         liked = compute_popularity(0.7, 10, 8, 0, liked=1)
         self.assertAlmostEqual(liked - base, min(LIKE_BONUS, 1.0 - base), places=3)
 
+    def test_novelty_recent_first_play_boosts(self):
+        """A recently first-played track scores above the same track discovered long ago."""
+        now = datetime.datetime(2026, 6, 20)
+        fresh = compute_popularity(0.6, 3, 2, 0,
+                                   first_played_at=now - datetime.timedelta(days=2), now=now)
+        old = compute_popularity(0.6, 3, 2, 0,
+                                  first_played_at=now - datetime.timedelta(days=2000), now=now)
+        self.assertGreater(fresh, old)
+
+    def test_novelty_saturates_with_completions(self):
+        """Novelty boost shrinks as the track gets completed more (plateau)."""
+        now = datetime.datetime(2026, 6, 20)
+        fp = now - datetime.timedelta(days=1)
+        few = compute_popularity(0.6, 1, 0, 0, first_played_at=fp, now=now)
+        many = compute_popularity(0.6, 30, 30, 0, first_played_at=fp, now=now)
+        # isolate novelty by comparing to the no-novelty baseline
+        few_base = compute_popularity(0.6, 1, 0, 0, now=now)
+        many_base = compute_popularity(0.6, 30, 30, 0, now=now)
+        self.assertGreater(few - few_base, many - many_base)
+
+    def test_novelty_unix_timestamp_accepted(self):
+        now = datetime.datetime(2026, 6, 20)
+        ts = (now - datetime.timedelta(days=3) - datetime.datetime(1970, 1, 1)).total_seconds()
+        s = compute_popularity(0.6, 3, 2, 0, first_played_at=ts, now=now)
+        self.assertTrue(0.0 <= s <= 1.0)
+
+    def test_playlist_endorsement(self):
+        """More playlist memberships raise the score, saturating at PLAYLIST_REF."""
+        base = compute_popularity(0.6, 5, 4, 0, playlist_count=0)
+        one = compute_popularity(0.6, 5, 4, 0, playlist_count=1)
+        many = compute_popularity(0.6, 5, 4, 0, playlist_count=7)
+        self.assertGreater(one, base)
+        self.assertGreater(many, one)
+
     def test_is_scorable(self):
         """Only replayable music is scorable; podcasts/infos/radios are excluded."""
         self.assertTrue(is_scorable('spotify:track:abc', 'library'))

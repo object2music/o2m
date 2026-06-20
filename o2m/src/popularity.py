@@ -30,6 +30,10 @@ SKIP_W = 0.5              # max fraction of base removed by a 100%-skip history
 REC_HALFLIFE_DAYS = 120.0 # recency half-life (days)
 REC_FLOOR = 0.6           # recency multiplier floor (old tracks keep 60% of score)
 LIKE_BONUS = 0.10         # additive bonus for liked tracks
+NOVELTY_W = 0.15          # max boost for a just-discovered track (first play)
+NOVELTY_HALFLIFE_DAYS = 30.0  # how fast the novelty boost fades with time
+PLAYLIST_W = 0.10         # max endorsement boost from playlist membership
+PLAYLIST_REF = 4          # playlist_count giving the full endorsement boost
 DEFAULT_PRIOR_COMPLETION = 0.55  # fallback cohort completion mean if none supplied
 
 # option_type values forced to a fixed low score (should not resurface).
@@ -60,12 +64,15 @@ def is_scorable(uri, option_type=None):
 
 def compute_popularity(read_end, read_count, read_count_end, skipped_count,
                        last_read_date=None, liked=0, option_type='library',
-                       prior_completion=DEFAULT_PRIOR_COMPLETION, now=None):
+                       prior_completion=DEFAULT_PRIOR_COMPLETION,
+                       first_played_at=None, playlist_count=0, now=None):
     """Return a popularity score in [0, 1] for a single track.
 
     All raw arguments come straight from the Track row; None values are tolerated.
     prior_completion is the cohort completion mean (read_end averaged over played
-    tracks) — see DatabaseHandler.get_completion_prior.
+    tracks) — see DatabaseHandler.get_completion_prior. first_played_at (datetime or
+    unix ts, from stats_raw MIN(read_date)) anchors the novelty boost; playlist_count
+    is the number of playlists the track belongs to (endorsement).
     """
     if option_type in _FORCED_LOW:
         return FORCED_LOW_SCORE
@@ -112,5 +119,25 @@ def compute_popularity(read_end, read_count, read_count_end, skipped_count,
     # 5. Explicit signal.
     if liked:
         base += LIKE_BONUS
+
+    # 6. Novelty — a recently first-played track gets a temporary boost that fades
+    #    with time AND with completions (saturation), then lets popularity take over.
+    if first_played_at is not None:
+        now = now or datetime.datetime.utcnow()
+        try:
+            fp = first_played_at
+            if isinstance(fp, (int, float)):
+                fp = datetime.datetime.utcfromtimestamp(fp)
+            if getattr(fp, 'tzinfo', None) is not None:
+                fp = fp.replace(tzinfo=None)
+            nown = now.replace(tzinfo=None) if getattr(now, 'tzinfo', None) is not None else now
+            fp_age = max((nown - fp).total_seconds() / 86400.0, 0.0)
+            base += NOVELTY_W * (0.5 ** (fp_age / NOVELTY_HALFLIFE_DAYS)) / (1 + read_count_end)
+        except Exception:
+            pass  # unparseable date → skip novelty rather than fail the score
+
+    # 7. Endorsement — tracks filed into several playlists are more "kept".
+    if playlist_count:
+        base += PLAYLIST_W * min(playlist_count / PLAYLIST_REF, 1.0)
 
     return max(0.0, min(1.0, base))
