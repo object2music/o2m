@@ -82,6 +82,20 @@ if __name__ == "__main__":
 
     threading.Thread(target=_background_warmup, daemon=True).start()
 
+    # Periodic popularity recompute — keeps the time-varying terms (recency, and the
+    # upcoming add-novelty term) fresh. Recomputes at most ~once a day (cheap), so a
+    # long-running process doesn't drift; skips if a recent run already exists.
+    def _popularity_scheduler():
+        sleep(20)  # let startup settle
+        while True:
+            try:
+                o2mHandler.dbHandler.recompute_popularity_if_stale(ttl_hours=24)
+            except Exception as e:
+                print(f"popularity scheduler error: {e}")
+            sleep(3600)  # re-check hourly
+
+    threading.Thread(target=_popularity_scheduler, daemon=True).start()
+
 #API DEF AND LISTENER (to be move in a dedicated part)
     #API BOX ACTION (mode : toogle, add, remove) AND SHOW
     def api_box_action(uid='',option_type='',mode='toogle'):

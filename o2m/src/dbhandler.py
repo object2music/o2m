@@ -290,6 +290,23 @@ class DatabaseHandler():
         print(f"recompute_popularity: {updated} tracks scored (prior={round(prior, 3)})")
         return updated
 
+    def recompute_popularity_if_stale(self, ttl_hours=24):
+        """Recompute popularity only if the last run is older than ttl_hours (or never).
+        A cheap ~daily refresh keeps the time-varying terms (recency, and later the
+        add-novelty term) current without a per-selection cost. Returns True if it ran."""
+        try:
+            _, updated = self.get_cache_meta('popularity_at')
+            if updated is not None:
+                if isinstance(updated, (int, float)):
+                    updated = datetime.datetime.utcfromtimestamp(updated)
+                age_h = (datetime.datetime.utcnow() - updated).total_seconds() / 3600.0
+                if age_h < ttl_hours:
+                    return False  # still fresh
+        except Exception as e:
+            print(f"recompute_popularity_if_stale check error: {e}")
+        self.recompute_popularity()
+        return True
+
     #STATS_RAW
     def clear_lasthour_stats_raw(self):
         one_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
