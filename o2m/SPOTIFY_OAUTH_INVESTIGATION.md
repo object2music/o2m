@@ -147,6 +147,21 @@ streaming+mint librespot ✓ (« Refreshed 43 Spotify playlists » côté Web AP
    app Spotify perso, scopes streaming) — utile aussi pour le **point 3** (Web API/édition) et le `.cache_spotipy`.
 3. Stockage : token user (+ refresh) par instance ; `credentials.json` minté → volume `./data/spotify` (déjà en place sur o2m_1).
 
+## Modèle de comptes retenu (séparation par plan)
+
+| Plan | Compte | Fichier |
+|---|---|---|
+| **Streaming** (librespot/blob) | **compte d'instance fixe** (« maison »), épinglé | `.cache_spotify_instance` (baseline) → `/api/spotify_stream_token` |
+| **Web API / contenu** (boxes, favoris, library, **écriture**) | overlay **perso** si auth manuelle, **sinon** baseline | `.cache_spotipy` (overlay) sinon baseline |
+| **Édition** (cookie signé) | identité perso | cookie `require_edit_auth` |
+
+- **Sans auth manuelle** : lecture + requêtes sur le compte d'instance fixe (la baseline est *seedée une fois* depuis le cache actif et **jamais écrasée** → un invité ne peut pas hijacker streaming/fallback).
+- **Auth manuelle** : overlay Web API (le user injecte ses favoris + droits d'écriture) + cookie d'édition. Le **streaming reste sur le compte fixe** → marche même si le user est en **gratuit**.
+- **Désauth** (`/api/spotipy_out`) : supprime l'overlay → Web API retombe sur la baseline ; streaming intact ; cookie effacé.
+
+### Suivi différé — prise en charge du streaming par le compte perso (Premium)
+Idée : si l'utilisateur signé est **Premium**, faire streamer **son** compte (jusqu'à désauth) pour répartir la charge (Spotify = 1 flux actif/compte). **Différé** : non bloquant aujourd'hui (le même compte streame OK sur plusieurs instances en parallèle ; la limite réelle est inconnue). Implémentation prête à l'emploi quand utile : `/api/spotify_stream_token` renvoie `{access_token, account}` (overlay si Premium, sinon baseline) + `backend.py` efface le blob `credentials.json` quand le compte voulu change (re-mint). Aucun changement structurel requis (tout reste dans mopidy).
+
 ## État / contexte
 - Branche `spotify-oauth` (worktree `/home/o2m/oauth-spotify`, base `stats_v2`). N'impacte pas o2m_1 qui tourne.
 - Correctif d'urgence déjà appliqué hors-branche : blob copié + volume `./data/spotify` (o2m_1 durable). Voir mémoire `project_spotify_multi_instance`.

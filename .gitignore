@@ -149,6 +149,7 @@ dump.sql
 o2m/.flask_session/
 o2m/o2m.conf
 o2m/.cache_spotipy
+o2m/.cache_spotify_instance
 data/
 
 
