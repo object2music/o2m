@@ -332,8 +332,17 @@ class SpotifyHandler:
         import requests
         for path in (self.cache_path, self.instance_cache_path):
             cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=path)
-            auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope, cache_handler=cache_handler, show_dialog=False)
-            if not auth_manager.validate_token(cache_handler.get_cached_token()):
+            tok = cache_handler.get_cached_token()
+            if not tok:
+                continue
+            # Build the live Web-API client against the token's OWN granted scope, not the
+            # full unified self.scope. Otherwise a scope expansion (e.g. adding `streaming`)
+            # makes validate_token reject a still-valid token via its scope-subset check,
+            # dropping the Web API until the user re-auths. Only the LOGIN (spotipy_init) and
+            # stream-token paths require the full self.scope.
+            client_scope = tok.get("scope") or self.scope
+            auth_manager = spotipy.oauth2.SpotifyOAuth(scope=client_scope, cache_handler=cache_handler, show_dialog=False)
+            if not auth_manager.validate_token(tok):
                 continue
             session = requests.Session()
             def _capture_retry_after(response, *args, **kwargs):
