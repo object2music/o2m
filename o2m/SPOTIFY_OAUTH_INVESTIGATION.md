@@ -113,6 +113,32 @@ Installer le binaire `librespot` et lancer son flow OAuth (`--oauth`) qui produi
 Utiliser une lib (librespot-python/-auth communautaire) pour échanger un token user contre des stored
 credentials et écrire `credentials.json`. À évaluer (maintenance/compat).
 
+## ✅ SPIKE #1 — RÉSULTAT : Piste A CONFIRMÉE (o2m_6, 21/06/2026)
+
+Protocole : OAuth unifié sur o2m_6 → token user (scope `streaming`) dans `.cache_spotipy` ;
+on vide `credentials-cache/` ; on patche `backend.py:on_source_setup` pour passer **le token user**
+(au lieu de `web_client.token()` = client_credentials) ; lecture d'un `spotify:track`.
+
+Résultat : **lecture `playing` + `credentials.json` minté** (`auth_type:1`, `username:1181464119`).
+→ **Un token user `streaming` fourni au gst-plugin (librespot) authentifie, streame ET génère le
+blob réutilisable durable.** C'est la voie retenue.
+
+Les 3 auth validées d'un seul login : Spotipy (`.cache_spotipy`) ✓, cookie d'édition (fan-out) ✓,
+streaming+mint librespot ✓ (« Refreshed 43 Spotify playlists » côté Web API en bonus).
+
+## Intégration propre (à faire — le spike utilisait un hack /tmp + patch en conteneur)
+
+1. **Feed du token user à librespot** : `backend.py:on_source_setup` doit utiliser le token user d'o2m
+   (au lieu de client_credentials) **pour le mint initial**. Le blob étant réutilisable, le token n'est
+   nécessaire qu'au 1er mint (ou re-mint si invalidé). Source du token : `.cache_spotipy` partagé
+   (volume) ou poussé par o2m après l'OAuth.
+2. **Déploiement du patch** : `mopidy_spotify/backend.py` est dans l'**image** (comme o2m.js) → le
+   déployer par **mount de fichier** (volume sur ce seul fichier, survit aux recreate) plutôt que par
+   `docker cp` éphémère. [[project_deploy_o2mjs]]
+3. **Persistance du blob** : monter `./data/spotify` (déjà prouvé sur o2m_1) → le blob minté survit aux recreate.
+4. **UI** : bouton « Connecter Spotify » dans l'UI mood → `/api/spotipy_init` (déjà fan-out Spotipy+édition).
+5. **Refresh** : `.cache_spotipy` se rafraîchit (refresh_token) ; prévoir un re-mint si Spotify invalide le blob.
+
 ## Reco de départ
 1. **Spike #1 (décisif)** : valider la **Piste A** — fournir un access-token **user** au gst-plugin et voir
    si `credentials.json` (auth_type 1) est minté dans `cache-credentials`. Si oui, c'est la voie la plus
