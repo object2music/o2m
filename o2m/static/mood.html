@@ -1929,55 +1929,29 @@ function startEditAuth() {
     });
     return;
   }
-  const scope = encodeURIComponent('user-read-private');
-  const popup = window.open(IRIS_AUTH_URL + '?action=authorize&scope=' + scope,
-                            'o2m_spotify_auth', 'height=600,width=400');
-  if (!popup) { setFeedback('Popup blocked — allow popups'); return; }
-  setFeedback('Connecting to Spotify…');
-
-  let done = false;
-  function finish() {
-    done = true;
-    window.removeEventListener('message', onMsg);
-    clearInterval(watch);
-  }
-
-  function sendToken(token) {
-    fetch(API + '/edit_auth', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ access_token: token })
-    }).then(async r => {
-      let j = {};
-      try { j = await r.json(); } catch(e) {}
-      console.log('[edit-auth] /edit_auth', r.status, j);
-      if (r.status === 404) { setFeedback('Backend not deployed — restart o2m container'); return; }
-      if (r.ok && j.ok) { setEditUnlocked(true, j.id); setFeedback('Editing enabled'); }
-      else if (j.reason === 'not_in_allowlist')
-        setFeedback('Not authorized — your Spotify id: ' + (j.id || '?'));
-      else setFeedback('Auth failed: ' + (j.error || ('HTTP ' + r.status)));
-    }).catch(err => { console.log('[edit-auth] network error', err); setFeedback('Auth network error'); });
-  }
-
-  function onMsg(event) {
-    // Security relies on server-side re-verification (/v1/me), so we do NOT
-    // hard-drop on event.origin (which would fail silently); we just warn.
-    let data = event.data;
-    if (typeof data === 'string') { try { data = JSON.parse(data); } catch(e) { return; } }
-    if (!data || typeof data !== 'object' || data.origin !== 'auth_spotify') return;
-    console.log('[edit-auth] message from', event.origin, 'keys:', Object.keys(data));
-    if (event.origin !== IRIS_AUTH_ORIGIN)
-      console.warn('[edit-auth] unexpected message origin:', event.origin);
-    finish();
-    if (data.error) { setFeedback('Spotify: ' + data.error); return; }
-    if (!data.access_token) { setFeedback('No token received'); return; }
-    sendToken(data.access_token);
-  }
-  window.addEventListener('message', onMsg);
-
-  // Watchdog: popup closed without posting a message
-  const watch = setInterval(() => {
-    if (done) { clearInterval(watch); return; }
-    if (popup.closed) { finish(); setFeedback('Auth cancelled (no token returned)'); }
+  // Unified Spotify OAuth: opens /api/spotipy_init (same login that feeds Spotipy AND mints
+  // the librespot streaming blob). On success the server sets the edit cookie (fan-out),
+  // so we just poll /api/edit_status until it flips to unlocked.
+  const popup = window.open(API + '/spotipy_init', 'o2m_spotify_auth', 'height=700,width=480');
+  if (!popup) { setFeedback('Popup blocked - allow popups'); return; }
+  setFeedback('Connecting to Spotify...');
+  let tries = 0;
+  const watch = setInterval(async () => {
+    tries++;
+    try {
+      const s = await fetch(API + '/edit_status').then(r => r.json());
+      if (s.unlocked) {
+        clearInterval(watch);
+        setEditUnlocked(true, s.id);
+        setFeedback('Editing enabled');
+        try { popup.close(); } catch(e) {}
+        return;
+      }
+    } catch(e) {}
+    if (popup.closed || tries > 180) {
+      clearInterval(watch);
+      if (!editUnlocked) setFeedback('Auth not completed');
+    }
   }, 1000);
 }
 
