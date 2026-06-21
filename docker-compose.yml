@@ -36,13 +36,15 @@ services:
       dockerfile: Dockerfile
     ports:
       - ${PORT_O2M_API}:6681
-    depends_on: 
+    depends_on:
       - mopidy
       - mysql
     volumes:
       - ./o2m:/app
       - /var/run/docker.sock:/var/run/docker.sock
     restart: always
+    environment:
+      - PYTHONUNBUFFERED=1
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6681/health')"]
       interval: 120s
