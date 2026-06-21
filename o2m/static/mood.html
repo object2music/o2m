@@ -700,6 +700,26 @@
       margin-left: 0; flex-direction: column; align-items: stretch; gap: 8px;
     }
   }
+  /* Overprint: same single-line + "More" dropdown as tablet, but at every width
+     ≥700px (not just the 700–1024 tablet band) — frees the vertical room the
+     matrix needs in fullscreen too. */
+  @media (min-width: 700px) {
+    [data-theme="overprint"] #footer-links {
+      flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+    }
+    [data-theme="overprint"] #footer-links > * { flex-shrink: 0; }
+    [data-theme="overprint"] #footer-links .footer-more-toggle { display: inline-flex; order: 3; margin-left: auto; }
+    [data-theme="overprint"] #footer-links .footer-extra { display: none; }
+    [data-theme="overprint"] #footer-links .footer-extra.open {
+      display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+      position: absolute; right: 14px; bottom: 100%; margin-bottom: 7px;
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 10px; min-width: 220px; z-index: 50;
+    }
+    [data-theme="overprint"] #footer-links .footer-extra.open .footer-warmups {
+      margin-left: 0; flex-direction: column; align-items: stretch; gap: 8px;
+    }
+  }
   .footer-link {
     font-size: 11px; color: var(--muted); text-decoration: none;
     padding: 3px 10px; border-radius: 0;
@@ -770,7 +790,7 @@
   /* ===== Overprint : pochette à gauche, titre pleine largeur en haut, contrôles centre-bas ===== */
   /* Largeur pochette DÉFINIE (vh/vw) : un % se résoudrait à 0 dans la grille → effondrement */
   [data-theme="overprint"] #top-zone {
-    --ovp-w: min(33vh, 29vw);   /* réduit pour dégager la matrice (était 39vh/35vw) */
+    --ovp-w: min(20vh, 18vw);   /* forced compact so the matrix is fully visible (was 33vh/29vw) */
     display: grid; align-items: start;
     grid-template-columns: auto 1fr minmax(190px, 240px);
     grid-template-areas: "cover mid details";
@@ -804,10 +824,31 @@
     grid-area: mid; align-self: end; justify-self: stretch;
     width: auto; margin: 0; padding: 0 14px 14px; background: none;
   }
-  [data-theme="overprint"] #now-playing  { padding: 10px 6px 4px; }
-  [data-theme="overprint"] #controls     { justify-content: flex-start; padding: 4px 6px; }
-  [data-theme="overprint"] #progress-wrap { padding: 4px 6px 6px; }
-  [data-theme="overprint"] #artist-name  { font-size: 22px; font-weight: 600; color: var(--text); }
+  [data-theme="overprint"] #now-playing  { padding: 6px 6px 2px; }
+  [data-theme="overprint"] #controls     { justify-content: flex-start; padding: 2px 6px; }
+  [data-theme="overprint"] #progress-wrap { padding: 2px 6px 4px; }
+  [data-theme="overprint"] #artist-name  { font-size: 18px; font-weight: 600; color: var(--text); }
+
+  /* Compact details column: tighter padding, Energy/Valence/Mood share one row,
+     playlists shown as a single-line chip row (expanded, not collapsed). */
+  [data-theme="overprint"] #track-details { padding: 8px 12px; gap: 6px; }
+  [data-theme="overprint"] #track-details .td-list { gap: 3px; }
+  [data-theme="overprint"] #track-details .td-list > div { flex: 1 0 100%; }
+  [data-theme="overprint"] #track-details .td-list > div:nth-child(3),
+  [data-theme="overprint"] #track-details .td-list > div:nth-child(4),
+  [data-theme="overprint"] #track-details .td-list > div:nth-child(5) {
+    flex: 1 1 30%;
+  }
+  [data-theme="overprint"] #track-details .td-list {
+    display: flex; flex-wrap: wrap; gap: 3px 10px;
+  }
+  [data-theme="overprint"] .td-playlists .pl-list {
+    flex-direction: row; flex-wrap: wrap; max-height: none; gap: 4px 8px;
+  }
+  [data-theme="overprint"] .td-playlists label {
+    border: 1px solid var(--border); padding: 1px 6px; gap: 5px;
+  }
+  [data-theme="overprint"] .td-playlists label span { max-width: 100px; }
 
   /* ===== Invert : bandeau pleine largeur, titre superposé en bas ===== */
   [data-theme="invert"] #top-zone {
@@ -1764,7 +1805,7 @@ async function loadEditablePlaylists() {
   return editablePlaylists;
 }
 
-let plExpanded = false;   // collapsed by default → show only the active playlists
+let plExpanded = true;   // expanded by default → full editable list visible on open
 async function renderPlaylistEditor(uri) {
   const box = document.getElementById('td-playlists');
   if (!box) return;
