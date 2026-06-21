@@ -15,6 +15,10 @@ services:
     volumes:
       - ./data/music:/app/Music
       - ./tmp/snapserver:/tmp
+      # Spotify OAuth unifié : token user fetché via http://o2m:6681/api/spotify_stream_token
+      # → librespot mint le blob (auth_type 1), persisté sur ./data/spotify.
+      - ./mopidy/mopidy_spotify_backend.py:/usr/local/lib/python3.10/dist-packages/mopidy_spotify/backend.py:ro
+      - ./data/spotify:/root/.local/share/mopidy/spotify
     restart: always
     healthcheck:
       test: "curl -f http://localhost:6680"

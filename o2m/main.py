@@ -1073,6 +1073,24 @@ if __name__ == "__main__":
             else:
                 print("File does not exist.")
             return redirect('/api/spotipy_init')
+
+        # Fan-out #2 (streaming): fresh USER access-token for mopidy-spotify/librespot.
+        # Called internally by the patched mopidy backend (on_source_setup) to mint/refresh
+        # the durable librespot credentials blob. Returns the cached token, refreshed if expired.
+        @api.route('/api/spotify_stream_token')
+        def api_spotify_stream_token():
+            try:
+                ch = spotipy.cache_handler.CacheFileHandler(cache_path=o2mHandler.spotifyHandler.cache_path)
+                am = spotipy.oauth2.SpotifyOAuth(scope=o2mHandler.spotifyHandler.scope, cache_handler=ch)
+                tok = ch.get_cached_token()
+                if not tok:
+                    return ("", 404)
+                if am.is_token_expired(tok) and tok.get("refresh_token"):
+                    tok = am.refresh_access_token(tok["refresh_token"])
+                return (tok.get("access_token", ""), 200)
+            except Exception as e:
+                print(f"spotify_stream_token error: {e}")
+                return ("", 503)
     
     #MOPIDY LISTENERS
         # Fonction called when track started
