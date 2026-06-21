@@ -427,12 +427,12 @@
   .dial-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .dial-label { font-size: 12px; color: var(--muted); text-transform: uppercase;
                 letter-spacing: .08em; text-align: center; margin-bottom: 1px; }
-  .dial-svg { touch-action: none; cursor: grab; display: block; }
+  .dial-svg { touch-action: none; cursor: grab; display: block; width: 108px; height: 108px; }
   .dial-svg:active { cursor: grabbing; }
   .dial-track { fill: none; stroke: var(--border); stroke-width: 8; stroke-linecap: round; }
   .dial-fill  { fill: none; stroke-width: 8; stroke-linecap: round;
                 transition: stroke-dashoffset .05s; }
-  .dial-sub { font-size: 11px; color: var(--muted); text-align: center; }
+  .dial-sub { font-size: 11px; color: var(--muted); text-align: center; margin-top: -6px; }
 
   /* ── 3-column layout ── */
   #main-cols { display: flex; flex-direction: column; }
