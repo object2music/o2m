@@ -1034,9 +1034,13 @@ if __name__ == "__main__":
             auth_manager = spotipy.oauth2.SpotifyOAuth(scope=o2mHandler.spotifyHandler.scope,cache_handler=cache_handler,show_dialog=True)
 
             if request.args.get("code"):
-                # Step 2. Being redirected from Spotify auth page
+                # Step 2. Being redirected from Spotify auth page.
+                # The token lands in .cache_spotipy = the per-user OVERLAY (Web API: favorites,
+                # library, write). Seed the instance baseline once (fixed house account for
+                # streaming + fallback), then (re)build sp preferring the overlay.
                 auth_manager.get_access_token(request.args.get("code"))
-                o2mHandler.spotifyHandler.sp = spotipy.Spotify(auth_manager=auth_manager)
+                o2mHandler.spotifyHandler.seed_instance_cache_if_absent()
+                o2mHandler.spotifyHandler.reload_sp()
                 return redirect('/api/spotipy_init')
 
             if not auth_manager.validate_token(cache_handler.get_cached_token()):
@@ -1045,19 +1049,63 @@ if __name__ == "__main__":
                 return f'<h2><a href="{auth_url}">Sign in</a></h2>'
 
             # Step 3. Signed in, display data
-            o2mHandler.spotifyHandler.sp = spotipy.Spotify(auth_manager=auth_manager)
-            return f'<h2>Hi {o2mHandler.spotifyHandler.sp.me()["display_name"]}, ' \
-            f'<small><a href="/api/spotipy_out">[sign out]<a/></small></h2>' \
+            o2mHandler.spotifyHandler.seed_instance_cache_if_absent()
+            o2mHandler.spotifyHandler.reload_sp()
+            # Fan-out #1 (edit-auth): the same Spotify login also unlocks the mood-edit
+            # space — set the signed cookie if the identity is in the allowlist (replaces
+            # the broken Iris proxy). Secure when served over HTTPS (behind Caddy).
+            from flask import make_response
+            me = o2mHandler.spotifyHandler.sp.me()
+            uid = (me.get("id") or "").strip()
+            resp = make_response(
+                f'<h2>Hi {me.get("display_name") or uid}, '
+                f'<small><a href="/api/spotipy_out">[sign out]</a></small></h2>'
+            )
+            if uid.lower() in _edit_allowlist():
+                resp.set_cookie(
+                    _EDIT_COOKIE, _edit_serializer.dumps({"id": uid}),
+                    max_age=_EDIT_MAX_AGE, httponly=True, samesite="Lax",
+                    secure=(request.headers.get("X-Forwarded-Proto", "") == "https"),
+                )
+            return resp
 
         @api.route('/api/spotipy_out')
         def api_spotipy_out():
-            #Delete cache file
+            from flask import make_response
+            # De-auth = drop the per-user OVERLAY only. The Web API then falls back to the
+            # instance baseline (fixed house account); streaming is untouched (pinned to it).
+            # Also clear the edit cookie.
             if os.path.exists(o2mHandler.spotifyHandler.cache_path):
                 os.remove(o2mHandler.spotifyHandler.cache_path)
-                print("File deleted successfully.")
-            else:
-                print("File does not exist.")
-            return redirect('/api/spotipy_init')
+                print("Per-user Spotify overlay removed — falling back to instance baseline.")
+            o2mHandler.spotifyHandler.reload_sp()
+            resp = make_response(redirect('/api/spotipy_init'))
+            resp.delete_cookie(_EDIT_COOKIE)
+            return resp
+
+        # Fan-out #2 (streaming): fresh USER access-token for mopidy-spotify/librespot.
+        # Called internally by the patched mopidy backend (on_source_setup) to mint/refresh
+        # the durable librespot credentials blob. Returns the cached token, refreshed if expired.
+        @api.route('/api/spotify_stream_token')
+        def api_spotify_stream_token():
+            try:
+                sh = o2mHandler.spotifyHandler
+                # Streaming is pinned to the fixed INSTANCE baseline (never the per-user
+                # overlay), so playback keeps running on the house Premium account even when a
+                # free-tier user is signed in only for Web-API/edit. Fall back to the overlay
+                # cache only if the baseline file does not exist yet.
+                path = sh.instance_cache_path if os.path.exists(sh.instance_cache_path) else sh.cache_path
+                ch = spotipy.cache_handler.CacheFileHandler(cache_path=path)
+                am = spotipy.oauth2.SpotifyOAuth(scope=sh.scope, cache_handler=ch)
+                tok = ch.get_cached_token()
+                if not tok:
+                    return ("", 404)
+                if am.is_token_expired(tok) and tok.get("refresh_token"):
+                    tok = am.refresh_access_token(tok["refresh_token"])
+                return (tok.get("access_token", ""), 200)
+            except Exception as e:
+                print(f"spotify_stream_token error: {e}")
+                return ("", 503)
     
     #MOPIDY LISTENERS
         # Fonction called when track started

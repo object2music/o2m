@@ -9,7 +9,11 @@ class SpotifyHandler:
         o2m_config = util.get_config_file("o2m.conf")["o2m"]
         self._lastfm_api_key = o2m_config.get("lastfm_api_key", "").strip() or None
         self.cache_path = ".cache_spotipy"
-        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify"
+        # Instance baseline = the fixed "house" account. Streaming (librespot blob) is pinned
+        # to it, and the Web API falls back to it when no per-user overlay is signed in.
+        self.instance_cache_path = ".cache_spotify_instance"
+        # Unified scope: Web API (Spotipy) + streaming (librespot/mopidy-spotify) + identity (edit-auth /v1/me)
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify streaming user-read-private user-read-email"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
@@ -307,11 +311,30 @@ class SpotifyHandler:
         self._save_rate_limit()
         print(f"Rate limited by Spotify — skipping API calls for {retry_after}s ({retry_after//3600}h {(retry_after%3600)//60}m)")
 
-    def init_token_sp(self):
+    def seed_instance_cache_if_absent(self):
+        """Establish the instance baseline (fixed house account) once, from whatever active
+        token already exists. Never overwrite it afterwards — so a guest signing in later
+        overlays only the Web API, it cannot hijack the streaming/fallback account."""
+        import shutil
+        try:
+            if os.path.exists(self.instance_cache_path):
+                return
+            if os.path.exists(self.cache_path):
+                shutil.copyfile(self.cache_path, self.instance_cache_path)
+                print("Seeded Spotify instance baseline from active cache.")
+        except Exception as e:
+            print(f"seed instance cache error: {e}")
+
+    def reload_sp(self):
+        """(Re)build self.sp from the active per-user overlay (.cache_spotipy) if valid,
+        else fall back to the instance baseline (.cache_spotify_instance). Returns the cache
+        path used, or None if neither holds a valid token."""
         import requests
-        cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
-        auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope,cache_handler=cache_handler,show_dialog=False)
-        if auth_manager.validate_token(cache_handler.get_cached_token()):
+        for path in (self.cache_path, self.instance_cache_path):
+            cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=path)
+            auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope, cache_handler=cache_handler, show_dialog=False)
+            if not auth_manager.validate_token(cache_handler.get_cached_token()):
+                continue
             session = requests.Session()
             def _capture_retry_after(response, *args, **kwargs):
                 if response.status_code == 429:
@@ -323,8 +346,13 @@ class SpotifyHandler:
             # retries=0: disable spotipy's internal blocking retry-on-429.
             # Our _on_rate_limit() handles 429 immediately without freezing the thread.
             self.sp = spotipy.Spotify(auth_manager=auth_manager, retries=0, requests_session=session)
-        else:
-            print("Token is not valid")
+            return path
+        print("Token is not valid (no active overlay nor instance baseline)")
+        return None
+
+    def init_token_sp(self):
+        self.seed_instance_cache_if_absent()
+        self.reload_sp()
 
     def refresh_token0(self):
         cached_token = self.spo.get_cached_token()
