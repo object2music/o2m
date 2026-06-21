@@ -44,9 +44,12 @@ if __name__ == "__main__":
     api=create_api()
     api.app_context().push()
 
-    # Silence noisy Werkzeug access logs for high-frequency polling endpoints
-    # (status badges / track features) so the logs stay readable. Extend the list as needed.
-    _SILENCED_LOG_PATHS = ('/api/track_features', '/api/track_status')
+    # Silence noisy Werkzeug access logs for high-frequency polling/health-check
+    # endpoints (status badges, track features, Docker healthcheck) so the logs stay
+    # readable. Doesn't affect the print()s in o2mtomopidy.py (track end, stats
+    # updates, recos, ...) — those go straight to stdout, untouched by this filter.
+    # Extend the list as needed.
+    _SILENCED_LOG_PATHS = ('/api/track_features', '/api/track_status', '/health')
     class _SilencePollingFilter(logging.Filter):
         def filter(self, record):
             msg = record.getMessage()
@@ -568,7 +571,7 @@ if __name__ == "__main__":
         """Get or set the _expand_pick selection variant (A/B testing, in-memory).
         ?mode=hybrid|weighted|topm sets it; no arg returns the current value."""
         from flask import jsonify
-        valid = ('hybrid', 'weighted', 'topm')
+        valid = ('hybrid', 'temp', 'band')
         mode = request.args.get('mode')
         if mode:
             if mode not in valid:

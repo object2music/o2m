@@ -1,4 +1,4 @@
-import datetime, time, sys, contextlib, random, subprocess, os, threading
+import datetime, time, sys, contextlib, random, subprocess, os, threading, math
 #import numpy as np
 import random
 from mopidy_podcast import Extension, feeds
@@ -31,7 +31,9 @@ class O2mToMopidy:
     discover_level = 5  # 0-10
     podcast_newest_first = False
     option_sort = "desc"
-    expand_pick_mode = "hybrid"  # _expand_pick variant: hybrid (V2) | weighted (V1) | topm (V0)
+    expand_pick_mode = "hybrid"  # smart-selection variant: hybrid (P0) | temp (P1) | band (P2)
+    cooldown_hours = 8.0         # recently-played tracks are down-weighted in smart selection
+    cooldown_mult = 0.05         # weight multiplier applied within the cooldown window
 
     avg_stats = {}
 
@@ -721,6 +723,11 @@ class O2mToMopidy:
             valence = getattr(box, 'option_valence', None)
             if valence is None: valence = self.mood_valence
 
+            # Smart selection (popularity/mood/cooldown via _expand_pick) only applies
+            # when the box opts in via option_sort='smart'. shuffle/asc/desc/none keep
+            # the basic legacy path (raw object expansion, no popularity selection).
+            smart = (getattr(box, 'option_sort', None) == 'smart')
+
             #DB Regulation (tmp)
             #self.reg_box_db(box)
             content = 0
@@ -895,29 +902,32 @@ class O2mToMopidy:
                     #self.update_stat_raw([data])
                     media_parts = content.split(":")
                     if media_parts[1] == "artist":
-                        # Cache-first: expand the artist's known tracks and mood/pop-filter them.
-                        cached = self.dbHandler.get_artist_track_uris(media_parts[2])
+                        # Smart only: expand the artist's cached tracks and stochastically pick.
+                        cached = self.dbHandler.get_artist_track_uris(media_parts[2]) if smart else None
                         if cached:
                             tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
                         else:
-                            # Fallback (cache miss): legacy top + all tracks (may hit the API)
+                            # Basic / cache-miss: legacy top + all tracks (may hit the API)
                             tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
                             tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
                     elif media_parts[1] == "album":
-                        # Cache-first: expand album sub-tracks from AlbumTrack and mood/pop-filter them.
-                        cached = self.dbHandler.get_album_tracks(media_parts[2])
+                        # Smart only: expand album sub-tracks from AlbumTrack and stochastically pick.
+                        cached = self.dbHandler.get_album_tracks(media_parts[2]) if smart else None
                         if cached:
                             tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
                         else:
-                            tracklist_uris.append(content)  # fallback: raw URI, Mopidy resolves the whole album
+                            tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole album
                     elif media_parts[1] == "playlist":
-                        # Cache playlist content if not already fresh (cache-first, 1 API call max)
-                        self.spotifyHandler.cache_playlist_by_id(media_parts[2])
-                        cached = self.dbHandler.get_playlist_track_uris(media_parts[2])
+                        if smart:
+                            # Cache playlist content if not already fresh (cache-first, 1 API call max)
+                            self.spotifyHandler.cache_playlist_by_id(media_parts[2])
+                            cached = self.dbHandler.get_playlist_track_uris(media_parts[2])
+                        else:
+                            cached = None
                         if cached:
                             tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
                         else:
-                            tracklist_uris.append(content)  # fallback: raw URI, Mopidy resolves the whole playlist
+                            tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole playlist
                     else:
                         tracklist_uris.append(content)
 
@@ -1621,35 +1631,30 @@ class O2mToMopidy:
         return result
 
     def _expand_pick(self, uris, n, energy, valence, discover_level):
-        """FILTER (not reorder) a tapped object's cached tracks (album/playlist/
-        artist) by mood+popularity. Fills up to n slots (max_results); DL changes
-        WHICH tracks are kept, never how many. The returned subset keeps the SOURCE
-        ORDER (sequencing stays box.option_sort's job). Count drops below n only
-        when the source has fewer tracks (short album).
+        """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
+        DL-controlled popularity target. Always SAMPLES max_results at random from
+        the pool (no deterministic block) so a large playlist ROTATES around the
+        target each tap instead of replaying the same top tracks. Returns a
+        source-ordered subset (sequencing stays option_sort's job); count drops
+        below n only when the source has fewer tracks. Only invoked when the box's
+        option_sort is 'smart' (shuffle/asc/desc keep the basic legacy path).
 
-        DL=0 → first n in source order (object played faithfully). DL↑ → curated.
-
-        Popularity is the main driver; mood adds only a small bonus to tracks that
-        carry energy/valence within the target window. Tracks without mood data are
-        NEUTRAL (scored on popularity alone), never penalised — mood coverage is
-        still partial/uncertain, so it must not exclude the feature-less majority.
-
-        Selection mode is self.expand_pick_mode (runtime-switchable for A/B testing):
-          - 'topm'     V0: deterministic top-m by pop + small mood bonus.
-          - 'weighted' V1: temperature-weighted sample (pop**k, k=(10-DL)/5) in the
-                       mood window — popularity bias fades as DL rises.
-          - 'hybrid'   V2 (default): n*(1-DL/10) exploit (top pop) + n*DL/10 explore
-                       (random from the rest) — strongest, most intuitive risk dial.
+        Variant = self.expand_pick_mode:
+          - 'hybrid' (P0): n*(1-DL/10) exploit (sampled ∝ affinity²) + n*DL/10
+                       explore (uniform from the rest) — both stochastic.
+          - 'temp'   (P1): one sample weighted by affinity^k, k=(5-DL)/2.5
+                       (+2 favours the top → 0 uniform → -2 favours the obscure).
+          - 'band'   (P2): one sample weighted by a Gaussian around a target
+                       popularity P*(DL) (≈p90 at DL0 → ≈p10 at DL10).
+        Mood adds a small bonus only when features exist (unknown = neutral).
+        hidden/trash are excluded; recently-played tracks are down-weighted (cooldown).
         """
         if not uris:
             return []
-        # Pull mood/popularity/option_type and drop hidden/trash up front, so
-        # explicitly rejected tracks never resurface — even at DL=0 (source order)
-        # or via high-DL exploration (which samples the bottom of the ranking).
-        feat, pop, excluded = {}, {}, set()
+        feat, pop, last_read, excluded = {}, {}, {}, set()
         try:
-            for t in (Track.select(Track.uri, Track.energy, Track.valence,
-                                   Track.popularity, Track.option_type)
+            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
+                                   Track.option_type, Track.last_read_date)
                           .where(Track.uri << list(uris)).namedtuples()):
                 if t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
@@ -1658,6 +1663,8 @@ class O2mToMopidy:
                     feat[t.uri] = (t.energy, t.valence)
                 if t.popularity is not None:
                     pop[t.uri] = t.popularity
+                if t.last_read_date is not None:
+                    last_read[t.uri] = t.last_read_date
         except Exception as e:
             print(f"_expand_pick lookup error: {e}")
             return list(uris[:min(n, len(uris))])
@@ -1667,44 +1674,53 @@ class O2mToMopidy:
         if not uris:
             return []
         m = min(n, len(uris))
-        if discover_level <= 0 or energy is None or valence is None:
-            return list(uris[:m])
-
-        radius = discover_level / 20.0 + 0.05
         mode = getattr(self, 'expand_pick_mode', 'hybrid')
-
-        # Mood is a SOFT bias on top of popularity, and only when the track actually
-        # carries energy/valence: an unknown mood is treated as NEUTRAL (no bonus, no
-        # penalty), never buried — popularity stays the main driver. Mood coverage is
-        # still incomplete/uncertain, so the bonus is intentionally small.
-        MOOD_BONUS = 0.15
+        now = datetime.datetime.utcnow()
+        radius = discover_level / 20.0 + 0.05
+        MOOD_BONUS = 0.15  # soft, features-only; unknown mood = neutral
 
         def in_mood(u):
             f = feat.get(u)
             return f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius
 
-        def score(u):
+        def cooldown(u):
+            lr = last_read.get(u)
+            if lr is None:
+                return 1.0
+            try:
+                if isinstance(lr, (int, float)):
+                    lr = datetime.datetime.utcfromtimestamp(lr)
+                if getattr(lr, 'tzinfo', None) is not None:
+                    lr = lr.replace(tzinfo=None)
+                age_h = (now - lr).total_seconds() / 3600.0
+                return self.cooldown_mult if age_h < self.cooldown_hours else 1.0
+            except Exception:
+                return 1.0
+
+        def aff(u):  # affinity = popularity + soft mood bonus
             return pop.get(u, 0.5) + (MOOD_BONUS if in_mood(u) else 0.0)
 
-        if mode == 'topm':
-            sel = sorted(uris, key=score, reverse=True)[:m]
-        elif mode == 'weighted':
-            k = max(0.0, (10 - discover_level) / 5.0)
-            in_r = [u for u in uris if in_mood(u)]
-            s = set(in_r)
-            rest = [u for u in uris if u not in s]
-            sel = self._weighted_sample(in_r, pop, k, m)
-            if len(sel) < m:
-                sel += self._weighted_sample(rest, pop, k, m - len(sel))
-        else:  # 'hybrid' (default)
+        if mode == 'temp':
+            k = (5 - discover_level) / 2.5  # +2 (favour top) .. 0 (uniform) .. -2 (favour obscure)
+            weights = {u: (max(aff(u), 1e-6) ** k) * cooldown(u) for u in uris}
+            sel = self._sample_by_weight(uris, weights, m)
+        elif mode == 'band':
+            vals = sorted(pop.get(u, 0.5) for u in uris)
+            p10 = vals[int(0.10 * (len(vals) - 1))]
+            p90 = vals[int(0.90 * (len(vals) - 1))]
+            target = p90 - (p90 - p10) * (discover_level / 10.0)  # DL0→top, DL10→bottom
+            sigma = 0.15
+            weights = {u: math.exp(-((pop.get(u, 0.5) - target) ** 2) / (2 * sigma * sigma))
+                          * (1.0 + (MOOD_BONUS if in_mood(u) else 0.0)) * cooldown(u) for u in uris}
+            sel = self._sample_by_weight(uris, weights, m)
+        else:  # 'hybrid' (P0): stochastic exploit + uniform explore
             n_explore = int(round(m * discover_level / 10.0))
-            ranked = sorted(uris, key=score, reverse=True)
-            exploit = ranked[:m - n_explore]
-            remaining = ranked[m - n_explore:]
-            # Neutral exploration: random lesser-known tracks, no bias on whether
-            # they carry mood features (a feature-less track is unknown, not worse).
-            random.shuffle(remaining)
-            sel = exploit + remaining[:n_explore]
+            ew = {u: (max(aff(u), 1e-6) ** 2) * cooldown(u) for u in uris}
+            exploit = self._sample_by_weight(uris, ew, m - n_explore)
+            ex_set = set(exploit)
+            rest = [u for u in uris if u not in ex_set]
+            xw = {u: cooldown(u) for u in rest}
+            sel = exploit + self._sample_by_weight(rest, xw, n_explore)
 
         sel_set = set(sel)
         try:
@@ -1714,6 +1730,22 @@ class O2mToMopidy:
         except Exception:
             pass
         return [u for u in uris if u in sel_set]  # source order preserved
+
+    def _sample_by_weight(self, uris, weights, n):
+        """Efraimidis-Spirakis weighted sampling without replacement from a
+        precomputed {uri: weight} map (key = rand**(1/w), keep the largest).
+        Returns up to n uris. Missing/≤0 weights fall back to a tiny epsilon."""
+        n = min(n, len(uris))
+        if n <= 0:
+            return []
+        keyed = []
+        for u in uris:
+            w = weights.get(u, 1e-9)
+            if w <= 0:
+                w = 1e-9
+            keyed.append((random.random() ** (1.0 / w), u))
+        keyed.sort(reverse=True)
+        return [u for _, u in keyed[:n]]
 
     def _weighted_sample(self, uris, pop, k, n, default=0.5):
         """Sample up to n uris without replacement, weighted by popularity**k.

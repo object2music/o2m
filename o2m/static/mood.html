@@ -1224,9 +1224,9 @@
         <label class="footer-pick" title="Tapped object filter variant (A/B test)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
           <select id="pick-mode" onchange="setPickMode(this.value)">
-            <option value="hybrid">Pick: Hybrid</option>
-            <option value="weighted">Pick: Weighted</option>
-            <option value="topm">Pick: Top-m</option>
+            <option value="hybrid">Pick: Hybrid (P0)</option>
+            <option value="temp">Pick: Temp (P1)</option>
+            <option value="band">Pick: Band (P2)</option>
           </select>
         </label>
         <button class="footer-link" onclick="triggerWarmup('moods')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Warmup moods</button>
@@ -2276,7 +2276,25 @@ function drawMatrix(ts) {
   ctx.strokeStyle = themeColors.border; ctx.lineWidth = 1;
   ctx.strokeRect(PAD, PAD, inner, inner);
 
-  /* Quadrant labels */
+  /* Quadrant names — big watermark centered in each quadrant, sized so the text
+     spans ~50% of the quadrant's width (each word gets its own font size to match). */
+  const qW = inner / 2, targetW = qW * 0.5;
+  ctx.save();
+  ctx.fillStyle = themeColors.label; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  // Size fixed once from the top-left word (CALM) and reused for all 4, so every
+  // quadrant name renders at the same font size (no per-word rescaling).
+  ctx.font = '800 40px ' + MX_FONT;
+  const qFontSize = Math.round(40 * targetW / ctx.measureText('CALM').width);
+  ctx.font = `800 ${qFontSize}px ` + MX_FONT;
+  [
+    ['CALM',      PAD + inner * 0.25, PAD + inner * 0.25],
+    ['HAPPY',     PAD + inner * 0.75, PAD + inner * 0.25],
+    ['INTENSE',   PAD + inner * 0.25, PAD + inner * 0.75],
+    ['ENERGETIC', PAD + inner * 0.75, PAD + inner * 0.75],
+  ].forEach(([text, cx, cy]) => ctx.fillText(text, cx, cy));
+  ctx.restore();
+
+  /* Quadrant labels (small, edge-anchored) */
   ctx.font = '600 13px ' + MX_FONT; ctx.fillStyle = themeColors.label; ctx.textAlign = 'center';
   ctx.fillText('CALM',      PAD + inner * 0.25, PAD + 17);
   ctx.fillText('HAPPY',     PAD + inner * 0.75, PAD + 17);
@@ -2301,17 +2319,18 @@ function drawMatrix(ts) {
     ctx.fill();
   });
 
-  /* Currently playing — vibing dot */
+  /* Currently playing — blinking dot filled with its own dominant mood color */
   const curF = matrixFeatures[matrixCurUri];
   if (curF) {
     const cx = ex(curF.energy), cy = vy(curF.valence);
-    const pulse = (Math.sin(ts / 600) + 1) / 2;
+    const pulse = (Math.sin(ts / 450) + 1) / 2;
     ctx.beginPath();
     ctx.arc(cx, cy, 9 + pulse * 6, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(${themeColors.pulse},${0.28 * (1 - pulse)})`;
+    ctx.strokeStyle = moodColor(curF.energy, curF.valence, 0.28 * (1 - pulse));
     ctx.lineWidth = 2; ctx.stroke();
     ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2);
-    ctx.fillStyle = themeColors.dotCore; ctx.fill();
+    ctx.fillStyle = moodColor(curF.energy, curF.valence, 0.45 + 0.55 * pulse);
+    ctx.fill();
     ctx.strokeStyle = moodColor(curF.energy, curF.valence, 1);
     ctx.lineWidth = 2.5; ctx.stroke();
   }
