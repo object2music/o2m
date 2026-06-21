@@ -1,8 +1,30 @@
 # Spotify OAuth dynamique — investigation (branche `spotify-oauth`)
 
-But : remplacer le **blob `credentials.json` copié à la main** (mopidy-spotify) par une
-**génération dynamique via une fenêtre OAuth** (HTTPS dispo : `https://o2m.site`), stockée
-localement par instance (volume `./data/spotify`).
+## But final : UNE auth OAuth unifiée et robuste pour les 3 usages
+
+L'objectif n'est pas juste de réparer mopidy-spotify, mais d'**unifier et fiabiliser les trois
+auth Spotify** derrière **un seul login OAuth** (Authorization Code, app Spotify perso, redirect
+`https://o2m.site/api/spotify_callback`), avec l'**union des scopes** :
+
+| Usage | Aujourd'hui | Ce que l'OAuth unifié fournit |
+|---|---|---|
+| **mopidy-spotify** (streaming) | blob `credentials.json` copié à la main, fragile | token user `streaming` → mint du blob librespot (persisté `./data/spotify`) |
+| **Spotipy** (Web API o2m : playlists/library/reco) | `.cache_spotipy` (token séparé) | le même token user (+ refresh) → `.cache_spotipy` |
+| **Édition via l'UI mood** (identité) | proxy Iris public **cassé** | `/v1/me` du même token → cookie signé `require_edit_auth` |
+
+Scopes à demander (union) : `streaming`, `user-read-private`, `user-read-email`,
+`user-library-read/modify`, `playlist-read-private/collaborative`, `playlist-modify-public/private`,
+`user-top-read`, `user-read-recently-played`, `user-follow-read/modify`.
+
+Un seul clic « Connecter Spotify » dans l'UI mood → autorisation → o2m : (1) stocke token+refresh
+(Spotipy), (2) mint le blob librespot (mopidy), (3) pose le cookie d'édition. Token rafraîchi
+automatiquement (refresh_token). Par instance (chacune sa redirect/sous-domaine ou state).
+
+---
+
+But technique sous-jacent : remplacer le **blob `credentials.json` copié à la main** (mopidy-spotify)
+par une **génération dynamique via la fenêtre OAuth** ci-dessus, stockée localement par instance
+(volume `./data/spotify`).
 
 ## Ce qu'on a (mécanisme réel, mopidy-spotify 5.0.0a3 + gst-plugin-spotify/librespot)
 
