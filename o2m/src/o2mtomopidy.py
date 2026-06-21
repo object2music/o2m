@@ -723,10 +723,10 @@ class O2mToMopidy:
             valence = getattr(box, 'option_valence', None)
             if valence is None: valence = self.mood_valence
 
-            # Smart selection (popularity/mood/cooldown via _expand_pick) only applies
-            # when the box opts in via option_sort='smart'. shuffle/asc/desc/none keep
-            # the basic legacy path (raw object expansion, no popularity selection).
-            smart = (getattr(box, 'option_sort', None) == 'smart')
+            # Smart selection (popularity/mood/cooldown via _expand_pick) is the DEFAULT:
+            # it applies when option_sort is 'smart' OR unspecified (NULL/empty).
+            # Only an explicit basic mode (shuffle/asc/desc) opts out to the legacy path.
+            smart = ((getattr(box, 'option_sort', None) or 'smart') == 'smart')
 
             #DB Regulation (tmp)
             #self.reg_box_db(box)
