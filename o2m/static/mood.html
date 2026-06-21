@@ -246,22 +246,37 @@
   body.edit-mode .td-playlists {
     display: block; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
   }
-  .td-playlists .pl-head {
-    font-size: 11px; color: var(--muted); text-transform: uppercase;
-    letter-spacing: .04em; margin-bottom: 6px;
+  /* Trigger button — same look as footer-link / footer-more-toggle */
+  .pl-trigger {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: none; border: 1px solid var(--border); cursor: pointer;
+    padding: 5px 11px; font-size: 11px; letter-spacing: .04em;
+    color: var(--muted); text-align: left; max-width: 100%;
   }
-  .td-playlists .pl-list {
-    display: flex; flex-direction: column; gap: 5px; max-height: 168px; overflow-y: auto;
+  .pl-trigger:hover { border-color: var(--text); background: var(--fill-2); }
+  .pl-trigger .pl-count {
+    background: var(--accent); color: var(--on-accent, #190E04); font-weight: 700;
+    padding: 0 5px; font-size: 10px; min-width: 14px; text-align: center; line-height: 15px;
+    flex-shrink: 0;
   }
-  .td-playlists label {
+  .pl-trigger .pl-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;
+  }
+  .pl-trigger .pl-caret { flex-shrink: 0; }
+  /* Fixed-position dropdown (same pattern as footer "More") */
+  .pl-dropdown {
+    position: fixed; z-index: 200;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 8px; min-width: 200px; max-width: 280px; max-height: 50vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .pl-dropdown label {
     display: flex; align-items: center; gap: 8px; font-size: 12px;
-    color: var(--text); cursor: pointer; min-width: 0;
+    color: var(--text); cursor: pointer; min-width: 0; padding: 3px 2px;
   }
-  .td-playlists label span {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .td-playlists input { accent-color: var(--accent); flex-shrink: 0; }
-  .td-playlists .pl-empty { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  .pl-dropdown label:hover { color: var(--accent); }
+  .pl-dropdown label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-dropdown input { accent-color: var(--accent); flex-shrink: 0; }
   body.edit-mode #mood-matrix { box-shadow: inset 0 0 0 2px var(--accent); }
 
   /* ── Now Playing ── */
@@ -407,11 +422,11 @@
   /* ── Dials ── */
   #dials {
     display: flex; flex-direction: row; justify-content: space-around;
-    align-items: flex-end; padding: 14px 8px 6px; gap: 4px;
+    align-items: flex-end; padding: 6px 8px 2px; gap: 4px;
   }
-  .dial-wrap { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-  .dial-label { font-size: 13px; color: var(--muted); text-transform: uppercase;
-                letter-spacing: .08em; text-align: center; }
+  .dial-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .dial-label { font-size: 12px; color: var(--muted); text-transform: uppercase;
+                letter-spacing: .08em; text-align: center; margin-bottom: 1px; }
   .dial-svg { touch-action: none; cursor: grab; display: block; }
   .dial-svg:active { cursor: grabbing; }
   .dial-track { fill: none; stroke: var(--border); stroke-width: 8; stroke-linecap: round; }
@@ -463,8 +478,8 @@
       padding: 13px 12px 10px; margin: 0;
     }
     #boxes-panel .panel-body { padding: 0 12px 14px; }
-    #dials { padding: 8px 10px 6px; }
-    #matrix-section { padding: 4px 10px 8px; min-width: 0; }
+    #dials { padding: 4px 10px 2px; }
+    #matrix-section { padding: 2px 10px 6px; min-width: 0; }
     #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
     #tracklist-section { padding: 0; }
     #tracklist-wrap { padding: 0 12px 10px; }
@@ -612,6 +627,7 @@
   .eq-icon i:nth-child(1) { animation-duration: 0.8s; animation-delay: 0s; }
   .eq-icon i:nth-child(2) { animation-duration: 1.1s; animation-delay: 0.2s; }
   .eq-icon i:nth-child(3) { animation-duration: 0.7s; animation-delay: 0.1s; }
+  body.is-paused .eq-icon i { animation-play-state: paused; }
   @keyframes eq-bounce {
     from { height: 3px; opacity: .5; }
     to   { height: 16px; opacity: 1; }
@@ -690,9 +706,10 @@
     #footer-links > * { flex-shrink: 0; }
     #footer-links .footer-more-toggle { display: inline-flex; order: 3; margin-left: auto; }
     #footer-links .footer-extra { display: none; }
+    /* Fixed positioning so the popup escapes #footer-links's overflow-y:hidden clip. */
     #footer-links .footer-extra.open {
       display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-      position: absolute; right: 14px; bottom: 100%; margin-bottom: 7px;
+      position: fixed; right: 14px; bottom: 50px;
       background: var(--surface); border: 1px solid var(--border);
       padding: 10px; min-width: 220px; z-index: 50;
     }
@@ -712,7 +729,7 @@
     [data-theme="overprint"] #footer-links .footer-extra { display: none; }
     [data-theme="overprint"] #footer-links .footer-extra.open {
       display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-      position: absolute; right: 14px; bottom: 100%; margin-bottom: 7px;
+      position: fixed; right: 14px; bottom: 50px;
       background: var(--surface); border: 1px solid var(--border);
       padding: 10px; min-width: 220px; z-index: 50;
     }
@@ -790,7 +807,7 @@
   /* ===== Overprint : pochette à gauche, titre pleine largeur en haut, contrôles centre-bas ===== */
   /* Largeur pochette DÉFINIE (vh/vw) : un % se résoudrait à 0 dans la grille → effondrement */
   [data-theme="overprint"] #top-zone {
-    --ovp-w: min(20vh, 18vw);   /* forced compact so the matrix is fully visible (was 33vh/29vw) */
+    --ovp-w: min(31.4vh, 27.6vw);
     display: grid; align-items: start;
     grid-template-columns: auto 1fr minmax(190px, 240px);
     grid-template-areas: "cover mid details";
@@ -829,26 +846,17 @@
   [data-theme="overprint"] #progress-wrap { padding: 2px 6px 4px; }
   [data-theme="overprint"] #artist-name  { font-size: 18px; font-weight: 600; color: var(--text); }
 
-  /* Compact details column: tighter padding, Energy/Valence/Mood share one row,
-     playlists shown as a single-line chip row (expanded, not collapsed). */
+  /* Compact details column: Energy/Valence/Mood share one row. */
   [data-theme="overprint"] #track-details { padding: 8px 12px; gap: 6px; }
-  [data-theme="overprint"] #track-details .td-list { gap: 3px; }
+  [data-theme="overprint"] #track-details .td-list {
+    display: flex; flex-wrap: wrap; gap: 6px 10px;
+  }
   [data-theme="overprint"] #track-details .td-list > div { flex: 1 0 100%; }
   [data-theme="overprint"] #track-details .td-list > div:nth-child(3),
   [data-theme="overprint"] #track-details .td-list > div:nth-child(4),
   [data-theme="overprint"] #track-details .td-list > div:nth-child(5) {
     flex: 1 1 30%;
   }
-  [data-theme="overprint"] #track-details .td-list {
-    display: flex; flex-wrap: wrap; gap: 3px 10px;
-  }
-  [data-theme="overprint"] .td-playlists .pl-list {
-    flex-direction: row; flex-wrap: wrap; max-height: none; gap: 4px 8px;
-  }
-  [data-theme="overprint"] .td-playlists label {
-    border: 1px solid var(--border); padding: 1px 6px; gap: 5px;
-  }
-  [data-theme="overprint"] .td-playlists label span { max-width: 100px; }
 
   /* ===== Invert : bandeau pleine largeur, titre superposé en bas ===== */
   [data-theme="invert"] #top-zone {
@@ -997,25 +1005,6 @@
     50%      { transform: scale(1.06); box-shadow: 0 0 0 14px rgba(255,90,0,0); }
   }
 
-  /* Playlists: collapsible, active-first (kept short). */
-  .td-playlists .pl-toggle {
-    display: flex; align-items: center; gap: 7px; width: 100%;
-    background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 8px;
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted);
-  }
-  .td-playlists .pl-count {
-    background: var(--accent); color: var(--on-accent, #190E04); font-weight: 700;
-    padding: 0 6px; font-size: 10px; min-width: 16px; text-align: center; line-height: 16px;
-  }
-  .td-playlists .pl-caret { margin-left: auto; color: var(--muted); }
-  .td-playlists .pl-more {
-    margin-top: 8px; width: 100%; background: none; border: 1px solid var(--border);
-    cursor: pointer; padding: 6px 10px; color: var(--muted);
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
-  }
-  .td-playlists .pl-more:hover { border-color: var(--text); color: var(--text); }
-
   /* Inline editing of the current track's energy / valence / mood (edit mode). */
   body.edit-mode #td-energy, body.edit-mode #td-valence, body.edit-mode #td-mood {
     cursor: pointer; border-bottom: 1px dotted var(--border-strong);
@@ -1028,13 +1017,6 @@
     padding: 0 4px; border-radius: 0; text-align: right;
   }
   .td-edit-select { width: auto; text-align: left; }
-  .td-hint {
-    display: none; font-size: 11px; color: var(--muted); line-height: 1.4;
-    margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;
-  }
-  body.edit-mode .td-hint.show { display: block; }
-  .td-hint b { color: var(--accent); font-weight: 600; }
-
   @media (max-width: 699px) {
     /* Opener button inside now-playing (right side). */
     #btn-details {
@@ -1070,7 +1052,6 @@
       opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s;
     }
     body.details-open #details-backdrop { opacity: 1; visibility: visible; }
-    .td-playlists .pl-list { max-height: 240px; }
   }
 </style>
 </head>
@@ -1143,7 +1124,6 @@
         <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
         <div><dt>Library</dt><dd id="td-library">—</dd></div>
       </dl>
-      <div id="td-edit-hint" class="td-hint"></div>
       <div id="td-playlists" class="td-playlists"></div>
     </div>
   </div>
@@ -1244,7 +1224,6 @@
   <div id="footer-links">
     <div class="tb-brand">
       <span class="tb-mark">O2M</span>
-      <span class="tb-eyebrow">Mood</span>
     </div>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
@@ -1805,10 +1784,20 @@ async function loadEditablePlaylists() {
   return editablePlaylists;
 }
 
-let plExpanded = true;   // expanded by default → full editable list visible on open
+let _plDropdown = null;
+function _closePlDropdown() {
+  _plDropdown?.remove(); _plDropdown = null;
+  document.removeEventListener('click', _plOutsideClick, true);
+}
+function _plOutsideClick(e) {
+  if (_plDropdown && !_plDropdown.contains(e.target) && !e.target.closest('.pl-trigger'))
+    _closePlDropdown();
+}
+
 async function renderPlaylistEditor(uri) {
   const box = document.getElementById('td-playlists');
   if (!box) return;
+  _closePlDropdown();
   if (!editUnlocked || !uri) { box.innerHTML = ''; return; }
   const pls = await loadEditablePlaylists();
   const inSet = new Set();
@@ -1816,32 +1805,34 @@ async function renderPlaylistEditor(uri) {
     const inPls = await fetch(API + '/track_playlists?uri=' + encodeURIComponent(uri)).then(r => r.json());
     if (Array.isArray(inPls)) inPls.forEach(p => inSet.add(p.id));
   } catch(e) {}
-  if (!pls.length) {
-    box.innerHTML = '<div class="pl-head">Playlists</div>'
-      + '<div class="pl-empty">No editable playlists cached. Open backoffice → cache playlists first.</div>';
-    return;
-  }
   const esc = s => String(s).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
   const active = pls.filter(p => inSet.has(p.id));
-  // Collapsed: only the playlists the track is in. Expanded: the whole editable list.
-  const list = plExpanded ? pls : active;
-  const rows = list.length
-    ? list.map(p =>
-        '<label><input type="checkbox" data-pid="' + esc(p.id) + '"' + (inSet.has(p.id) ? ' checked' : '') + '>'
-        + '<span>' + esc(p.name || p.id) + '</span></label>').join('')
-    : '<div class="pl-empty">Not in any playlist</div>';
-  const more = plExpanded ? 'Show active only' : ('Add to a playlist… (' + pls.length + ')');
+  const labelText = active.length ? active.map(p => p.name || p.id).join(', ') : '—';
   box.innerHTML =
-      '<button type="button" class="pl-head pl-toggle">Playlists'
-        + '<span class="pl-count">' + active.length + '</span>'
-        + '<span class="pl-caret">' + (plExpanded ? '▾' : '▸') + '</span></button>'
-    + '<div class="pl-list">' + rows + '</div>'
-    + '<button type="button" class="pl-more">' + more + '</button>';
-  const toggleExpand = () => { plExpanded = !plExpanded; renderPlaylistEditor(uri); };
-  box.querySelector('.pl-toggle').addEventListener('click', toggleExpand);
-  box.querySelector('.pl-more').addEventListener('click', toggleExpand);
-  box.querySelectorAll('input[type=checkbox]').forEach(cb =>
-    cb.addEventListener('change', () => togglePlaylistMembership(cb, uri)));
+    '<button type="button" class="pl-trigger">'
+    + '<span class="pl-count">' + active.length + '</span>'
+    + '<span class="pl-label">' + esc(labelText) + '</span>'
+    + '<span class="pl-caret">▸</span></button>';
+  box.querySelector('.pl-trigger').addEventListener('click', e => {
+    e.stopPropagation();
+    if (_plDropdown) { _closePlDropdown(); return; }
+    const dropdown = document.createElement('div');
+    dropdown.className = 'pl-dropdown';
+    dropdown.innerHTML = pls.length
+      ? pls.map(p =>
+          '<label><input type="checkbox" data-pid="' + esc(p.id) + '"' + (inSet.has(p.id) ? ' checked' : '') + '>'
+          + '<span>' + esc(p.name || p.id) + '</span></label>').join('')
+      : '<span style="font-size:11px;color:var(--muted)">No editable playlists cached.</span>';
+    dropdown.querySelectorAll('input[type=checkbox]').forEach(cb =>
+      cb.addEventListener('change', () => togglePlaylistMembership(cb, uri)));
+    const rect = box.querySelector('.pl-trigger').getBoundingClientRect();
+    dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+    dropdown.style.top   = (rect.bottom + 4) + 'px';
+    document.body.appendChild(dropdown);
+    _plDropdown = dropdown;
+    setTimeout(() => document.addEventListener('click', _plOutsideClick, true), 0);
+    box.querySelector('.pl-caret').textContent = '▾';
+  });
 }
 
 async function togglePlaylistMembership(cb, uri) {
@@ -1872,19 +1863,13 @@ function renderFav() {
            + (editUnlocked ? ' — click to toggle' : '');
 }
 
-function updateEditHint(noFeat) {
-  const h = document.getElementById('td-edit-hint');
-  if (!h) return;
-  h.classList.toggle('show', !!noFeat);
-  if (noFeat) h.innerHTML = 'No energy/valence yet — click the values above, or click the <b>matrix</b> to set them.';
-}
 
 async function renderTrackDetails(uri) {
   // Skip elements that currently hold an open inline editor.
   const set = (id, v) => { const el = document.getElementById(id); if (el && !el.querySelector('input,select')) el.textContent = v; };
   if (!uri) {
     ['td-type','td-energy','td-valence','td-mood','td-popularity','td-plays','td-library'].forEach(id => set(id, '—'));
-    detailsUri = null; favLocal = false; favSpotify = null; renderFav(); updateEditHint(false);
+    detailsUri = null; favLocal = false; favSpotify = null; renderFav(); 
     return;
   }
   try {
@@ -1897,7 +1882,7 @@ async function renderTrackDetails(uri) {
     set('td-popularity', ev(info.popularity));
     set('td-plays',   (info.read_count_end ?? 0) + '');
     set('td-library', info.library || '—');
-    updateEditHint(info.energy == null || info.valence == null);
+    
     favLocal = !!info.liked;
     // Statut Spotify : seulement quand l'uri change, pour ne pas spammer l'API
     if (uri !== detailsUri) {
@@ -2186,7 +2171,7 @@ async function saveCurrentTrackFeatures() {
     });
     if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     setFeedback('Energy / valence saved');
-    updateEditHint(false);
+    
   } catch(e) { setFeedback('Save error'); }
 }
 
@@ -2230,7 +2215,7 @@ function editTrackNumber(kind) {            // kind = 'energy' | 'valence'
     matrixFeatures[matrixCurUri] = { energy, valence };
     document.getElementById('td-energy').textContent  = Math.round(energy * 10)  + '/10';
     document.getElementById('td-valence').textContent = Math.round(valence * 10) + '/10';
-    updateEditHint(false);
+    
     await saveTrackFeature({ energy, valence });
   };
   inp.addEventListener('blur', commit);
@@ -2985,6 +2970,7 @@ function setupProgressSeek() {
 let progBaseMs = 0, progBaseAt = 0, progPlaying = false, lastNpUri = null, lastCoverUrl = '';
 function setClock(posMs, playing) {
   progBaseMs = Math.max(0, posMs || 0); progBaseAt = Date.now(); progPlaying = !!playing;
+  document.body.classList.toggle('is-paused', !progPlaying);
 }
 function clockPosMs() {
   return progPlaying ? progBaseMs + (Date.now() - progBaseAt) : progBaseMs;
