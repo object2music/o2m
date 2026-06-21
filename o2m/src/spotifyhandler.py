@@ -9,7 +9,8 @@ class SpotifyHandler:
         o2m_config = util.get_config_file("o2m.conf")["o2m"]
         self._lastfm_api_key = o2m_config.get("lastfm_api_key", "").strip() or None
         self.cache_path = ".cache_spotipy"
-        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify"
+        # Unified scope: Web API (Spotipy) + streaming (librespot/mopidy-spotify) + identity (edit-auth /v1/me)
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify streaming user-read-private user-read-email"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]

@@ -1046,8 +1046,23 @@ if __name__ == "__main__":
 
             # Step 3. Signed in, display data
             o2mHandler.spotifyHandler.sp = spotipy.Spotify(auth_manager=auth_manager)
-            return f'<h2>Hi {o2mHandler.spotifyHandler.sp.me()["display_name"]}, ' \
-            f'<small><a href="/api/spotipy_out">[sign out]<a/></small></h2>' \
+            # Fan-out #1 (edit-auth): the same Spotify login also unlocks the mood-edit
+            # space — set the signed cookie if the identity is in the allowlist (replaces
+            # the broken Iris proxy). Secure when served over HTTPS (behind Caddy).
+            from flask import make_response
+            me = o2mHandler.spotifyHandler.sp.me()
+            uid = (me.get("id") or "").strip()
+            resp = make_response(
+                f'<h2>Hi {me.get("display_name") or uid}, '
+                f'<small><a href="/api/spotipy_out">[sign out]</a></small></h2>'
+            )
+            if uid.lower() in _edit_allowlist():
+                resp.set_cookie(
+                    _EDIT_COOKIE, _edit_serializer.dumps({"id": uid}),
+                    max_age=_EDIT_MAX_AGE, httponly=True, samesite="Lax",
+                    secure=(request.headers.get("X-Forwarded-Proto", "") == "https"),
+                )
+            return resp
 
         @api.route('/api/spotipy_out')
         def api_spotipy_out():
