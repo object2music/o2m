@@ -47,6 +47,40 @@ Constats vérifiés dans le conteneur :
 
 → C'est exactement le symptôme d'o2m_1 : blob périmé/absent ⇒ pas de musique (podcasts via mopidy-podcast OK).
 
+## Cohabitation avec l'existant (.env + flow déjà présent)
+
+Le `.env` contient **deux apps Spotify** + un compte ; ce sont des **credentials d'APP**, pas des
+sessions user. La fenêtre du front produit, elle, un **token USER** (Authorization Code) — chose
+**complémentaire**, pas concurrente : l'OAuth user **utilise** le client_id/secret d'une app pour
+produire le token. On n'enlève rien, on **ajoute la couche user** par-dessus.
+
+| Clé .env (o2m_1) | Rôle | Devenir dans l'unification |
+|---|---|---|
+| `SPOTIFY_CLIENT_ID` = `f650d733-…` (UUID) + `SPOTIFY_CLIENT_SECRET` | app **mopidy-spotify** (`mopidy.conf [spotify] client_id`) : client_credentials metadata + identité librespot | reste pour la metadata ; le **streaming** prend le blob minté via l'OAuth user |
+| `SPOTIPY_CLIENT_ID` = `2c8b31fd…` (32 hex) + `SPOTIPY_CLIENT_SECRET` | app **Web API o2m (Spotipy)** | **= l'app de l'OAuth unifié** (on lui ajoute le scope `streaming` + redirect HTTPS) |
+| `SPOTIPY_REDIRECT_URI` = `http://109.7.238.172:6691/api/spotipy_init` | redirect du flow Spotipy **existant** | → **`https://<sous-domaine>/api/spotipy_init`** (HTTPS, par instance) |
+| `SPOTIFY_USERNAME` / `SPOTIFY_PASSWORD` | legacy (déprécié mopidy-spotify 5.x) | inutilisé pour l'auth |
+
+**Le scaffolding existe déjà** : `main.py:/api/spotipy_init` fait le flow Authorization Code complet
+(`SpotifyOAuth.get_authorize_url()` → callback `get_access_token(code)` → `.cache_spotipy` via
+`CacheFileHandler`), avec `spotifyhandler.scope` (Web API). **Il manque juste** : redirect **HTTPS** +
+scope **`streaming`** + **fan-out** du token vers les 3 consommateurs.
+
+**Unifier = upgrader CE flow** (pas en créer un nouveau) :
+1. `spotifyhandler.scope` += `streaming user-read-private user-read-email`.
+2. `SPOTIPY_REDIRECT_URI` → `https://<sous-domaine instance>/api/spotipy_init` (enregistrer chaque
+   sous-domaine dans le dashboard de l'app SPOTIPY ; Spotify accepte plusieurs redirect URIs).
+3. À la fin de `/api/spotipy_init` (token obtenu) → **fan-out** :
+   - **Spotipy** : déjà (`.cache_spotipy`). ✓
+   - **Édition mood** : `/v1/me` → cookie signé `require_edit_auth` (remplace le proxy Iris cassé).
+   - **mopidy-spotify** : mint du `credentials.json` librespot depuis ce token (spike #1).
+4. Par instance : chacune garde son `.cache_spotipy`, son blob librespot (volume `./data/spotify`),
+   son sous-domaine de redirect.
+
+⚠️ À valider au spike : un token issu de l'app **SPOTIPY** (avec `streaming`) suffit-il à librespot
+même si `mopidy.conf client_id` = app **mopidy** (f650d733) ? Sinon → pointer `mopidy.conf client_id`
+sur l'app SPOTIPY (full consolidation 1 app).
+
 ## Le vrai problème à résoudre
 
 Produire dynamiquement un **`credentials.json` librespot (auth_type 1)** à partir d'un **login user OAuth**,
