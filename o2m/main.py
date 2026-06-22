@@ -651,6 +651,9 @@ if __name__ == "__main__":
         if 'discover_level' in data:
             o2mHandler.discover_level = int(data['discover_level'])
         added = o2mHandler.apply_mood_settings()
+        if added is not None and added < 0:
+            # Skipped: user boxes are active → mood affects their future recommendations.
+            return jsonify({'status': 'boxes_active', 'tracks_added': 0})
         return jsonify({'status': 'ok', 'tracks_added': added})
 
     @api.route('/api/track_features')
@@ -997,6 +1000,20 @@ if __name__ == "__main__":
     def api_reset_o2m():
         o2mHandler.starting_mode(True,True)
         return ("reset")
+
+    @api.route('/api/clear_boxes')
+    def api_clear_boxes():
+        """Authoritatively deactivate EVERY active box server-side and clear the
+        tracklist — a clean slate so the mood matrix rebuilds the auto mix.
+        (starting_mode clears the tracklist but not activeboxs, and the UI only
+        deactivates boxes it renders; this is the reliable empty-everything.)"""
+        from flask import jsonify
+        o2mHandler.activeboxs = []
+        try:
+            o2mHandler.starting_mode(clear=True)
+        except Exception as e:
+            print(f"clear_boxes error: {e}")
+        return jsonify({'status': 'cleared'})
 
     @api.route('/api/restart_o2m')
     def api_restart_o2m():

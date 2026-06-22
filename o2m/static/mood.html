@@ -1379,7 +1379,9 @@ async function applyMood() {
       body: JSON.stringify(body)
     });
     const d = await r.json();
-    setFeedback(d.tracks_added > 0 ? `${d.tracks_added} tracks loaded` : 'No matching tracks');
+    setFeedback(d.status === 'boxes_active'
+      ? 'Boxes active — mood applied to recommendations (empty the boxes to rebuild)'
+      : d.tracks_added > 0 ? `${d.tracks_added} tracks loaded` : 'No matching tracks');
     moodSessionActive = true;   // on est désormais dans un mix mood → potards en direct
     updateAutoBtn();
     setTimeout(refreshNowPlaying, 600);
@@ -2558,12 +2560,10 @@ async function clearTracklist() {
 
 /* Clear all active boxes (deactivate each), like the tracklist trash button. */
 async function clearAllBoxes() {
-  const active = [...document.querySelectorAll('#boxes-wrap .box-btn.active')];
-  if (!active.length) { setFeedback('No active box'); return; }
   setFeedback('Clearing boxes…');
-  for (const btn of active) {
-    try { await fetch(API + '/box?uid=' + encodeURIComponent(btn.dataset.uid) + '&mode=remove'); } catch(e) {}
-  }
+  // Authoritative server-side purge of activeboxs (not just the DOM-rendered ones),
+  // so a residual active box can't block the mood-matrix rebuild.
+  try { await fetch(API + '/clear_boxes'); } catch(e) {}
   setFeedback('All boxes cleared');
   setTimeout(() => { refreshBoxStates(); refreshNowPlaying(); }, 600);
 }

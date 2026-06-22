@@ -32,8 +32,11 @@ class O2mToMopidy:
     podcast_newest_first = False
     option_sort = "desc"
     expand_pick_mode = "hybrid"  # smart-selection variant: hybrid (P0) | temp (P1) | band (P2)
-    cooldown_hours = 8.0         # recently-played tracks are down-weighted in smart selection
-    cooldown_mult = 0.05         # weight multiplier applied within the cooldown window
+    cooldown_hours = 8.0         # recently-PLAYED tracks are down-weighted in smart selection
+    cooldown_mult = 0.05         # weight multiplier applied within the played-cooldown window
+    exploit_sharpness = 1.3      # P0 exploit weight exponent (affinity**this); 2 was too repetitive
+    served_cooldown_min = 30.0   # minutes; tracks just SERVED (selected) are down-weighted
+    served_mult = 0.1            # weight multiplier applied within the served-cooldown window
 
     avg_stats = {}
 
@@ -1154,7 +1157,7 @@ class O2mToMopidy:
                       if 'auto:library' not in (getattr(b, 'data', '') or '')]
         if user_boxes:
             print("apply_mood_settings: user box(es) active → no rebuild (reco impact handled later)")
-            return 0
+            return -1  # sentinel: skipped because boxes are active (not "0 matches")
 
         # Drop any previously self-activated auto box so we can refresh it cleanly
         self.activeboxs = [b for b in self.activeboxs
@@ -1682,6 +1685,10 @@ class O2mToMopidy:
         m = min(n, len(uris))
         mode = getattr(self, 'expand_pick_mode', 'hybrid')
         now = datetime.datetime.utcnow()
+        now_ts = time.time()
+        served = getattr(self, '_served_at', None)
+        if served is None:
+            self._served_at = served = {}
         radius = discover_level / 20.0 + 0.05
         MOOD_BONUS = 0.15  # soft, features-only; unknown mood = neutral
 
@@ -1689,26 +1696,33 @@ class O2mToMopidy:
             f = feat.get(u)
             return f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius
 
-        def cooldown(u):
+        def cd(u):
+            """Combined anti-repeat down-weight: a track recently PLAYED
+            (last_read_date, hours) and/or recently SERVED in a previous tap
+            (_served_at, minutes) is demoted, so successive taps rotate."""
+            f = 1.0
             lr = last_read.get(u)
-            if lr is None:
-                return 1.0
-            try:
-                if isinstance(lr, (int, float)):
-                    lr = datetime.datetime.utcfromtimestamp(lr)
-                if getattr(lr, 'tzinfo', None) is not None:
-                    lr = lr.replace(tzinfo=None)
-                age_h = (now - lr).total_seconds() / 3600.0
-                return self.cooldown_mult if age_h < self.cooldown_hours else 1.0
-            except Exception:
-                return 1.0
+            if lr is not None:
+                try:
+                    if isinstance(lr, (int, float)):
+                        lr = datetime.datetime.utcfromtimestamp(lr)
+                    if getattr(lr, 'tzinfo', None) is not None:
+                        lr = lr.replace(tzinfo=None)
+                    if (now - lr).total_seconds() / 3600.0 < self.cooldown_hours:
+                        f *= self.cooldown_mult
+                except Exception:
+                    pass
+            sa = served.get(u)
+            if sa is not None and (now_ts - sa) < self.served_cooldown_min * 60.0:
+                f *= self.served_mult
+            return f
 
         def aff(u):  # affinity = popularity + soft mood bonus
             return pop.get(u, 0.5) + (MOOD_BONUS if in_mood(u) else 0.0)
 
         if mode == 'temp':
             k = (5 - discover_level) / 2.5  # +2 (favour top) .. 0 (uniform) .. -2 (favour obscure)
-            weights = {u: (max(aff(u), 1e-6) ** k) * cooldown(u) for u in uris}
+            weights = {u: (max(aff(u), 1e-6) ** k) * cd(u) for u in uris}
             sel = self._sample_by_weight(uris, weights, m)
         elif mode == 'band':
             vals = sorted(pop.get(u, 0.5) for u in uris)
@@ -1717,18 +1731,20 @@ class O2mToMopidy:
             target = p90 - (p90 - p10) * (discover_level / 10.0)  # DL0→top, DL10→bottom
             sigma = 0.15
             weights = {u: math.exp(-((pop.get(u, 0.5) - target) ** 2) / (2 * sigma * sigma))
-                          * (1.0 + (MOOD_BONUS if in_mood(u) else 0.0)) * cooldown(u) for u in uris}
+                          * (1.0 + (MOOD_BONUS if in_mood(u) else 0.0)) * cd(u) for u in uris}
             sel = self._sample_by_weight(uris, weights, m)
         else:  # 'hybrid' (P0): stochastic exploit + uniform explore
             n_explore = int(round(m * discover_level / 10.0))
-            ew = {u: (max(aff(u), 1e-6) ** 2) * cooldown(u) for u in uris}
+            ew = {u: (max(aff(u), 1e-6) ** self.exploit_sharpness) * cd(u) for u in uris}
             exploit = self._sample_by_weight(uris, ew, m - n_explore)
             ex_set = set(exploit)
             rest = [u for u in uris if u not in ex_set]
-            xw = {u: cooldown(u) for u in rest}
+            xw = {u: cd(u) for u in rest}
             sel = exploit + self._sample_by_weight(rest, xw, n_explore)
 
         sel_set = set(sel)
+        for u in sel_set:
+            served[u] = now_ts  # remember what we just served (served-cooldown)
         try:
             ps = [pop.get(u, 0.5) for u in sel_set]
             print(f"_expand_pick[{mode}] DL={discover_level} pool={len(uris)} "
