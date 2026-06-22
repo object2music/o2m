@@ -1587,6 +1587,12 @@ class O2mToMopidy:
         """
         if not uris:
             return []
+        # Some auto-fill sources hand in nested lists (e.g. News) — flatten to flat
+        # scalar URIs, else the `uri IN (...)` lookup raises "Operand should contain
+        # 1 column(s)" and the whole mood/popularity selection silently falls back.
+        uris = [u for u in util.flatten_list(list(uris)) if isinstance(u, str) and u]
+        if not uris:
+            return []
         # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1 (proportional), DL=10 → 0 (uniform)
         k = max(0.0, (10 - discover_level) / 5.0)
 
