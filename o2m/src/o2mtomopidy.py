@@ -1921,6 +1921,11 @@ class O2mToMopidy:
 
         #Harmonize option_type if new
         if 'new' in option_type: option_type='new'
+        # Content activated outside any box (e.g. Iris search) has no context, so option_type
+        # falls back to 'new'. A podcast/video URI is never a Spotify 'new' discovery — classify
+        # it by type so it stays resumable and out of the 'new' removal/reco flow.
+        if option_type == 'new' and (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)):
+            option_type = 'podcast'
         new_stat = False
 
         #Get stats
