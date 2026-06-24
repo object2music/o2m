@@ -1959,10 +1959,13 @@ class O2mToMopidy:
 
         #Avoid downgrade of option types in DB
         #Due to many possibilities of change, we remove it and follow the flow !
-        if not(option_type == 'new' and (stat.option_type == 'library' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
-            #if not(option_type == 'library' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
-            if not(option_type == 'incoming' and (stat.option_type == 'library' or stat.option_type == 'favorites')):
-                stat.option_type = option_type
+        # Keep an 'info' classification sticky: an info-box item (handled by the news/actuality
+        # window) must not be silently downgraded to 'podcast'/'new' by a later casual replay.
+        if not(stat.option_type == 'info' and option_type in ('new', 'podcast')):
+            if not(option_type == 'new' and (stat.option_type == 'library' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
+                #if not(option_type == 'library' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
+                if not(option_type == 'incoming' and (stat.option_type == 'library' or stat.option_type == 'favorites')):
+                    stat.option_type = option_type
         #stat.option_type = option_type
         
         # Store library_link in the in_library field (repurposed from obsolete boolean)
