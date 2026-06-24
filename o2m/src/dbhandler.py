@@ -424,26 +424,24 @@ class DatabaseHandler():
         return []
 
     def get_uris_podcasts_notread(self, limit=15, discover_level=5):
-        #Track unfinished
-        #pattern="%podcast+%"
-        date_now = datetime.datetime.utcnow().timestamp()
-        #query = Track.select().where( ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))& (Track.read_end <= 0.9)& (Track.read_position > 30000)& (Track.option_type != "info")& (Track.option_type != "library")).order_by(Track.last_read_date.desc()).limit(limit)
-        #query = Track.select().where( ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))
-        query = Track.select().where( ((Track.uri % '%podcast+%')| (Track.uri % '%youtube:video%')| (Track.uri % '%yt:%'))& (Track.read_end < 0.9)& (Track.read_position > 0)& (Track.read_count_end == 0)
-            & (
-            #((Track.option_type != "info")& (Track.option_type != "library")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
-            ((Track.option_type != "library")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level))
-            |((Track.option_type == "podcast")& (Track.read_count_end <= discover_level/2) & (Track.skipped_count <= discover_level*2)) 
-            )).order_by(Track.last_read_date.desc()).limit(limit)
+        # "Unfinished / resume": the LAST listen didn't finish (read_end < 0.9) and there is a
+        # real position. This OVERRIDES past completions — an episode finished-then-restarted
+        # (e.g. ended by accident) is eligible again, whatever its read_count_end.
+        # info-typed items are handled by the news/actuality window, not here.
+        # Soft ranking instead of hard skip/age thresholds: bring the most recent and
+        # least-skipped to the top, THEN apply the selection window (limit). The per-skip
+        # recency cost shrinks as discover_level rises (more tolerant when exploring more).
+        skip_penalty = max(1, 8 - discover_level) * 86400  # seconds of recency lost per skip
+        effective_recency = Track.last_read_date - (Track.skipped_count * skip_penalty)
+        query = Track.select().where(
+            ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%') | (Track.uri % '%yt:%'))
+            & (Track.read_end < 0.9)
+            & (Track.read_position > 0)
+            & (Track.option_type != "library")
+            & (Track.option_type != "info")
+        ).order_by(effective_recency.desc()).limit(limit)
         results = self.transform_query_to_list(query)
-        print (results)
-        if len(results) > 0:
-            #uris = [o.uri for o in results]
-            uris = []
-            for o in results:
-                #uris.append(self.podcast_uri_remove_max_results(o.uri))
-                uris.append(o.uri)
-            return uris
+        return [o.uri for o in results] if results else []
 
     # ─── Cache helpers ─────────────────────────────────────────────────────────
 
