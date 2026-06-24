@@ -73,16 +73,21 @@ class DatabaseHandler():
 
     #Manage Podcasts url
     def podcast_uri_remove_max_results(self,uri):
+        # Canonical podcast/episode URI: strip the feed-level ?max_results=N param so the
+        # same episode (identified by its #guid) maps to ONE stat row, however it was played.
+        # No-op for any URI without ?max_results= (radio/tunein http://, spotify, local…),
+        # so non-podcast lookups are never altered.
+        if not uri or "?max_results=" not in uri:
+            return uri
         if "http://" in uri:
             uri = uri.replace("http://", "https://")
-        if "?max_results=" in uri : 
-            uri1 = uri.split("?max_results=")
-            if "#" in uri1[1]: 
-                uri2 = uri1[1].split("#")
-                track_uri = str(uri1[0]) + "#" + str(uri2[1])
-            else : track_uri = str(uri1[0])
-            return track_uri
-        else: return uri
+        uri1 = uri.split("?max_results=")
+        if "#" in uri1[1]:
+            uri2 = uri1[1].split("#")
+            track_uri = str(uri1[0]) + "#" + str(uri2[1])
+        else:
+            track_uri = str(uri1[0])
+        return track_uri
 
     #BOX
     def create_box(self, uid, media_url):
@@ -170,6 +175,7 @@ class DatabaseHandler():
 
     #STATS
     def create_stat(self, uri):
+        uri = self.podcast_uri_remove_max_results(uri)
         try:
             stat = Track.create(uri=uri)
             return stat
@@ -185,7 +191,13 @@ class DatabaseHandler():
         return self.transform_query_to_list(query)
     
     def get_stat_by_uri(self, uri):
-        query = Track.select().where(Track.uri == uri)
+        # Match the canonical (no ?max_results) URI OR the raw one, so lookups work whether
+        # or not the row has been migrated yet (safe rollout on un-migrated DBs).
+        canon = self.podcast_uri_remove_max_results(uri)
+        if canon != uri:
+            query = Track.select().where((Track.uri == canon) | (Track.uri == uri))
+        else:
+            query = Track.select().where(Track.uri == uri)
         results = self.transform_query_to_list(query)
         if len(results) > 0:
             #print (results[0])
@@ -214,10 +226,12 @@ class DatabaseHandler():
 
     
     def stat_exists(self, uri):
-        if len(Track.select().where(Track.uri == uri)) > 0:
-            return True
+        canon = self.podcast_uri_remove_max_results(uri)
+        if canon != uri:
+            q = Track.select().where((Track.uri == canon) | (Track.uri == uri))
         else:
-            return False
+            q = Track.select().where(Track.uri == uri)
+        return len(q) > 0
 
     def get_avg_stat(self, option_type='', column='read_end'):
         if option_type != '':
@@ -333,6 +347,7 @@ class DatabaseHandler():
         return deleted
 
     def create_stat_raw(self, uri, read_time, read_hour, username):
+        uri = self.podcast_uri_remove_max_results(uri)
         stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
         return stat_raw
 
