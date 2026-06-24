@@ -225,6 +225,24 @@
   }
   #btn-edit-lock svg { width: 15px; height: 15px; display: block; }
   #btn-edit-lock.unlocked { color: var(--accent); }
+  /* Row holding the playlists trigger (edit-mode only) and the track-options
+     "More" trigger (always visible, pinned to the right). */
+  .td-actions-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .track-menu-trigger { margin-left: auto; }
+  /* Fixed-position dropdown, same pattern as footer "More" / playlists */
+  .track-menu-dropdown {
+    position: fixed; z-index: 200;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 6px; min-width: 170px; max-width: 240px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .track-menu-dropdown button {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    background: none; border: none; cursor: pointer; padding: 7px 8px;
+    font-size: 12px; color: var(--text); text-align: left;
+  }
+  .track-menu-dropdown button:hover { background: var(--fill-2); color: var(--accent); }
+  .track-menu-dropdown button svg { width: 14px; height: 14px; flex-shrink: 0; }
   #track-details .td-list { display: flex; flex-direction: column; gap: 7px; margin: 0; }
   #track-details .td-list > div {
     display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
@@ -1124,7 +1142,10 @@
         <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
         <div><dt>Library</dt><dd id="td-library">—</dd></div>
       </dl>
-      <div id="td-playlists" class="td-playlists"></div>
+      <div class="td-actions-row">
+        <div id="td-playlists" class="td-playlists"></div>
+        <button id="btn-track-menu" class="footer-link track-menu-trigger" title="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>More</button>
+      </div>
     </div>
   </div>
 </div><!-- /top-zone -->
@@ -1158,6 +1179,9 @@
   <div id="left-panel" class="col collapsible">
   <button class="panel-head" id="settings-label">Mood</button>
   <div class="panel-body">
+  <div id="matrix-section">
+    <canvas id="mood-matrix"></canvas>
+  </div>
   <div id="dials">
     <div class="dial-wrap">
       <div class="dial-label">Energy</div>
@@ -1192,9 +1216,6 @@
       </svg>
       <div class="dial-sub">focused ↔ adventurous</div>
     </div>
-  </div>
-  <div id="matrix-section">
-    <canvas id="mood-matrix"></canvas>
   </div>
   <div id="genres-section">
     <div id="genres-label">Genres</div>
@@ -1474,16 +1495,53 @@ function imageUrl(uri) {
   return API + '/mopidy_image?uri=' + encodeURIComponent(uri);
 }
 
+// Signature of the rendered list (tlids + uris). Lets us skip the full DOM
+// rebuild when refreshNowPlaying fires but the list content is unchanged — which
+// is the common case (10s safety net, play/pause, spurious tracklist_changed).
+let lastTracklistSig = null;
+
+// Lightweight update when only the active track moved within the same list:
+// move the `.current` class + eq-icon instead of wiping and rebuilding the DOM.
+function updateCurrentRow(wrap, activeTlid) {
+  wrap.querySelectorAll('.tl-item').forEach((item, i) => {
+    const num = item.querySelector('.tl-num');
+    if (Number(item.dataset.tlid) === activeTlid) {
+      item.classList.add('current');
+      if (num && !num.querySelector('.eq-icon'))
+        num.innerHTML = '<span class="eq-icon"><i></i><i></i><i></i></span>';
+    } else {
+      item.classList.remove('current');
+      if (num && num.querySelector('.eq-icon'))
+        num.textContent = String(i + 1).padStart(2, '0');
+    }
+  });
+  const cur = wrap.querySelector('.tl-item.current');
+  if (cur && activeTlid !== lastScrolledTlid) {
+    lastScrolledTlid = activeTlid;
+    requestAnimationFrame(() => scrollTracklistToCurrent(cur));
+  }
+}
+
 function renderTracklist(tracks, activeTlid) {
   const wrap = document.getElementById('tracklist-wrap');
   const count = document.getElementById('tracklist-count');
-  wrap.innerHTML = '';
   currentTracklistLength = tracks.length;
+
+  const sig = tracks.map(({tlid, track}) => tlid + ':' + (track?.uri || '')).join('|');
+  if (sig === lastTracklistSig) {
+    // Same list — at most the current row changed. No wipe, no re-fetch.
+    updateCurrentRow(wrap, activeTlid);
+    return;
+  }
+  lastTracklistSig = sig;
+
+  wrap.innerHTML = '';
   count.textContent = tracks.length ? `${tracks.length} tracks` : '';
   let scrollTarget = null;
   tracks.forEach(({tlid, track}, i) => {
     const item = document.createElement('div');
     item.className = 'tl-item' + (tlid === activeTlid ? ' current' : '');
+    item.dataset.tlid = tlid;
     const num = document.createElement('div');
     num.className = 'tl-num';
     if (tlid === activeTlid) {
@@ -1529,13 +1587,18 @@ function scrollableAncestor(el) {
   return null;
 }
 
-/* Centre le titre courant dans son conteneur scrollable (no-op si rien ne scrolle) */
+/* Cale le titre courant en haut de son conteneur scrollable, sous l'en-tête
+   sticky s'il y en a un (no-op si rien ne scrolle) */
 function scrollTracklistToCurrent(item) {
   const container = scrollableAncestor(item);
   if (!container) return;
   const cRect = container.getBoundingClientRect();
   const iRect = item.getBoundingClientRect();
-  const offset = (iRect.top - cRect.top) - (container.clientHeight - item.offsetHeight) / 2;
+  const header = container.querySelector('#tracklist-label');
+  const topPad = (header && getComputedStyle(header).position === 'sticky')
+    ? header.getBoundingClientRect().height
+    : 0;
+  const offset = (iRect.top - cRect.top) - topPad - 6;
   container.scrollBy({ top: offset, behavior: 'smooth' });
 }
 
@@ -1654,10 +1717,16 @@ async function refreshNowPlaying() {
   if (trackChanged) fetchAndRenderTrackTags(matrixCurUri);
 
   const playBtn = document.getElementById('btn-play');
-  playBtn.dataset.state = playing ? 'playing' : 'paused';
-  playBtn.innerHTML = playing
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+  const playState = playing ? 'playing' : 'paused';
+  // Only rewrite the SVG when the state actually flips — rewriting innerHTML on
+  // every refresh (10s safety net + each WS event) repaints the button and makes
+  // it flicker during playback.
+  if (playBtn.dataset.state !== playState) {
+    playBtn.dataset.state = playState;
+    playBtn.innerHTML = playing
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+  }
 
   if (track) {
     document.getElementById('track-name').textContent  = track.name || '—';
@@ -1716,14 +1785,24 @@ function updateMediaSession(track, isPlaying, coverUrl) {
   if (!('mediaSession' in navigator)) return;
   navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
   if (track) {
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title:  track.name || '',
-      artist: (track.artists || []).map(a => a.name).join(', ') || '',
-      album:  track.album?.name || '',
-      artwork: coverUrl ? [{ src: coverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
-    });
+    // Only rebuild metadata when the track or cover actually changes. Assigning a
+    // new MediaMetadata makes Android re-fetch the artwork and redraw the media
+    // notification — doing it on every 10s refresh flashes the system controls.
+    const sig = (track.uri || '') + '|' + (coverUrl || '');
+    if (sig !== _mediaMetaSig) {
+      _mediaMetaSig = sig;
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title:  track.name || '',
+        artist: (track.artists || []).map(a => a.name).join(', ') || '',
+        album:  track.album?.name || '',
+        artwork: coverUrl ? [{ src: coverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
+      });
+    }
+  } else {
+    _mediaMetaSig = null;
   }
 }
+let _mediaMetaSig = null;
 
 /* ── Ancre Media Session ───────────────────────────────────────────────────────
    Snapcast joue via WebAudio (gainNode → ctx.destination, inchangé). WebAudio seul
@@ -1794,6 +1873,43 @@ function _closePlDropdown() {
 function _plOutsideClick(e) {
   if (_plDropdown && !_plDropdown.contains(e.target) && !e.target.closest('.pl-trigger'))
     _closePlDropdown();
+}
+
+/* Track-options dropdown (top-right of #track-details), same fixed-popup
+   pattern as the footer "More" / playlists dropdowns. New menu items are
+   plain <button data-action="..."> entries handled below. */
+let _trackMenuEl = null;
+function _closeTrackMenu() {
+  _trackMenuEl?.remove(); _trackMenuEl = null;
+  document.removeEventListener('click', _trackMenuOutsideClick, true);
+  document.getElementById('btn-track-menu')?.setAttribute('aria-expanded', 'false');
+}
+function _trackMenuOutsideClick(e) {
+  if (_trackMenuEl && !_trackMenuEl.contains(e.target) && !e.target.closest('#btn-track-menu'))
+    _closeTrackMenu();
+}
+function openTrackMenu(triggerBtn) {
+  if (_trackMenuEl) { _closeTrackMenu(); return; }
+  if (!matrixCurUri) return;
+  const menu = document.createElement('div');
+  menu.className = 'track-menu-dropdown';
+  menu.innerHTML =
+    '<button type="button" data-action="copy-link">'
+    + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
+    + 'Copy link</button>';
+  menu.querySelector('[data-action="copy-link"]').addEventListener('click', () => {
+    navigator.clipboard.writeText(matrixCurUri)
+      .then(() => setFeedback('Link copied'))
+      .catch(() => setFeedback('Copy failed'));
+    _closeTrackMenu();
+  });
+  const rect = triggerBtn.getBoundingClientRect();
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  menu.style.top   = (rect.bottom + 4) + 'px';
+  document.body.appendChild(menu);
+  _trackMenuEl = menu;
+  triggerBtn.setAttribute('aria-expanded', 'true');
+  setTimeout(() => document.addEventListener('click', _trackMenuOutsideClick, true), 0);
 }
 
 async function renderPlaylistEditor(uri) {
@@ -2295,13 +2411,6 @@ function drawMatrix(ts) {
     ['ENERGETIC', PAD + inner * 0.75, PAD + inner * 0.75],
   ].forEach(([text, cx, cy]) => ctx.fillText(text, cx, cy));
   ctx.restore();
-
-  /* Quadrant labels (small, edge-anchored) */
-  ctx.font = '600 13px ' + MX_FONT; ctx.fillStyle = themeColors.label; ctx.textAlign = 'center';
-  ctx.fillText('CALM',      PAD + inner * 0.25, PAD + 17);
-  ctx.fillText('HAPPY',     PAD + inner * 0.75, PAD + 17);
-  ctx.fillText('INTENSE',   PAD + inner * 0.25, PAD + inner - 6);
-  ctx.fillText('ENERGETIC', PAD + inner * 0.75, PAD + inner - 6);
 
   /* Axis labels */
   ctx.font = '11px ' + MX_FONT; ctx.fillStyle = themeColors.axis;
@@ -2860,6 +2969,7 @@ async function init() {
 
   initMediaSession();
   document.getElementById('btn-edit-lock')?.addEventListener('click', (e) => { e.stopPropagation(); startEditAuth(); });
+  document.getElementById('btn-track-menu')?.addEventListener('click', (e) => { e.stopPropagation(); openTrackMenu(e.currentTarget); });
   document.querySelector('#track-details .td-head')?.addEventListener('click', () => {
     document.getElementById('track-details')?.classList.toggle('open');
   });
@@ -2945,24 +3055,33 @@ let progBaseMs = 0, progBaseAt = 0, progPlaying = false, lastNpUri = null, lastC
 function setClock(posMs, playing) {
   progBaseMs = Math.max(0, posMs || 0); progBaseAt = Date.now(); progPlaying = !!playing;
   document.body.classList.toggle('is-paused', !progPlaying);
+  pushPositionState();   // single authoritative push; the OS interpolates from here
 }
 function clockPosMs() {
   return progPlaying ? progBaseMs + (Date.now() - progBaseAt) : progBaseMs;
 }
+// Push the position to the OS media notification ONCE per real change (seek,
+// play/pause, track change, 10s resync). The OS advances the scrubber itself
+// from playbackRate, so we must NOT call this every tick — doing so redraws the
+// Android media controls ~4×/s and makes them flicker.
+function pushPositionState() {
+  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+  if (!currentDurationMs) return;
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: currentDurationMs / 1000,
+      position: Math.min(clockPosMs(), currentDurationMs) / 1000,
+      playbackRate: progPlaying ? 1 : 0,
+    });
+  } catch(e) {}
+}
 function tickProgress() {
   if (seekDragging || !currentDurationMs) return;
   const pos = Math.min(clockPosMs(), currentDurationMs);
+  // In-page bar only — NO mediaSession call here (see pushPositionState).
   document.getElementById('progress-fill').style.width =
     Math.min(100, (pos / currentDurationMs) * 100) + '%';
   document.getElementById('prog-elapsed').textContent = msToMin(pos);
-  if ('mediaSession' in navigator && navigator.mediaSession.setPositionState) {
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: currentDurationMs / 1000,
-        position: pos / 1000, playbackRate: progPlaying ? 1 : 0,
-      });
-    } catch(e) {}
-  }
 }
 async function updateProgress() {          // one-off network resync (not a 1s loop)
   if (seekDragging) return;
@@ -2971,11 +3090,21 @@ async function updateProgress() {          // one-off network resync (not a 1s l
 }
 
 // ─── Mopidy events received via push on the WebSocket ────────────────────────
+// O2M refills the tracklist track-by-track during playback → a burst of
+// `tracklist_changed`. Coalesce them into a single refresh to avoid replaying
+// refreshNowPlaying (and its RPCs) many times per second.
+let _tlChangeTimer = null;
+function scheduleTracklistRefresh() {
+  clearTimeout(_tlChangeTimer);
+  _tlChangeTimer = setTimeout(refreshNowPlaying, 300);
+}
+
 function onMopidyEvent(m) {
   switch (m.event) {
+    case 'tracklist_changed':
+      scheduleTracklistRefresh(); break;   // debounced (bursty during refill)
     case 'track_playback_started':
     case 'track_playback_ended':
-    case 'tracklist_changed':
     case 'playback_state_changed':
       refreshNowPlaying(); break;          // reseed track + state + clock
     case 'track_playback_paused':
