@@ -1163,13 +1163,17 @@ class O2mToMopidy:
         self.activeboxs = [b for b in self.activeboxs
                            if 'auto:library' not in (getattr(b, 'data', '') or '')]
 
-        # Keep the currently playing track, drop the rest, then refill via the auto pipeline
+        # Full reload: clear the WHOLE tracklist (current track included) and rebuild
+        # from scratch with the new mood — a clean relaunch is preferred over keeping
+        # the song. Playback restarts from the top of the fresh mix below.
         try:
-            self.clear_tracklist_except_current_song()
+            self.mopidyHandler.playback.stop()
+            self.mopidyHandler.tracklist.clear()
+            self._track_info.clear()
         except Exception as e:
             print(f"apply_mood_settings: clear error: {e}")
 
-        base_len = self.mopidyHandler.tracklist.get_length()
+        base_len = 0
 
         box = self.dbHandler.get_box_by_data_contains('auto:library')
         if box is not None:
