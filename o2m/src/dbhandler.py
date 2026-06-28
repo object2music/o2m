@@ -590,6 +590,7 @@ class DatabaseHandler():
                 LEFT JOIN artist a ON a.id = ta.artist_id
                 LEFT JOIN album al ON al.id = t.album_id
                 WHERE t.mood IS NULL
+                  AND t.mood_edited_at IS NULL
                   AND t.name IS NOT NULL
                   AND COALESCE(a.name, al.artist_name) IS NOT NULL
                 ORDER BY t.read_count_end DESC
@@ -611,6 +612,7 @@ class DatabaseHandler():
                 LEFT JOIN artist a ON a.id = ta.artist_id
                 LEFT JOIN album al ON al.id = t.album_id
                 WHERE t.mood IS NULL
+                  AND t.mood_edited_at IS NULL
                   AND t.name IS NOT NULL
                   AND COALESCE(a.name, al.artist_name) IS NOT NULL
             """).fetchone()
@@ -633,6 +635,7 @@ class DatabaseHandler():
                 .join(Album, JOIN.LEFT_OUTER, on=(Track.album_id == Album.id))
                 .where(
                     (Track.mood == '_') &
+                    Track.mood_edited_at.is_null() &
                     Track.name.is_null(False) &
                     Artist.name.is_null(False) &
                     (TrackArtist.position == 0)
@@ -662,6 +665,7 @@ class DatabaseHandler():
                 LEFT JOIN artist a ON a.id = ta.artist_id
                 LEFT JOIN album al ON al.id = t.album_id
                 WHERE t.mood = '_'
+                  AND t.mood_edited_at IS NULL
                   AND t.name IS NOT NULL
                   AND COALESCE(a.name, al.artist_name) IS NOT NULL
                 ORDER BY t.read_count_end DESC
@@ -726,10 +730,15 @@ class DatabaseHandler():
         if valence is not None:
             updates[Track.valence] = valence
         if updates:
-            Track.update(updates).where(Track.uri == uri).execute()
+            # Never overwrite a manually-edited (locked) track.
+            Track.update(updates).where(
+                (Track.uri == uri) & (Track.mood_edited_at.is_null())
+            ).execute()
 
     def upsert_track_features(self, uri, mood=None, energy=None, valence=None):
-        """Comme update_track_features mais crée la ligne si absente (édition manuelle)."""
+        """Comme update_track_features mais crée la ligne si absente (édition manuelle).
+        Pose mood_edited_at = now → verrouille la track contre tout écrasement futur
+        par le warmup (même si seuls energy/valence sont édités, mood restant NULL)."""
         updates = {}
         if mood is not None:
             updates['mood'] = mood
@@ -739,6 +748,7 @@ class DatabaseHandler():
             updates['valence'] = valence
         if not updates:
             return
+        updates['mood_edited_at'] = datetime.datetime.utcnow()
         Track.insert({**updates, 'uri': uri}).on_conflict(
             action='update', update=updates,
         ).execute()
