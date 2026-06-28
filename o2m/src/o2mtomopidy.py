@@ -1038,7 +1038,23 @@ class O2mToMopidy:
                 uris.append(item.uri)'''
         return uris
 
-#MOPIDY LIVE CONTROL 
+#MOPIDY LIVE CONTROL
+    def reload_active_boxes(self):
+        """Rebuild the tracklist by re-running box_action on EVERY active box.
+        In discover mode a single call rebuilds from all active boxes at once;
+        otherwise each box is refilled in turn. Shared by starting_mode(start=True)
+        and apply_mood_settings (live mood change)."""
+        if not self.activeboxs:
+            return
+        if ("discover" in self.configO2M and self.configO2M["discover"] == "true"):
+            self.box_action(self.activeboxs[0])
+        else:
+            for b in list(self.activeboxs):
+                try:
+                    self.box_action(b)
+                except Exception as e:
+                    print(f"reload_active_boxes error: {e}")
+
     def starting_mode(self,clear=False,start=False,uid=None):
         #Cleaning 
         if clear == True:
@@ -1053,9 +1069,8 @@ class O2mToMopidy:
         self.mopidyHandler.mixer.set_volume(self.default_volume)
 
         #Restart with active boxs if actived
-        if start == True: 
-            for box in self.activeboxs:
-                self.box_action(box)
+        if start == True:
+            self.reload_active_boxes()
             if uid != None:
                 box = self.dbHandler.get_box_by_uid(uid)
                 if box != None:
@@ -1173,14 +1188,7 @@ class O2mToMopidy:
 
         if self.activeboxs:
             # Reload EVERY active box (auto + any user boxes) with the new mood/DL.
-            if ("discover" in self.configO2M and self.configO2M["discover"] == "true"):
-                self.box_action(self.activeboxs[0])  # discover mode rebuilds from all at once
-            else:
-                for b in list(self.activeboxs):
-                    try:
-                        self.box_action(b)
-                    except Exception as e:
-                        print(f"apply_mood_settings: reload box error: {e}")
+            self.reload_active_boxes()
         else:
             # Nothing active → start the auto/mood mix.
             box = self.dbHandler.get_box_by_data_contains('auto:library')
@@ -1410,44 +1418,31 @@ class O2mToMopidy:
         track_data = track_uri.split(":")
         track_seed = [track_data[2]]
 
-        choices = ['album','artist','reco']
-        uris = []
-
-        #Ponderation Album / Artist / Reco depending the context data
+        # Build a candidate pool (wider than `limit`) from same-album / same-artist /
+        # Spotify reco, then mood+popularity-select it via _expand_pick so live recos
+        # follow the current mood matrix + discover_level (and the cooldown avoids
+        # re-recommending what was just played/served). Context: an album box leans on
+        # the artist + reco rather than re-serving the same album.
+        n_fetch = max(6, limit * 4)
+        pool = []
         if 'album' in data:
-            p = [0, 0.8, 0.2]
+            pool += self.get_same_artist_tracks(track_uri, n_fetch) or []
+            pool += self.get_spotify_reco(track_seed, n_fetch) or []
         else:
-            p = [0.5, 0.3, 0.2]
+            pool += self.get_same_album_tracks(track_uri, n_fetch) or []
+            pool += self.get_same_artist_tracks(track_uri, n_fetch) or []
+            pool += self.get_spotify_reco(track_seed, n_fetch) or []
 
-        # Tracks to exclude: seed + already chosen in this call
-        excluded = {track_uri}
+        # Dedup (keep order), drop the seed.
+        seen, candidates = {track_uri}, []
+        for u in pool:
+            if u and u not in seen:
+                seen.add(u)
+                candidates.append(u)
+        if not candidates:
+            return []
 
-        for i in range(0, limit):
-            c = random.choices(choices, weights=p, k=3)
-            print(c)
-            new_uri = None
-
-            for _attempt in range(len(c)):
-                strategy = c[_attempt]
-                if strategy == 'album':
-                    candidates = self.get_same_album_tracks(track_uri, 3)
-                elif strategy == 'artist':
-                    candidates = self.get_same_artist_tracks(track_uri, 3)
-                else:  # reco
-                    candidates = self.get_spotify_reco(track_seed, 3)
-
-                if not candidates:
-                    continue
-
-                # Pick first candidate that isn't the seed or already selected
-                valid = [u for u in candidates if u and u not in excluded]
-                if valid:
-                    new_uri = valid[0]
-                    break
-
-            if new_uri:
-                uris.append(new_uri)
-                excluded.add(new_uri)
+        uris = self._expand_pick(candidates, limit, self.mood_energy, self.mood_valence, discover_level)
 
         return uris
 
