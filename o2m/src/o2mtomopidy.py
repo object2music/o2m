@@ -1143,29 +1143,27 @@ class O2mToMopidy:
     def apply_mood_settings(self):
         """Apply a mood change coming from the interface.
 
-        Converges with the auto pipeline:
-        - If real (user) boxes are active → no rebuild here; their mood impact via
-          recommendations is handled later. Returns 0.
-        - Otherwise → (re)activate the auto box, biased by the global mood context
-          (mood_energy / mood_valence / discover_level). Uses the DB box whose data
-          contains 'auto:library' if it exists, else a simulated auto fill.
+        Two cases:
+        - Auto/mood mode (auto box active, or nothing active): full clean reload —
+          clear the whole tracklist + per-track box state, then RELOAD EVERY active
+          box with the new mood/discover_level (not just the auto box). If nothing is
+          active, self-activate the auto box (DB 'auto:library' or a simulated fill).
+        - A user box active WITHOUT the auto session (e.g. a single playlist): no
+          rebuild (returns -1); the new mood biases its future live recommendations.
 
-        Returns the number of tracks added.
+        Returns tracks added, or -1 when skipped (user box active, no auto).
         """
-        # Real user boxes active (anything that isn't the self-activated auto box)
+        auto_active = any('auto:library' in (getattr(b, 'data', '') or '') for b in self.activeboxs)
         user_boxes = [b for b in self.activeboxs
                       if 'auto:library' not in (getattr(b, 'data', '') or '')]
-        if user_boxes:
-            print("apply_mood_settings: user box(es) active → no rebuild (reco impact handled later)")
-            return -1  # sentinel: skipped because boxes are active (not "0 matches")
 
-        # Drop any previously self-activated auto box so we can refresh it cleanly
-        self.activeboxs = [b for b in self.activeboxs
-                           if 'auto:library' not in (getattr(b, 'data', '') or '')]
+        # Case 2: user box(es) active without the auto/mood session → don't disrupt.
+        if user_boxes and not auto_active:
+            print("apply_mood_settings: user box(es) active (no auto) → no rebuild")
+            return -1
 
-        # Full reload: clear the WHOLE tracklist (current track included) and rebuild
-        # from scratch with the new mood — a clean relaunch is preferred over keeping
-        # the song. Playback restarts from the top of the fresh mix below.
+        # Case 1: clean clear of the whole tracklist + per-track box state (no volume
+        # reset), then rebuild from scratch with the new mood.
         try:
             self.mopidyHandler.playback.stop()
             self.mopidyHandler.tracklist.clear()
@@ -1173,24 +1171,30 @@ class O2mToMopidy:
         except Exception as e:
             print(f"apply_mood_settings: clear error: {e}")
 
-        base_len = 0
-
-        box = self.dbHandler.get_box_by_data_contains('auto:library')
-        if box is not None:
-            # Real auto box: box_action runs tracklistfill_auto with its options + global mood
-            self.activeboxs.append(box)
-            self.box_action(box)
+        if self.activeboxs:
+            # Reload EVERY active box (auto + any user boxes) with the new mood/DL.
+            if ("discover" in self.configO2M and self.configO2M["discover"] == "true"):
+                self.box_action(self.activeboxs[0])  # discover mode rebuilds from all at once
+            else:
+                for b in list(self.activeboxs):
+                    try:
+                        self.box_action(b)
+                    except Exception as e:
+                        print(f"apply_mood_settings: reload box error: {e}")
         else:
-            # Simulated auto: run the auto fill on a fallback box (like quicklaunch_auto)
-            fallback = self.dbHandler.get_box_by_option_type('new_mopidy')
-            if fallback is None:
-                fallback = Box(uid='auto_sim', option_type='new_mopidy',
-                               data='auto:library', option_sort=None)
-            self.tracklistfill_auto(fallback, self.max_results, self.discover_level)
+            # Nothing active → start the auto/mood mix.
+            box = self.dbHandler.get_box_by_data_contains('auto:library')
+            if box is not None:
+                self.activeboxs.append(box)
+                self.box_action(box)
+            else:
+                fallback = self.dbHandler.get_box_by_option_type('new_mopidy') or Box(
+                    uid='auto_sim', option_type='new_mopidy', data='auto:library', option_sort=None)
+                self.tracklistfill_auto(fallback, self.max_results, self.discover_level)
 
-        added = self.mopidyHandler.tracklist.get_length() - base_len
+        added = self.mopidyHandler.tracklist.get_length()
 
-        # Start playback if stopped
+        # Start playback from the top of the fresh mix.
         try:
             if self.mopidyHandler.playback.get_state() == "stopped":
                 tl = self.mopidyHandler.tracklist.get_tl_tracks()
@@ -1199,7 +1203,7 @@ class O2mToMopidy:
         except Exception as e:
             print(f"apply_mood_settings: play error: {e}")
 
-        print(f"apply_mood_settings: auto refill added {added} "
+        print(f"apply_mood_settings: reloaded {len(self.activeboxs)} box(es), added {added} "
               f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
         return max(0, added)
 
