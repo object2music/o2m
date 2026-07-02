@@ -162,10 +162,17 @@ if __name__ == "__main__":
     _edit_serializer = URLSafeTimedSerializer(_edit_secret(), salt='o2m-edit')
 
     def _edit_allowlist():
-        """IDs Spotify autorisés : O2M_EDIT_SPOTIFY_IDS (csv) + défaut SPOTIFY_USERNAME."""
+        """IDs Spotify autorisés : O2M_EDIT_SPOTIFY_IDS (csv) + défaut SPOTIFY_USERNAME.
+        Hors Docker les variables d'env n'existent pas → fallback sur o2m.conf [spotify] username."""
+        sources = [os.environ.get('O2M_EDIT_SPOTIFY_IDS', ''),
+                   os.environ.get('SPOTIFY_USERNAME', '')]
+        try:
+            sources.append(o2mConf.get('spotify', 'username', fallback=''))
+        except Exception:
+            pass
         ids = set()
-        for var in ('O2M_EDIT_SPOTIFY_IDS', 'SPOTIFY_USERNAME'):
-            for part in os.environ.get(var, '').replace(';', ',').split(','):
+        for src in sources:
+            for part in src.replace(';', ',').split(','):
                 p = part.strip().lower()
                 if p:
                     ids.add(p)
