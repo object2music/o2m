@@ -225,10 +225,9 @@
   }
   #btn-edit-lock svg { width: 15px; height: 15px; display: block; }
   #btn-edit-lock.unlocked { color: var(--accent); }
-  /* Row holding the playlists trigger (edit-mode only) and the track-options
-     "More" trigger (always visible, pinned to the right). */
-  .td-actions-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-  .track-menu-trigger { margin-left: auto; }
+  /* Stack holding the playlists trigger (edit-mode only) and the track-options
+     "More" trigger (always visible) — each on its own line, both right-aligned. */
+  .td-actions-row { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-top: 4px; }
   /* Fixed-position dropdown, same pattern as footer "More" / playlists */
   .track-menu-dropdown {
     position: fixed; z-index: 200;
@@ -2170,6 +2169,18 @@ function moodColor(e, v, a = 1) {
   return `rgba(${t || '120,120,120'},${a})`;
 }
 
+/* Theme's dominant accent color (orange), used only for the currently-playing dot */
+function accentColor(a = 1) {
+  return `rgba(${themeColors.pulse || '255,90,0'},${a})`;
+}
+
+/* Greyscale by popularity: darker = more popular, lighter = less popular */
+function popularityColor(p) {
+  if (p == null) return 'rgba(150,150,150,.5)';
+  const light = Math.round(85 - 65 * Math.max(0, Math.min(1, p)));
+  return `hsl(0,0%,${light}%)`;
+}
+
 function initMatrix() {
   const canvas = document.getElementById('mood-matrix');
   const dpr    = window.devicePixelRatio || 1;
@@ -2420,29 +2431,29 @@ function drawMatrix(ts) {
   ctx.fillText('▲ Bright', mx, 12);
   ctx.fillText('▼ Dark',   mx, PAD + inner + PAD - 2);
 
-  /* Tracklist dots */
+  /* Tracklist dots — color correlated to popularity (darker = more popular) */
   matrixTlItems.forEach(({ uri, tlid }) => {
     const f = matrixFeatures[uri];
     if (!f || tlid === currentTlid) return;
     ctx.beginPath();
     ctx.arc(ex(f.energy), vy(f.valence), 3, 0, Math.PI * 2);
-    ctx.fillStyle = moodColor(f.energy, f.valence, 0.55);
+    ctx.fillStyle = popularityColor(f.popularity);
     ctx.fill();
   });
 
-  /* Currently playing — blinking dot filled with its own dominant mood color */
+  /* Currently playing — blinking dot in the theme's accent color */
   const curF = matrixFeatures[matrixCurUri];
   if (curF) {
     const cx = ex(curF.energy), cy = vy(curF.valence);
     const pulse = (Math.sin(ts / 450) + 1) / 2;
     ctx.beginPath();
     ctx.arc(cx, cy, 9 + pulse * 6, 0, Math.PI * 2);
-    ctx.strokeStyle = moodColor(curF.energy, curF.valence, 0.28 * (1 - pulse));
+    ctx.strokeStyle = accentColor(0.28 * (1 - pulse));
     ctx.lineWidth = 2; ctx.stroke();
     ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2);
-    ctx.fillStyle = moodColor(curF.energy, curF.valence, 0.45 + 0.55 * pulse);
+    ctx.fillStyle = accentColor(0.45 + 0.55 * pulse);
     ctx.fill();
-    ctx.strokeStyle = moodColor(curF.energy, curF.valence, 1);
+    ctx.strokeStyle = accentColor(1);
     ctx.lineWidth = 2.5; ctx.stroke();
   }
 

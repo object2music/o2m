@@ -665,10 +665,12 @@ if __name__ == "__main__":
             return jsonify({})
         try:
             result = {}
-            for t in Track.select(Track.uri, Track.energy, Track.valence).where(
+            for t in Track.select(Track.uri, Track.energy, Track.valence, Track.popularity).where(
                 Track.uri.in_(uris) & Track.energy.is_null(False)
             ):
                 result[t.uri] = {'energy': float(t.energy), 'valence': float(t.valence)}
+                if t.popularity is not None:
+                    result[t.uri]['popularity'] = float(t.popularity)
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -934,6 +936,19 @@ if __name__ == "__main__":
             return jsonify(o2mHandler.dbHandler.get_stats_breakdown())
         except Exception as e:
             return jsonify({'error': str(e), 'categories': [], 'totals': {}}), 500
+
+    @api.route('/api/stats/playlist_log')
+    def api_stats_playlist_log():
+        from flask import jsonify, request as req
+        try:
+            limit = int(req.args.get('limit', 100))
+        except Exception:
+            limit = 100
+        limit = max(1, min(limit, 1000))
+        try:
+            return jsonify(o2mHandler.dbHandler.get_playlist_log(limit))
+        except Exception as e:
+            return jsonify({'error': str(e), 'log': []}), 500
 
     @api.route('/stats')
     def stats_ui():

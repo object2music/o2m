@@ -1555,6 +1555,36 @@ class DatabaseHandler():
 
         return {'categories': categories, 'totals': totals}
 
+    def get_playlist_log(self, limit=100):
+        """Recent hard playlist mutations from the dedicated PlaylistLog table.
+
+        Each row is a real add/remove of a track to/from a playlist (or saved
+        tracks), recorded by `_log_playlist_change` whenever update_stat_track
+        promotes/demotes a track between option_type buckets.
+        """
+        rows = []
+        try:
+            cur = db.execute_sql(
+                "SELECT event_date, action, from_option_type, to_option_type, "
+                "track_name, track_uri, playlist_name, playlist_uri, username "
+                "FROM playlistlog ORDER BY event_date DESC LIMIT %d" % int(limit)
+            )
+            for r in cur:
+                rows.append({
+                    'event_date':       int(r[0]) if r[0] is not None else None,
+                    'action':           r[1],
+                    'from_option_type': r[2],
+                    'to_option_type':   r[3],
+                    'track_name':       r[4],
+                    'track_uri':        r[5],
+                    'playlist_name':    r[6],
+                    'playlist_uri':     r[7],
+                    'username':         r[8],
+                })
+        except Exception as e:
+            print(f"get_playlist_log error: {e}")
+        return {'log': rows}
+
 
 if __name__ == "__main__":
 

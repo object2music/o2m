@@ -14,7 +14,26 @@
     --border: #ffffff18;
   }
   body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
-         min-height: 100vh; padding: 20px 16px 40px; }
+         min-height: 100vh; padding: 20px 16px 84px; }
+
+  /* Unified footer (shared look with the Mood page) */
+  #site-footer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--border);
+  }
+  #site-footer .brand { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+  .footer-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .footer-link {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--muted); text-decoration: none; background: transparent;
+    border: 1px solid var(--border); border-radius: 999px; padding: 6px 11px;
+    cursor: pointer; font-family: inherit; line-height: 1;
+  }
+  .footer-link:hover { color: var(--text); border-color: var(--text); }
+  .footer-link svg { width: 15px; height: 15px; display: block; }
+  #btn-snapcast.playing { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 500px) { #site-footer .brand { display: none; } }
   h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
   .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 28px; }
   .subtitle a { color: var(--muted); text-decoration: none; }
@@ -33,6 +52,9 @@
   .chart-wrap { position: relative; width: 100%; }
   .chart-wrap canvas { max-height: 260px; }
   .chart-wide canvas { max-height: 320px; }
+  /* Square scatter so Energy (x) and Valence (y) share the same pixel scale */
+  .scatter-wrap { max-width: 460px; margin: 0 auto; }
+  .scatter-wrap canvas { max-height: 460px; }
 
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 500px) { .two-col { grid-template-columns: 1fr; } }
@@ -51,6 +73,27 @@
   table.cmp tr.totals td { font-weight: 700; border-top: 2px solid var(--border); color: var(--text); }
   .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: baseline; }
   .num-muted { color: var(--muted); }
+
+  /* Playlist change log */
+  table.cmp.log th, table.cmp.log td { text-align: left; }
+  table.cmp.log td.when { color: var(--muted); font-variant-numeric: tabular-nums; }
+  table.cmp.log td.track { white-space: normal; max-width: 280px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+           border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
+  .badge.add { background: #4caf5022; color: #66bb6a; }
+  .badge.remove { background: #e9456022; color: #ef5350; }
+  .arrow { color: var(--muted); margin: 0 5px; }
+  .otype { color: var(--text); }
+
+  /* Pager */
+  .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
+  .pager button {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .pager button:hover:not(:disabled) { border-color: var(--text); }
+  .pager button:disabled { opacity: .4; cursor: default; }
+  .pager .pager-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* Mood bars */
   .mood-list { display: flex; flex-direction: column; gap: 10px; }
@@ -113,22 +156,24 @@
   </div>
 </div>
 
-<!-- 1. Mood tags -->
+<!-- 1+2. Mood tags & Energy × Valence matrix (same row) -->
 <div class="section">
-  <div class="section-title">Mood tags</div>
-  <div class="card">
-    <div class="mood-list" id="mood-list">
-      <div style="color:var(--muted);font-size:13px">Loading…</div>
+  <div class="two-col">
+    <div>
+      <div class="section-title">Mood tags</div>
+      <div class="card">
+        <div class="mood-list" id="mood-list">
+          <div style="color:var(--muted);font-size:13px">Loading…</div>
+        </div>
+      </div>
     </div>
-  </div>
-</div>
-
-<!-- 2. Scatter Energy × Valence -->
-<div class="section">
-  <div class="section-title">Energy &times; Valence matrix</div>
-  <div class="card chart-wide">
-    <div class="chart-wrap">
-      <canvas id="chart-scatter"></canvas>
+    <div>
+      <div class="section-title">Energy &times; Valence matrix</div>
+      <div class="card chart-wide">
+        <div class="chart-wrap scatter-wrap">
+          <canvas id="chart-scatter"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -168,8 +213,108 @@
   </div>
 </div>
 
+<!-- 6. Recent state changes (playlist log) -->
+<div class="section">
+  <div class="section-title">Recent state changes</div>
+  <div class="section-note">
+    Hard add/remove operations on stored playlists (and saved tracks), logged whenever a
+    track is promoted or demoted between option_type buckets.
+  </div>
+  <div class="card table-scroll">
+    <table class="cmp log" id="log-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Action</th>
+          <th>Track</th>
+          <th>Playlist</th>
+          <th>Transition</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="5" style="color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="pager" id="log-pager"></div>
+</div>
+
+<footer id="site-footer">
+  <span class="brand">O2M &middot; Stats</span>
+  <nav class="footer-nav">
+    <a class="footer-link" href="/mood"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Mood</a>
+    <a class="footer-link" href="/iris/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>Iris</a>
+    <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
+    <button class="footer-link" id="btn-snapcast" title="Snapcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>Listen</button>
+  </nav>
+</footer>
+
+<script src="/static/snapstream.bundle.js"></script>
 <script>
 const API = location.origin + '/api';
+
+/* ── Snapcast: keep the audio stream alive across pages ──────────────────────
+   The Mood page persists its connection state in localStorage['snap-autoconnect'].
+   Here we read the same key (and /api/client_config for the WS URL) so that
+   arriving on Stats from Mood resumes the same Snapcast stream — on the first
+   user gesture for desktop/tablet, automatically on phones. */
+let snapWsUrl = null, snapPlayer = null;
+
+function isPhoneDevice() {
+  const ua = navigator.userAgent;
+  const minSide = Math.min(window.screen?.width || 9999, window.screen?.height || 9999);
+  if (/iPad/.test(ua)) return false;
+  if (/iPhone|iPod/.test(ua)) return true;
+  if (/Android/.test(ua) && /Mobile/.test(ua)) return minSide <= 600;
+  if (/Windows Phone|BlackBerry|Opera Mini|IEMobile/.test(ua)) return true;
+  const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  return touch && minSide <= 480;
+}
+
+function _snapStart() {
+  if (snapPlayer || !snapWsUrl || !window.SnapStream) return;
+  snapPlayer = new window.SnapStream(snapWsUrl);
+  document.getElementById('btn-snapcast')?.classList.add('playing');
+}
+
+function toggleSnapcast() {
+  if (snapPlayer) {
+    try { snapPlayer.stop(); } catch (e) {}
+    snapPlayer = null;
+    document.getElementById('btn-snapcast')?.classList.remove('playing');
+    localStorage.setItem('snap-autoconnect', '0');
+  } else {
+    if (!snapWsUrl || !window.SnapStream) return;
+    _snapStart();
+    localStorage.setItem('snap-autoconnect', '1');
+  }
+}
+
+function autoConnectSnapIfNeeded() {
+  const pref = localStorage.getItem('snap-autoconnect');
+  const shouldConnect = isPhoneDevice() || pref === '1';
+  if (!shouldConnect || !snapWsUrl) return;
+  // AudioContext needs a user gesture on a freshly loaded document — reconnect on
+  // the first click/tap (keep listeners until a player actually exists).
+  const onGesture = () => {
+    _snapStart();
+    if (snapPlayer) {
+      document.removeEventListener('click', onGesture);
+      document.removeEventListener('touchstart', onGesture);
+    }
+  };
+  document.addEventListener('click', onGesture);
+  document.addEventListener('touchstart', onGesture, { passive: true });
+}
+
+async function initSnapcast() {
+  try {
+    const cfg = await fetch(API + '/client_config').then(r => r.json());
+    snapWsUrl = cfg.snap_ws_url || null;
+  } catch (e) {}
+  const btn = document.getElementById('btn-snapcast');
+  if (!snapWsUrl) { btn?.remove(); return; }
+  btn?.addEventListener('click', toggleSnapcast);
+  autoConnectSnapIfNeeded();
+}
 
 const MOOD_COLORS = {
   calm:      '#4fc3f7',
@@ -294,6 +439,70 @@ function renderPopularityChart(data) {
   });
 }
 
+/* ── Playlist change log ── */
+function fmtDate(epoch) {
+  if (!epoch) return '—';
+  const d = new Date(epoch * 1000);
+  return d.toLocaleString(undefined, {
+    year: '2-digit', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function cleanPlaylistName(name, uri) {
+  if (name) return name.replace(/^playlist:/, '');
+  if (uri === 'spotify:saved') return 'Saved tracks';
+  if (uri) return uri.replace(/^spotify:playlist:/, 'playlist ');
+  return '—';
+}
+
+const LOG_PAGE_SIZE = 25;
+let logEntries = [];
+let logPage = 0;
+
+function renderPlaylistLog(data) {
+  logEntries = data.log || [];
+  logPage = 0;
+  renderLogPage();
+}
+
+function renderLogPage() {
+  const tbody = document.querySelector('#log-table tbody');
+  const pager = document.getElementById('log-pager');
+  if (logEntries.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">No state changes recorded.</td></tr>';
+    pager.innerHTML = '';
+    return;
+  }
+  const pageCount = Math.ceil(logEntries.length / LOG_PAGE_SIZE);
+  logPage = Math.max(0, Math.min(logPage, pageCount - 1));
+  const start = logPage * LOG_PAGE_SIZE;
+  const slice = logEntries.slice(start, start + LOG_PAGE_SIZE);
+
+  tbody.innerHTML = '';
+  slice.forEach(e => {
+    const action = (e.action || '').toLowerCase();
+    const badge = `<span class="badge ${action === 'remove' ? 'remove' : 'add'}">${action || '?'}</span>`;
+    const transition = (e.from_option_type || e.to_option_type)
+      ? `<span class="otype">${e.from_option_type || '—'}</span><span class="arrow">→</span><span class="otype">${e.to_option_type || '—'}</span>`
+      : '<span class="num-muted">—</span>';
+    tbody.innerHTML += `<tr>
+      <td class="when">${fmtDate(e.event_date)}</td>
+      <td>${badge}</td>
+      <td class="track">${e.track_name || '<span class="num-muted">—</span>'}</td>
+      <td>${cleanPlaylistName(e.playlist_name, e.playlist_uri)}</td>
+      <td>${transition}</td>
+    </tr>`;
+  });
+
+  pager.innerHTML =
+    `<button id="log-prev"${logPage === 0 ? ' disabled' : ''}>&larr; Newer</button>` +
+    `<span class="pager-info">${start + 1}–${start + slice.length} of ${logEntries.length}</span>` +
+    `<button id="log-next"${logPage >= pageCount - 1 ? ' disabled' : ''}>Older &rarr;</button>`;
+  document.getElementById('log-prev').onclick = () => { logPage--; renderLogPage(); };
+  document.getElementById('log-next').onclick = () => { logPage++; renderLogPage(); };
+}
+
 /* ── Mood bars ── */
 function renderMoodBars(dist) {
   const el = document.getElementById('mood-list');
@@ -342,6 +551,8 @@ function renderScatter(scatter) {
     data: { datasets },
     options: {
       responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1,
       animation: false,
       scales: {
         x: {
@@ -454,8 +665,9 @@ async function init() {
   Chart.defaults.color = '#8892a4';
   Chart.defaults.borderColor = '#ffffff18';
   try {
-    const [breakdown, moodData, trackData] = await Promise.all([
+    const [breakdown, playlistLog, moodData, trackData] = await Promise.all([
       fetch(API + '/stats/breakdown').then(r => r.json()),
+      fetch(API + '/stats/playlist_log?limit=200').then(r => r.json()),
       fetch(API + '/stats/mood').then(r => r.json()),
       fetch(API + '/stats/tracks').then(r => r.json()),
     ]);
@@ -465,6 +677,8 @@ async function init() {
       renderProvenanceChart(breakdown);
       renderPopularityChart(breakdown);
     }
+
+    renderPlaylistLog(playlistLog);
 
     renderMoodBars(moodData.mood_distribution || {});
     if (moodData.scatter && moodData.scatter.length > 0) {
@@ -489,6 +703,7 @@ async function init() {
 }
 
 init();
+initSnapcast();
 </script>
 </body>
 </html>
