@@ -23,7 +23,6 @@ class O2mToMopidy:
     activecards = {}
     activeboxs = []
     last_box_uid = None
-    queue = 0 #queue empty
 
     suffle = False
     max_results = 50
@@ -53,6 +52,11 @@ class O2mToMopidy:
         # Replaces the parallel box.tlids / box.uris / box.option_types / box.library_link lists.
         # {tlid: {'uri': str, 'option_type': str, 'library_link': str, 'box_id': str}}
         self._track_info = {}
+        # Serialize box add/remove/reload ops (Flask HTTP threads + mopidy-event thread). RLock
+        # is reentrant so a cascade (box: include) re-enters on the same thread without deadlock,
+        # and the `with` release is exception-safe (a failed load no longer wedges the mutex).
+        self._box_lock = threading.RLock()
+        self._box_lock_timeout = 30  # seconds; on timeout we proceed rather than hang forever
         self._local_to_spotify = {}  # file:// URI → spotify:track: URI for stat routing
 
         if "api_result_limit" in self.configO2M:
@@ -177,14 +181,24 @@ class O2mToMopidy:
                 self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
                 #self.one_box_changed(box)
 
+    @contextlib.contextmanager
+    def _box_ops_lock(self):
+        """Reentrant, exception-safe mutex around box add/remove/reload. Bounded acquire so a
+        stuck/slow op can't wedge everything — the old self.queue polling waited up to 120s and,
+        worse, never released on exception (a failed load left it stuck, so the next remove hung
+        the full 120s). On timeout we proceed without the lock rather than hang forever, matching
+        the old 'eventually run it' behaviour."""
+        acquired = self._box_lock.acquire(timeout=self._box_lock_timeout)
+        if not acquired:
+            print(f"box lock: not acquired within {self._box_lock_timeout}s — proceeding anyway")
+        try:
+            yield
+        finally:
+            if acquired:
+                self._box_lock.release()
+
     def box_action_remove(self,box,removedBox):
-        qi = 0
-        while self.queue>0 and qi<120:
-            print(f"\nRunning: {qi}")
-            time.sleep(1)
-            if (self.queue>0): qi+=1
-        else:
-            self.queue=1
+        with self._box_ops_lock():
             if len(self.activeboxs) == 0:
                     self.starting_mode(clear=True)
                     # print('Stopping music')
@@ -222,7 +236,6 @@ class O2mToMopidy:
                         self.mopidyHandler.playback.play(tlid=next_tlid)
                 else:
                     print("no tracks registered for removed box")
-            self.queue=0
                 
 
     """
@@ -286,13 +299,7 @@ class O2mToMopidy:
         
         #print(f"\nNew box added: {box}")
         if (box.uid != self.last_box_uid):  # If different from last box added - for NFC mode only
-            qi = 0
-            while self.queue>0 and qi<120:
-                print(f"\nRunning: {qi}")
-                time.sleep(1)
-                if (self.queue>0): qi+=1
-            else:
-                self.queue=1
+            with self._box_ops_lock():
                 uri = "box:"+box.uid
                 self.update_stat_raw(uri)
 
@@ -327,7 +334,6 @@ class O2mToMopidy:
                     if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
                     if current_tl_length > index + 1:
                         self.smart_shuffle_tracklist(index+1, current_tl_length)
-                self.queue = 0
 
         # Next option
         else:
@@ -751,7 +757,6 @@ class O2mToMopidy:
                 #Other box called (cascade include)
                 if "box:" in content :
                     box_uid = content.split(":", 1)[1].strip()
-                    self.queue = 0
                     sub_box = self.dbHandler.get_box_by_uid(box_uid)
                     if sub_box is None:
                         print(f"box include: unknown box uid '{box_uid}' — skipped")
