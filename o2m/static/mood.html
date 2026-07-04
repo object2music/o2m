@@ -1404,8 +1404,8 @@ async function applyMood() {
       : d.tracks_added > 0 ? `${d.tracks_added} tracks loaded` : 'No matching tracks');
     moodSessionActive = true;   // on est désormais dans un mix mood → potards en direct
     updateAutoBtn();
-    setTimeout(refreshNowPlaying, 600);
-    setTimeout(refreshBoxStates, 700);   // allume tout de suite la box auto activée côté serveur
+    setTimeout(refreshNowPlaying, 400);
+    setTimeout(refreshBoxStates, 500);   // allume tout de suite la box auto activée côté serveur
   } catch(e) { setFeedback('Network error'); }
 }
 
@@ -1470,15 +1470,17 @@ document.getElementById('btn-play').addEventListener('click', async () => {
   } else {
     await fetch(API + '/toogle_play');
   }
-  setTimeout(refreshNowPlaying, 500);
+  setTimeout(refreshNowPlaying, 200);
 });
 document.getElementById('btn-next').addEventListener('click', async () => {
+  resetProgress();
   await rpc('core.playback.next');
-  setTimeout(refreshNowPlaying, 800);
+  setTimeout(refreshNowPlaying, 300);
 });
 document.getElementById('btn-prev').addEventListener('click', async () => {
+  resetProgress();
   await rpc('core.playback.previous');
-  setTimeout(refreshNowPlaying, 800);
+  setTimeout(refreshNowPlaying, 300);
 });
 
 /* ── Now playing + tracklist ── */
@@ -1563,7 +1565,8 @@ function renderTracklist(tracks, activeTlid) {
     dur.textContent = msToMin(track.length);
     item.append(num, texts, dur);
     item.addEventListener('click', () => {
-      rpc('core.playback.play', {tlid}).then(() => setTimeout(refreshNowPlaying, 500));
+      resetProgress();
+      rpc('core.playback.play', {tlid}).then(() => setTimeout(refreshNowPlaying, 200));
     });
     wrap.appendChild(item);
     if (tlid === activeTlid) scrollTarget = item;
@@ -1770,8 +1773,8 @@ function initMediaSession() {
   const setH = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch(e) {} };
   setH('play',          async () => { await rpc('core.playback.resume');   setTimeout(refreshNowPlaying, 300); });
   setH('pause',         async () => { await rpc('core.playback.pause');    setTimeout(refreshNowPlaying, 300); });
-  setH('previoustrack', async () => { await rpc('core.playback.previous'); setTimeout(refreshNowPlaying, 800); });
-  setH('nexttrack',     async () => { await rpc('core.playback.next');     setTimeout(refreshNowPlaying, 800); });
+  setH('previoustrack', async () => { resetProgress(); await rpc('core.playback.previous'); setTimeout(refreshNowPlaying, 300); });
+  setH('nexttrack',     async () => { resetProgress(); await rpc('core.playback.next');     setTimeout(refreshNowPlaying, 300); });
   setH('seekto', async (d) => {
     if (d && d.seekTime != null) {
       await rpc('core.playback.seek', { time_position: Math.round(d.seekTime * 1000) });
@@ -2585,10 +2588,11 @@ async function toggleBox(uid, btn) {
   try {
     await fetch(API + '/box?uid=' + encodeURIComponent(uid) + '&mode=toogle');
     moodSessionActive = false;   // lancer une box termine la session mood implicite
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 200));
     await checkBoxActive(uid, btn);
-    // Refresh tracklist after box change
-    setTimeout(refreshNowPlaying, 1500);
+    // First refresh: box badge state visible early; second: full tracklist after O2M async refill
+    setTimeout(refreshNowPlaying, 800);
+    setTimeout(refreshNowPlaying, 3000);
     const boxName = btn.querySelector('.box-name')?.textContent || '';
     setFeedback(btn.classList.contains('active') ? `▶ ${boxName}` : `⏹ ${boxName}`);
   } catch(e) { setFeedback('Box error'); }
@@ -2674,7 +2678,7 @@ async function fetchTrackFeatures(uris) {
 async function clearTracklist() {
   await rpc('core.tracklist.clear');
   currentTracklistLength = 0;
-  setTimeout(refreshNowPlaying, 400);
+  setTimeout(refreshNowPlaying, 200);
   setFeedback('Tracklist cleared');
 }
 
@@ -2685,7 +2689,7 @@ async function clearAllBoxes() {
   // so a residual active box can't block the mood-matrix rebuild.
   try { await fetch(API + '/clear_boxes'); } catch(e) {}
   setFeedback('All boxes cleared');
-  setTimeout(() => { refreshBoxStates(); refreshNowPlaying(); }, 600);
+  setTimeout(() => { refreshBoxStates(); refreshNowPlaying(); }, 400);
 }
 
 /* Clear the last hour of listening history (stats_raw) — same as the old o2m.js button. */
@@ -2998,8 +3002,8 @@ async function init() {
   checkEditStatus();
   await loadGenres();
   await loadBoxes();
-  // Laisse au WS le temps de s'ouvrir (≤1.5s) → évite un fallback HTTP /mopidy_rpc au chargement
-  await Promise.race([wsReady, new Promise(r => setTimeout(r, 1500))]);
+  // Laisse au WS le temps de s'ouvrir (≤300ms) → préfère WS sur HTTP mais ne bloque plus longtemps
+  await Promise.race([wsReady, new Promise(r => setTimeout(r, 300))]);
   await refreshNowPlaying();
   await refreshVolume();
   setInterval(refreshNowPlaying, 10000);   // safety net + clock resync (WS events drive real-time)
@@ -3067,6 +3071,18 @@ function setClock(posMs, playing) {
   progBaseMs = Math.max(0, posMs || 0); progBaseAt = Date.now(); progPlaying = !!playing;
   document.body.classList.toggle('is-paused', !progPlaying);
   pushPositionState();   // single authoritative push; the OS interpolates from here
+}
+// Optimistic snap of the progress bar to 0 on next/prev, before refreshNowPlaying
+// arrives. Bypasses CSS `transition: width 1s linear` so bar jumps instantly.
+function resetProgress() {
+  progBaseMs = 0; progBaseAt = Date.now();
+  const fill = document.getElementById('progress-fill');
+  if (fill) {
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+    requestAnimationFrame(() => { fill.style.transition = ''; });
+  }
+  document.getElementById('prog-elapsed').textContent = msToMin(0);
 }
 function clockPosMs() {
   return progPlaying ? progBaseMs + (Date.now() - progBaseAt) : progBaseMs;
