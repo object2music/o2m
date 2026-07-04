@@ -536,25 +536,12 @@ class SpotifyHandler:
                                 if aid and aid not in followed_set and aid not in seed_artist_ids:
                                     external_ids.append(aid)
                     else:
-                        # Last resort: sp.search(genre:...)
-                        for genre in list(target_genres)[:3]:
-                            if len(external_ids) >= n_external or self._is_rate_limited():
-                                break
-                            try:
-                                results = self.sp.search(
-                                    q=f'genre:"{genre}"', type='artist', limit=20,
-                                    offset=random.randint(0, 50)
-                                )
-                                for artist in results.get('artists', {}).get('items', []):
-                                    aid = artist['id']
-                                    if aid not in followed_set and aid not in seed_artist_ids:
-                                        external_ids.append(aid)
-                            except spotipy.SpotifyException as e:
-                                if e.http_status == 429:
-                                    self._on_rate_limit(e)
-                                break
-                            except Exception:
-                                pass
+                        # Spotify's `genre:` search filter is restricted — it returns 400
+                        # "Invalid limit" even at offset=0 — so this last-resort call is dead
+                        # (contributes nothing, spams the logs). Disabled: artist resolution
+                        # relies on the DB-first / followed-artist paths above; genre→artist
+                        # discovery should go through the Last.fm path when needed.
+                        pass
                     random.shuffle(external_ids)
                     candidates.extend(external_ids[:n_external])
                     random.shuffle(candidates)

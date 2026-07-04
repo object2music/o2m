@@ -143,9 +143,15 @@ class O2mToMopidy:
         return uri
 
     def _resolve_uris(self, uris):
-        """Resolve a list of URIs, substituting local files where available."""
+        """Resolve a list of URIs, substituting local files where available.
+        Defensive: coerce a bare string to a list and drop non-URI tokens (no ':'
+        scheme) so a stray value (e.g. a box id) never reaches mopidy.tracklist.add,
+        which would raise 'Expected a list of URIs'."""
         if not uris:
             return uris
+        if isinstance(uris, str):
+            uris = [uris]
+        uris = [u for u in uris if isinstance(u, str) and ':' in u]
         return [self._resolve_uri(u) for u in uris]
 
     def get_spotify_uri(self, uri):
@@ -742,14 +748,27 @@ class O2mToMopidy:
             data = [x.replace('\r', '') for x in data]
 
             for content in data:
-                #Other box called
+                #Other box called (cascade include)
                 if "box:" in content :
-                    box_uid = content.split(":")[1]
+                    box_uid = content.split(":", 1)[1].strip()
                     self.queue = 0
-                    box = self.dbHandler.get_box_by_uid(box_uid)
-                    self.activeboxs.append(box)  #adding box to list
-                    print(f"added box {box}") 
-                    self.box_action(box)
+                    sub_box = self.dbHandler.get_box_by_uid(box_uid)
+                    if sub_box is None:
+                        print(f"box include: unknown box uid '{box_uid}' — skipped")
+                        continue
+                    # Dedup: don't register the same included box twice (it made activeboxs
+                    # grow and double-loaded on the next reload).
+                    if not any(b.uid == sub_box.uid for b in self.activeboxs):
+                        self.activeboxs.append(sub_box)  #adding box to list
+                    # During a full reload, load each box at most once per cycle so a cascade
+                    # include + a direct reload don't double it.
+                    seen = getattr(self, '_reload_seen', None)
+                    if seen is not None:
+                        if sub_box.uid in seen:
+                            continue
+                        seen.add(sub_box.uid)
+                    print(f"added box {sub_box}")
+                    self.box_action(sub_box)
                 
                 # Recommandation
                 elif "recommendation" in content:
@@ -1049,11 +1068,37 @@ class O2mToMopidy:
         if ("discover" in self.configO2M and self.configO2M["discover"] == "true"):
             self.box_action(self.activeboxs[0])
         else:
+            # Dedup active boxes by uid (cascade `box:` includes can append duplicates).
+            seen_uids = set()
+            unique = []
             for b in list(self.activeboxs):
-                try:
-                    self.box_action(b)
-                except Exception as e:
-                    print(f"reload_active_boxes error: {e}")
+                if b.uid not in seen_uids:
+                    seen_uids.add(b.uid)
+                    unique.append(b)
+            self.activeboxs = unique
+            # Boxes included by a cascade (box:<uid>) are loaded by their parent — don't also
+            # reload them directly (that double-loaded them → 120 instead of 60).
+            included = set()
+            for b in unique:
+                for line in (b.data or '').split('\n'):
+                    line = line.strip()
+                    if line.startswith('box:'):
+                        included.add(line.split(':', 1)[1].strip())
+            # Reset the NFC "same tag = next song" guard so every box actually reloads, and
+            # track boxes loaded this cycle so a cascade child isn't loaded twice.
+            self.last_box_uid = None
+            self._reload_seen = set()
+            try:
+                for b in unique:
+                    if b.uid in included or b.uid in self._reload_seen:
+                        continue  # loaded via its parent's cascade
+                    self._reload_seen.add(b.uid)
+                    try:
+                        self.box_action(b)
+                    except Exception as e:
+                        print(f"reload_active_boxes error: {e}")
+            finally:
+                self._reload_seen = None
 
     def starting_mode(self,clear=False,start=False,uid=None):
         #Cleaning 
