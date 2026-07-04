@@ -31,6 +31,23 @@ def flatten_list(_2d_list):
             flat_list.append(element)
     return flat_list
 
+
+def mood_from_energy_valence(energy, valence):
+    """Derive the categorical mood from (energy, valence) on Russell's circumplex.
+    happy = high energy + high valence, energetic = high energy + low valence,
+    calm = low energy + high valence, dark = low energy + low valence.
+    Returns None if energy is None (can't place the point)."""
+    if energy is None:
+        return None
+    v = valence if valence is not None else 0.5
+    if energy > 0.5 and v > 0.5:
+        return 'happy'
+    if energy > 0.5:
+        return 'energetic'
+    if v > 0.5:
+        return 'calm'
+    return 'dark'
+
 """
     Get mopidy config file for mac or linux paths
 """

@@ -699,6 +699,17 @@ if __name__ == "__main__":
         energy  = _f01(data['energy'])  if 'energy'  in data else None
         valence = _f01(data['valence']) if 'valence' in data else None
         mood    = (data.get('mood') or None) if 'mood' in data else None
+        # Auto-derive the categorical mood from a manual energy/valence edit (matrix drag),
+        # unless the caller set the mood explicitly (dropdown). One-way: e/v → mood.
+        if mood is None and energy is not None:
+            v = valence
+            if v is None:
+                try:
+                    t = o2mHandler.dbHandler.get_stat_by_uri(uri)
+                    v = float(t.valence) if (t and t.valence is not None) else None
+                except Exception:
+                    v = None
+            mood = util.mood_from_energy_valence(energy, v)
         try:
             o2mHandler.dbHandler.upsert_track_features(uri, mood=mood, energy=energy, valence=valence)
             return jsonify({'ok': True, 'uri': uri, 'energy': energy, 'valence': valence, 'mood': mood})

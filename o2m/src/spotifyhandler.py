@@ -1578,17 +1578,8 @@ class SpotifyHandler:
         def _finalize(mood, energy, valence):
             """Derive mood from quadrant when energy/valence are available; tag-mood as fallback only."""
             if energy is not None:
-                v = valence if valence is not None else 0.5
                 # 4-quadrant Russell circumplex: mood = f(energy, valence)
-                # happy=haut-droite, energetic=bas-droite, calm=haut-gauche, dark=bas-gauche
-                if energy > 0.5 and v > 0.5:
-                    mood = 'happy'
-                elif energy > 0.5:
-                    mood = 'energetic'
-                elif v > 0.5:
-                    mood = 'calm'
-                else:
-                    mood = 'dark'
+                mood = util.mood_from_energy_valence(energy, valence)
             # else: no features found → keep tag-based mood as fallback
             return mood, energy, valence
 

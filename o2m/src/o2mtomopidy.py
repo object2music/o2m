@@ -531,6 +531,7 @@ class O2mToMopidy:
                     #***UPDATE VALUES***
                     # Register each added track in the central _track_info dict
                     option_types_list = ['new' if x.tlid in replaced_tlids else option_type for x in slice2]
+                    _enrich_items = []  # feature-less tracks to enrich preemptively (async)
                     for tl_track, track_option_type in zip(slice2, option_types_list):
                         track_uri = tl_track.track.uri
                         if tl_track.tlid in replaced_tlids:
@@ -554,6 +555,11 @@ class O2mToMopidy:
                             else:
                                 stat = self.dbHandler.create_stat(track_uri)
 
+                            # Queue feature-less, unlocked tracks for preemptive enrichment.
+                            if (stat is not None and getattr(stat, 'mood_edited_at', None) is None
+                                    and (stat.mood is None or stat.mood == '_' or stat.energy is None)):
+                                _enrich_items.append((tl_track.track, track_uri))
+
                             if (not getattr(stat, 'option_type', None)) and track_option_type:
                                 stat.option_type = track_option_type
 
@@ -563,7 +569,11 @@ class O2mToMopidy:
                             stat.save()
                         except Exception as e:
                             print(f"Error saving stats for {track_uri}: {e}")
-                    
+
+                    # Preemptive mood enrichment for the just-added feature-less tracks
+                    # (one background worker, sequential in play order, rate-limit aware).
+                    self._enrich_tracks_preemptive(_enrich_items)
+
                     # Shuffle complete computed tracklist if more than two boxs
                     #self.shuffle_tracklist(current_index + 1, new_length)
                     if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle" or active_box.option_sort=="smart") and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1)):
@@ -578,6 +588,64 @@ class O2mToMopidy:
                     
                     #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
+
+    def _enrich_track_features_sync(self, track, uri, stat=None):
+        """Enrich (mood/energy/valence) one track via Last.fm if it lacks them.
+        Blocking — call from a background thread. Skips already-enriched, non-music,
+        and manually-locked tracks (update_track_features also refuses locked ones)."""
+        try:
+            if stat is None and self.dbHandler.stat_exists(uri):
+                stat = self.dbHandler.get_stat_by_uri(uri)
+        except Exception:
+            stat = None
+        if stat is not None and getattr(stat, 'mood_edited_at', None) is not None:
+            return  # manually locked
+        needs = (stat is None or stat.mood is None or stat.mood == '_'
+                 or (stat.energy is None and stat.mood not in (None, '_')))
+        if not needs:
+            return
+        name = getattr(track, 'name', None)
+        artists = getattr(track, 'artists', None) or []
+        artist = next((a.name for a in artists if getattr(a, 'name', None)), None)
+        album = getattr(track, 'album', None)
+        album_name = getattr(album, 'name', None)
+        album_uri = getattr(album, 'uri', None) or ''
+        album_id = album_uri.split(':')[-1] if ':' in album_uri else None
+        if not (name and artist) or any(s in uri for s in ('podcast', 'rss', 'http://', 'https://')):
+            return
+        try:
+            mood, energy, valence = self.spotifyHandler._lastfm_get_track_mood(
+                artist, name, album_name, track_uri=uri, album_id=album_id)
+            if mood or energy is not None:
+                self.dbHandler.update_track_features(uri, mood=mood, energy=energy, valence=valence)
+                print(f"deferred mood: {artist} – {name} → mood={mood} e={energy} v={valence}")
+            else:
+                self.dbHandler.update_track_features(uri, mood='_')
+        except Exception as e:
+            print(f"deferred mood error ({name}): {e}")
+
+    def _enrich_track_features_async(self, track, uri, stat=None):
+        """Background single-track enrichment (deferred, on playback end)."""
+        threading.Thread(target=self._enrich_track_features_sync,
+                         args=(track, uri, stat), daemon=True).start()
+
+    def _enrich_tracks_preemptive(self, items):
+        """Enrich a batch of just-added feature-less tracks in ONE background worker,
+        sequentially in play order and rate-limit aware — so queued tracks get their
+        mood/energy/valence before playback, without a burst of concurrent Last.fm
+        calls. items = [(track, uri), ...]. Non-blocking."""
+        if not items:
+            return
+        def _worker():
+            for track, uri in items:
+                try:
+                    if self.spotifyHandler._is_rate_limited():
+                        break
+                    self._enrich_track_features_sync(track, uri)
+                    time.sleep(0.25)
+                except Exception as e:
+                    print(f"preemptive enrich error: {e}")
+        threading.Thread(target=_worker, daemon=True).start()
 
     def tracklistfill_auto(self,active_box,max_results=20,discover_level=5,mode='normal'):
         #box is the active box in memory and box1,2.. the database contents of boxes
@@ -2212,42 +2280,8 @@ class O2mToMopidy:
                                     if result5: stat.option_type = 'library'
                                     if result5: self._log_playlist_change(uri[0], playlist.tracks[0].uri, 'remove', _from_option_type, 'library', _track_name)
 
-        # Deferred mood enrichment — three cases handled:
-        # 1. mood=NULL : never attempted
-        # 2. mood='_'  : sentinel — retry, coverage improved (album fallback, better GENRE_MOOD…)
-        # 3. mood set but energy=NULL : partial data, fill numeric features
-        _needs_enrichment = (
-            (stat.mood is None) or
-            (stat.mood == '_') or
-            (stat.energy is None and stat.mood not in (None, '_'))
-        )
-        if _needs_enrichment:
-            _track_name   = getattr(track, 'name', None)
-            _artists      = getattr(track, 'artists', None) or []
-            _artist_name  = next((a.name for a in _artists if getattr(a, 'name', None)), None)
-            _track_album  = getattr(track, 'album', None)
-            _album_name   = getattr(_track_album, 'name', None)
-            _album_uri    = getattr(_track_album, 'uri', None) or ''
-            _album_id     = _album_uri.split(':')[-1] if ':' in _album_uri else None
-            _uri_mood     = uri
-            _db           = self.dbHandler
-            _sp           = self.spotifyHandler
-            if _track_name and _artist_name and not any(
-                s in _uri_mood for s in ('podcast', 'rss', 'http://', 'https://')
-            ):
-                def _enrich():
-                    try:
-                        mood, energy, valence = _sp._lastfm_get_track_mood(
-                            _artist_name, _track_name, _album_name,
-                            track_uri=_uri_mood, album_id=_album_id)
-                        if mood or energy is not None:
-                            _db.update_track_features(_uri_mood, mood=mood, energy=energy, valence=valence)
-                            print(f"deferred mood: {_artist_name} – {_track_name} → mood={mood} e={energy} v={valence}")
-                        else:
-                            _db.update_track_features(_uri_mood, mood='_')
-                    except Exception as e:
-                        print(f"deferred mood error ({_track_name}): {e}")
-                threading.Thread(target=_enrich, daemon=True).start()
+        # Deferred mood enrichment on playback end (mood=NULL / '_' / energy=NULL).
+        self._enrich_track_features_async(track, uri, stat)
 
         print(f"\n\nUpdate and Fix {fix} stat track {stat}\n\n")
         stat.update()
