@@ -27,10 +27,29 @@ class SpotifyBackend(pykka.ThreadingActor, backend.Backend):
             client_secret=self._config["spotify"]["client_secret"],
             proxy_config=self._config["proxy"],
         )
-        self._web_client.login()
-
-        if self.playlists is not None:
-            self.playlists.refresh()
+        # o2m: the token broker (auth.mopidy.com) hiccups intermittently; a single failed
+        # login() left the web client permanently 'not logged in' → library.lookup returned 0
+        # (music silently empty while podcasts still worked) until a manual mopidy restart.
+        # Retry login() in the background with capped backoff so a transient broker failure
+        # self-heals; refresh playlists once logged in. Runs off the actor thread so on_start
+        # doesn't block mopidy startup.
+        import threading, time as _time
+        def _login_until_ok():
+            attempt = 0
+            while True:
+                try:
+                    if self._web_client.login():
+                        if self.playlists is not None:
+                            try:
+                                self.playlists.refresh()
+                            except Exception:
+                                pass
+                        return
+                except Exception:
+                    pass
+                attempt += 1
+                _time.sleep(min(10 * attempt, 60))
+        threading.Thread(target=_login_until_ok, daemon=True, name="o2m-spotify-login").start()
 
 
 class SpotifyPlaybackProvider(backend.PlaybackProvider):
