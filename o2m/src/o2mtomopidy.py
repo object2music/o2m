@@ -1090,16 +1090,22 @@ class O2mToMopidy:
     def get_podcast_from_url(self, url):
         try:
             f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
+            with contextlib.closing(f) as source:
+                feed = feeds.parse(source)
+            print(f"option_sort : {self.option_sort}")
+            shows = list(feed.items(self.option_sort))
+            # Conserve les max_results premiers épisodes
+            del shows[self.max_results :]
+            return shows
         except (url_error.HTTPError, url_error.URLError) as e:
             print(f"Podcast feed unavailable ({url}): {e}")
             return []
-        with contextlib.closing(f) as source:
-            feed = feeds.parse(source)
-        print(f"option_sort : {self.option_sort}")
-        shows = list(feed.items(self.option_sort))
-        # Conserve les max_results premiers épisodes
-        del shows[self.max_results :]
-        return shows
+        except Exception as e:
+            # Read timeout ('The read operation timed out'), malformed feed, etc. Skip THIS
+            # feed instead of letting it bubble up to box_action, which would swallow it and
+            # drop the whole podcast/info half of a cascade (intermittent 'no podcasts').
+            print(f"Podcast feed skipped ({url}): {e}")
+            return []
 
     def get_unread_podcasts(self, data, last_track_played, max_results=15):
         uris = []
