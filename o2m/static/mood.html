@@ -1813,6 +1813,7 @@ let _mediaMetaSig = null;
    On joue donc un fichier silencieux réel en boucle dans un <audio> : Chrome/Android
    le reconnaît comme média « contenu » actif → métadonnées + contrôles remontent. */
 let mediaAnchorEl = null;
+let _anchorIntentionalPause = false;   // set when WE pause the anchor (vs. the OS)
 
 function _ensureMediaAnchor() {
   if (!mediaAnchorEl) {
@@ -1823,6 +1824,21 @@ function _ensureMediaAnchor() {
     mediaAnchorEl.preload = 'auto';
     mediaAnchorEl.setAttribute('aria-hidden', 'true');
     mediaAnchorEl.style.display = 'none';
+    // Auto-pause on "audio becoming noisy": when a Bluetooth/wired output is
+    // removed (or audio focus is lost to a call/another app), the OS pauses this
+    // <audio>. WebAudio (the Snapcast stream) does NOT honor this, so we mirror it
+    // to the server. Only act when THIS device is the audio sink (Snapcast active)
+    // and the pause wasn't triggered by us.
+    mediaAnchorEl.addEventListener('pause', () => {
+      if (_anchorIntentionalPause) { _anchorIntentionalPause = false; return; }
+      if (snapPlayer && progPlaying) {
+        console.log('[media-anchor] external pause (route/focus lost) → pausing server');
+        rpc('core.playback.pause').catch(() => {});
+        try { snapPlayer.stop(); } catch (e) {}
+        snapPlayer = null; _snapBtnOff();
+        setTimeout(refreshNowPlaying, 300);
+      }
+    });
     document.body.appendChild(mediaAnchorEl);
   }
   return mediaAnchorEl;
@@ -1837,7 +1853,12 @@ function startMediaAnchor() {
 }
 
 function stopMediaAnchor() {
-  if (mediaAnchorEl) { try { mediaAnchorEl.pause(); } catch(e) {} }
+  // Only arm the flag when a pause event will actually fire (element is playing),
+  // otherwise it would stay set and swallow the next genuine external pause.
+  if (mediaAnchorEl && !mediaAnchorEl.paused) {
+    _anchorIntentionalPause = true;
+    try { mediaAnchorEl.pause(); } catch(e) {}
+  }
 }
 
 /* Arme l'ancre dès le 1er geste utilisateur, indépendamment de Snapcast :
