@@ -215,9 +215,13 @@ window.onload = function() {
     }
 
   function update_style_button_box(uid,b){
+    // Don't fight the in-progress visual: while a toggle is pending, the button
+    // shows the amber "processing" state — let the response reconcile it.
+    if (b.dataset.pending === "1") { return; }
     var xhr0 = new XMLHttpRequest();
     xhr0.onreadystatechange = function() {
         if (xhr0.readyState == xhr0.DONE) {
+            if (b.dataset.pending === "1") { return; }
             if (xhr0.status === 200) {
             if (xhr0.responseText=='1') {b.classList.add("sidebar__menu__item--active");}
             if (xhr0.responseText=='0') {b.classList.remove("sidebar__menu__item--active");}
@@ -227,17 +231,42 @@ window.onload = function() {
     xhr0.send();
   }
 
+  // Enter/leave the "in progress" state: amber + pulsing + not clickable.
+  function set_box_pending(b, on){
+    if (on){
+      b.dataset.pending = "1";
+      b.disabled = true;
+      b.classList.add("sidebar__menu__item--pending");
+    } else {
+      b.dataset.pending = "0";
+      b.disabled = false;
+      b.classList.remove("sidebar__menu__item--pending");
+    }
+  }
+
   function create_button_box(uid,name){
     var b = document.createElement("button");
     b.innerHTML = "<i class=\"icon icon--material \">recent_actors</i>"+name;
     b.className = "sidebar__menu__item icon icon--material";
-    b.onclick = function(){  
+    b.onclick = function(){
+        // Guard against double-fire: a box op is synchronous and serialises
+        // behind the server-side lock, so re-clicking only makes it slower.
+        if (b.dataset.pending === "1") { return; }
+        set_box_pending(b, true);
         var xhr = new XMLHttpRequest();
+        // The /api/box endpoint is synchronous: it returns only once the box
+        // action (cascade fills included) has completed. Wait for the real
+        // response instead of a fixed 1s timeout, then reconcile the state.
+        xhr.timeout = 120000; // safety net so a hung op eventually re-enables the button
+        var settle = function(){
+          set_box_pending(b, false);
+          update_style_button_box(uid,b);
+        };
+        xhr.onload = settle;
+        xhr.onerror = settle;
+        xhr.ontimeout = settle;
         xhr.open("GET",base_url+"box?uid="+uid+"&mode=toogle");
         xhr.send();
-        setTimeout(() => {
-          update_style_button_box(uid,b)
-      },1000);
     };
   list.insertBefore(b, list.children[0]);
   update_style_button_box(uid,b)

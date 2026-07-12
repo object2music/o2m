@@ -23,6 +23,55 @@ from flask_cors import CORS
 START_BOLD = "\033[1m"
 END_BOLD = "\033[0m"
 
+
+def _install_resilient_ws_listener():
+    """Harden mopidyapi's WSListener against fatal exceptions.
+
+    The stock ``MopidyWSClient._websocket_runner`` only catches
+    ``(ConnectionError, ConnectionClosed, OSError)``. A handshake ``EOFError``
+    ("connection closed while reading HTTP status line") — seen when mopidy is
+    briefly overloaded / restarting after a keepalive ping timeout — escapes the
+    ``while True`` loop and kills the listener thread with no recovery. Once dead,
+    no more ``track_playback_ended`` / ``track_playback_paused`` events arrive:
+    podcasts stop resuming where they left off and stats stop being written,
+    while HTTP/RPC (a separate path) keeps working — exactly the observed failure.
+
+    Replace the runner with one that catches *any* exception and reconnects with a
+    capped backoff. Event callbacks live on the client (``_event_callbacks``), so
+    they survive reconnects untouched.
+    """
+    import asyncio, time as _time
+    import websockets
+    from mopidyapi.wsclient import MopidyWSClient
+
+    def _resilient_websocket_runner(self, loop):
+        async def packethandler(state):
+            async with websockets.connect(self.ws_url) as ws:
+                state['ok'] = True  # connected → reset backoff after this session
+                while True:
+                    msg = await ws.recv()
+                    self._on_message(msg)
+
+        base = getattr(self, 'reconnect_time', 0.5) or 0.5
+        backoff = base
+        while True:
+            state = {'ok': False}
+            try:
+                loop.run_until_complete(packethandler(state))
+            except Exception as e:
+                try:
+                    self.logger.warning(
+                        f"Mopidy WS listener error, reconnecting in {backoff:.0f}s: {e}")
+                except Exception:
+                    pass
+            _time.sleep(backoff)
+            backoff = base if state['ok'] else min(backoff * 2, 30)
+
+    MopidyWSClient._websocket_runner = _resilient_websocket_runner
+
+
+_install_resilient_ws_listener()
+
 if __name__ == "__main__":
 
 #CONFS AND CONSTS
