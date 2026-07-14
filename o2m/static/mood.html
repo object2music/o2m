@@ -170,7 +170,10 @@
   html, body { height: 100%; }
   body { background: var(--bg); color: var(--text); font-family: var(--font);
          display: flex; flex-direction: column; overflow: hidden; height: 100dvh;
-         transition: background .25s, color .25s; }
+         transition: background .25s, color .25s;
+         /* Landscape: keep content clear of a side-mounted camera cutout */
+         padding-left: env(safe-area-inset-left, 0px);
+         padding-right: env(safe-area-inset-right, 0px); }
 
 
   /* Couleurs des potentiomètres (override des attributs SVG inline) */
@@ -199,10 +202,15 @@
   .theme-chip.active { background: var(--accent); color: #fff; }
   [data-theme="mono"] .theme-chip.active { color: #fff; }
 
-  /* ── Top zone : pochette colonne + infos/contrôles à droite ── */
+  /* ── Top zone: cover column + info/controls on the right ── */
   #top-zone {
     display: flex; align-items: stretch; background: var(--surface);
     border-bottom: 1px solid var(--border); flex-shrink: 0;
+    /* Display cutout (camera hole): with viewport-fit=cover the page extends under
+       the status-bar strip in fullscreen/PWA. The inset becomes padding so the
+       top-zone background claims that strip while content stays clear of the
+       camera. 0 everywhere else (desktop, regular browser tab). */
+    padding-top: env(safe-area-inset-top, 0px);
   }
   #cover-col { flex: 0 0 auto; display: flex; padding: 12px; }
   #top-right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -1806,12 +1814,15 @@ function updateMediaSession(track, isPlaying, coverUrl) {
 }
 let _mediaMetaSig = null;
 
-/* ── Ancre Media Session ───────────────────────────────────────────────────────
-   Snapcast joue via WebAudio (gainNode → ctx.destination, inchangé). WebAudio seul
-   ne crée PAS de session média OS, et un <audio srcObject=MediaStream> est traité
-   comme de l'audio « communication » → pas de notification sur Android.
-   On joue donc un fichier silencieux réel en boucle dans un <audio> : Chrome/Android
-   le reconnaît comme média « contenu » actif → métadonnées + contrôles remontent. */
+/* ── Media Session anchor ─────────────────────────────────────────────────────
+   Snapcast plays through WebAudio (gainNode → ctx.destination, unchanged). WebAudio
+   alone does NOT create an OS media session, and an <audio srcObject=MediaStream>
+   is treated as "communication" audio → no notification on Android. So we loop a
+   real audio file in an <audio> element: Chrome/Android recognizes it as active
+   "content" media → metadata + controls surface. The file is named silence.wav but
+   actually carries a faint 40 Hz tone at -54 dBFS (acoustically imperceptible):
+   Chrome exempts fully *silent* players from the "audio becoming noisy" auto-pause
+   (BT/headphone removal), and we rely on that pause to detect route loss. */
 let mediaAnchorEl = null;
 let _anchorIntentionalPause = false;   // set when WE pause the anchor (vs. the OS)
 
@@ -1827,17 +1838,12 @@ function _ensureMediaAnchor() {
     // Auto-pause on "audio becoming noisy": when a Bluetooth/wired output is
     // removed (or audio focus is lost to a call/another app), the OS pauses this
     // <audio>. WebAudio (the Snapcast stream) does NOT honor this, so we mirror it
-    // to the server. Only act when THIS device is the audio sink (Snapcast active)
-    // and the pause wasn't triggered by us.
+    // to the server. Note: Chrome only auto-pauses *audible* players, which is why
+    // silence.wav actually carries a faint -54dBFS tone (see its generator note).
     mediaAnchorEl.addEventListener('pause', () => {
       if (_anchorIntentionalPause) { _anchorIntentionalPause = false; return; }
-      if (snapPlayer && progPlaying) {
-        console.log('[media-anchor] external pause (route/focus lost) → pausing server');
-        rpc('core.playback.pause').catch(() => {});
-        try { snapPlayer.stop(); } catch (e) {}
-        snapPlayer = null; _snapBtnOff();
-        setTimeout(refreshNowPlaying, 300);
-      }
+      console.log('[media-anchor] external pause');
+      pauseFromRouteLoss('output lost');
     });
     document.body.appendChild(mediaAnchorEl);
   }
@@ -1859,6 +1865,42 @@ function stopMediaAnchor() {
     _anchorIntentionalPause = true;
     try { mediaAnchorEl.pause(); } catch(e) {}
   }
+}
+
+/* Shared reaction to "the audio route died" (BT/headphones removed, audio focus
+   lost). Fed by two detectors: the media-anchor pause event above and the
+   devicechange watcher below. Only acts when this device is the audio sink
+   (snapPlayer active) and we believe playback is running. */
+function pauseFromRouteLoss(source) {
+  if (!snapPlayer || !progPlaying) return;
+  console.log('[route-loss] ' + source + ' → pausing server');
+  rpc('core.playback.pause').catch(() => {});
+  try { snapPlayer.stop(); } catch (e) {}
+  snapPlayer = null;
+  _snapBtnOff();
+  setFeedback('Paused (' + source + ')');
+  setTimeout(refreshNowPlaying, 300);
+}
+
+/* Fallback detector: Bluetooth audio devices almost always expose a microphone
+   (HFP), so unpairing/powering one off fires mediaDevices.devicechange with a
+   shorter device list. Counting works without mic permission (entries are just
+   unlabeled). We react only to a *shrinking* list — connecting a device grows it. */
+function watchAudioDevices() {
+  const md = navigator.mediaDevices;
+  if (!md || !md.enumerateDevices || !md.addEventListener) return;
+  let lastCount = null;
+  const countDevices = () => md.enumerateDevices()
+    .then(ds => ds.filter(d => d.kind === 'audioinput' || d.kind === 'audiooutput').length)
+    .catch(() => null);
+  countDevices().then(n => { lastCount = n; });
+  md.addEventListener('devicechange', async () => {
+    const n = await countDevices();
+    const prev = lastCount;
+    lastCount = n;
+    console.log('[route-loss] devicechange: audio devices ' + prev + ' → ' + n);
+    if (n != null && prev != null && n < prev) pauseFromRouteLoss('device removed');
+  });
 }
 
 /* Arme l'ancre dès le 1er geste utilisateur, indépendamment de Snapcast :
@@ -3039,6 +3081,7 @@ async function init() {
     autoInitPlaybackIfPhone();
   }
   armMediaAnchor();
+  watchAudioDevices();
 
   let fitTimer = null;
   window.addEventListener('resize', () => {
