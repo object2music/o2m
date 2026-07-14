@@ -36,6 +36,7 @@ class O2mToMopidy:
     exploit_sharpness = 1.3      # P0 exploit weight exponent (affinity**this); 2 was too repetitive
     served_cooldown_min = 30.0   # minutes; tracks just SERVED (selected) are down-weighted
     served_mult = 0.1            # weight multiplier applied within the served-cooldown window
+    rest_pop_factor = 0.7        # _mood_pick: gentler popularity exponent on the off-mood fallback (1=full)
 
     avg_stats = {}
 
@@ -1769,14 +1770,17 @@ class O2mToMopidy:
                 else:
                     rest.append(u)
 
-        # Weight = popularity**k × anti-repeat cooldown (played + served), shared with
-        # _expand_pick — so habitual/just-served tracks don't keep resurfacing here either.
-        weights = {u: (max(pop.get(u, 0.5), 1e-6) ** k)
-                      * self._cooldown_factor(u, last_read.get(u), now, now_ts, served)
-                   for u in uris}
-        result = self._sample_by_weight(in_range, weights, n)
+        # Weight = popularity**exp × anti-repeat cooldown (played + served). The off-mood
+        # fallback (rest) uses a gentler popularity exponent (rest_pop_factor) so a merely
+        # very-popular out-of-mood track doesn't systematically win the filler slots.
+        def _w(u, exp):
+            return (max(pop.get(u, 0.5), 1e-6) ** exp) \
+                   * self._cooldown_factor(u, last_read.get(u), now, now_ts, served)
+        w_in = {u: _w(u, k) for u in in_range}
+        result = self._sample_by_weight(in_range, w_in, n)
         if len(result) < n:
-            result += self._sample_by_weight(rest, weights, n - len(result))
+            w_rest = {u: _w(u, k * self.rest_pop_factor) for u in rest}
+            result += self._sample_by_weight(rest, w_rest, n - len(result))
         for u in result:
             served[u] = now_ts  # served-cooldown for subsequent selections
         return result
