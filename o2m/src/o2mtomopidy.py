@@ -1728,10 +1728,10 @@ class O2mToMopidy:
 
         # Single query for energy/valence + popularity; drop hidden/trash from the pool
         # so explicitly rejected tracks never resurface.
-        feat, pop, excluded = {}, {}, set()
+        feat, pop, last_read, excluded = {}, {}, {}, set()
         try:
-            for t in (Track.select(Track.uri, Track.energy, Track.valence,
-                                   Track.popularity, Track.option_type)
+            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
+                                   Track.option_type, Track.last_read_date)
                           .where(Track.uri << list(uris)).namedtuples()):
                 if t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
@@ -1740,6 +1740,8 @@ class O2mToMopidy:
                     feat[t.uri] = (t.energy, t.valence)
                 if t.popularity is not None:
                     pop[t.uri] = t.popularity
+                if t.last_read_date is not None:
+                    last_read[t.uri] = t.last_read_date
         except Exception as e:
             print(f"_mood_pick lookup error: {e}")
             return uris[:min(n, len(uris))]
@@ -1749,6 +1751,12 @@ class O2mToMopidy:
         if not uris:
             return []
         n = min(n, len(uris))
+
+        now = datetime.datetime.utcnow()
+        now_ts = time.time()
+        served = getattr(self, '_served_at', None)
+        if served is None:
+            self._served_at = served = {}
 
         if energy is None or valence is None:
             in_range, rest = list(uris), []
@@ -1761,9 +1769,16 @@ class O2mToMopidy:
                 else:
                     rest.append(u)
 
-        result = self._weighted_sample(in_range, pop, k, n)
+        # Weight = popularity**k × anti-repeat cooldown (played + served), shared with
+        # _expand_pick — so habitual/just-served tracks don't keep resurfacing here either.
+        weights = {u: (max(pop.get(u, 0.5), 1e-6) ** k)
+                      * self._cooldown_factor(u, last_read.get(u), now, now_ts, served)
+                   for u in uris}
+        result = self._sample_by_weight(in_range, weights, n)
         if len(result) < n:
-            result += self._weighted_sample(rest, pop, k, n - len(result))
+            result += self._sample_by_weight(rest, weights, n - len(result))
+        for u in result:
+            served[u] = now_ts  # served-cooldown for subsequent selections
         return result
 
     def _expand_pick(self, uris, n, energy, valence, discover_level):
@@ -1824,25 +1839,7 @@ class O2mToMopidy:
             return f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius
 
         def cd(u):
-            """Combined anti-repeat down-weight: a track recently PLAYED
-            (last_read_date, hours) and/or recently SERVED in a previous tap
-            (_served_at, minutes) is demoted, so successive taps rotate."""
-            f = 1.0
-            lr = last_read.get(u)
-            if lr is not None:
-                try:
-                    if isinstance(lr, (int, float)):
-                        lr = datetime.datetime.utcfromtimestamp(lr)
-                    if getattr(lr, 'tzinfo', None) is not None:
-                        lr = lr.replace(tzinfo=None)
-                    if (now - lr).total_seconds() / 3600.0 < self.cooldown_hours:
-                        f *= self.cooldown_mult
-                except Exception:
-                    pass
-            sa = served.get(u)
-            if sa is not None and (now_ts - sa) < self.served_cooldown_min * 60.0:
-                f *= self.served_mult
-            return f
+            return self._cooldown_factor(u, last_read.get(u), now, now_ts, served)
 
         def aff(u):  # affinity = popularity + soft mood bonus
             return pop.get(u, 0.5) + (MOOD_BONUS if in_mood(u) else 0.0)
@@ -1896,27 +1893,28 @@ class O2mToMopidy:
         keyed.sort(reverse=True)
         return [u for _, u in keyed[:n]]
 
-    def _weighted_sample(self, uris, pop, k, n, default=0.5):
-        """Sample up to n uris without replacement, weighted by popularity**k.
+    def _cooldown_factor(self, uri, last_read_at, now, now_ts, served):
+        """Combined anti-repeat down-weight in (0,1]: a track recently PLAYED
+        (last_read_at within cooldown_hours) and/or recently SERVED (served map
+        within served_cooldown_min) is demoted, so successive selections rotate.
+        Shared by _expand_pick and _mood_pick."""
+        f = 1.0
+        if last_read_at is not None:
+            try:
+                lr = last_read_at
+                if isinstance(lr, (int, float)):
+                    lr = datetime.datetime.utcfromtimestamp(lr)
+                if getattr(lr, 'tzinfo', None) is not None:
+                    lr = lr.replace(tzinfo=None)
+                if (now - lr).total_seconds() / 3600.0 < self.cooldown_hours:
+                    f *= self.cooldown_mult
+            except Exception:
+                pass
+        sa = served.get(uri)
+        if sa is not None and (now_ts - sa) < self.served_cooldown_min * 60.0:
+            f *= self.served_mult
+        return f
 
-        Uses the Efraimidis-Spirakis A-Res method (key = rand**(1/weight), keep
-        the largest keys). NULL/unscored tracks fall back to `default` so they
-        still participate. k<=0 degrades to a plain shuffle (uniform)."""
-        n = min(n, len(uris))
-        if n <= 0:
-            return []
-        if k <= 0:
-            pool = list(uris)
-            random.shuffle(pool)
-            return pool[:n]
-        keyed = []
-        for u in uris:
-            w = pop.get(u, default) ** k
-            if w <= 0:
-                w = 1e-9
-            keyed.append((random.random() ** (1.0 / w), u))
-        keyed.sort(reverse=True)
-        return [u for _, u in keyed[:n]]
 
     def get_new_tracks_notread(self, limit):
         return self.dbHandler.get_uris_new_notread(limit)
