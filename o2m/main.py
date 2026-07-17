@@ -341,8 +341,69 @@ if __name__ == "__main__":
             'data': box.data,
             'description': box.description,
             'option_type': box.option_type,
+            'option_sort': box.option_sort,
+            'option_discover_level': box.option_discover_level,
+            'option_max_results': box.option_max_results,
+            'option_duration': box.option_duration,
+            'option_energy': box.option_energy,
+            'option_valence': box.option_valence,
             'favorite': box.favorite,
+            'public': box.public,
         })
+
+    BOX_OPTION_TYPES = ['library', 'favorites', 'new', 'incoming', 'hidden', 'trash', 'podcast', 'info']
+    BOX_SORTS = ['shuffle', 'asc', 'desc']
+
+    @api.route('/api/box_edit', methods=['POST'])
+    @require_edit_auth
+    def api_box_edit():
+        """Update editable box fields. Gated on edit rights (same as track edits).
+        Only whitelisted fields are written, each validated/clamped."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uid = (data.get('uid') or '').strip()
+        if not uid:
+            return jsonify({'error': 'uid required'}), 400
+        box = o2mHandler.dbHandler.get_box_by_uid(uid)
+        if box is None:
+            return jsonify({'error': 'box not found'}), 404
+
+        def _clamp(v, lo, hi):
+            try: v = float(v)
+            except (TypeError, ValueError): return None
+            return max(lo, min(hi, v))
+        def _int_or_none(v):
+            if v in (None, ''): return None
+            try: return int(v)
+            except (TypeError, ValueError): return None
+
+        changed = {}
+        if 'description' in data:
+            box.description = (data['description'] or '').strip() or None; changed['description'] = box.description
+        if 'data' in data:
+            box.data = data['data'] if data['data'] is not None else ''; changed['data'] = box.data
+        if 'option_type' in data and data['option_type'] in BOX_OPTION_TYPES:
+            box.option_type = data['option_type']; changed['option_type'] = box.option_type
+        if 'option_sort' in data:
+            box.option_sort = data['option_sort'] if data['option_sort'] in BOX_SORTS else None; changed['option_sort'] = box.option_sort
+        if 'option_discover_level' in data:
+            v = _clamp(data['option_discover_level'], 0, 10)
+            if v is not None: box.option_discover_level = int(round(v)); changed['option_discover_level'] = box.option_discover_level
+        if 'option_max_results' in data:
+            box.option_max_results = _int_or_none(data['option_max_results']); changed['option_max_results'] = box.option_max_results
+        if 'favorite' in data:
+            box.favorite = 1 if data['favorite'] else 0; changed['favorite'] = box.favorite
+        if 'public' in data:
+            box.public = 1 if data['public'] else 0; changed['public'] = box.public
+        if 'option_energy' in data:
+            box.option_energy = _clamp(data['option_energy'], 0, 1); changed['option_energy'] = box.option_energy
+        if 'option_valence' in data:
+            box.option_valence = _clamp(data['option_valence'], 0, 1); changed['option_valence'] = box.option_valence
+        try:
+            box.save()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({'ok': True, 'uid': uid, 'changed': changed})
 
     #Register a local file download for a Spotify track (called by spotdl cache service)
     @api.route('/api/register_local_track', methods=['POST'])
@@ -880,6 +941,90 @@ if __name__ == "__main__":
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/play_next')
+    def api_play_next():
+        """Queue a track right after the current one, with O2M's live URI
+        adaptation (swap a Spotify track for its cached local file when present,
+        recording the local→spotify mapping for stats) — same path O2M uses when
+        it fills the tracklist, so externally-cached content is used live."""
+        from flask import jsonify
+        uris_in = request.args.getlist('uri')  # one or many uri= params (album/artist queue)
+        if not uris_in:
+            return jsonify({'error': 'uri required'}), 400
+        try:
+            m = o2mHandler.mopidyHandler
+            tl_length = m.tracklist.get_length()
+            # Insert right after the currently playing track. Prefer the current
+            # tl_track (reliable while playing); fall back to tracklist.index(),
+            # then to the end of the tracklist if nothing is playing.
+            at = None
+            try:
+                cur_tl = m.playback.get_current_tl_track()
+                if cur_tl is not None:
+                    ci = m.tracklist.index(cur_tl)
+                    if isinstance(ci, int):
+                        at = ci + 1
+            except Exception:
+                at = None
+            if at is None:
+                idx = m.tracklist.index()
+                at = (idx + 1) if isinstance(idx, int) else tl_length
+            resolved = o2mHandler._resolve_uris(uris_in)
+            if not resolved:
+                return jsonify({'error': 'unresolved uri'}), 400
+            added = m.tracklist.add(uris=resolved, at_position=at)
+            tlid = None
+            try: tlid = added[0].tlid
+            except Exception: pass
+            return jsonify({'ok': True, 'at_position': at, 'count': len(resolved), 'tlid': tlid})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    def _spotify_id(uri):
+        return uri.split(':')[-1] if uri and ':' in uri else (uri or '')
+
+    @api.route('/api/album_info')
+    def api_album_info():
+        """Album detail served from the O2M DB cache (Album + Track.album_id +
+        TrackArtist). Returns {cached: False} when the album isn't in the DB so the
+        client can fall back to a live Spotify lookup."""
+        from flask import jsonify
+        aid = _spotify_id(request.args.get('uri'))
+        try:
+            d = o2mHandler.dbHandler.get_album_detail(aid)
+            if d and not d.get('partial'):
+                d['cached'] = True
+                return jsonify(d)
+            # Incomplete or missing in cache → lazy backfill from Spotify into the DB,
+            # then re-read so this album is fully cache-served from now on.
+            try:
+                o2mHandler.spotifyHandler.backfill_album(aid)
+            except Exception as e:
+                print(f"album backfill error: {e}")
+            d2 = o2mHandler.dbHandler.get_album_detail(aid)
+            if d2:
+                d2['cached'] = True
+                d2['backfilled'] = True
+                return jsonify(d2)
+            return jsonify({'cached': False})
+        except Exception as e:
+            return jsonify({'cached': False, 'error': str(e)})
+
+    @api.route('/api/artist_info')
+    def api_artist_info():
+        """Artist detail served from the O2M DB cache (Artist + TrackArtist +
+        AlbumArtist + ArtistGenre). {cached: False} → client falls back to Spotify."""
+        from flask import jsonify
+        aid = _spotify_id(request.args.get('uri'))
+        try:
+            d = o2mHandler.dbHandler.get_artist_detail(aid)
+            if not d:
+                return jsonify({'cached': False})
+            d['cached'] = True
+            return jsonify(d)
+        except Exception as e:
+            return jsonify({'cached': False, 'error': str(e)})
 
     @api.route('/mood')
     def mood_ui():

@@ -261,6 +261,47 @@ class SpotifyHandler:
         if self._db and album_data and album_data.get('id'):
             self._db.save_album(album_data)
 
+    def backfill_album(self, album_id):
+        """Fetch a full album from Spotify and persist it (album row + all tracks +
+        artist/album links) into the O2M DB, so the detail page serves it fully from
+        cache next time. Lazy — called only when the DB copy is incomplete. Returns
+        True on success."""
+        if not album_id or self.sp is None or self._is_rate_limited():
+            return False
+        try:
+            album = self.sp.album(album_id)
+        except Exception as e:
+            try: self._on_rate_limit(e)
+            except Exception: pass
+            print(f"backfill_album({album_id}) error: {e}")
+            return False
+        if not album or not album.get('id'):
+            return False
+        try:
+            self._db.save_album(album)
+            album_min = {k: v for k, v in album.items() if k != 'tracks'}
+            page = album.get('tracks') or {}
+            items = list(page.get('items') or [])
+            while page.get('next'):
+                try:
+                    page = self.sp.next(page)
+                except Exception:
+                    break
+                items += page.get('items') or []
+            for it in items:
+                if not it or not it.get('uri'):
+                    continue
+                it = dict(it)
+                it['album'] = album_min  # simplified album tracks lack the album field
+                try:
+                    self._db.save_track_metadata(it)
+                except Exception:
+                    pass
+            return True
+        except Exception as e:
+            print(f"backfill_album({album_id}) persist error: {e}")
+            return False
+
     def _cache_track(self, track_data):
         if self._db and track_data and track_data.get('uri'):
             self._db.save_track_metadata(track_data)

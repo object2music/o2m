@@ -324,8 +324,16 @@
                 overflow: hidden; text-overflow: ellipsis; color: var(--eyebrow-color, var(--accent));
                 font-family: var(--font-head); font-weight: var(--head-weight);
                 text-transform: var(--head-transform); letter-spacing: var(--head-spacing); }
-  #artist-name { font-size: 14px; color: var(--muted); margin-top: 3px;
+  /* Artist + album on a single line ("Artist · Album"). Both ellipsize; the album
+     is opened from its label (the cover click is taken by the color toggle). */
+  #artist-album { display: flex; align-items: baseline; gap: 5px; margin-top: 3px; min-width: 0; }
+  #artist-name { font-size: 14px; color: var(--muted); flex: 0 1 auto;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #album-name { font-size: 12px; color: var(--muted); cursor: pointer; flex: 0 1 auto;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #album-name:not(:empty)::before { content: "· "; color: var(--muted); }
+  #album-name:hover { color: var(--text); text-decoration: underline; }
+  #album-name:empty { display: none; }
 
   /* track status badge — texte plat lisible, avec carré de couleur en tête */
   #track-status-badge {
@@ -442,6 +450,7 @@
   #scroll-area {
     flex: 1; overflow-y: auto; overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    position: relative;   /* anchor for the desktop object-detail overlay */
   }
 
   /* ── Dials ── */
@@ -690,6 +699,7 @@
   .tl-status.s-trash     { color: #ef9a9a; }
   .tl-status.s-hidden    { color: #ce93d8; }
   .tl-status.s-podcast   { color: #90a4ae; }
+  .tl-status svg { width: 11px; height: 11px; vertical-align: -1px; }
 
   /* ── Footer links ── */
   #footer-links {
@@ -993,6 +1003,14 @@
 
   /* Tracklist rows → o2m-row-item : hairline separators. */
   .tl-item { border-bottom: 1px solid var(--border-soft); }
+  /* Per-row info badge → opens the row actions menu (Play next, …). */
+  .tl-info {
+    flex-shrink: 0; align-self: center; background: none; border: none;
+    color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex;
+    align-items: center; opacity: .5; transition: opacity .12s, color .12s;
+  }
+  .tl-info:hover { color: var(--accent); opacity: 1; }
+  .tl-info svg { width: 15px; height: 15px; display: block; }
   .tl-item:last-child { border-bottom: none; }
 
   @media (max-width: 699px) {
@@ -1078,6 +1096,141 @@
     }
     body.details-open #details-backdrop { opacity: 1; visibility: visible; }
   }
+
+  /* ════════════ Object detail / edit overlay (album · artist · box) ════════════
+     Covers the lower area (below the now-playing line). Mobile-first: a bottom-sheet
+     like the track edit space. Desktop/tablet: overlays the columns in place.
+     Read-only for now; edit affordances land later. */
+  #obj-backdrop { display: none; }
+  #obj-panel {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+    z-index: 210; max-height: 86vh; overflow-y: auto;
+    background: var(--surface); border-top: 1px solid var(--border-strong);
+    box-shadow: 0 -12px 40px rgba(0,0,0,.45);
+    transform: translateY(101%); transition: transform .26s var(--ease, ease);
+    display: flex; flex-direction: column; padding: 14px 16px 26px;
+  }
+  body.obj-open #obj-panel { transform: translateY(0); }
+  #obj-backdrop {
+    position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,.5);
+    opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s;
+  }
+  body.obj-open #obj-backdrop { display: block; opacity: 1; visibility: visible; }
+
+  .obj-head { display: flex; align-items: flex-start; gap: 10px; }
+  .obj-head-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .obj-kind {
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .14em;
+    font-size: 10px; color: var(--accent);
+  }
+  .obj-title { font-size: 17px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .obj-sub { font-size: 12px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #obj-close, #obj-actions {
+    flex-shrink: 0; background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 2px 4px; display: inline-flex;
+  }
+  #obj-close svg, #obj-actions svg { width: 18px; height: 18px; display: block; }
+  #obj-actions:hover { color: var(--accent); }
+  /* Navigation rows (albums / spotify links) carry a chevron → clicking opens. */
+  .obj-nav { align-items: center; }
+  .obj-chevron { width: 16px; height: 16px; flex-shrink: 0; color: var(--muted); margin-left: auto; }
+  .obj-body { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+  .obj-hero { display: flex; gap: 12px; align-items: flex-start; }
+  .obj-cover {
+    width: 84px; height: 84px; flex-shrink: 0; object-fit: cover;
+    background: var(--card); border: 1px solid var(--border);
+  }
+  .obj-meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px;
+    color: var(--muted); min-width: 0; }
+  .obj-meta b { color: var(--text); font-weight: 600; }
+  .obj-src { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .1em;
+    font-size: 9px; color: var(--muted); margin-top: 3px; }
+  .obj-src-db { color: var(--accent); }
+
+  .obj-dl { display: flex; flex-direction: column; }
+  .obj-dl > div { display: flex; justify-content: space-between; gap: 10px; font-size: 13px;
+    padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .obj-dl dt { color: var(--muted); }
+  .obj-dl dd { color: var(--text); text-align: right; word-break: break-word; }
+
+  /* Box editor — one field per row, separated by a line (like album/track rows). */
+  .obj-field { display: flex; align-items: center; gap: 10px; padding: 8px 2px;
+    border-bottom: 1px solid var(--border); }
+  .obj-field-label { flex: 0 0 42%; font-size: 12px; color: var(--muted); }
+  .obj-field-ctrl { flex: 1; display: flex; justify-content: flex-end; min-width: 0; }
+  .obj-data-field { flex-direction: column; align-items: stretch; gap: 6px; }
+  /* In this column-direction field, flex-basis:42% would size the label to 42% of the
+     field HEIGHT (huge empty gap above the textarea) — reset it to natural height. */
+  .obj-data-field .obj-field-label { flex: 0 0 auto; }
+  .obj-data-field .obj-field-ctrl { flex: 0 0 auto; justify-content: stretch; }
+  .bx-input { font: inherit; font-family: var(--font-mono); background: var(--card);
+    color: var(--text); border: 1px solid var(--border-strong); padding: 3px 6px; border-radius: 0; }
+  .bx-input:focus { border-color: var(--accent); outline: none; }
+  .bx-wide { width: 100%; }
+  .bx-num { width: 72px; text-align: right; }
+  select.bx-input { width: auto; }
+  .bx-data { width: 100%; resize: vertical; font-size: 15px; line-height: 1.7;
+    min-height: 220px; max-height: 60vh; overflow-y: auto; padding: 8px 10px; }
+  .obj-field input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+  .obj-save-row { margin-top: 14px; }
+  .obj-save-btn { background: var(--accent); color: #fff; border: none; padding: 8px 18px;
+    font: inherit; font-weight: 600; cursor: pointer; border-radius: 0; }
+  .obj-save-btn:hover { opacity: .9; }
+
+  .obj-tracks { display: flex; flex-direction: column; }
+  .obj-row {
+    display: flex; align-items: baseline; gap: 8px; padding: 5px 2px;
+    border-bottom: 1px solid var(--border);
+  }
+  .obj-row .ot-num { font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    width: 22px; flex-shrink: 0; }
+  .obj-row .ot-name { flex: 1; font-size: 13px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .obj-row .ot-dur { font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    flex-shrink: 0; }
+  .obj-row.obj-clickable { cursor: pointer; }
+  .obj-row.obj-clickable:hover { background: var(--card); }
+  .obj-row.obj-clickable:hover .ot-name { color: var(--accent); }
+  /* Harmonized track rows (.tl-item) reused inside the modal. */
+  .obj-tracks .tl-item.obj-clickable:hover { background: var(--card); }
+  .obj-tracks .tl-item.obj-clickable:hover .tl-name { color: var(--accent); }
+  .obj-loading, .obj-empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  .obj-section-label {
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .12em;
+    font-size: 10px; color: var(--muted); margin: 4px 0 4px;
+  }
+
+  /* Clickable affordances on existing elements */
+  #artist-name.obj-link { cursor: pointer; }
+  #artist-name.obj-link:hover { color: var(--text); text-decoration: underline; }
+  .tl-artist.obj-link { cursor: pointer; }
+  .tl-artist.obj-link:hover { color: var(--text); text-decoration: underline; }
+  .box-info-btn {
+    margin-left: auto; flex-shrink: 0; background: none; border: none;
+    color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex;
+  }
+  .box-info-btn:hover { color: var(--accent); }
+  .box-info-btn svg { width: 15px; height: 15px; display: block; }
+
+  /* Desktop / tablet: overlay the lower area in place (over the columns). */
+  @media (min-width: 700px) {
+    #obj-panel {
+      position: absolute; inset: 0; z-index: 60;
+      max-height: none; overflow-y: auto;
+      /* Slide up from the bottom edge of the lower area (scroll-area clips it). */
+      transform: translateY(100%); opacity: 0; visibility: hidden;
+      border-top: 1px solid var(--border-strong);
+      box-shadow: 0 -14px 34px rgba(0,0,0,.30); background: var(--surface);
+      transition: transform .28s cubic-bezier(.22,.61,.36,1),
+                  opacity .2s var(--ease, ease), visibility .28s var(--ease, ease);
+      padding: 16px 20px 20px;
+    }
+    body.obj-open #obj-panel { transform: translateY(0); opacity: 1; visibility: visible; }
+    #obj-backdrop { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -1096,7 +1249,10 @@
     <div id="now-playing">
       <div id="track-info">
         <div id="track-name">—</div>
-        <div id="artist-name">O2M</div>
+        <div id="artist-album">
+          <span id="artist-name">O2M</span>
+          <span id="album-name"></span>
+        </div>
         <div id="track-status-badge"></div>
         <div id="track-tags-row"><span id="track-ev"></span></div>
       </div>
@@ -1284,7 +1440,25 @@
     </div>
   </div>
 
+  <!-- ══ Object detail / edit overlay (album · artist · box) ══
+       Covers the lower area. Desktop: overlays the columns in place.
+       Mobile: bottom-sheet like the track edit space. Read-only for now. -->
+  <div id="obj-panel" aria-hidden="true">
+    <div class="obj-head">
+      <div class="obj-head-main">
+        <span class="obj-kind" id="obj-kind">—</span>
+        <span class="obj-title" id="obj-title">—</span>
+        <span class="obj-sub" id="obj-sub"></span>
+      </div>
+      <button id="obj-actions" class="hide" title="Actions" aria-label="Actions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
+      <button id="obj-close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="obj-body" id="obj-body"></div>
+  </div>
+
 </div><!-- /scroll-area -->
+
+<div id="obj-backdrop"></div>
 
 <div id="matrix-tooltip">
   <div class="tt-name"></div>
@@ -1511,6 +1685,25 @@ let lastTracklistSig = null;
 
 // Lightweight update when only the active track moved within the same list:
 // move the `.current` class + eq-icon instead of wiping and rebuilding the DOM.
+/* Shared track-row markup — the single pattern reused by the tracklist AND the
+   object modal (album/artist). Returns the row inner HTML:
+   number (or eq-icon) · name + artist (+ optional status) · duration · info badge. */
+const TL_INFO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+const CHEVRON_SVG = '<svg class="obj-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>';
+const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false }) {
+  const numHtml = isCurrent ? '<span class="eq-icon"><i></i><i></i><i></i></span>' : indexLabel;
+  const aCls = 'tl-artist' + (artistUri ? ' obj-link' : '');
+  const aAttr = artistUri ? ` data-artist-uri="${objEsc(artistUri)}"` : '';
+  const infoAttr = uri ? ` data-uri="${objEsc(uri)}"` : '';
+  return `<div class="tl-num">${numHtml}</div>`
+    + `<div class="tl-texts"><div class="tl-name">${objEsc(name || '?')}</div>`
+    + `<div class="${aCls}"${aAttr}>${objEsc(artist)}</div>${statusHtml}</div>`
+    + `<div class="tl-dur">${objEsc(durText)}</div>`
+    + `<button class="tl-info" title="Track actions" aria-label="Track actions"${infoAttr}>${TL_INFO_SVG}</button>`;
+}
+
 function updateCurrentRow(wrap, activeTlid) {
   wrap.querySelectorAll('.tl-item').forEach((item, i) => {
     const num = item.querySelector('.tl-num');
@@ -1551,28 +1744,26 @@ function renderTracklist(tracks, activeTlid) {
     const item = document.createElement('div');
     item.className = 'tl-item' + (tlid === activeTlid ? ' current' : '');
     item.dataset.tlid = tlid;
-    const num = document.createElement('div');
-    num.className = 'tl-num';
-    if (tlid === activeTlid) {
-      num.innerHTML = '<span class="eq-icon"><i></i><i></i><i></i></span>';
-    } else {
-      num.textContent = String(i + 1).padStart(2, '0');
-    }
-    const texts = document.createElement('div');
-    texts.className = 'tl-texts';
     const cached = getCachedStatus(track.uri);
-    const statusHtml = cached
-      ? `<div class="tl-status ${STATUS_CLASS[(cached.split(' - ')[0]||'').trim().toLowerCase()]||''}"
-              data-uri="${track.uri.replace(/"/g,'&quot;')}">${formatStatus(cached)}</div>`
-      : `<div class="tl-status" data-uri="${track.uri.replace(/"/g,'&quot;')}"></div>`;
-    texts.innerHTML = `<div class="tl-name">${track.name || '?'}</div>
-      <div class="tl-artist">${(track.artists||[]).map(a=>a.name).join(', ')}</div>
-      ${statusHtml}`;
-    const dur = document.createElement('div');
-    dur.className = 'tl-dur';
-    dur.textContent = msToMin(track.length);
-    item.append(num, texts, dur);
-    item.addEventListener('click', () => {
+    const statusCls = cached ? (STATUS_CLASS[(cached.split(' - ')[0]||'').trim().toLowerCase()] || '') : '';
+    const statusHtml = `<div class="tl-status ${statusCls}" data-uri="${(track.uri||'').replace(/"/g,'&quot;')}">${cached ? formatStatus(cached) : ''}</div>`;
+    item.innerHTML = trackRowInnerHTML({
+      indexLabel: String(i + 1).padStart(2, '0'),
+      name: track.name,
+      artist: (track.artists || []).map(a => a.name).join(', '),
+      artistUri: (track.artists || [])[0]?.uri || '',
+      uri: track.uri,
+      durText: msToMin(track.length),
+      statusHtml,
+      isCurrent: tlid === activeTlid,
+    });
+    item.addEventListener('click', (e) => {
+      // Info badge → row actions menu.
+      const ib = e.target.closest('.tl-info');
+      if (ib) { e.stopPropagation(); openRowMenu(ib, ib.dataset.uri || track.uri); return; }
+      // Clicking the artist name opens the artist detail instead of playing the row.
+      const al = e.target.closest('.tl-artist[data-artist-uri]');
+      if (al) { e.stopPropagation(); openArtist(al.dataset.artistUri, al.textContent.trim()); return; }
       resetProgress();
       rpc('core.playback.play', {tlid}).then(() => setTimeout(refreshNowPlaying, 200));
     });
@@ -1712,6 +1903,7 @@ async function refreshNowPlaying() {
 
   currentTlid      = tlid;
   matrixCurUri     = track?.uri ?? null;
+  currentTrackObj  = track || null;
   currentDurationMs = track?.length || 0;
   document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
   matrixTlItems  = tracks.map(({tlid: id, track: t}) => ({
@@ -1743,8 +1935,11 @@ async function refreshNowPlaying() {
     document.getElementById('hero-title').textContent   = track.name || '';
     updateHeroAccent(track.uri);
     fitHeroTitle();
-    document.getElementById('artist-name').textContent =
-      (track.artists || []).map(a => a.name).join(', ') || '—';
+    const artistEl = document.getElementById('artist-name');
+    artistEl.textContent = (track.artists || []).map(a => a.name).join(', ') || '—';
+    artistEl.classList.toggle('obj-link', !!((track.artists || [])[0]?.uri));
+    const albumEl = document.getElementById('album-name');
+    if (albumEl) albumEl.textContent = (track.album && track.album.uri) ? (track.album.name || '') : '';
 
     // O2M metadata (status badge, cover, details): only on track change —
     // avoids /track_status and /track_info being refetched every 10s.
@@ -1975,6 +2170,82 @@ function openTrackMenu(triggerBtn) {
   _trackMenuEl = menu;
   triggerBtn.setAttribute('aria-expanded', 'true');
   setTimeout(() => document.addEventListener('click', _trackMenuOutsideClick, true), 0);
+}
+
+/* ── Per-row actions menu (tracklist info badge) ── */
+let _rowMenuEl = null;
+function _closeRowMenu() {
+  _rowMenuEl?.remove(); _rowMenuEl = null;
+  document.removeEventListener('click', _rowMenuOutside, true);
+}
+function _rowMenuOutside(e) {
+  if (_rowMenuEl && !_rowMenuEl.contains(e.target)
+      && !e.target.closest('.tl-info') && !e.target.closest('#obj-actions')) _closeRowMenu();
+}
+function _positionMenu(menu, btn) {
+  const rect = btn.getBoundingClientRect();
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  menu.style.top   = (rect.bottom + 4) + 'px';
+}
+function openRowMenu(triggerBtn, uri) {
+  if (_rowMenuEl) { _closeRowMenu(); return; }
+  if (!uri) return;
+  const menu = document.createElement('div');
+  menu.className = 'track-menu-dropdown';
+  menu.innerHTML =
+    '<button type="button" data-a="next">' + ICON_PLAYNEXT + 'Play next</button>' +
+    '<button type="button" data-a="now">'  + ICON_PLAYNOW  + 'Play now</button>';
+  menu.querySelector('[data-a="next"]').addEventListener('click', () => { playNext(uri); _closeRowMenu(); });
+  menu.querySelector('[data-a="now"]').addEventListener('click',  () => { playNow(uri);  _closeRowMenu(); });
+  _positionMenu(menu, triggerBtn);
+  document.body.appendChild(menu);
+  _rowMenuEl = menu;
+  setTimeout(() => document.addEventListener('click', _rowMenuOutside, true), 0);
+}
+
+/* Object-level actions (album / artist header) — Play next the whole thing. */
+let objCurrentPlayUris = [];
+function objSetActionUris(list) {
+  objCurrentPlayUris = Array.isArray(list) ? list.filter(Boolean) : [];
+  document.getElementById('obj-actions')?.classList.toggle('hide', objCurrentPlayUris.length === 0);
+}
+function openObjActions(btn) {
+  if (_rowMenuEl) { _closeRowMenu(); return; }
+  if (!objCurrentPlayUris.length) return;
+  const menu = document.createElement('div');
+  menu.className = 'track-menu-dropdown';
+  menu.innerHTML = '<button type="button" data-a="next">' + ICON_PLAYNEXT + 'Play next</button>';
+  menu.querySelector('[data-a="next"]').addEventListener('click', () => { playNext(objCurrentPlayUris); _closeRowMenu(); });
+  _positionMenu(menu, btn);
+  document.body.appendChild(menu);
+  _rowMenuEl = menu;
+  setTimeout(() => document.addEventListener('click', _rowMenuOutside, true), 0);
+}
+
+/* Queue via O2M (live URI adaptation + stat mapping for externally-cached
+   content). Accepts a single uri or a list (album/artist). */
+function _playNextReq(uris) {
+  const list = (Array.isArray(uris) ? uris : [uris]).filter(Boolean);
+  const qs = list.map(u => 'uri=' + encodeURIComponent(u)).join('&');
+  return fetch(API + '/play_next?' + qs).then(r => r.json());
+}
+async function playNext(uris) {
+  try {
+    const r = await _playNextReq(uris);
+    if (r.ok) { setFeedback(r.count > 1 ? ('Queued ' + r.count + ' tracks next') : 'Added to play next'); setTimeout(refreshNowPlaying, 300); }
+    else setFeedback(r.error || 'Could not queue');
+  } catch(e) { setFeedback('Queue error'); }
+}
+async function playNow(uri) {
+  try {
+    const r = await _playNextReq(uri);
+    if (r.ok && r.tlid != null) {
+      resetProgress();
+      await rpc('core.playback.play', {tlid: r.tlid});
+      setTimeout(refreshNowPlaying, 200);
+      setFeedback('Playing');
+    } else setFeedback(r.error || 'Could not play');
+  } catch(e) { setFeedback('Play error'); }
 }
 
 async function renderPlaylistEditor(uri) {
@@ -2601,6 +2872,298 @@ function hideMatrixTooltip() {
 }
 
 /* ── Boxes panel ── */
+/* ════════════ Object detail overlay (album · artist · box) ════════════
+   Read-only for now. Opens over the lower area; edit affordances come later.
+   Album/artist detail is sourced from mopidy RPC (browse/lookup/get_images);
+   box detail from the O2M API (/box_info). */
+let currentTrackObj = null;
+
+function openObjPanel() {
+  document.body.classList.add('obj-open');
+  document.getElementById('obj-panel')?.setAttribute('aria-hidden', 'false');
+}
+function closeObjPanel() {
+  document.body.classList.remove('obj-open');
+  document.getElementById('obj-panel')?.setAttribute('aria-hidden', 'true');
+}
+function objSetHead(kind, title, sub) {
+  document.getElementById('obj-kind').textContent  = kind;
+  document.getElementById('obj-title').textContent = title || '—';
+  document.getElementById('obj-sub').textContent   = sub || '';
+}
+function objBody()  { return document.getElementById('obj-body'); }
+function objLoading(msg) { objBody().innerHTML = `<div class="obj-loading">${msg || 'Loading…'}</div>`; }
+const objEsc = s => String(s ?? '').replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function objCover(uri) {
+  try {
+    const r = await rpc('core.library.get_images', {uris: [uri]});
+    const imgs = r?.result?.[uri] || [];
+    const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+    return best ? imageUrl(best.uri || best) : '';
+  } catch(e) { return ''; }
+}
+
+// Track list (album/artist) — same row pattern as the tracklist (.tl-item). The
+// row is NOT click-to-play (that was ambiguous): all actions are explicit and
+// labelled behind the info badge (Play next / Play now).
+function objRenderTracks(tracks) {
+  if (!tracks.length) return '<div class="obj-empty">No tracks.</div>';
+  return '<div class="obj-tracks">' + tracks.map((t, i) => {
+    // Per-track O2M cache fields (status/mood/energy/local) → compact meta line.
+    const meta = [];
+    if (t.option_type) meta.push(objEsc(t.option_type));
+    if (t.energy != null)  meta.push(ICON.zap + ' ' + Number(t.energy).toFixed(1));
+    if (t.valence != null) meta.push(ICON.sun + ' ' + Number(t.valence).toFixed(1));
+    if (t.mood) meta.push(objEsc(t.mood));
+    if (t.local) meta.push('local');
+    const statusCls = t.option_type ? ('s-' + objEsc(t.option_type)) : '';
+    const statusHtml = meta.length ? `<div class="tl-status ${statusCls}">${meta.join(' · ')}</div>` : '';
+    const inner = trackRowInnerHTML({
+      indexLabel: String(i + 1).padStart(2, '0'),
+      name: t.name,
+      artist: (t.artists || []).map(a => a.name).join(', '),
+      artistUri: (t.artists || [])[0]?.uri || '',
+      uri: t.uri,
+      durText: t.length ? msToMin(t.length) : '',
+      statusHtml,
+    });
+    return `<div class="tl-item">${inner}</div>`;
+  }).join('') + '</div>';
+}
+
+/* Frontend memo cache — the overlay refetches via RPC on each open even though
+   mopidy-spotify already caches the web responses (images in a permanent dict,
+   album/artist/track metadata via an etag/Cache-Control response cache). Caching
+   the rendered result here makes reopening the same object instant. */
+const OBJ_TTL = 10 * 60 * 1000;
+const objCache = new Map();
+function objShowCached(key) {
+  const c = objCache.get(key);
+  if (c && (Date.now() - c.ts) < OBJ_TTL) {
+    objSetHead(c.kind, c.title, c.sub); objBody().innerHTML = c.html; return true;
+  }
+  return false;
+}
+function objStore(key, kind, title, sub) {
+  objCache.set(key, { kind, title, sub, html: objBody().innerHTML, ts: Date.now() });
+}
+
+// Small tag showing where the content came from (O2M DB cache vs live Spotify).
+function objSourceTag(source) {
+  return `<span class="obj-src obj-src-${source}">${source === 'db' ? 'from cache' : 'live'}</span>`;
+}
+
+function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = [], albums = [], source = 'db' }) {
+  objSetActionUris(tracks.map(t => t.uri).filter(Boolean));
+  objSetHead('Artist', name, '');
+  const coverHtml = image ? `<img class="obj-cover" src="${objEsc(image)}" alt="">` : '';
+  const genreLine = genres.length ? `<span>${genres.slice(0, 6).map(objEsc).join(' · ')}</span>` : '';
+  let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b>`
+    + `<span>${tracks.length} tracks · ${albums.length} albums</span>${genreLine}${objSourceTag(source)}</div></div>`;
+  if (tracks.length)
+    html += `<div><div class="obj-section-label">Tracks</div>${objRenderTracks(tracks)}</div>`;
+  if (albums.length)
+    html += `<div><div class="obj-section-label">Albums</div><div class="obj-tracks">`
+      + albums.map(a => `<div class="obj-row obj-clickable obj-nav" data-album-uri="${objEsc(a.uri)}" data-name="${objEsc(a.name)}"><span class="ot-name">${objEsc(a.name)}</span>${CHEVRON_SVG}</div>`).join('')
+      + `</div></div>`;
+  objBody().innerHTML = html || '<div class="obj-empty">No data.</div>';
+  objStore('artist:' + uri, 'Artist', name, '');
+}
+
+// DB-first (O2M cache); falls back to a live Spotify browse when not cached.
+async function openArtist(uri, seedName) {
+  if (!uri) { setFeedback('No artist link'); return; }
+  const title = seedName || 'Artist';
+  objSetHead('Artist', title, '');
+  openObjPanel();
+  if (objShowCached('artist:' + uri)) return;
+  objLoading();
+  try {
+    const d = await fetch(API + '/artist_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
+    if (d && d.cached) {
+      renderArtist(uri, {
+        name: d.name || title, image: d.image, genres: d.genres || [], albums: d.albums || [], source: 'db',
+        tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: (t.artists || []).map(n => ({ name: n })) })),
+      });
+      return;
+    }
+  } catch(e) {}
+  try {
+    const [browseR, cover] = await Promise.all([ rpc('core.library.browse', {uri}), objCover(uri) ]);
+    const rows = browseR?.result || [];
+    renderArtist(uri, {
+      name: title, image: cover, genres: [], source: 'live',
+      tracks: rows.filter(r => r.type === 'track').map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists })),
+      albums: rows.filter(r => r.type !== 'track').map(a => ({ uri: a.uri, name: a.name })),
+    });
+  } catch(e) { objBody().innerHTML = '<div class="obj-empty">Could not load artist.</div>'; }
+}
+
+function renderAlbum(uri, { name = 'Album', artist = '', image = '', release = '', tracks = [], source = 'db' }) {
+  objSetActionUris(tracks.map(t => t.uri).filter(Boolean));
+  objSetHead('Album', name, artist);
+  const totalMs = tracks.reduce((s, t) => s + (t.length || 0), 0);
+  const coverHtml = image ? `<img class="obj-cover" src="${objEsc(image)}" alt="">` : '';
+  const yr = release ? (' · ' + objEsc(String(release).slice(0, 4))) : '';
+  let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b><span>${objEsc(artist)}</span>`
+    + `<span>${tracks.length} tracks · ${msToMin(totalMs)}${yr}</span>${objSourceTag(source)}</div></div>`;
+  html += objRenderTracks(tracks);
+  objBody().innerHTML = html;
+  objStore('album:' + uri, 'Album', name, artist);
+}
+
+// DB-first (O2M cache); falls back to a live Spotify lookup when not cached.
+async function openAlbum(uri, seed) {
+  if (!uri) { setFeedback('No album link'); return; }
+  objSetHead('Album', seed?.name || 'Album', seed?.artist || '');
+  openObjPanel();
+  if (objShowCached('album:' + uri)) return;
+  objLoading();
+  try {
+    const d = await fetch(API + '/album_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
+    if (d && d.cached && !d.partial) {   // full album cached → serve from DB; partial → live
+      renderAlbum(uri, {
+        name: d.name || seed?.name, artist: d.artist || seed?.artist, image: d.image, release: d.release, source: 'db',
+        tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: (t.artists || []).map(n => ({ name: n })) })),
+      });
+      return;
+    }
+  } catch(e) {}
+  try {
+    const [lookupR, cover] = await Promise.all([ rpc('core.library.lookup', {uris: [uri]}), objCover(uri) ]);
+    let tracks = lookupR?.result?.[uri] || lookupR?.result || [];
+    if (!Array.isArray(tracks)) tracks = [];
+    const first = tracks[0];
+    renderAlbum(uri, {
+      name: first?.album?.name || seed?.name || 'Album',
+      artist: (first?.artists || []).map(a => a.name).join(', ') || seed?.artist || '',
+      image: cover, source: 'live',
+      tracks: tracks.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists })),
+    });
+  } catch(e) { objBody().innerHTML = '<div class="obj-empty">Could not load album.</div>'; }
+}
+
+let _boxEditUid = null;
+
+function renderBoxContent(info) {
+  const lines = String(info.data || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (!lines.length) return '';
+  return `<div><div class="obj-section-label">Content</div><div class="obj-tracks">`
+    + lines.map(l => {
+        let attr = '', cls = 'obj-row', nav = false;
+        if (/^spotify:album:/.test(l))       { attr = ` data-album-uri="${objEsc(l)}"`;  nav = true; }
+        else if (/^spotify:artist:/.test(l)) { attr = ` data-artist-uri="${objEsc(l)}"`; nav = true; }
+        else if (/^box:/.test(l))            { attr = ` data-box-uid="${objEsc(l.split(':', 2)[1].trim())}"`; nav = true; }
+        if (nav) cls += ' obj-clickable obj-nav';
+        return `<div class="${cls}"${attr}><span class="ot-name">${objEsc(l)}</span>${nav ? CHEVRON_SVG : ''}</div>`;
+      }).join('')
+    + `</div></div>`;
+}
+
+function renderBoxReadonly(info) {
+  const lines = String(info.data || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  return `<div class="obj-dl">
+      <div><dt>Type</dt><dd>${objEsc(info.option_type || '—')}</dd></div>
+      <div><dt>Discover</dt><dd>${info.option_discover_level ?? '—'}</dd></div>
+      <div><dt>Sort</dt><dd>${objEsc(info.option_sort || '—')}</dd></div>
+      <div><dt>Favorite</dt><dd>${info.favorite ? 'Yes' : 'No'}</dd></div>
+      <div><dt>Public</dt><dd>${info.public ? 'Yes' : 'No'}</dd></div>
+      <div><dt>UID</dt><dd>${objEsc(info.uid)}</dd></div>
+      <div><dt>Content lines</dt><dd>${lines.length}</dd></div>
+    </div>` + renderBoxContent(info);
+}
+
+function renderBoxEditor(info) {
+  const opt = (v, l, cur) => `<option value="${objEsc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${objEsc(l)}</option>`;
+  const types = ['library','favorites','new','incoming','hidden','trash','podcast','info'];
+  const typeSel = `<select class="bx-input" id="bx-option_type">` + types.map(t => opt(t, t, info.option_type)).join('') + `</select>`;
+  const sortSel = `<select class="bx-input" id="bx-option_sort">`
+    + [['','—'],['shuffle','shuffle'],['asc','asc'],['desc','desc']].map(([v,l]) => opt(v, l, info.option_sort || '')).join('') + `</select>`;
+  const num = (id, val, attrs) => `<input class="bx-input bx-num" type="number" id="bx-${id}" value="${val == null ? '' : val}" ${attrs}>`;
+  const chk = (id, on) => `<input type="checkbox" id="bx-${id}"${on ? ' checked' : ''}>`;
+  const field = (label, ctrl, cls) => `<div class="obj-field${cls ? ' ' + cls : ''}"><label class="obj-field-label">${label}</label><div class="obj-field-ctrl">${ctrl}</div></div>`;
+  return field('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(info.description || '')}">`)
+    + field('Type', typeSel)
+    + field('Discover level', num('option_discover_level', info.option_discover_level, 'min="0" max="10" step="1"'))
+    + field('Sort', sortSel)
+    + field('Max results', num('option_max_results', info.option_max_results, 'min="0" step="1" placeholder="default"'))
+    + field('Energy', num('option_energy', info.option_energy, 'min="0" max="1" step="0.05" placeholder="inherit"'))
+    + field('Ambiance', num('option_valence', info.option_valence, 'min="0" max="1" step="0.05" placeholder="inherit"'))
+    + field('Favorite', chk('favorite', info.favorite))
+    + field('Public', chk('public', info.public))
+    + field('Data (raw)', `<textarea class="bx-input bx-data" id="bx-data" rows="4" spellcheck="false">${objEsc(info.data || '')}</textarea>`, 'obj-data-field')
+    + `<div class="obj-save-row"><button class="obj-save-btn" id="bx-save">Save box</button></div>`;
+}
+
+function wireBoxEditor() {
+  document.getElementById('bx-save')?.addEventListener('click', saveBox);
+  // Auto-size the raw-data textarea to its content (no huge empty area, no scroll
+  // until it hits max-height) — grows/shrinks as you type.
+  const ta = document.getElementById('bx-data');
+  if (ta) {
+    const grow = () => {
+      ta.style.height = 'auto';
+      const max = Math.round(window.innerHeight * 0.6);
+      // Honour the CSS min-height so short data still gets a comfortable box.
+      const min = parseInt(getComputedStyle(ta).minHeight, 10) || 0;
+      ta.style.height = Math.min(Math.max(ta.scrollHeight + 2, min), max) + 'px';
+    };
+    ta.addEventListener('input', grow);
+    // Run after layout settles (the panel slides in) so scrollHeight is correct on desktop.
+    requestAnimationFrame(() => requestAnimationFrame(grow));
+  }
+}
+
+async function saveBox() {
+  if (!_boxEditUid) return;
+  const el = id => document.getElementById('bx-' + id);
+  const numOrNull = e => (e && e.value !== '' ? Number(e.value) : null);
+  const payload = {
+    uid: _boxEditUid,
+    description: el('description')?.value ?? '',
+    option_type: el('option_type')?.value,
+    option_sort: el('option_sort')?.value ?? '',
+    option_discover_level: numOrNull(el('option_discover_level')),
+    option_max_results: numOrNull(el('option_max_results')),
+    option_energy: numOrNull(el('option_energy')),
+    option_valence: numOrNull(el('option_valence')),
+    favorite: !!el('favorite')?.checked,
+    public: !!el('public')?.checked,
+    data: el('data')?.value ?? '',
+  };
+  try {
+    const r = await fetch(API + '/box_edit', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    }).then(r => r.json());
+    if (r.ok) { setFeedback('Box saved'); if (typeof loadBoxes === 'function') loadBoxes(); openBox(_boxEditUid); }
+    else if (r.error === 'edit_auth_required') setFeedback('Editing not authorized');
+    else setFeedback(r.error || 'Save failed');
+  } catch(e) { setFeedback('Save error'); }
+}
+
+async function openBox(uid) {
+  if (!uid) return;
+  objSetHead('Box', 'Box', '');
+  openObjPanel(); objSetActionUris([]); objLoading();
+  try {
+    const info = await fetch(API + '/box_info?uid=' + encodeURIComponent(uid)).then(r => r.json());
+    if (info.error) { objBody().innerHTML = `<div class="obj-empty">${objEsc(info.error)}</div>`; return; }
+    _boxEditUid = uid;
+    objSetHead('Box', info.description || uid, info.option_type || '');
+    if (editUnlocked) { objBody().innerHTML = renderBoxEditor(info); wireBoxEditor(); }
+    else { objBody().innerHTML = renderBoxReadonly(info); }
+  } catch(e) { objBody().innerHTML = '<div class="obj-empty">Could not load box.</div>'; }
+}
+
+// Open the album of the currently playing track (from the cover).
+function openCurrentAlbum() {
+  const al = currentTrackObj?.album;
+  if (!al?.uri) return;   // silent: the cover is tapped often; no album link → no-op
+  openAlbum(al.uri, { name: al.name, artist: (currentTrackObj.artists || []).map(a => a.name).join(', ') });
+}
+
 async function loadBoxes() {
   const wrap = document.getElementById('boxes-wrap');
   if (!wrap) return;
@@ -2610,10 +3173,15 @@ async function loadBoxes() {
     boxes.forEach(box => {
       const btn = document.createElement('button');
       btn.className = 'box-btn';
-      btn.innerHTML = `<span class="box-swatch sw-${box.option_type}"></span><span class="box-name">${box.description}</span>`;
+      btn.innerHTML = `<span class="box-swatch sw-${box.option_type}"></span><span class="box-name">${box.description}</span>`
+        + `<span class="box-info-btn" role="button" tabindex="0" title="Box details" aria-label="Box details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>`;
       btn.dataset.uid = box.uid;
       btn.title = box.option_type;
-      btn.addEventListener('click', () => toggleBox(box.uid, btn));
+      btn.addEventListener('click', (e) => {
+        // The info glyph opens the box detail; the rest of the row toggles the box.
+        if (e.target.closest('.box-info-btn')) { e.stopPropagation(); openBox(box.uid); return; }
+        toggleBox(box.uid, btn);
+      });
       wrap.appendChild(btn);
       checkBoxActive(box.uid, btn);
       // Refresh active state every 10min (same as o2m.js)
@@ -2976,7 +3544,7 @@ function setupCollapsibles() {
 async function init() {
   // Pochette de remplacement dès le chargement (évite l'image vide) + repli si un visuel casse
   const coverEl = document.getElementById('cover');
-  coverEl.src = placeholderForUri(null);
+  coverEl.src = PLACEHOLDER_COVERS[2];   // o2m-cover3 as startup default
   coverEl.addEventListener('error', () => {
     const ph = placeholderForUri(matrixCurUri);
     if (coverEl.src.indexOf(ph) === -1) coverEl.src = ph;   // évite la boucle si le placeholder lui-même échoue
@@ -3058,6 +3626,29 @@ async function init() {
   document.getElementById('btn-details-close')?.addEventListener('click', closeDetails);
   document.getElementById('details-backdrop')?.addEventListener('click', closeDetails);
   document.getElementById('td-fav')?.addEventListener('click', toggleFavorite);
+  // Object detail overlay (album · artist · box)
+  document.getElementById('obj-close')?.addEventListener('click', closeObjPanel);
+  document.getElementById('obj-actions')?.addEventListener('click', (e) => { e.stopPropagation(); openObjActions(e.currentTarget); });
+  document.getElementById('obj-backdrop')?.addEventListener('click', closeObjPanel);
+  document.getElementById('artist-name')?.addEventListener('click', () => {
+    const a = (currentTrackObj?.artists || [])[0];
+    if (a?.uri) openArtist(a.uri, a.name);
+  });
+  document.getElementById('album-name')?.addEventListener('click', openCurrentAlbum);
+  // Delegated clicks inside the overlay → info menu, drill into albums/artists/boxes,
+  // or play a track. Same info badge + row pattern as the tracklist.
+  document.getElementById('obj-body')?.addEventListener('click', (e) => {
+    const ib = e.target.closest('.tl-info');
+    if (ib) { openRowMenu(ib, ib.dataset.uri); return; }
+    const row = e.target.closest('[data-artist-uri],[data-album-uri],[data-box-uid]');
+    if (!row) return;
+    if (row.dataset.artistUri) return openArtist(row.dataset.artistUri, (row.textContent || '').trim());
+    if (row.dataset.albumUri)  return openAlbum(row.dataset.albumUri, { name: row.dataset.name || '' });
+    if (row.dataset.boxUid)    return openBox(row.dataset.boxUid);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('obj-open')) closeObjPanel();
+  });
   // Inline editing of the current track's mood/energy/valence (edit mode).
   document.getElementById('td-energy')?.addEventListener('click', () => editTrackNumber('energy'));
   document.getElementById('td-valence')?.addEventListener('click', () => editTrackNumber('valence'));

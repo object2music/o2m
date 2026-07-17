@@ -1026,6 +1026,86 @@ class DatabaseHandler():
             print(f"get_artist_track_uris error: {e}")
         return None
 
+    def _track_artist_names(self, track_uri):
+        """Artist name(s) for a track from the TrackArtist join (ordered), cache-only."""
+        try:
+            rows = (Artist.select(Artist.name)
+                    .join(TrackArtist, on=(Artist.id == TrackArtist.artist_id))
+                    .where(TrackArtist.track_uri == track_uri)
+                    .order_by(TrackArtist.position))
+            return [r.name for r in rows if r.name]
+        except Exception:
+            return []
+
+    def get_album_detail(self, album_id):
+        """DB-cached album detail (metadata + ordered tracks). None if nothing cached."""
+        if not album_id:
+            return None
+        a = Album.get_or_none(Album.id == album_id)
+        tracks = list(Track.select()
+                      .where(Track.album_id == album_id)
+                      .order_by(Track.track_number))
+        if a is None and not tracks:
+            return None
+        total = a.total_tracks if (a and a.total_tracks) else len(tracks)
+        return {
+            'source':  'db',
+            'name':    a.name if a else None,
+            'artist':  a.artist_name if a else None,
+            'image':   a.image_url if a else None,
+            'total':   total,
+            # Partial = the DB only has some of the album's tracks (not a full catalog);
+            # the client falls back to a live lookup for a complete listing.
+            'partial': bool(total and len(tracks) < total),
+            'release': a.release_date if a else None,
+            'tracks': [self._track_dict(t) for t in tracks],
+        }
+
+    def _track_dict(self, t):
+        """Normalized track dict with the O2M per-track cache fields (status/mood/…)."""
+        return {
+            'uri': t.uri, 'name': t.name, 'length': t.duration_ms,
+            'track_number': t.track_number,
+            'artists': self._track_artist_names(t.uri),
+            'local': bool(t.local_uri),
+            'option_type': t.option_type,
+            'mood': (t.mood if (t.mood and t.mood != '_') else None),
+            'energy': t.energy, 'valence': t.valence,
+            'liked': bool(t.liked),
+        }
+
+    def get_artist_detail(self, artist_id):
+        """DB-cached artist detail (metadata + genres + known tracks + albums). None if empty."""
+        if not artist_id:
+            return None
+        a = Artist.get_or_none(Artist.id == artist_id)
+        track_uris = [r.track_uri for r in TrackArtist.select(TrackArtist.track_uri)
+                      .where(TrackArtist.artist_id == artist_id)]
+        tracks = []
+        if track_uris:
+            rows = list(Track.select().where(Track.uri.in_(track_uris[:300])))
+            rows.sort(key=lambda t: ((t.popularity or 0), (t.read_count_end or 0)), reverse=True)
+            tracks = rows[:50]
+        album_ids = [r.album_id for r in AlbumArtist.select(AlbumArtist.album_id)
+                     .where(AlbumArtist.artist_id == artist_id)]
+        albums = []
+        if album_ids:
+            for al in Album.select().where(Album.id.in_(album_ids)):
+                albums.append({'uri': al.uri or f'spotify:album:{al.id}', 'name': al.name})
+        genres = self.get_artist_genres(artist_id) or []
+        if a is None and not tracks and not albums:
+            return None
+        return {
+            'source':     'db',
+            'name':       a.name if a else None,
+            'image':      a.image_url if a else None,
+            'popularity': a.popularity if a else None,
+            'followers':  a.followers if a else None,
+            'genres':     genres,
+            'tracks':     [self._track_dict(t) for t in tracks],
+            'albums':     albums,
+        }
+
     # ─── Track (stats) cache ───────────────────────────────────────────────────
 
     def get_track(self, uri):
