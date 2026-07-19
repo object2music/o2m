@@ -432,7 +432,14 @@ class DatabaseHandler():
         # least-skipped to the top, THEN apply the selection window (limit). The per-skip
         # recency cost shrinks as discover_level rises (more tolerant when exploring more).
         skip_penalty = max(1, 8 - discover_level) * 86400  # seconds of recency lost per skip
-        effective_recency = Track.last_read_date - (Track.skipped_count * skip_penalty)
+        # skipped_count is inflated for long episodes listened over several sessions
+        # (each interrupted session counts as a "skip": read_count - read_count_end).
+        # An episode with REAL progress is a resume, not a rejection — exempt it from
+        # the skip penalty so it ranks by recency (bug: Sismique/Védrine, listened the
+        # same morning, ranked as 9 days old and fell out of the selection window).
+        from peewee import Case
+        penalized_skips = Case(None, [(Track.read_end >= 0.15, 0)], Track.skipped_count)
+        effective_recency = Track.last_read_date - (penalized_skips * skip_penalty)
         query = Track.select().where(
             ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%') | (Track.uri % '%yt:%'))
             & (Track.read_end < 0.9)
