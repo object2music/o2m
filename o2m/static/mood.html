@@ -23,6 +23,18 @@
     var t = new URLSearchParams(location.search).get('theme')
           || localStorage.getItem('o2m2-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', t);
+    /* Basic view: /basic = simplified actuators (default on mobile). Same page,
+       the mode is a root class so CSS can swap the middle section without flash. */
+    var basic = /\/basic\/?$/.test(location.pathname);
+    if (basic) document.documentElement.classList.add('basic');
+    try {
+      if (location.search.indexOf('full=1') !== -1) localStorage.setItem('o2m-view', 'full');
+      if (!basic && /\/mood2?\/?$/.test(location.pathname)
+          && window.matchMedia('(max-width: 699px)').matches
+          && localStorage.getItem('o2m-view') !== 'full') {
+        location.replace('/basic');
+      }
+    } catch (e) {}
   })();
 </script>
 <style>
@@ -317,8 +329,11 @@
   #cover {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; display: block;
-    filter: none; transition: filter .4s;   /* dark / light / mono: original colour */
+    filter: none;
+    /* filter: theme recolor · opacity: crossfade on track change (setCoverSmooth) */
+    transition: filter .4s, opacity .22s ease;
   }
+  #cover.cover-fading { opacity: 0; }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
   #track-name { font-size: 21px; white-space: nowrap; line-height: 1.1;
                 overflow: hidden; text-overflow: ellipsis; color: var(--eyebrow-color, var(--accent));
@@ -494,7 +509,7 @@
   .box-btn.active { color: var(--text); }
   .box-btn.active .box-swatch { opacity: 1; background: var(--accent); }
   .box-btn:active { opacity: .6; }
-  .box-btn:disabled { opacity: .5; cursor: wait; }
+  .box-btn:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
 
   @media (min-width: 700px) {
     /* 3 colonnes scrollables indépendamment, footer fixe en bas */
@@ -590,6 +605,12 @@
   #mood-matrix { display: block; width: 100%; aspect-ratio: 1 / 1;
                  touch-action: none; cursor: crosshair; border-radius: 0; }
   #mood-matrix.cursor-resize { cursor: ew-resize; }
+  /* Phone: let vertical swipes on the matrix scroll the page (pan-y). Taps still
+     set the target, and drags that START on the handle/ring take over the gesture
+     (a non-passive touchstart preventDefault claims it). See matrix pointer JS. */
+  @media (max-width: 699px) {
+    #mood-matrix { touch-action: pan-y; }
+  }
 
   /* ── Auto toggle (mood en direct) ── */
   #auto-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
@@ -723,11 +744,16 @@
   #footer-links .footer-pick svg { width: 15px; height: 15px; }
   #footer-links .footer-pick select { font: inherit; color: inherit; background: transparent;
     border: 1px solid currentColor; border-radius: 6px; padding: 2px 6px; cursor: pointer; }
-  /* Mobile: keep the footer on a single line, swipe horizontally to reach all items. */
+  /* Mobile: keep the footer on a single line, swipe horizontally to reach all items.
+     touch-action:pan-x makes the browser commit slightly-diagonal swipes to THIS bar
+     instead of hijacking them as vertical page scrolls; the taller padding gives the
+     thumb a real grab area. */
   @media (max-width: 699px) {
     #footer-links {
       flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
       -webkit-overflow-scrolling: touch; scrollbar-width: none;
+      touch-action: pan-x;
+      padding-top: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom));
     }
     #footer-links::-webkit-scrollbar { display: none; }
     #footer-links > * { flex-shrink: 0; }
@@ -794,17 +820,18 @@
   #feedback.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
 
   /* ── Clear buttons (tracklist + boxes) ── */
-  #btn-clear-tl, #btn-clear-boxes {
+  #btn-clear-tl, #btn-clear-boxes, #btn-reset-mood {
     background: none; border: none; color: var(--muted); cursor: pointer;
     padding: 2px; border-radius: 0; display: flex; align-items: center;
     transition: color .15s; flex-shrink: 0;
   }
-  #btn-clear-tl svg, #btn-clear-boxes svg { width: 13px; height: 13px; display: block; }
-  #btn-clear-tl:hover, #btn-clear-boxes:hover { color: var(--accent); }
-  /* Boxes header carries a trash button on the right (like the tracklist header). */
-  #boxes-panel-label { display: flex; align-items: center; }
-  #boxes-panel-label > span { flex: 1; }
-  #boxes-panel-label #btn-clear-boxes { margin-left: auto; }
+  #btn-clear-tl svg, #btn-clear-boxes svg, #btn-reset-mood svg { width: 13px; height: 13px; display: block; }
+  #btn-clear-tl:hover, #btn-clear-boxes:hover, #btn-reset-mood:hover { color: var(--accent); }
+  /* Boxes / Mood headers carry a right-side action (like the tracklist header). */
+  #boxes-panel-label, #settings-label { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; }
+  #boxes-panel-label > span:first-child, #settings-label > span:first-child { flex: 1; }
+  #boxes-panel-label #btn-clear-boxes, #settings-label #btn-reset-mood { margin-left: auto; }
+  #boxes-count { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
 
   /* ── Footer link SVG icons ── */
   .footer-link { display: inline-flex; align-items: center; gap: 5px; }
@@ -922,6 +949,12 @@
   @media (max-width: 699px) {
     [data-theme="overprint"] #top-zone,
     [data-theme="invert"]    #top-zone { display: block; }
+    /* Poster themes: the full-width artwork is the first thing on screen — let it
+       extend edge-to-edge UNDER the camera cutout (no reserved strip); only the
+       overlaid title shifts down clear of the punch hole. Standard themes keep the
+       surface strip (their top row is text, which must not sit under the camera). */
+    [data-theme="overprint"] #top-zone,
+    [data-theme="invert"]    #top-zone { padding-top: 0; }
     [data-theme="overprint"] #track-details,
     [data-theme="invert"]    #track-details { display: none; }
     [data-theme="overprint"] #cover-col { width: 72vw; max-width: 340px; }
@@ -931,7 +964,8 @@
        title can never overflow the cover and bleed over everything. */
     [data-theme="overprint"] #hero-title,
     [data-theme="invert"]    #hero-title {
-      position: absolute; top: 10px; left: 14px; right: 14px; z-index: 3;
+      position: absolute; top: calc(10px + env(safe-area-inset-top, 0px));
+      left: 14px; right: 14px; z-index: 3;
       margin: 0; font-size: clamp(28px, 10vw, 70px);
       max-height: 64vw; overflow: hidden; overflow-wrap: anywhere; line-height: 0.95;
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4;
@@ -1231,6 +1265,79 @@
     body.obj-open #obj-panel { transform: translateY(0); opacity: 1; visibility: visible; }
     #obj-backdrop { display: none !important; }
   }
+
+  /* ════════════ Basic view (/basic — default on mobile) ════════════
+     Top zone and footer are kept; the 3 middle columns are replaced by a single
+     section: 4 ON/OFF actuators (music/podcast/info/radio) + 2 dials. */
+  #basic-section { display: none; }
+  html.basic #main-cols { display: none !important; }
+  html.basic #basic-section {
+    display: flex; flex-direction: column; gap: 26px;
+    width: 100%; max-width: 560px; margin: 0 auto; padding: 22px 16px 30px;
+    /* Shrinkable with internal scroll, like the full-view accordion — otherwise on
+       short viewports the section's natural height pushes the footer below the
+       fold of the overflow-hidden #scroll-area (footer unreachable on phones). */
+    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  }
+  .basic-toggles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
+    position: relative; }   /* anchor for the central ALL meta-button */
+  @media (min-width: 700px) { .basic-toggles { grid-template-columns: repeat(4, 1fr); } }
+  /* ALL meta-button: round, floating at the center of the 2×2 grid (mid-row on
+     desktop). One tap = everything on / everything off. */
+  #basic-all {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 62px; height: 62px; border-radius: 50%; z-index: 2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    color: var(--muted); cursor: pointer; font: inherit; font-size: 10px; font-weight: 700;
+    box-shadow: 0 2px 10px rgba(0,0,0,.25);
+    transition: color .15s, border-color .15s;
+  }
+  #basic-all svg { width: 20px; height: 20px; }
+  #basic-all.on { color: var(--accent); border-color: var(--accent); }
+  #basic-all:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
+  .basic-toggle {
+    display: flex; flex-direction: column; align-items: center; gap: 9px;
+    padding: 18px 8px 14px; background: none; border: 1px solid var(--border);
+    color: var(--muted); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
+    transition: color .15s, border-color .15s;
+  }
+  .basic-toggle svg { width: 26px; height: 26px; }
+  .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
+  .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
+  @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+  #basic-dials { display: flex; justify-content: space-around; align-items: flex-start; }
+  /* The mood dial's viewBox is wider (label ring): give it its own size so the
+     knob circle renders as large as the sibling dials (.dial-svg caps at 108px). */
+  #dial-bmood { width: 172px; height: 123px; }
+  #txt-bmood { font-size: 11px; letter-spacing: .04em; }
+  /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
+     Sits on the status line of the now-playing header. */
+  #net-dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    margin-top: 4px; background: var(--border-strong); vertical-align: middle;
+    transition: background .3s;
+  }
+  #net-dot[data-level="green"]  { background: #3fbf6f; }
+  #net-dot[data-level="orange"] { background: #f0a000; }
+  #net-dot[data-level="red"]    { background: #e0245e; }
+
+  /* Detent labels around the mood dial — the active one lights up. */
+  .bmood-lbl {
+    font-size: 10px; letter-spacing: .05em; fill: var(--muted);
+    cursor: pointer; user-select: none; transition: fill .15s;
+  }
+  .bmood-lbl.on { fill: var(--accent); font-weight: 700; }
+  /* Footer view-switch: show the counterpart link only. Sits right after the O2M
+     brand (order 0 + DOM position) and stands out in accent. The #footer-links
+     prefix is required to out-rank `#footer-links .footer-link { order: 2 }`. */
+  #footer-links #link-basic, #footer-links #link-full {
+    order: 0; color: var(--accent);
+    border: 1px solid var(--border-strong); padding: 3px 9px;
+  }
+  #footer-links #link-full { display: none; }
+  html.basic #footer-links #link-full { display: inline-flex; }
+  html.basic #footer-links #link-basic { display: none; }
 </style>
 </head>
 <body>
@@ -1254,6 +1361,7 @@
           <span id="album-name"></span>
         </div>
         <div id="track-status-badge"></div>
+        <span id="net-dot" title="Network quality"></span>
         <div id="track-tags-row"><span id="track-ev"></span></div>
       </div>
       <button id="btn-details" title="Track details &amp; edit" aria-label="Track details">
@@ -1316,6 +1424,47 @@
 <!-- Scrollable area -->
 <div id="scroll-area">
 
+  <!-- ══ Basic view (/basic) : 4 actuators + 2 dials — replaces the 3 columns ══ -->
+  <div id="basic-section">
+    <div class="basic-toggles" id="basic-toggles">
+      <button class="basic-toggle" data-cat="music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Music</button>
+      <button class="basic-toggle" data-cat="podcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Podcast</button>
+      <button class="basic-toggle" data-cat="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Info</button>
+      <button class="basic-toggle" data-cat="radio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg>Radio</button>
+      <button id="basic-all" title="All on / all off" aria-label="All on / all off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>All</button>
+    </div>
+    <div id="basic-dials">
+      <div class="dial-wrap">
+        <div class="dial-label">Opening level</div>
+        <svg class="dial-svg" id="dial-bdl" width="120" height="120" viewBox="0 0 110 110">
+          <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
+          <circle class="dial-fill" id="fill-bdl" cx="55" cy="55" r="42"
+                  stroke="#00bcd4" transform="rotate(135 55 55)"/>
+          <circle id="knob-bdl" cx="55" cy="13" r="7" fill="#00bcd4"/>
+          <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-bdl">5</text>
+        </svg>
+        <div class="dial-sub">focused ↔ adventurous</div>
+      </div>
+      <div class="dial-wrap">
+        <div class="dial-label">Mood</div>
+        <!-- Wider viewBox: the 5 detent labels sit around the knob, at their angle
+             on the arc (135°→405°). Labels are clickable shortcuts. -->
+        <svg class="dial-svg" id="dial-bmood" width="196" height="136" viewBox="-33 -14 176 126">
+          <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
+          <circle class="dial-fill" id="fill-bmood" cx="55" cy="55" r="42"
+                  stroke="#ff5a00" transform="rotate(135 55 55)"/>
+          <text class="bmood-lbl" data-i="0" x="16" y="99"  text-anchor="end">intense</text>
+          <text class="bmood-lbl" data-i="1" x="0"  y="35"  text-anchor="end">calm</text>
+          <text class="bmood-lbl" data-i="2" x="55" y="-4"  text-anchor="middle">normy</text>
+          <text class="bmood-lbl" data-i="3" x="110" y="35" text-anchor="start">happy</text>
+          <text class="bmood-lbl" data-i="4" x="94" y="99"  text-anchor="start">energetic</text>
+          <circle id="knob-bmood" cx="55" cy="13" r="7" fill="#ff5a00"/>
+          <text x="55" y="60" text-anchor="middle" fill="#eaeaea" font-weight="700" id="txt-bmood">normy</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
   <!-- 3 colonnes : Boxes | Matrice+Genres | Tracklist -->
   <div id="main-cols">
 
@@ -1323,6 +1472,7 @@
   <div id="boxes-panel" class="col collapsible">
     <div class="panel-head" id="boxes-panel-label">
       <span>Boxes</span>
+      <span id="boxes-count"></span>
       <button id="btn-clear-boxes" type="button" title="Clear all boxes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
     </div>
 
@@ -1340,7 +1490,10 @@
 
   <!-- Col 2 : Réglages — potentiomètres + matrice + genres (repliable en mobile) -->
   <div id="left-panel" class="col collapsible">
-  <button class="panel-head" id="settings-label">Mood</button>
+  <div class="panel-head" id="settings-label">
+    <span>Mood</span>
+    <button id="btn-reset-mood" type="button" title="Reset mood to defaults"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+  </div>
   <div class="panel-body">
   <div id="matrix-section">
     <canvas id="mood-matrix"></canvas>
@@ -1420,6 +1573,8 @@
     <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
     <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
     <a class="footer-link" id="footer-backoffice" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>Backoffice</a>
+    <a class="footer-link" id="link-basic" href="/basic" onclick="try{localStorage.setItem('o2m-view','basic')}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Basic</a>
+    <a class="footer-link" id="link-full" href="/mood?full=1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Full</a>
     <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
     <button class="footer-link footer-more-toggle" id="footer-more-toggle" title="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>More</button>
     <div class="footer-extra" id="footer-extra">
@@ -1561,7 +1716,8 @@ function setAutoToggle(on) {
 /* ── Apply ── */
 function shouldApplyMood() {
   // Rafraîchit le mix si la tracklist est vide OU si on est en mode mood/auto.
-  return currentTracklistLength === 0 || isAutoMode();
+  // Vue basic : les potards sont des commandes directes → toujours appliquer.
+  return isBasic() || currentTracklistLength === 0 || isAutoMode();
 }
 
 function scheduleApply() {
@@ -1572,15 +1728,24 @@ function scheduleApply() {
 
 async function applyMood() {
   if (!shouldApplyMood()) return;
-  setFeedback('Applying…');
+  // Basic view: the dials are settings, the actuators are the switches. With no
+  // actuator on, just save the values server-side — don't launch anything.
+  const basicIdle = isBasic() && basicCats
+    && !Object.values(basicCats).some(l => Array.isArray(l) && l.some(b => b.active));
+  setFeedback(basicIdle ? 'Saving…' : 'Applying…');
   try {
     const body = { energy: appState.energy, valence: appState.valence,
                    discover_level: appState.dl, genres: appState.genres };
+    if (basicIdle) body.apply = false;
     const r = await fetch(API + '/mood', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
     });
     const d = await r.json();
+    if (d.status === 'settings_saved') {
+      setFeedback('Settings saved — turn Music on to start');
+      return;
+    }
     setFeedback(d.status === 'boxes_active'
       ? 'Boxes active — mood applied to recommendations (empty the boxes to rebuild)'
       : d.tracks_added > 0 ? `${d.tracks_added} tracks loaded` : 'No matching tracks');
@@ -1589,6 +1754,180 @@ async function applyMood() {
     setTimeout(refreshNowPlaying, 400);
     setTimeout(refreshBoxStates, 500);   // allume tout de suite la box auto activée côté serveur
   } catch(e) { setFeedback('Network error'); }
+}
+
+/* ── Network quality indicator (green / orange / red) ──────────────────────────
+   Periodic latency probe against the o2m API + Network Information API when
+   available. Thresholds chosen against the snapcast reality: the web stream has
+   ~1s of buffer, so RTT spikes beyond ~1.2s mean audible dropouts (red). */
+async function netProbe() {
+  const el = document.getElementById('net-dot');
+  if (!el) return;
+  const t0 = performance.now();
+  let ms = Infinity;
+  try {
+    const ctl = new AbortController();
+    const to = setTimeout(() => ctl.abort(), 5000);
+    await fetch(API + '/dl?_t=' + Date.now(), { signal: ctl.signal, cache: 'no-store' });
+    clearTimeout(to);
+    ms = performance.now() - t0;
+  } catch (e) { ms = Infinity; }
+  const conn = navigator.connection || {};
+  let level = 'green';
+  if (ms > 1200 || conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') level = 'red';
+  else if (ms > 400 || conn.effectiveType === '3g') level = 'orange';
+  el.dataset.level = level;
+  el.title = 'Network: ' + (ms === Infinity ? 'offline'
+    : Math.round(ms) + ' ms' + (conn.effectiveType ? ' · ' + conn.effectiveType : ''));
+}
+
+/* ── Basic view (/basic — default on mobile) ─────────────────────────────────
+   A simplified façade over the existing mechanisms: the 4 actuators add/remove
+   pinned boxes by category via /api/box, the 2 dials drive the same appState +
+   scheduleApply() pipeline as the full view. No backend behavior change. */
+// Dynamic: the view can switch in place (SPA) — always read the live class.
+function isBasic() { return document.documentElement.classList.contains('basic'); }
+// 5 detents; the 4 moods sit at the center of their matrix quadrant (X=energy,
+// Y=valence), "intense" being the dark quadrant (already labelled Intense in the UI).
+const BASIC_MOODS = [
+  ['intense',   0.25, 0.25],
+  ['calm',      0.25, 0.75],
+  ['normy',     0.50, 0.50],   // default — center
+  ['happy',     0.75, 0.75],
+  ['energetic', 0.75, 0.25],
+];
+let basicCats = null;
+
+function basicMoodIndex() {
+  let best = 2, bd = Infinity;
+  BASIC_MOODS.forEach(([, e, v], i) => {
+    const d = Math.hypot(appState.energy - e, appState.valence - v);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+function setBasicMoodDial(i) {
+  setDial('bmood', i / (BASIC_MOODS.length - 1));
+  const txt = document.getElementById('txt-bmood');
+  if (txt) txt.textContent = BASIC_MOODS[i][0];
+  document.querySelectorAll('.bmood-lbl').forEach(l =>
+    l.classList.toggle('on', Number(l.dataset.i) === i));
+}
+
+let basicLimit = 30;   // fill target — refreshed from api_result_limit via /api/basic_boxes
+
+async function refreshBasicToggles() {
+  if (!isBasic()) return;
+  try {
+    basicCats = await fetch(API + '/basic_boxes').then(r => r.json());
+    if (basicCats.limit) basicLimit = basicCats.limit;
+    document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn => {
+      const boxes = basicCats[btn.dataset.cat] || [];
+      btn.classList.toggle('on', boxes.some(b => b.active));
+    });
+    const allBtn = document.getElementById('basic-all');
+    if (allBtn) allBtn.classList.toggle('on',
+      ['music', 'podcast', 'info', 'radio'].every(c => (basicCats[c] || []).some(b => b.active)));
+  } catch(e) {}
+}
+
+// ALL meta-button: any category active → everything off; nothing active → everything on.
+async function toggleBasicAll(btn) {
+  if (!basicCats) return;
+  const cats = ['music', 'podcast', 'info', 'radio'];
+  const anyActive = cats.some(c => (basicCats[c] || []).some(b => b.active));
+  btn.disabled = true;
+  try {
+    for (const c of cats) {
+      const cbtn = document.querySelector(`.basic-toggle[data-cat="${c}"]`);
+      const isOn = (basicCats[c] || []).some(b => b.active);
+      // OFF pass: only categories currently on; ON pass: only those off.
+      if (anyActive === isOn && cbtn) await toggleBasicCat(cbtn);
+    }
+  } finally { btn.disabled = false; }
+  await refreshBasicToggles();
+}
+
+async function toggleBasicCat(btn) {
+  const boxes = (basicCats && basicCats[btn.dataset.cat]) || [];
+  if (!boxes.length) { setFeedback('No ' + btn.dataset.cat + ' box'); return; }
+  const turnOn = !boxes.some(b => b.active);
+  btn.disabled = true;
+  try {
+    // One atomic server-side call: meta_fill (sources drawn recency × chance up
+    // to the limit) or meta_remove. A reload / phone lock can't leave a partial
+    // category state anymore — the server finishes the job either way.
+    setFeedback((turnOn ? 'Starting ' : 'Stopping ') + btn.dataset.cat + '…');
+    await fetch(API + '/basic_toggle?cat=' + encodeURIComponent(btn.dataset.cat)
+                + '&mode=' + (turnOn ? 'add' : 'remove'));
+    if (turnOn) {
+      moodSessionActive = false;   // like toggleBox: launching boxes ends the implicit mood session
+      // Basic view: an actuator is a switch — if the box fill left playback idle
+      // (box_action only fills the tracklist), start playing. NOTE: from a stale
+      // 'paused' state with no current track, a bare play() does nothing — target
+      // the current tlid, or the first tracklist row, explicitly.
+      try {
+        const st = (await rpc('core.playback.get_state'))?.result;
+        if (st !== 'playing') {
+          const cur = (await rpc('core.playback.get_current_tl_track'))?.result;
+          if (cur && cur.tlid != null) {
+            await rpc('core.playback.play', {tlid: cur.tlid});
+          } else {
+            const tl = (await rpc('core.tracklist.get_tl_tracks'))?.result || [];
+            if (tl.length) { resetProgress(); await rpc('core.playback.play', {tlid: tl[0].tlid}); }
+          }
+        }
+      } catch(e) {}
+    }
+  } catch(e) { setFeedback('Box error'); }
+  btn.disabled = false;
+  await refreshBasicToggles();
+  refreshBoxStates();   // sync the hidden full-view buttons too (keeps autoBoxActive right)
+  setTimeout(refreshNowPlaying, 800);
+  setTimeout(refreshNowPlaying, 3000);
+}
+
+function initBasicView() {
+  document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn =>
+    btn.addEventListener('click', () => toggleBasicCat(btn)));
+  document.getElementById('basic-all')?.addEventListener('click', (e) => toggleBasicAll(e.currentTarget));
+  // Opening level — same semantics as the full view's Discovery dial.
+  makeDraggable('bdl', v => {
+    appState.dl = Math.round(v * 10);
+    setDial('dl', appState.dl / 10);           // keep the (hidden) full dial in sync
+  });
+  // Mood — snaps to the 5 detents; sets energy+valence to the detent's pair.
+  makeDraggable('bmood', v => {
+    const i = Math.round(v * (BASIC_MOODS.length - 1));
+    const [, e, val] = BASIC_MOODS[i];
+    appState.energy = e; appState.valence = val;
+    setBasicMoodDial(i);
+    setDial('energy', e); setDial('valence', val);   // keep hidden full dials in sync
+  });
+  setDial('bdl', (appState.dl ?? 5) / 10);
+  setBasicMoodDial(basicMoodIndex());
+  refreshBasicToggles();
+  setInterval(refreshBasicToggles, 60000);
+  // In-place view switch (SPA): keep the page — and the Snapcast stream, Web
+  // Audio unlock, WS — alive; a full navigation would force a reconnect + a new
+  // "tap to start audio" gesture on mobile.
+  document.getElementById('link-basic')?.addEventListener('click', (e) => { e.preventDefault(); switchView(true); });
+  document.getElementById('link-full')?.addEventListener('click', (e) => { e.preventDefault(); switchView(false); });
+  window.addEventListener('popstate', () => switchView(/\/basic\/?$/.test(location.pathname), false));
+}
+
+function switchView(toBasic, push = true) {
+  if (toBasic === isBasic()) return;
+  document.documentElement.classList.toggle('basic', toBasic);
+  try { localStorage.setItem('o2m-view', toBasic ? 'basic' : 'full'); } catch (e) {}
+  if (push) history.pushState({}, '', toBasic ? '/basic' : '/mood?full=1');
+  if (toBasic) {
+    // Sync the basic controls with the current state on entry.
+    setDial('bdl', (appState.dl ?? 5) / 10);
+    setBasicMoodDial(basicMoodIndex());
+    refreshBasicToggles();
+  }
+  try { fitHeroTitle(); } catch (e) {}
 }
 
 /* ── Mopidy RPC ── */
@@ -1654,15 +1993,30 @@ document.getElementById('btn-play').addEventListener('click', async () => {
   }
   setTimeout(refreshNowPlaying, 200);
 });
+/* Optimistic skip: paint the destination track's name/artist IMMEDIATELY from the
+   tracklist we already hold, then let the server confirm (WS event + refresh). The
+   UI feels instant instead of waiting a full network round-trip. */
+function optimisticSkip(delta) {
+  const i = matrixTlItems.findIndex(it => it.tlid === currentTlid);
+  const dest = i >= 0 ? matrixTlItems[i + delta] : null;
+  if (!dest) return;
+  document.getElementById('track-name').textContent = dest.name || '—';
+  document.getElementById('hero-title').textContent = dest.name || '';
+  const aa = document.getElementById('artist-name');
+  if (aa) aa.textContent = dest.artist || '—';
+  fitHeroTitle();
+}
 document.getElementById('btn-next').addEventListener('click', async () => {
   resetProgress();
+  optimisticSkip(1);
   await rpc('core.playback.next');
-  setTimeout(refreshNowPlaying, 300);
+  refreshNowPlaying();
 });
 document.getElementById('btn-prev').addEventListener('click', async () => {
   resetProgress();
+  optimisticSkip(-1);
   await rpc('core.playback.previous');
-  setTimeout(refreshNowPlaying, 300);
+  refreshNowPlaying();
 });
 
 /* ── Now playing + tracklist ── */
@@ -1943,19 +2297,20 @@ async function refreshNowPlaying() {
 
     // O2M metadata (status badge, cover, details): only on track change —
     // avoids /track_status and /track_info being refetched every 10s.
+    // Fetches run in PARALLEL (they were sequential → the cover lagged behind).
     if (trackChanged) {
-      try {
-        const statusText = await fetch(API + '/track_status?uri=' + encodeURIComponent(track.uri))
-          .then(r => r.ok ? r.text() : '');
-        updateStatusBadge(statusText);
-      } catch(e) { updateStatusBadge(''); }
-
-      const imgR = await rpc('core.library.get_images', {uris: [track.uri]});
-      const imgs = imgR?.result?.[track.uri] || [];
-      const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
-      lastCoverUrl = best ? imageUrl(best.uri || best) : '';
-      document.getElementById('cover').src = lastCoverUrl || placeholderForUri(track.uri);
+      fetch(API + '/track_status?uri=' + encodeURIComponent(track.uri))
+        .then(r => r.ok ? r.text() : '').then(updateStatusBadge)
+        .catch(() => updateStatusBadge(''));
       renderTrackDetails(track.uri);
+      rpc('core.library.get_images', {uris: [track.uri]}).then(imgR => {
+        const imgs = imgR?.result?.[track.uri] || [];
+        const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+        lastCoverUrl = best ? imageUrl(best.uri || best) : '';
+        setCoverSmooth(lastCoverUrl || placeholderForUri(track.uri));
+        updateMediaSession(track, playing, lastCoverUrl);
+        prefetchNextCover();
+      }).catch(() => {});
     }
     updateMediaSession(track, playing, lastCoverUrl);
   } else {
@@ -2530,9 +2885,42 @@ function initMatrix() {
   resizeCanvas();
   new ResizeObserver(resizeCanvas).observe(canvas);
 
+  /* Touch-friendly gesture routing (phone): the canvas is touch-action:pan-y, so a
+     vertical swipe scrolls the page. We CLAIM the gesture (preventDefault on a
+     non-passive touchstart) only when it starts on the handle, the dl ring, or the
+     draggable track point — those drags control the matrix even vertically.
+     Touch-drags elsewhere scroll; a tap elsewhere still sets the target (applied on
+     pointerup so an aborted scroll never accidentally moves the mood). */
+  function matrixShouldClaimTouch(canvas, pt) {
+    const rect  = canvas.getBoundingClientRect();
+    const inner = rect.width - 2 * PAD;
+    const tx = rect.left + PAD + appState.energy * inner;
+    const ty = rect.top  + PAD + (1 - appState.valence) * inner;
+    if (Math.hypot(pt.clientX - tx, pt.clientY - ty) < 28) return true;          // handle
+    const r = (appState.dl / 20 + 0.05) * inner;
+    if (Math.abs(Math.hypot(pt.clientX - tx, pt.clientY - ty) - r) < 18) return true;  // ring
+    if (editUnlocked && matrixCurUri && matrixFeatures[matrixCurUri]) {          // track point
+      const f = matrixFeatures[matrixCurUri];
+      const cx = rect.left + PAD + f.energy * inner;
+      const cy = rect.top  + PAD + (1 - f.valence) * inner;
+      if (Math.hypot(pt.clientX - cx, pt.clientY - cy) < 28) return true;
+    }
+    return false;
+  }
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    if (t && matrixShouldClaimTouch(canvas, t)) e.preventDefault();
+  }, { passive: false });
+
+  let matrixDeferred = null;   // touch started off-handle: apply only if it ends as a tap
   canvas.addEventListener('pointerdown', e => {
-    canvas.setPointerCapture(e.pointerId);
     matrixMode = detectMatrixMode(canvas, e);
+    if (e.pointerType === 'touch' && !matrixShouldClaimTouch(canvas, e)) {
+      matrixDeferred = { x: e.clientX, y: e.clientY, mode: matrixMode };
+      return;   // may become a page scroll — don't move the target yet
+    }
+    matrixDeferred = null;
+    canvas.setPointerCapture(e.pointerId);
     if (matrixMode === 'resize') matrixResize(canvas, e);
     else if (matrixMode === 'edittrack') matrixEditTrack(canvas, e);
     else matrixMove(canvas, e);
@@ -2544,15 +2932,26 @@ function initMatrix() {
       showMatrixTooltip(canvas, e);
       return;
     }
+    if (matrixDeferred) return;   // pending tap-or-scroll: let the browser decide
     e.preventDefault();
     if (matrixMode === 'resize') matrixResize(canvas, e);
     else if (matrixMode === 'edittrack') matrixEditTrack(canvas, e);
     else matrixMove(canvas, e);
   });
-  canvas.addEventListener('pointerup',    () => {
+  canvas.addEventListener('pointerup', e => {
+    if (matrixDeferred) {
+      const tap = Math.hypot(e.clientX - matrixDeferred.x, e.clientY - matrixDeferred.y) < 12;
+      const mode = matrixDeferred.mode; matrixDeferred = null;
+      if (!tap) return;   // it was a swipe the browser turned into a scroll
+      matrixMode = mode;
+      if (mode === 'edittrack') { matrixEditTrack(canvas, e); saveCurrentTrackFeatures(); matrixMode = 'move'; }
+      else { matrixMove(canvas, e); scheduleApply(); }
+      return;
+    }
     if (matrixMode === 'edittrack') { saveCurrentTrackFeatures(); matrixMode = 'move'; }
     else scheduleApply();
   });
+  canvas.addEventListener('pointercancel', () => { matrixDeferred = null; });
   canvas.addEventListener('pointerleave', () => hideMatrixTooltip());
 
   requestAnimationFrame(drawMatrix);
@@ -2878,13 +3277,63 @@ function hideMatrixTooltip() {
    box detail from the O2M API (/box_info). */
 let currentTrackObj = null;
 
+/* ── Back gesture closes modals (history-based) ──
+   Opening a modal pushes one history entry; the Android back swipe/button pops it
+   and we close the modal instead of leaving the app. Closing through the UI
+   (X / backdrop / Escape) consumes our entry with history.back() so the history
+   stack stays balanced. */
+let _modalPop = null;        // tag of the history entry we pushed ('obj' | 'details')
+let _consumingModal = false; // our own history.back() consuming a modal entry
+function modalHistoryPush(tag) {
+  if (_modalPop) return;   // one modal entry at a time is enough
+  _modalPop = tag;
+  try { history.pushState({ o2mModal: tag }, ''); } catch (e) {}
+}
+function modalHistoryConsume(tag) {
+  if (_modalPop !== tag) return;
+  _modalPop = null;
+  _consumingModal = true;
+  try { history.back(); } catch (e) { _consumingModal = false; }
+}
+/* Root back-trap: O2M is a music player — an accidental back swipe used to kill
+   the app AND the audio (the phone is the Snapcast speaker). Keep a sentinel
+   history entry armed under the modal entries so a back gesture with no modal
+   open is swallowed (re-armed) instead of exiting. Leaving the app is done with
+   the Home/recents gesture, like any fullscreen player. */
+function armBackTrap() {
+  const s = history.state || {};
+  if (s.o2mTrap || s.o2mModal) return;   // already armed (or a modal is on top)
+  try { history.pushState({ o2mTrap: true }, ''); } catch (e) {}
+}
+window.addEventListener('popstate', () => {
+  if (_consumingModal) { _consumingModal = false; return; }  // balanced UI close
+  const tag = _modalPop;
+  if (tag) {               // back gesture with a modal open → close the modal
+    _modalPop = null;
+    if (tag === 'obj') closeObjPanel(true);
+    else if (tag === 'details') document.body.classList.remove('details-open');
+    return;
+  }
+  // Back gesture at app root → swallow it and stay alive.
+  armBackTrap();
+  setFeedback('Use the Home gesture to leave O2M');
+});
+armBackTrap();
+
+/* Reopening the app after it was backgrounded/closed can restore a frozen
+   bfcache copy (dead WebSockets, suspended audio, stale UI stuck on the splash).
+   A persisted pageshow means exactly that → force a clean reload. */
+window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+
 function openObjPanel() {
+  if (!document.body.classList.contains('obj-open')) modalHistoryPush('obj');
   document.body.classList.add('obj-open');
   document.getElementById('obj-panel')?.setAttribute('aria-hidden', 'false');
 }
-function closeObjPanel() {
+function closeObjPanel(fromPop) {
   document.body.classList.remove('obj-open');
   document.getElementById('obj-panel')?.setAttribute('aria-hidden', 'true');
+  if (fromPop !== true) modalHistoryConsume('obj');   // UI close → consume our entry
 }
 function objSetHead(kind, title, sub) {
   document.getElementById('obj-kind').textContent  = kind;
@@ -3204,6 +3653,17 @@ async function checkBoxActive(uid, btn) {
 function recomputeAutoBox() {
   autoBoxActive = !!document.querySelector('.box-btn.active[data-auto="1"]');
   updateAutoBtn();
+  updateBoxesCount();
+}
+
+/* Header counter: number of ACTIVE boxes only — refreshed every time a box's
+   active state is (re)checked. */
+function updateBoxesCount() {
+  const bc = document.getElementById('boxes-count');
+  if (!bc) return;
+  const total  = document.querySelectorAll('#boxes-wrap .box-btn').length;
+  const active = document.querySelectorAll('#boxes-wrap .box-btn.active').length;
+  bc.textContent = total ? `${active} ${active === 1 ? 'box' : 'boxes'}` : '';
 }
 
 // Resync immédiat de l'état actif de toutes les boxes (ex: la box auto que le
@@ -3212,6 +3672,7 @@ function refreshBoxStates() {
   document.querySelectorAll('#boxes-wrap .box-btn').forEach(btn => {
     if (btn.dataset.uid) checkBoxActive(btn.dataset.uid, btn);
   });
+  refreshBasicToggles();   // basic view: reflect e.g. the server-activated auto box
 }
 
 async function toggleBox(uid, btn) {
@@ -3403,7 +3864,8 @@ function isPhoneDevice() {
 function autoInitPlaybackIfPhone() {
   if (!isPhoneDevice()) return;
   setTimeout(() => {
-    fetch(API + '/initialize_playback')
+    // Basic view: never auto-launch a box (unmute + resume only).
+    fetch(API + '/initialize_playback' + (isBasic() ? '?nobox=1' : ''))
       .then(r => r.text())
       .then(t => { if (t && t !== 'no_action') setTimeout(refreshNowPlaying, 800); })
       .catch(() => {});
@@ -3428,8 +3890,8 @@ function showAudioTapOverlay() {
     // 2. Connect Snapcast (the phone becomes the speaker).
     _snapStart();
     localStorage.setItem('snap-autoconnect', '1');
-    // 3. Make sure something is playing.
-    fetch(API + '/initialize_playback').then(() => setTimeout(refreshNowPlaying, 800)).catch(() => {});
+    // 3. Make sure something is playing (basic view: resume only, no box auto-launch).
+    fetch(API + '/initialize_playback' + (isBasic() ? '?nobox=1' : '')).then(() => setTimeout(refreshNowPlaying, 800)).catch(() => {});
     ov.classList.add('hide');
     setTimeout(() => ov.remove(), 320);
   };
@@ -3448,6 +3910,38 @@ const PLACEHOLDER_COVERS = [
   '/static/ds/covers/o2m-cover9.png',  '/static/ds/covers/o2m-cover10.png',
   '/static/ds/covers/o2m-cover11.png', '/static/ds/covers/o2m-cover12.png',
 ];
+/* Crossfade the cover: preload the new image off-DOM, then swap + fade in.
+   Avoids the blank flash of setting src directly and makes track changes feel
+   snappier. No-op when the URL is unchanged. */
+function setCoverSmooth(url) {
+  const el = document.getElementById('cover');
+  if (!el || !url || el.src === url) return;
+  const img = new Image();
+  img.onload = () => {
+    el.classList.add('cover-fading');
+    setTimeout(() => { el.src = url; el.classList.remove('cover-fading'); }, 120);
+  };
+  img.onerror = () => { el.src = url; };
+  img.src = url;
+}
+
+/* Warm the browser image cache with the NEXT track's cover so pressing next shows
+   it instantly (get_images is served from mopidy's cache; the image itself comes
+   from the CDN once and stays cached). */
+let _prefetchedCoverUri = null;
+async function prefetchNextCover() {
+  try {
+    const i = matrixTlItems.findIndex(it => it.tlid === currentTlid);
+    const next = (i >= 0 && matrixTlItems[i + 1]) ? matrixTlItems[i + 1] : null;
+    if (!next?.uri || next.uri === _prefetchedCoverUri) return;
+    _prefetchedCoverUri = next.uri;
+    const r = await rpc('core.library.get_images', {uris: [next.uri]});
+    const imgs = r?.result?.[next.uri] || [];
+    const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+    if (best) { const im = new Image(); im.src = imageUrl(best.uri || best); }
+  } catch (e) {}
+}
+
 function placeholderForUri(uri) {            // déterministe : même morceau → même pochette (pas de scintillement)
   let h = 0; const s = uri || 'o2m';
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
@@ -3526,13 +4020,26 @@ function setupThemeSwitcher() {
   applyTheme(current);
 }
 
+/* Reset the mood controls to their defaults (energy .5, ambiance .6, discover 5,
+   no genre filter) and refresh the mix like any other setting change. */
+function resetMood() {
+  appState.energy = 0.5; appState.valence = 0.6; appState.dl = 5; appState.genres = [];
+  setDial('energy', appState.energy);
+  setDial('valence', appState.valence);
+  setDial('dl', appState.dl / 10);
+  document.querySelectorAll('#genres-wrap .genre-chip.active').forEach(c => c.classList.remove('active'));
+  scheduleApply();
+  setFeedback('Mood reset');
+}
+
 function setupCollapsibles() {
   // Single-open accordion (mobile): opening one section closes the others, so the
   // 3 headers stay visible. On desktop the .open class has no effect (all shown).
   const heads = document.querySelectorAll(
     '#boxes-panel .panel-head, #left-panel .panel-head, #tracklist-col #tracklist-label');
   heads.forEach(h => h.addEventListener('click', (e) => {
-    if (e.target.closest('#btn-clear-tl') || e.target.closest('#btn-clear-boxes')) return;   // don't toggle on a clear button
+    if (e.target.closest('#btn-clear-tl') || e.target.closest('#btn-clear-boxes')
+        || e.target.closest('#btn-reset-mood')) return;   // don't toggle on a header action
     const panel = h.closest('.collapsible');
     if (!panel) return;
     const willOpen = !panel.classList.contains('open');
@@ -3562,6 +4069,7 @@ async function init() {
 
   document.getElementById('btn-clear-tl').addEventListener('click', clearTracklist);
   document.getElementById('btn-clear-boxes')?.addEventListener('click', (e) => { e.stopPropagation(); clearAllBoxes(); });
+  document.getElementById('btn-reset-mood')?.addEventListener('click', (e) => { e.stopPropagation(); resetMood(); });
   // Overprint: tap/click the cover to toggle its recolorization (rollover does it on desktop).
   document.getElementById('cover-wrap')?.addEventListener('click', () =>
     document.getElementById('top-zone')?.classList.toggle('cover-lit'));
@@ -3612,6 +4120,9 @@ async function init() {
     setDial('valence', v);
     setDial('dl', dl / 10);
   } catch(e) {}
+  initBasicView();   // no-op outside /basic
+  netProbe();
+  setInterval(netProbe, 8000);
 
   initMediaSession();
   document.getElementById('btn-edit-lock')?.addEventListener('click', (e) => { e.stopPropagation(); startEditAuth(); });
@@ -3620,9 +4131,17 @@ async function init() {
     document.getElementById('track-details')?.classList.toggle('open');
   });
   // Mobile: open/close the details/edit space as a bottom-sheet modal.
-  const closeDetails = () => document.body.classList.remove('details-open');
-  document.getElementById('btn-details')?.addEventListener('click', () =>
-    document.body.classList.toggle('details-open'));
+  // History-tracked so the back gesture closes the sheet instead of the app.
+  const closeDetails = () => {
+    document.body.classList.remove('details-open');
+    modalHistoryConsume('details');
+  };
+  document.getElementById('btn-details')?.addEventListener('click', () => {
+    const willOpen = !document.body.classList.contains('details-open');
+    if (willOpen) modalHistoryPush('details');
+    document.body.classList.toggle('details-open', willOpen);
+    if (!willOpen) modalHistoryConsume('details');
+  });
   document.getElementById('btn-details-close')?.addEventListener('click', closeDetails);
   document.getElementById('details-backdrop')?.addEventListener('click', closeDetails);
   document.getElementById('td-fav')?.addEventListener('click', toggleFavorite);

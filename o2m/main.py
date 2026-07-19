@@ -767,6 +767,11 @@ if __name__ == "__main__":
             o2mHandler.mood_genres = data['genres'] if isinstance(data['genres'], list) else []
         if 'discover_level' in data:
             o2mHandler.discover_level = int(data['discover_level'])
+        # apply=false → store the settings only (no rebuild, no auto-box launch).
+        # Used by the /basic view when no actuator is on: the dials set the values
+        # that the next Music launch will use.
+        if data.get('apply') is False:
+            return jsonify({'status': 'settings_saved', 'tracks_added': 0})
         added = o2mHandler.apply_mood_settings()
         if added is not None and added < 0:
             # Skipped: user boxes are active → mood affects their future recommendations.
@@ -1032,6 +1037,60 @@ if __name__ == "__main__":
         from flask import send_from_directory
         return send_from_directory('static', 'mood.html')
 
+    @api.route('/basic')
+    def basic_ui():
+        # Basic view (default on mobile): same page, the client switches to
+        # basic mode based on the /basic path — no separate file to maintain.
+        from flask import send_from_directory
+        return send_from_directory('static', 'mood.html')
+
+    @api.route('/api/basic_boxes')
+    def api_basic_boxes():
+        """Pinned boxes grouped for the /basic view actuators. Read-only —
+        categories: music (the auto box: data has an 'auto:' line), podcast/info
+        (by option_type), radio (data carries direct audio-stream URLs).
+        Cascade boxes (data has uncommented 'box:' include lines — composite
+        scenarios like auto_morning) are excluded: an actuator only drives
+        direct sources, and a cascade would light other actuators as a side
+        effect (e.g. Info pulling in the auto box)."""
+        from flask import jsonify
+        try:
+            active_uids = {b.uid for b in o2mHandler.activeboxs}
+            out = {}
+            for cat, boxes in o2mHandler.get_basic_categories().items():
+                rows = []
+                for box in boxes:
+                    lr = box.get('last_read_date')
+                    try:
+                        lr = lr.timestamp() if hasattr(lr, 'timestamp') else (float(lr) if lr else 0)
+                    except Exception:
+                        lr = 0
+                    rows.append({'uid': box['uid'], 'description': box.get('description'),
+                                 'active': box['uid'] in active_uids, 'last_read': lr})
+                out[cat] = rows
+            out['limit'] = o2mHandler.max_results   # fill target for multi-source categories
+            return jsonify(out)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/basic_toggle')
+    def api_basic_toggle():
+        """Atomic actuator action for the /basic view: one request activates
+        (meta_fill: sources drawn recency × chance up to the limit) or deactivates
+        (meta_remove) a whole category server-side — the client no longer loops box
+        by box, so a page reload or phone lock can't leave a partial state."""
+        from flask import jsonify
+        cat = request.args.get('cat')
+        mode = request.args.get('mode', 'add')
+        if cat not in ('music', 'podcast', 'info', 'radio'):
+            return jsonify({'error': 'cat must be music|podcast|info|radio'}), 400
+        try:
+            if mode == 'remove':
+                return jsonify({'ok': True, 'removed': o2mHandler.meta_remove(cat)})
+            return jsonify({'ok': True, 'gained': o2mHandler.meta_fill(cat)})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/mood2')
     def mood2_ui():
         # Transitional alias → same as /mood (kept so existing test links don't 404).
@@ -1213,9 +1272,12 @@ if __name__ == "__main__":
 
         The server determines the current time; the client should not supply the time.
         An optional `window` query param is ignored for time-of-day — server-side clock is used.
+        `nobox=1` keeps unmute + resume-if-paused but never auto-launches a box
+        (used by the /basic view).
         """
         try:
-            result = o2mHandler.initialize_playback()
+            nobox = request.args.get('nobox') in ('1', 'true')
+            result = o2mHandler.initialize_playback(allow_box=not nobox)
             if result:
                 return ("initialized")
             else:

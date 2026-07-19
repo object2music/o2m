@@ -1,4 +1,4 @@
-import datetime, time, sys, contextlib, random, subprocess, os, threading, math
+import datetime, time, sys, contextlib, random, subprocess, os, threading, math, re
 #import numpy as np
 import random
 from mopidy_podcast import Extension, feeds
@@ -790,6 +790,100 @@ class O2mToMopidy:
 #TRACKLIST APPEND / MANAGEMENT 
     
     #Tracklist filling from box
+#BASIC CATEGORIES (shared by /api/basic_boxes, /api/basic_toggle and the meta_* box patterns)
+    _META_PATTERNS = {'meta_podcasts': 'podcast', 'meta_infos': 'info', 'meta_radios': 'radio'}
+
+    def get_basic_categories(self):
+        """Pinned boxes grouped into the basic-view categories (direct sources only).
+        music: data has an 'auto:' line · podcast/info: by option_type · radio: data
+        carries direct audio-stream URLs. Cascade boxes ('box:' lines) and meta
+        boxes ('meta_*' lines) are excluded — they are scenarios, not sources."""
+        stream_re = re.compile(r'https?://\S+\.(aac|mp3|m3u8)\b|icecast', re.I)
+        cats = {'music': [], 'podcast': [], 'info': [], 'radio': []}
+        for b in self.dbHandler.get_boxes_pinned():
+            data = b.get('data') or ''
+            if re.search(r'^\s*box:', data, re.M) or re.search(r'^\s*meta_', data, re.M):
+                continue
+            if re.search(r'^\s*auto:', data, re.M):
+                cat = 'music'
+            elif b.get('option_type') == 'podcast':
+                cat = 'podcast'
+            elif b.get('option_type') == 'info':
+                cat = 'info'
+            elif stream_re.search(data):
+                cat = 'radio'
+            else:
+                continue
+            cats[cat].append(b)
+        return cats
+
+    def _pick_box_by_recency(self, boxes):
+        """Recency × chance: rank by last_read_date, halving weights per rank."""
+        def ts(b):
+            lr = b.get('last_read_date')
+            try:
+                return lr.timestamp() if hasattr(lr, 'timestamp') else float(lr or 0)
+            except Exception:
+                return 0
+        ranked = sorted(boxes, key=ts, reverse=True)
+        weights = [2 ** -i for i in range(len(ranked))]
+        return random.choices(ranked, weights=weights, k=1)[0]
+
+    def meta_fill(self, cat, max_results=None):
+        """Activate direct sources of a category, drawn recency × chance, until the
+        tracklist gained ~max_results tracks. music/radio are single-source (the mood
+        engine sizes itself / a stream is endless); podcast/info mix sources when one
+        is too small (e.g. a 1-track news box). Runs server-side so an actuator tap
+        is atomic — no client loop to interrupt."""
+        limit = max_results or self.max_results
+        boxes = self.get_basic_categories().get(cat) or []
+        if not boxes:
+            return 0
+        single = cat in ('music', 'radio')
+        try:
+            start = self.mopidyHandler.tracklist.get_length()
+        except Exception:
+            start = 0
+        pool = list(boxes)
+        gained = 0
+        while pool:
+            meta = self._pick_box_by_recency(pool)
+            pool.remove(meta)
+            sub = self.dbHandler.get_box_by_uid(meta['uid'])
+            if sub is None:
+                continue
+            if any(b.uid == sub.uid for b in self.activeboxs):
+                if single:
+                    break
+                continue
+            self.activeboxs.append(sub)
+            try:
+                self.box_action(sub)
+            except Exception as e:
+                print(f"meta_fill({cat}) on {sub.uid}: {e}")
+            if single:
+                break
+            try:
+                gained = self.mopidyHandler.tracklist.get_length() - start
+            except Exception:
+                gained = limit
+            if gained >= limit:
+                break
+        return gained
+
+    def meta_remove(self, cat):
+        """Deactivate every active box of a category (mirror of meta_fill)."""
+        uids = {b['uid'] for b in (self.get_basic_categories().get(cat) or [])}
+        removed = 0
+        for b in [x for x in self.activeboxs if x.uid in uids]:
+            try:
+                self.activeboxs.remove(b)
+                self.box_action_remove(b, b)
+                removed += 1
+            except Exception as e:
+                print(f"meta_remove({cat}) on {b.uid}: {e}")
+        return removed
+
     def tracklistappend_box(self,box,max_results):
         #Variables
         tracklist_uris = []
@@ -868,6 +962,12 @@ class O2mToMopidy:
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto:library" in content :
                     tracklist_uris.append(self.tracklistfill_auto(box,max_results,discover_level))
+
+                # meta_podcasts / meta_infos / meta_radios — category fills (the basic-view
+                # actuators as box patterns): sources drawn recency × chance until the
+                # limit is reached. Music's equivalent is auto:library above.
+                elif content.strip() in self._META_PATTERNS:
+                    self.meta_fill(self._META_PATTERNS[content.strip()], max_results)
 
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto_podcast:library" in content :
@@ -968,7 +1068,7 @@ class O2mToMopidy:
 
                 # Unfinished podcasts
                 elif "podcasts:unfinished" in content:
-                    uris = self.dbHandler.get_uris_podcasts_notread(max_results)
+                    uris = self.dbHandler.get_uris_podcasts_notread(max_results, discover_level)
                     if uris:
                         tracklist_uris.append(uris)
 
@@ -1340,7 +1440,7 @@ class O2mToMopidy:
               f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
         return max(0, added)
 
-    def initialize_playback(self, window=1):
+    def initialize_playback(self, window=1, allow_box=True):
         """
         Initialize playback according to rules:
         1) If there is a track in the tracklist and playback is paused, resume playback.
@@ -1386,6 +1486,15 @@ class O2mToMopidy:
             # 2) If no tracks in the tracklist -> use default box if configured, else fall back to stats_raw history
             if not tl_length or tl_length == 0:
                 box = None
+
+                # Two ways to skip the box auto-launch (unmute + resume-if-paused
+                # still apply): the caller passes allow_box=False (e.g. the /basic
+                # view), or default_box_uid is the sentinel 'none'. An EMPTY
+                # default_box_uid falls back to the stats_raw history box instead.
+                if not allow_box:
+                    return False
+                if self.default_box_uid and self.default_box_uid.lower() == 'none':
+                    return False
 
                 if self.default_box_uid:
                     try:
