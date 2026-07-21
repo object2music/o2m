@@ -1307,10 +1307,10 @@
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
   @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
   #basic-dials { display: flex; justify-content: space-around; align-items: flex-start; }
-  /* The mood dial's viewBox is wider (label ring): give it its own size so the
-     knob circle renders as large as the sibling dials (.dial-svg caps at 108px). */
-  #dial-bmood { width: 172px; height: 123px; }
-  #txt-bmood { font-size: 11px; letter-spacing: .04em; }
+  /* Both dials' viewBox is wider (label ring): give them their own size so the
+     knob circle renders as large as a plain dial (.dial-svg caps at 108px). */
+  #dial-bmood, #dial-bdl { width: 172px; height: 123px; }
+  #txt-bmood, #txt-bdl { font-size: 11px; letter-spacing: .04em; }
   /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
      Sits on the status line of the now-playing header. */
   #net-dot {
@@ -1322,12 +1322,13 @@
   #net-dot[data-level="orange"] { background: #f0a000; }
   #net-dot[data-level="red"]    { background: #e0245e; }
 
-  /* Detent labels around the mood dial — the active one lights up. */
-  .bmood-lbl {
+  /* Detent labels around a basic-view dial (Mood, Opening level) — the active
+     one lights up. Shared by both dials for a consistent appearance. */
+  .bmood-lbl, .bdl-lbl {
     font-size: 10px; letter-spacing: .05em; fill: var(--muted);
     cursor: pointer; user-select: none; transition: fill .15s;
   }
-  .bmood-lbl.on { fill: var(--accent); font-weight: 700; }
+  .bmood-lbl.on, .bdl-lbl.on { fill: var(--accent); font-weight: 700; }
   /* Footer view-switch: show the counterpart link only. Sits right after the O2M
      brand (order 0 + DOM position) and stands out in accent. The #footer-links
      prefix is required to out-rank `#footer-links .footer-link { order: 2 }`. */
@@ -1436,14 +1437,21 @@
     <div id="basic-dials">
       <div class="dial-wrap">
         <div class="dial-label">Opening level</div>
-        <svg class="dial-svg" id="dial-bdl" width="120" height="120" viewBox="0 0 110 110">
+        <!-- Same presentation as the Mood dial: wider viewBox, detent labels around
+             the arc (135°→405°), clickable shortcuts. 3 detents reuse the Mood
+             dial's bottom-left/top/bottom-right label positions (indices 0/2/4 of
+             its 5-slot layout land exactly there). Appearance only — still the
+             same continuous discover_level(0-10) underneath, just snapped. -->
+        <svg class="dial-svg" id="dial-bdl" width="196" height="136" viewBox="-33 -14 176 126">
           <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
           <circle class="dial-fill" id="fill-bdl" cx="55" cy="55" r="42"
                   stroke="#00bcd4" transform="rotate(135 55 55)"/>
+          <text class="bdl-lbl" data-i="0" x="16" y="99"  text-anchor="end">focused</text>
+          <text class="bdl-lbl" data-i="1" x="55" y="-4"  text-anchor="middle">regular</text>
+          <text class="bdl-lbl" data-i="2" x="94" y="99"  text-anchor="start">crazy</text>
           <circle id="knob-bdl" cx="55" cy="13" r="7" fill="#00bcd4"/>
-          <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-bdl">5</text>
+          <text x="55" y="60" text-anchor="middle" fill="#eaeaea" font-weight="700" id="txt-bdl">regular</text>
         </svg>
-        <div class="dial-sub">focused ↔ adventurous</div>
       </div>
       <div class="dial-wrap">
         <div class="dial-label">Mood</div>
@@ -1814,6 +1822,25 @@ function setBasicMoodDial(i) {
     l.classList.toggle('on', Number(l.dataset.i) === i));
 }
 
+// Opening level, presented the same way as Mood (detent labels around the dial)
+// — appearance only, still the same continuous discover_level(0-10) underneath.
+const BASIC_DL_LEVELS = [['focused', 0], ['regular', 5], ['crazy', 10]];
+function basicDlIndex() {
+  let best = 1, bd = Infinity;
+  BASIC_DL_LEVELS.forEach(([, dl], i) => {
+    const d = Math.abs((appState.dl ?? 5) - dl);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+function setBasicDlDial(i) {
+  setDial('bdl', i / (BASIC_DL_LEVELS.length - 1));
+  const txt = document.getElementById('txt-bdl');
+  if (txt) txt.textContent = BASIC_DL_LEVELS[i][0];
+  document.querySelectorAll('.bdl-lbl').forEach(l =>
+    l.classList.toggle('on', Number(l.dataset.i) === i));
+}
+
 let basicLimit = 30;   // fill target — refreshed from api_result_limit via /api/basic_boxes
 
 async function refreshBasicToggles() {
@@ -1891,9 +1918,12 @@ function initBasicView() {
   document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn =>
     btn.addEventListener('click', () => toggleBasicCat(btn)));
   document.getElementById('basic-all')?.addEventListener('click', (e) => toggleBasicAll(e.currentTarget));
-  // Opening level — same semantics as the full view's Discovery dial.
+  // Opening level — snaps to the 3 detents (focused/regular/crazy), same
+  // interaction pattern as Mood; same underlying discover_level(0-10) value.
   makeDraggable('bdl', v => {
-    appState.dl = Math.round(v * 10);
+    const i = Math.round(v * (BASIC_DL_LEVELS.length - 1));
+    appState.dl = BASIC_DL_LEVELS[i][1];
+    setBasicDlDial(i);
     setDial('dl', appState.dl / 10);           // keep the (hidden) full dial in sync
   });
   // Mood — snaps to the 5 detents; sets energy+valence to the detent's pair.
@@ -1904,7 +1934,7 @@ function initBasicView() {
     setBasicMoodDial(i);
     setDial('energy', e); setDial('valence', val);   // keep hidden full dials in sync
   });
-  setDial('bdl', (appState.dl ?? 5) / 10);
+  setBasicDlDial(basicDlIndex());
   setBasicMoodDial(basicMoodIndex());
   refreshBasicToggles();
   setInterval(refreshBasicToggles, 60000);
@@ -1923,9 +1953,18 @@ function switchView(toBasic, push = true) {
   if (push) history.pushState({}, '', toBasic ? '/basic' : '/mood?full=1');
   if (toBasic) {
     // Sync the basic controls with the current state on entry.
-    setDial('bdl', (appState.dl ?? 5) / 10);
+    setBasicDlDial(basicDlIndex());
     setBasicMoodDial(basicMoodIndex());
     refreshBasicToggles();
+  } else {
+    // Mobile accordion: #left-panel (Mood, containing the matrix canvas) starts
+    // collapsed (only Tracklist is open by default) — with display:none its
+    // offsetWidth is 0, so the canvas never resizes/repaints until a panel is
+    // opened. Coming from the mood-centric basic view, open Mood directly
+    // instead of leaving the matrix invisible behind a collapsed accordion row.
+    // No-op visually on desktop (.open only matters in the ≤699px CSS).
+    document.querySelectorAll('#main-cols .collapsible').forEach(p =>
+      p.classList.toggle('open', p.id === 'left-panel'));
   }
   try { fitHeroTitle(); } catch (e) {}
 }
@@ -2046,6 +2085,8 @@ const TL_INFO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const CHEVRON_SVG = '<svg class="obj-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
 const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>';
 const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+const ICON_REMOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false }) {
   const numHtml = isCurrent ? '<span class="eq-icon"><i></i><i></i><i></i></span>' : indexLabel;
   const aCls = 'tl-artist' + (artistUri ? ' obj-link' : '');
@@ -2095,6 +2136,7 @@ function renderTracklist(tracks, activeTlid) {
   count.textContent = tracks.length ? `${tracks.length} tracks` : '';
   let scrollTarget = null;
   tracks.forEach(({tlid, track}, i) => {
+    registerTrackMeta(track);   // so the row's "Copy link" can resolve a podcast episode page
     const item = document.createElement('div');
     item.className = 'tl-item' + (tlid === activeTlid ? ' current' : '');
     item.dataset.tlid = tlid;
@@ -2114,7 +2156,7 @@ function renderTracklist(tracks, activeTlid) {
     item.addEventListener('click', (e) => {
       // Info badge → row actions menu.
       const ib = e.target.closest('.tl-info');
-      if (ib) { e.stopPropagation(); openRowMenu(ib, ib.dataset.uri || track.uri); return; }
+      if (ib) { e.stopPropagation(); openActionMenu(ib, trackMenuItems(ib.dataset.uri || track.uri, tlid)); return; }
       // Clicking the artist name opens the artist detail instead of playing the row.
       const al = e.target.closest('.tl-artist[data-artist-uri]');
       if (al) { e.stopPropagation(); openArtist(al.dataset.artistUri, al.textContent.trim()); return; }
@@ -2257,6 +2299,7 @@ async function refreshNowPlaying() {
 
   currentTlid      = tlid;
   matrixCurUri     = track?.uri ?? null;
+  registerTrackMeta(track);   // so the "More" menu's Copy link can resolve a podcast episode page
   currentTrackObj  = track || null;
   currentDurationMs = track?.length || 0;
   document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
@@ -2490,91 +2533,115 @@ function _plOutsideClick(e) {
     _closePlDropdown();
 }
 
-/* Track-options dropdown (top-right of #track-details), same fixed-popup
-   pattern as the footer "More" / playlists dropdowns. New menu items are
-   plain <button data-action="..."> entries handled below. */
-let _trackMenuEl = null;
-function _closeTrackMenu() {
-  _trackMenuEl?.remove(); _trackMenuEl = null;
-  document.removeEventListener('click', _trackMenuOutsideClick, true);
+/* ══ Harmonized object action menu (the "i"/⋯ context menu used everywhere:
+   tracklist rows, the current-track "More" button, and album/artist/box
+   headers in the detail modal) ══
+   One shared dropdown builder + one shared open/close/outside-click lifecycle,
+   fed by a per-context list of {label, icon, action} items — instead of three
+   diverging ad-hoc menus. */
+let _actionMenuEl = null;
+function _closeActionMenu() {
+  _actionMenuEl?.remove(); _actionMenuEl = null;
+  document.removeEventListener('click', _actionMenuOutside, true);
   document.getElementById('btn-track-menu')?.setAttribute('aria-expanded', 'false');
 }
-function _trackMenuOutsideClick(e) {
-  if (_trackMenuEl && !_trackMenuEl.contains(e.target) && !e.target.closest('#btn-track-menu'))
-    _closeTrackMenu();
-}
-function openTrackMenu(triggerBtn) {
-  if (_trackMenuEl) { _closeTrackMenu(); return; }
-  if (!matrixCurUri) return;
-  const menu = document.createElement('div');
-  menu.className = 'track-menu-dropdown';
-  menu.innerHTML =
-    '<button type="button" data-action="copy-link">'
-    + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>'
-    + 'Copy link</button>';
-  menu.querySelector('[data-action="copy-link"]').addEventListener('click', () => {
-    navigator.clipboard.writeText(matrixCurUri)
-      .then(() => setFeedback('Link copied'))
-      .catch(() => setFeedback('Copy failed'));
-    _closeTrackMenu();
-  });
-  const rect = triggerBtn.getBoundingClientRect();
-  menu.style.right = (window.innerWidth - rect.right) + 'px';
-  menu.style.top   = (rect.bottom + 4) + 'px';
-  document.body.appendChild(menu);
-  _trackMenuEl = menu;
-  triggerBtn.setAttribute('aria-expanded', 'true');
-  setTimeout(() => document.addEventListener('click', _trackMenuOutsideClick, true), 0);
-}
-
-/* ── Per-row actions menu (tracklist info badge) ── */
-let _rowMenuEl = null;
-function _closeRowMenu() {
-  _rowMenuEl?.remove(); _rowMenuEl = null;
-  document.removeEventListener('click', _rowMenuOutside, true);
-}
-function _rowMenuOutside(e) {
-  if (_rowMenuEl && !_rowMenuEl.contains(e.target)
-      && !e.target.closest('.tl-info') && !e.target.closest('#obj-actions')) _closeRowMenu();
+function _actionMenuOutside(e) {
+  if (_actionMenuEl && !_actionMenuEl.contains(e.target)
+      && !e.target.closest('.tl-info') && !e.target.closest('#obj-actions')
+      && !e.target.closest('#btn-track-menu')) _closeActionMenu();
 }
 function _positionMenu(menu, btn) {
   const rect = btn.getBoundingClientRect();
   menu.style.right = (window.innerWidth - rect.right) + 'px';
   menu.style.top   = (rect.bottom + 4) + 'px';
 }
-function openRowMenu(triggerBtn, uri) {
-  if (_rowMenuEl) { _closeRowMenu(); return; }
-  if (!uri) return;
+function openActionMenu(triggerBtn, items) {
+  if (_actionMenuEl) { _closeActionMenu(); return; }
+  if (!items || !items.length) return;
   const menu = document.createElement('div');
   menu.className = 'track-menu-dropdown';
-  menu.innerHTML =
-    '<button type="button" data-a="next">' + ICON_PLAYNEXT + 'Play next</button>' +
-    '<button type="button" data-a="now">'  + ICON_PLAYNOW  + 'Play now</button>';
-  menu.querySelector('[data-a="next"]').addEventListener('click', () => { playNext(uri); _closeRowMenu(); });
-  menu.querySelector('[data-a="now"]').addEventListener('click',  () => { playNow(uri);  _closeRowMenu(); });
+  menu.innerHTML = items.map((it, i) =>
+    `<button type="button" data-i="${i}">${it.icon}${objEsc(it.label)}</button>`).join('');
+  items.forEach((it, i) => menu.querySelector(`[data-i="${i}"]`)
+    .addEventListener('click', () => { it.action(); _closeActionMenu(); }));
   _positionMenu(menu, triggerBtn);
   document.body.appendChild(menu);
-  _rowMenuEl = menu;
-  setTimeout(() => document.addEventListener('click', _rowMenuOutside, true), 0);
+  _actionMenuEl = menu;
+  triggerBtn.setAttribute?.('aria-expanded', 'true');
+  setTimeout(() => document.addEventListener('click', _actionMenuOutside, true), 0);
 }
 
-/* Object-level actions (album / artist header) — Play next the whole thing. */
+/* ── Smart shareable link resolution ──
+   Internal URIs aren't directly useful to share/open outside O2M — resolve them
+   to something usable: spotify:track:ID → open.spotify.com (works for anyone,
+   no app needed); yt:URL → the plain YouTube URL; a podcast episode → the site
+   page link embedded in mopidy-podcast's `comment` field (falls back to the feed
+   URL); a box → its box:<uid> reference, directly paste-able into another box's
+   raw data to build a cascade. */
+const trackMeta = new Map();   // uri -> track object (populated wherever rows render)
+function registerTrackMeta(t) { if (t && t.uri) trackMeta.set(t.uri, t); }
+function extractHrefFromComment(comment) {
+  const m = /<a\s+href="([^"]+)"/i.exec(comment || '');
+  return m ? m[1] : null;
+}
+function shareableLink(uri) {
+  if (!uri) return null;
+  let m;
+  if ((m = /^spotify:(track|album|artist|playlist):([A-Za-z0-9]+)/.exec(uri)))
+    return `https://open.spotify.com/${m[1]}/${m[2]}`;
+  if (uri.startsWith('yt:')) return uri.slice(3);
+  if (uri.startsWith('podcast+')) {
+    const fromComment = extractHrefFromComment(trackMeta.get(uri)?.comment);
+    if (fromComment) return fromComment;
+    return uri.slice('podcast+'.length).split('#')[0];   // feed URL fallback
+  }
+  return uri;   // local file / box / anything else — copy the raw reference
+}
+async function copyLink(uri) {
+  const link = shareableLink(uri);
+  if (!link) { setFeedback('No link'); return; }
+  try { await navigator.clipboard.writeText(link); setFeedback('Link copied'); }
+  catch (e) { setFeedback('Copy failed'); }
+}
+
+/* Track row menu: Play next / Play now always available; Remove only when a
+   tlid is known (i.e. the row IS a tracklist entry — not a browse-only row from
+   an album/artist/box listing); Copy link resolves smartly per uri kind. */
+function trackMenuItems(uri, tlid) {
+  const items = [
+    { label: 'Play next', icon: ICON_PLAYNEXT, action: () => playNext(uri) },
+    { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => playNow(uri) },
+  ];
+  if (tlid != null) items.push({ label: 'Remove', icon: ICON_REMOVE, action: () => removeFromTracklist(tlid) });
+  items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
+  return items;
+}
+async function removeFromTracklist(tlid) {
+  try {
+    await rpc('core.tracklist.remove', { criteria: { tlid: [tlid] } });
+    setFeedback('Removed');
+    setTimeout(refreshNowPlaying, 200);
+  } catch (e) { setFeedback('Remove error'); }
+}
+
+/* Object-level actions (album / artist / box header, the ⋯ button) — Play next
+   the whole set (album/artist only) + Copy link for the object itself (its own
+   shareable link, or box:<uid> for a box). */
 let objCurrentPlayUris = [];
-function objSetActionUris(list) {
+let objCurrentUri = null;
+function objSetActionUris(list, uri) {
   objCurrentPlayUris = Array.isArray(list) ? list.filter(Boolean) : [];
-  document.getElementById('obj-actions')?.classList.toggle('hide', objCurrentPlayUris.length === 0);
+  objCurrentUri = uri || null;
+  document.getElementById('obj-actions')?.classList.toggle('hide',
+    objCurrentPlayUris.length === 0 && !objCurrentUri);
 }
 function openObjActions(btn) {
-  if (_rowMenuEl) { _closeRowMenu(); return; }
-  if (!objCurrentPlayUris.length) return;
-  const menu = document.createElement('div');
-  menu.className = 'track-menu-dropdown';
-  menu.innerHTML = '<button type="button" data-a="next">' + ICON_PLAYNEXT + 'Play next</button>';
-  menu.querySelector('[data-a="next"]').addEventListener('click', () => { playNext(objCurrentPlayUris); _closeRowMenu(); });
-  _positionMenu(menu, btn);
-  document.body.appendChild(menu);
-  _rowMenuEl = menu;
-  setTimeout(() => document.addEventListener('click', _rowMenuOutside, true), 0);
+  const items = [];
+  if (objCurrentPlayUris.length)
+    items.push({ label: 'Play next', icon: ICON_PLAYNEXT, action: () => playNext(objCurrentPlayUris) });
+  if (objCurrentUri)
+    items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(objCurrentUri) });
+  openActionMenu(btn, items);
 }
 
 /* Queue via O2M (live URI adaptation + stat mapping for externally-cached
@@ -3405,7 +3472,7 @@ function objSourceTag(source) {
 }
 
 function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = [], albums = [], source = 'db' }) {
-  objSetActionUris(tracks.map(t => t.uri).filter(Boolean));
+  objSetActionUris(tracks.map(t => t.uri).filter(Boolean), uri);
   objSetHead('Artist', name, '');
   const coverHtml = image ? `<img class="obj-cover" src="${objEsc(image)}" alt="">` : '';
   const genreLine = genres.length ? `<span>${genres.slice(0, 6).map(objEsc).join(' · ')}</span>` : '';
@@ -3451,7 +3518,7 @@ async function openArtist(uri, seedName) {
 }
 
 function renderAlbum(uri, { name = 'Album', artist = '', image = '', release = '', tracks = [], source = 'db' }) {
-  objSetActionUris(tracks.map(t => t.uri).filter(Boolean));
+  objSetActionUris(tracks.map(t => t.uri).filter(Boolean), uri);
   objSetHead('Album', name, artist);
   const totalMs = tracks.reduce((s, t) => s + (t.length || 0), 0);
   const coverHtml = image ? `<img class="obj-cover" src="${objEsc(image)}" alt="">` : '';
@@ -3595,7 +3662,7 @@ async function saveBox() {
 async function openBox(uid) {
   if (!uid) return;
   objSetHead('Box', 'Box', '');
-  openObjPanel(); objSetActionUris([]); objLoading();
+  openObjPanel(); objSetActionUris([], 'box:' + uid); objLoading();
   try {
     const info = await fetch(API + '/box_info?uid=' + encodeURIComponent(uid)).then(r => r.json());
     if (info.error) { objBody().innerHTML = `<div class="obj-empty">${objEsc(info.error)}</div>`; return; }
@@ -4126,7 +4193,7 @@ async function init() {
 
   initMediaSession();
   document.getElementById('btn-edit-lock')?.addEventListener('click', (e) => { e.stopPropagation(); startEditAuth(); });
-  document.getElementById('btn-track-menu')?.addEventListener('click', (e) => { e.stopPropagation(); openTrackMenu(e.currentTarget); });
+  document.getElementById('btn-track-menu')?.addEventListener('click', (e) => { e.stopPropagation(); openActionMenu(e.currentTarget, trackMenuItems(matrixCurUri, currentTlid)); });
   document.querySelector('#track-details .td-head')?.addEventListener('click', () => {
     document.getElementById('track-details')?.classList.toggle('open');
   });
@@ -4158,7 +4225,7 @@ async function init() {
   // or play a track. Same info badge + row pattern as the tracklist.
   document.getElementById('obj-body')?.addEventListener('click', (e) => {
     const ib = e.target.closest('.tl-info');
-    if (ib) { openRowMenu(ib, ib.dataset.uri); return; }
+    if (ib) { openActionMenu(ib, trackMenuItems(ib.dataset.uri, null)); return; }
     const row = e.target.closest('[data-artist-uri],[data-album-uri],[data-box-uid]');
     if (!row) return;
     if (row.dataset.artistUri) return openArtist(row.dataset.artistUri, (row.textContent || '').trim());
@@ -4344,6 +4411,27 @@ function updateFsBtn() {
 }
 
 init();
+
+// TEMP diagnostic for the display-cutout investigation — remove once resolved.
+// Shows, directly on screen (no devtools needed on the phone), which display-mode
+// the browser actually granted and what env(safe-area-inset-top) resolves to.
+// If inset=0px while a notch/camera is visible, the OS isn't handing us that
+// strip at all (not a CSS/color issue) — display-mode is the thing to fix.
+(function cutoutDebug() {
+  const modes = ['fullscreen', 'standalone', 'minimal-ui', 'browser'];
+  const mode = modes.find(m => window.matchMedia(`(display-mode: ${m})`).matches) || '?';
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);' +
+    'min-height:2px;background:red;z-index:99999;pointer-events:none;';
+  document.body.appendChild(probe);
+  const label = document.createElement('div');
+  label.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0px);left:4px;z-index:99999;' +
+    'font:11px monospace;color:#0f0;background:#000;padding:2px 5px;pointer-events:none;';
+  const insetPx = getComputedStyle(probe).height;
+  label.textContent = `mode=${mode} inset-top=${insetPx}`;
+  document.body.appendChild(label);
+  console.log('[cutout-debug]', mode, insetPx);
+})();
 
 // PWA : enregistre le service worker (uniquement en contexte sécurisé HTTPS).
 // En HTTP, navigator.serviceWorker est absent ou register() échoue → ignoré.
