@@ -41,6 +41,13 @@ class O2mToMopidy:
     avg_stats = {}
 
     def __init__(self, mopidyHandler, configO2m, configMopidy, logging):
+        # `activeboxs` is declared as a CLASS attribute above (line 24) — a mutable
+        # default shared by every instance unless shadowed here. Without this,
+        # self.activeboxs.append(...)/.remove(...) mutate that one shared list, so
+        # state can leak across O2mToMopidy re-instantiations within the same
+        # process (main.py's connect-retry loop) — observed as boxes appearing
+        # "already active" with no user action (stuck-boxes-like symptom).
+        self.activeboxs = []
         self.configO2M = configO2m["o2m"]
         #self.configMopidy = configMopidy
         self.dbHandler = DatabaseHandler()  # Database management
@@ -92,6 +99,7 @@ class O2mToMopidy:
         else: self.option_add_reco_after_track = False
 
         self.default_box_uid = self.configO2M.get("default_box_uid", "").strip() or None
+        self._health_check_last = 0  # cooldown gate for check_active_boxes_health
 
         if "shuffle" in self.configO2M:
             self.shuffle = self.clean_bool(self.configO2M["shuffle"])
@@ -296,8 +304,8 @@ class O2mToMopidy:
     """
 
 #O2M CORE / TRACKLIST INIT 
-    def one_box_changed(self, box, max_results=15):
-        
+    def one_box_changed(self, box, max_results=None):
+
         #print(f"\nNew box added: {box}")
         if (box.uid != self.last_box_uid):  # If different from last box added - for NFC mode only
             with self._box_ops_lock():
@@ -305,7 +313,7 @@ class O2mToMopidy:
                 self.update_stat_raw(uri)
 
                 # Variables
-                if max_results==15:
+                if max_results is None:
                     max_results = self.max_results
                     if box.option_max_results: max_results = box.option_max_results
                     #print (f"Max results : {max_results}")
@@ -780,7 +788,7 @@ class O2mToMopidy:
             if base_counts.get('news', 0) > 0:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('new')
-                news = self.tracklistappend_box(box1,_pool(base_counts['news']))
+                news = self.tracklistappend_box(box1,_pool(base_counts['news']),attribute_to=active_box)
                 news = self._mood_pick(news, base_counts['news'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, news, base_counts['news'], "new","o2m:new")
     
@@ -793,28 +801,40 @@ class O2mToMopidy:
 #BASIC CATEGORIES (shared by /api/basic_boxes, /api/basic_toggle and the meta_* box patterns)
     _META_PATTERNS = {'meta_podcasts': 'podcast', 'meta_infos': 'info', 'meta_radios': 'radio'}
 
+    _STREAM_RE = re.compile(r'https?://\S+\.(aac|mp3|m3u8)\b|icecast', re.I)
+
+    def _box_category(self, data, option_type):
+        """Classify any box (pinned or not) into a basic-view category, given its
+        data/option_type. None = cascade/meta scenario box (not a direct source
+        of any kind — leave it alone). 'other' = a direct, non-cascade box that
+        isn't podcast/info/radio (e.g. a plain library/new box) — not one of the
+        4 actuators' fill sources, but still swept up by Music OFF's catch-all
+        (see meta_remove) so it doesn't get orphaned once activated some other
+        way (Full view, NFC, cascade)."""
+        data = data or ''
+        if re.search(r'^\s*box:', data, re.M) or re.search(r'^\s*meta_', data, re.M):
+            return None
+        if re.search(r'^\s*auto:', data, re.M):
+            return 'music'
+        if option_type == 'podcast':
+            return 'podcast'
+        if option_type == 'info':
+            return 'info'
+        if self._STREAM_RE.search(data):
+            return 'radio'
+        return 'other'
+
     def get_basic_categories(self):
         """Pinned boxes grouped into the basic-view categories (direct sources only).
         music: data has an 'auto:' line · podcast/info: by option_type · radio: data
-        carries direct audio-stream URLs. Cascade boxes ('box:' lines) and meta
-        boxes ('meta_*' lines) are excluded — they are scenarios, not sources."""
-        stream_re = re.compile(r'https?://\S+\.(aac|mp3|m3u8)\b|icecast', re.I)
+        carries direct audio-stream URLs. Cascade boxes ('box:' lines), meta boxes
+        ('meta_*' lines) and anything else uncategorized ('other') are excluded —
+        they are scenarios or not a fill source, not one of the 4 direct sources."""
         cats = {'music': [], 'podcast': [], 'info': [], 'radio': []}
         for b in self.dbHandler.get_boxes_pinned():
-            data = b.get('data') or ''
-            if re.search(r'^\s*box:', data, re.M) or re.search(r'^\s*meta_', data, re.M):
-                continue
-            if re.search(r'^\s*auto:', data, re.M):
-                cat = 'music'
-            elif b.get('option_type') == 'podcast':
-                cat = 'podcast'
-            elif b.get('option_type') == 'info':
-                cat = 'info'
-            elif stream_re.search(data):
-                cat = 'radio'
-            else:
-                continue
-            cats[cat].append(b)
+            cat = self._box_category(b.get('data'), b.get('option_type'))
+            if cat in cats:
+                cats[cat].append(b)
         return cats
 
     def _pick_box_by_recency(self, boxes):
@@ -830,61 +850,129 @@ class O2mToMopidy:
         return random.choices(ranked, weights=weights, k=1)[0]
 
     def meta_fill(self, cat, max_results=None):
-        """Activate direct sources of a category, drawn recency × chance, until the
-        tracklist gained ~max_results tracks. music/radio are single-source (the mood
-        engine sizes itself / a stream is endless); podcast/info mix sources when one
-        is too small (e.g. a 1-track news box). Runs server-side so an actuator tap
-        is atomic — no client loop to interrupt."""
-        limit = max_results or self.max_results
-        boxes = self.get_basic_categories().get(cat) or []
-        if not boxes:
-            return 0
-        single = cat in ('music', 'radio')
-        try:
-            start = self.mopidyHandler.tracklist.get_length()
-        except Exception:
-            start = 0
-        pool = list(boxes)
-        gained = 0
-        while pool:
-            meta = self._pick_box_by_recency(pool)
-            pool.remove(meta)
-            sub = self.dbHandler.get_box_by_uid(meta['uid'])
-            if sub is None:
-                continue
-            if any(b.uid == sub.uid for b in self.activeboxs):
-                if single:
-                    break
-                continue
-            self.activeboxs.append(sub)
+        """Activate a category's sources within a max_results budget. music/radio
+        are single-source (the mood engine sizes itself / a stream is endless) —
+        one pick by recency×chance, unchanged. podcast/info activate ALL their
+        (not-yet-active) sources at once, each asked for an equal share of the
+        budget (limit // N); a source that can't fill its share (e.g. a 1-track
+        news box) has its shortfall carried forward and redistributed equally
+        across the sources processed after it, so a thin source doesn't leave the
+        category under-filled when richer sources could have covered it. Runs
+        server-side so an actuator tap is atomic — no client loop to interrupt.
+        Locked (reentrant) around the whole read-modify-write of activeboxs: without
+        it, tapping two actuators quickly (or racing the check_active_boxes_health
+        watchdog) let two threads mutate the shared activeboxs list concurrently —
+        a remove() on one thread's stale snapshot could raise/skip while another
+        thread's box_action_remove never ran, leaving that box's tracks stuck in
+        the tracklist even though the box looked deactivated."""
+        with self._box_ops_lock():
+            limit = max_results or self.max_results
+            boxes = self.get_basic_categories().get(cat) or []
+            if not boxes:
+                return 0
             try:
-                self.box_action(sub)
-            except Exception as e:
-                print(f"meta_fill({cat}) on {sub.uid}: {e}")
-            if single:
-                break
-            try:
-                gained = self.mopidyHandler.tracklist.get_length() - start
+                start = self.mopidyHandler.tracklist.get_length()
             except Exception:
-                gained = limit
-            if gained >= limit:
-                break
-        return gained
+                start = 0
+
+            if cat in ('music', 'radio'):
+                # Single-source: one pick by recency×chance, as before.
+                pool = [b for b in boxes if not any(a.uid == b['uid'] for a in self.activeboxs)]
+                if not pool:
+                    return 0
+                meta = self._pick_box_by_recency(pool)
+                sub = self.dbHandler.get_box_by_uid(meta['uid'])
+                if sub is None:
+                    return 0
+                self.activeboxs.append(sub)
+                try:
+                    self.box_action(sub)
+                except Exception as e:
+                    print(f"meta_fill({cat}) on {sub.uid}: {e}")
+                try:
+                    return self.mopidyHandler.tracklist.get_length() - start
+                except Exception:
+                    return limit
+
+            # Multi-source: equal split across every not-yet-active source, with
+            # a running budget so an underfilled source's shortfall rolls forward.
+            pool = [b for b in boxes if not any(a.uid == b['uid'] for a in self.activeboxs)]
+            if not pool:
+                return 0
+            gained_total = 0
+            budget = limit
+            for i, meta in enumerate(pool):
+                sub = self.dbHandler.get_box_by_uid(meta['uid'])
+                if sub is None:
+                    continue
+                share = max(1, round(budget / (len(pool) - i)))
+                self.activeboxs.append(sub)
+                try:
+                    before = self.mopidyHandler.tracklist.get_length()
+                except Exception:
+                    before = None
+                try:
+                    self.one_box_changed(sub, max_results=share)
+                except Exception as e:
+                    print(f"meta_fill({cat}) on {sub.uid}: {e}")
+                try:
+                    got = self.mopidyHandler.tracklist.get_length() - before if before is not None else share
+                except Exception:
+                    got = share
+                gained_total += got
+                budget -= got   # a shortfall (got < share) rolls forward; a surplus tightens the rest
+                if budget <= 0:
+                    break
+            return gained_total
 
     def meta_remove(self, cat):
-        """Deactivate every active box of a category (mirror of meta_fill)."""
-        uids = {b['uid'] for b in (self.get_basic_categories().get(cat) or [])}
-        removed = 0
-        for b in [x for x in self.activeboxs if x.uid in uids]:
-            try:
-                self.activeboxs.remove(b)
-                self.box_action_remove(b, b)
-                removed += 1
-            except Exception as e:
-                print(f"meta_remove({cat}) on {b.uid}: {e}")
-        return removed
+        """Deactivate every active box of a category (mirror of meta_fill). See
+        meta_fill's docstring for why this needs the same lock.
 
-    def tracklistappend_box(self,box,max_results):
+        Music is the catch-all bucket: it ALSO sweeps up any currently-active box
+        that isn't podcast/info/radio/cascade/meta either (checked directly on the
+        live box, not just the pinned list, so an unpinned one — Full view, NFC,
+        cascade — isn't missed). Without this, a plain library/new-style box
+        activated some other way than the Music actuator (e.g. a pinned
+        'newnotcompleted:library' box tapped in the Full view's Boxes panel) has
+        no category claiming it, so no actuator — including Music OFF — could
+        ever remove its tracks; they'd sit in the tracklist forever."""
+        with self._box_ops_lock():
+            uids = {b['uid'] for b in (self.get_basic_categories().get(cat) or [])}
+            if cat == 'music':
+                for b in self.activeboxs:
+                    if self._box_category(b.data, b.option_type) in ('music', 'other'):
+                        uids.add(b.uid)
+            removed = 0
+            for b in [x for x in self.activeboxs if x.uid in uids]:
+                try:
+                    if b not in self.activeboxs:
+                        continue   # already removed by a concurrent call in this same lock window
+                    self.activeboxs.remove(b)
+                    self.box_action_remove(b, b)
+                    removed += 1
+                except Exception as e:
+                    print(f"meta_remove({cat}) on {b.uid}: {e}")
+            return removed
+
+    def tracklistappend_box(self,box,max_results,attribute_to=None):
+        # attribute_to: the box that dynamically-added tracks (skip badge, box_id
+        # in _track_info, and hence deactivation cleanup) get tagged under.
+        # Defaults to `box` itself (the normal case: a box's own data is being
+        # read to fill ITS OWN tracklist entry). Some content patterns below
+        # (spotify:library / newnotcompleted:library / newrecent:library /
+        # albums:spotify) call add_tracks internally rather than returning URIs
+        # to the caller — when tracklistappend_box is instead called to borrow
+        # ANOTHER box's content on behalf of a currently-active box (e.g.
+        # tracklistfill_auto's "News" component reads the option_type='new' box
+        # to mix a few of its tracks into Music/Auto's own mix), those internal
+        # calls used to tag tracks under `box` (the box being READ) instead of
+        # the box actually being activated — so turning that active box off
+        # could never find/remove them (observed: Music off left "Newnotcompleted"
+        # tracks stuck when other actuators were still active and the box-count
+        # never dropped to 0, which is when a separate blanket-clear fallback
+        # would otherwise have masked the issue). Pass attribute_to to fix that.
+        tag_box = attribute_to or box
         #Variables
         tracklist_uris = []
         tl_length_at_start = self.mopidyHandler.tracklist.get_length()
@@ -983,7 +1071,7 @@ class O2mToMopidy:
                         remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
                         if remaining <= 0:
                             break
-                        self.add_tracks(box, [uri], remaining, library_link=source or '')
+                        self.add_tracks(tag_box, [uri], remaining, library_link=source or '')
 
                 # spotify:library (library random extract)
                 elif "spotify:library2" in content :
@@ -1019,7 +1107,7 @@ class O2mToMopidy:
                     if remaining > 0:
                         uri_new = self.get_new_tracks_notread(remaining)
                         if uri_new:
-                            self.add_tracks(box, uri_new, remaining, library_link='o2m:newnotcompleted', bypass_remove_filter=True)
+                            self.add_tracks(tag_box, uri_new, remaining, library_link='o2m:newnotcompleted', bypass_remove_filter=True)
 
                 # newrecent:library — pre-filtered in DB, bypass REMOVE in add_tracks
                 elif "newrecent:library" in content:
@@ -1028,7 +1116,7 @@ class O2mToMopidy:
                         days = 60
                         uri_new = self.get_newrecent_tracks(remaining, days)
                         if uri_new:
-                            self.add_tracks(box, uri_new, remaining, library_link='o2m:newrecent', bypass_remove_filter=True)
+                            self.add_tracks(tag_box, uri_new, remaining, library_link='o2m:newrecent', bypass_remove_filter=True)
 
                 # album:local
                 elif "albums:local" in content :
@@ -1054,7 +1142,7 @@ class O2mToMopidy:
                         else:
                             uris, source = self.spotifyHandler.get_my_artists_tracks(1, 0, return_source=True)
                         if uris:
-                            self.add_tracks(box, uris, remaining, library_link=source or '')
+                            self.add_tracks(tag_box, uris, remaining, library_link=source or '')
 
                 # Autos mode (to be optimized with the above code)
                 elif "auto:library" in content:
@@ -1242,43 +1330,79 @@ class O2mToMopidy:
         """Rebuild the tracklist by re-running box_action on EVERY active box.
         In discover mode a single call rebuilds from all active boxes at once;
         otherwise each box is refilled in turn. Shared by starting_mode(start=True)
-        and apply_mood_settings (live mood change)."""
+        and apply_mood_settings (live mood change).
+        Locked (reentrant): `self._reload_seen` is shared instance state reset to
+        None in a finally at the end of the method — two overlapping calls (e.g.
+        two /api/mood POSTs firing close together, both reaching
+        apply_mood_settings) raced on it: one call's finally could null it out
+        while the other was still mid-loop, crashing with 'argument of type
+        NoneType is not iterable'. The lock serializes the whole method, matching
+        the pattern already used for box_action/meta_fill/meta_remove."""
+        with self._box_ops_lock():
+            if not self.activeboxs:
+                return
+            if ("discover" in self.configO2M and self.configO2M["discover"] == "true"):
+                self.box_action(self.activeboxs[0])
+            else:
+                # Dedup active boxes by uid (cascade `box:` includes can append duplicates).
+                seen_uids = set()
+                unique = []
+                for b in list(self.activeboxs):
+                    if b.uid not in seen_uids:
+                        seen_uids.add(b.uid)
+                        unique.append(b)
+                self.activeboxs = unique
+                # Boxes included by a cascade (box:<uid>) are loaded by their parent — don't also
+                # reload them directly (that double-loaded them → 120 instead of 60).
+                included = set()
+                for b in unique:
+                    for line in (b.data or '').split('\n'):
+                        line = line.strip()
+                        if line.startswith('box:'):
+                            included.add(line.split(':', 1)[1].strip())
+                # Reset the NFC "same tag = next song" guard so every box actually reloads, and
+                # track boxes loaded this cycle so a cascade child isn't loaded twice.
+                self.last_box_uid = None
+                self._reload_seen = set()
+                try:
+                    for b in unique:
+                        if b.uid in included or b.uid in self._reload_seen:
+                            continue  # loaded via its parent's cascade
+                        self._reload_seen.add(b.uid)
+                        try:
+                            self.box_action(b)
+                        except Exception as e:
+                            print(f"reload_active_boxes error: {e}")
+                finally:
+                    self._reload_seen = None
+
+    def check_active_boxes_health(self):
+        """Transitional watchdog (2026-07-20 incident): o2m's `activeboxs` lives in
+        process memory and survives a mopidy restart, but mopidy's tracklist does
+        not (no persisted state) — so an independent mopidy restart leaves boxes
+        marked active in the UI with an empty tracklist and no playback, looking
+        stuck. If active boxes exist but the tracklist is empty, auto-refill by
+        replaying reload_active_boxes(). The cooldown only gates the REFILL
+        attempt (15s) — the cheap emptiness check itself always runs, so a
+        healthy poll never suppresses the next, actually-empty one."""
         if not self.activeboxs:
             return
-        if ("discover" in self.configO2M and self.configO2M["discover"] == "true"):
-            self.box_action(self.activeboxs[0])
-        else:
-            # Dedup active boxes by uid (cascade `box:` includes can append duplicates).
-            seen_uids = set()
-            unique = []
-            for b in list(self.activeboxs):
-                if b.uid not in seen_uids:
-                    seen_uids.add(b.uid)
-                    unique.append(b)
-            self.activeboxs = unique
-            # Boxes included by a cascade (box:<uid>) are loaded by their parent — don't also
-            # reload them directly (that double-loaded them → 120 instead of 60).
-            included = set()
-            for b in unique:
-                for line in (b.data or '').split('\n'):
-                    line = line.strip()
-                    if line.startswith('box:'):
-                        included.add(line.split(':', 1)[1].strip())
-            # Reset the NFC "same tag = next song" guard so every box actually reloads, and
-            # track boxes loaded this cycle so a cascade child isn't loaded twice.
-            self.last_box_uid = None
-            self._reload_seen = set()
-            try:
-                for b in unique:
-                    if b.uid in included or b.uid in self._reload_seen:
-                        continue  # loaded via its parent's cascade
-                    self._reload_seen.add(b.uid)
-                    try:
-                        self.box_action(b)
-                    except Exception as e:
-                        print(f"reload_active_boxes error: {e}")
-            finally:
-                self._reload_seen = None
+        try:
+            length = self.mopidyHandler.tracklist.get_length()
+        except Exception:
+            return
+        if length:
+            return
+        now = time.time()
+        if now - self._health_check_last < 15:
+            return   # a refill was already attempted recently; don't hammer mopidy
+        self._health_check_last = now
+        print(f"check_active_boxes_health: {len(self.activeboxs)} active box(es) but empty "
+              f"tracklist (mopidy restarted independently?) — auto-refilling")
+        try:
+            self.reload_active_boxes()
+        except Exception as e:
+            print(f"check_active_boxes_health: reload error: {e}")
 
     def starting_mode(self,clear=False,start=False,uid=None):
         #Cleaning 
@@ -2458,10 +2582,12 @@ class O2mToMopidy:
     #Threshold NEW : stopping playing and autofilling new tracks (add_tracks or autofill)
     #discover_level = 5 : read_count_end>=3
     def threshold_playing_count_new(self,read_count_end,discover_level):
-        #print (f"read_count_end : {read_count_end} discover_level : {discover_level}")
-        threshold = ((11-discover_level)/2) + (1 if discover_level == 10 else 0)
-        if float(read_count_end) >= threshold: return True
-        else: return False
+        # Complete plays before a 'new' track is promoted (→ incoming / library).
+        # Gentler slope (/4) so the "3 plays" plateau spans DL 5–8 instead of DL7
+        # dropping to 2 — loosens the incoming inflow at high discover levels.
+        # Effective (ceil): DL0-4→4-5, DL5-8→3, DL9-10→2.
+        threshold = (17 - discover_level) / 4.0
+        return float(read_count_end) >= threshold
 
     #Threshold FAVORITES : for adding or removing tracks to favorites (autofill)
     #discover_level = 5 : read_count_end>=12 // if float(read_count_end) >= ((11-discover_level)*2):
