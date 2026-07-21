@@ -328,6 +328,29 @@ if __name__ == "__main__":
         uris = o2mHandler.dbHandler.get_uris_newrecent(limit=limit, days=days)
         return json.dumps({'count': len(uris), 'days': days, 'uris': uris})
 
+    @api.route('/api/debug/tracklist_ownership')
+    def api_debug_tracklist_ownership():
+        """Diagnostic (read-only): current tracklist cross-referenced with
+        o2mHandler._track_info's box_id, so a 'why is this still here after
+        deactivating box X' question can be answered directly instead of guessed
+        at. Not linked from the UI; call it manually when investigating."""
+        from flask import jsonify
+        try:
+            tl = o2mHandler.mopidyHandler.tracklist.get_tl_tracks()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        active_uids = {b.uid for b in o2mHandler.activeboxs}
+        rows = []
+        for tlt in tl:
+            info = o2mHandler._track_info.get(tlt.tlid, {})
+            box_id = info.get('box_id')
+            rows.append({
+                'tlid': tlt.tlid, 'uri': tlt.track.uri, 'name': tlt.track.name,
+                'option_type': info.get('option_type'), 'box_id': box_id,
+                'box_active': box_id in active_uids if box_id else None,
+            })
+        return jsonify({'active_boxes': sorted(active_uids), 'tracks': rows})
+
     @api.route('/api/box_info')
     def api_box_info():
         uid = request.args.get('uid')
@@ -437,6 +460,7 @@ if __name__ == "__main__":
     #API box checking if activated or not
     @api.route('/api/box_activated')
     def api_box_activated():
+        o2mHandler.check_active_boxes_health()  # transitional watchdog, see docstring
         uid = request.args.get('uid')
         box = o2mHandler.dbHandler.get_box_by_uid(uid)
         if box != None:
@@ -1054,6 +1078,7 @@ if __name__ == "__main__":
         direct sources, and a cascade would light other actuators as a side
         effect (e.g. Info pulling in the auto box)."""
         from flask import jsonify
+        o2mHandler.check_active_boxes_health()  # transitional watchdog, see docstring
         try:
             active_uids = {b.uid for b in o2mHandler.activeboxs}
             out = {}

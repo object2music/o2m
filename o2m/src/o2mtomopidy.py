@@ -732,7 +732,7 @@ class O2mToMopidy:
                 print(f"\nAUTO : Incoming {base_counts['incoming']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('incoming')
                 library_link = self.get_spotify_playlist_from_box(box1)
-                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']))
+                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']),attribute_to=active_box)
                 incoming = self._mood_pick(incoming, base_counts['incoming'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, incoming, base_counts['incoming'], "incoming",library_link)
 
@@ -748,7 +748,7 @@ class O2mToMopidy:
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #Using specific playlist (normaly elif)
                 if box1 != None:
-                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']))
+                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']),attribute_to=active_box)
                     fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius, discover_level)
                     library_link = self.get_spotify_playlist_from_box(box1)
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
@@ -759,7 +759,7 @@ class O2mToMopidy:
                 box1 = self.dbHandler.get_box_by_option_type('podcast')
                 if box1:
                     print(f"\nAUTO : Podcasts {base_counts['podcasts']} tracks\n")                
-                    self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['podcasts']), base_counts['podcasts'], "podcast","o2m:podcast")
+                    self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['podcasts'],attribute_to=active_box), base_counts['podcasts'], "podcast","o2m:podcast")
             
             #Albums/Artists
             if base_counts.get('albums_artists', 0) > 0:
