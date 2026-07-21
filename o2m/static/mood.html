@@ -555,7 +555,20 @@
     #track-details.open .td-head::after { content: '▾'; }
     #track-details:not(.open) .td-body { display: none; }
     #track-details .td-body { margin-top: 8px; }
-    #controls { flex-wrap: wrap; gap: 16px; padding: 8px 12px; }
+    /* Break #controls out of the #top-right column (itself capped by the cover
+       thumbnail's width) so the button/volume row spans the full device width,
+       matching Invert's look — WITHOUT moving the cover art (Invert achieves it
+       by making the cover a full-width banner above; here we keep the thumbnail
+       in place and just let this one row bleed edge-to-edge under/past it).
+       Classic full-bleed trick: width 100vw + negative margins re-centers it on
+       the viewport regardless of the parent's constrained width. */
+    #controls {
+      flex-wrap: wrap; gap: 16px; box-sizing: border-box;
+      width: 100vw; position: relative; left: 50%; right: 50%;
+      margin-left: -50vw; margin-right: -50vw;
+      padding: 8px max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
+      justify-content: space-evenly;
+    }
 
     /* ── Mobile accordion: Boxes / Mood / Tracklist ──
        The 3 headers are always-visible fixed rows that never move; one section is
