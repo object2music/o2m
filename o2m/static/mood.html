@@ -2716,8 +2716,20 @@ async function renderPlaylistEditor(uri) {
       cb.addEventListener('change', () => togglePlaylistMembership(cb, uri)));
     const rect = box.querySelector('.pl-trigger').getBoundingClientRect();
     dropdown.style.right = (window.innerWidth - rect.right) + 'px';
-    dropdown.style.top   = (rect.bottom + 4) + 'px';
     document.body.appendChild(dropdown);
+    // Flip upward when there isn't enough room below (common on mobile, where
+    // the trigger sits low in the details panel) — and always cap max-height to
+    // the space actually available in the chosen direction, so the list is fully
+    // reachable by scroll instead of being clipped past the viewport edge.
+    const spaceBelow = window.innerHeight - rect.bottom - 8;
+    const spaceAbove = rect.top - 8;
+    if (dropdown.scrollHeight > spaceBelow && spaceAbove > spaceBelow) {
+      dropdown.style.bottom    = (window.innerHeight - rect.top + 4) + 'px';
+      dropdown.style.maxHeight = Math.max(120, spaceAbove) + 'px';
+    } else {
+      dropdown.style.top       = (rect.bottom + 4) + 'px';
+      dropdown.style.maxHeight = Math.max(120, spaceBelow) + 'px';
+    }
     _plDropdown = dropdown;
     setTimeout(() => document.addEventListener('click', _plOutsideClick, true), 0);
     box.querySelector('.pl-caret').textContent = '▾';
