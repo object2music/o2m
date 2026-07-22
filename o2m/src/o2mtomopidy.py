@@ -837,6 +837,36 @@ class O2mToMopidy:
                 cats[cat].append(b)
         return cats
 
+    def search_radio_stations(self, query):
+        """Keyword search over radio station names — the content-search feature's
+        radio source. Stations aren't Track-backed (a live stream is never logged
+        the way a played track is); their only record is the '#Label' comment
+        line immediately preceding each stream URL inside a radio-category box's
+        data (the established convention — see e.g. the 'Radios' box). Reuses
+        get_basic_categories()['radio'] so this stays in sync with whatever
+        counts as a direct radio source elsewhere (basic-view actuator, etc)."""
+        q = (query or '').lower()
+        if not q:
+            return []
+        results = []
+        for meta in self.get_basic_categories().get('radio') or []:
+            box = self.dbHandler.get_box_by_uid(meta['uid'])
+            if box is None:
+                continue
+            label = None
+            for raw in (box.data or '').splitlines():
+                line = raw.strip()
+                if not line:
+                    continue
+                if line.startswith('#'):
+                    label = line.lstrip('#').strip()
+                    continue
+                if line.startswith('http') and label:
+                    if q in label.lower():
+                        results.append({'uri': line, 'name': label, 'box_uid': box.uid})
+                    label = None
+        return results
+
     def _pick_box_by_recency(self, boxes):
         """Recency × chance: rank by last_read_date, halving weights per rank."""
         def ts(b):

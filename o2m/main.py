@@ -328,6 +328,29 @@ if __name__ == "__main__":
         uris = o2mHandler.dbHandler.get_uris_newrecent(limit=limit, days=days)
         return json.dumps({'count': len(uris), 'days': days, 'uris': uris})
 
+    @api.route('/api/search')
+    def api_search():
+        """Content search — the DB cache first (tracks/artists/albums/podcast
+        episodes/info episodes/radio stations), plus a live Spotify search for
+        music (tagged separately so the UI can show cache vs live results)."""
+        from flask import jsonify
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'error': 'query too short'}), 400
+        try:
+            results = o2mHandler.dbHandler.search_local(q)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        try:
+            results['radios'] = o2mHandler.search_radio_stations(q)
+        except Exception as e:
+            results['radios'] = []
+        try:
+            results['spotify'] = o2mHandler.spotifyHandler.search_music(q)
+        except Exception as e:
+            results['spotify'] = {'tracks': [], 'artists': [], 'albums': []}
+        return jsonify(results)
+
     @api.route('/api/debug/tracklist_ownership')
     def api_debug_tracklist_ownership():
         """Diagnostic (read-only): current tracklist cross-referenced with

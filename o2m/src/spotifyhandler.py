@@ -261,6 +261,31 @@ class SpotifyHandler:
         if self._db and album_data and album_data.get('id'):
             self._db.save_album(album_data)
 
+    def search_music(self, query, limit=8):
+        """Live Spotify search across track/artist/album — the "live" counterpart
+        to the local-cache keyword search (content-search feature). Complements,
+        never blocks on, the DB-first results."""
+        if not query or self.sp is None or self._is_rate_limited():
+            return {'tracks': [], 'artists': [], 'albums': []}
+        try:
+            r = self.sp.search(q=query, type='track,artist,album', limit=limit)
+        except Exception as e:
+            try: self._on_rate_limit(e)
+            except Exception: pass
+            print(f"search_music({query!r}) error: {e}")
+            return {'tracks': [], 'artists': [], 'albums': []}
+        tracks = [{'uri': t['uri'], 'name': t['name'], 'length': t.get('duration_ms'),
+                   'artists': [a['name'] for a in t.get('artists') or []]}
+                  for t in ((r.get('tracks') or {}).get('items') or [])]
+        artists = [{'uri': a['uri'], 'name': a['name'],
+                    'image': ((a.get('images') or [{}])[0].get('url'))}
+                   for a in ((r.get('artists') or {}).get('items') or [])]
+        albums = [{'uri': al['uri'], 'name': al['name'],
+                   'artist': ', '.join(a['name'] for a in al.get('artists') or []),
+                   'image': ((al.get('images') or [{}])[0].get('url'))}
+                  for al in ((r.get('albums') or {}).get('items') or [])]
+        return {'tracks': tracks, 'artists': artists, 'albums': albums}
+
     def backfill_album(self, album_id):
         """Fetch a full album from Spotify and persist it (album row + all tracks +
         artist/album links) into the O2M DB, so the detail page serves it fully from

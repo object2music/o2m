@@ -1033,6 +1033,36 @@ class DatabaseHandler():
             print(f"get_artist_track_uris error: {e}")
         return None
 
+    def search_local(self, query, limit=15):
+        """Keyword search across cached content — the DB-first half of the
+        content-search feature. Tracks/artists/albums by name; podcast/info
+        episodes by name (Track.option_type). Radio isn't Track-backed (a live
+        stream is never logged like a played track) — see
+        O2mToMopidy.search_radio_stations for that one."""
+        results = {'tracks': [], 'artists': [], 'albums': [], 'podcasts': [], 'info': []}
+        for t in (Track.select()
+                  .where(Track.name.contains(query) & ~(Track.option_type.in_(['podcast', 'info'])))
+                  .limit(limit)):
+            results['tracks'].append({
+                'uri': t.uri, 'name': t.name, 'length': t.duration_ms,
+                'artists': self._track_artist_names(t.uri),
+            })
+        for ot, bucket in (('podcast', 'podcasts'), ('info', 'info')):
+            for t in (Track.select()
+                      .where((Track.option_type == ot) & Track.name.contains(query))
+                      .limit(limit)):
+                results[bucket].append({'uri': t.uri, 'name': t.name, 'length': t.duration_ms})
+        for a in Artist.select().where(Artist.name.contains(query)).limit(limit):
+            results['artists'].append({
+                'uri': a.uri or f'spotify:artist:{a.id}', 'name': a.name, 'image': a.image_url,
+            })
+        for al in Album.select().where(Album.name.contains(query)).limit(limit):
+            results['albums'].append({
+                'uri': al.uri or f'spotify:album:{al.id}', 'name': al.name,
+                'artist': al.artist_name, 'image': al.image_url,
+            })
+        return results
+
     def _track_artist_names(self, track_uri):
         """Artist name(s) for a track from the TrackArtist join (ordered), cache-only."""
         try:

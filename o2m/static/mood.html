@@ -182,10 +182,10 @@
   html, body { height: 100%; }
   body { background: var(--bg); color: var(--text); font-family: var(--font);
          display: flex; flex-direction: column; overflow: hidden; height: 100dvh;
-         transition: background .25s, color .25s;
-         /* Landscape: keep content clear of a side-mounted camera cutout */
-         padding-left: env(safe-area-inset-left, 0px);
-         padding-right: env(safe-area-inset-right, 0px); }
+         transition: background .25s, color .25s; }
+  /* NB: do NOT add horizontal padding to <body> — several rows use a full-bleed
+     width:100vw trick (e.g. mobile #controls) that would then overflow by the
+     padding width. Landscape safe-area insets are applied per-row instead. */
 
 
   /* Couleurs des potentiomètres (override des attributs SVG inline) */
@@ -250,7 +250,10 @@
   .td-actions-row { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-top: 4px; }
   /* Fixed-position dropdown, same pattern as footer "More" / playlists */
   .track-menu-dropdown {
-    position: fixed; z-index: 200;
+    /* Above the mobile object modal (#obj-panel z-index 210) and track-details
+       sheet (200) — otherwise the ⓘ menu opens BEHIND the sheet on phones and
+       looks like it "doesn't work". */
+    position: fixed; z-index: 300;
     background: var(--surface); border: 1px solid var(--border);
     padding: 6px; min-width: 170px; max-width: 240px;
     display: flex; flex-direction: column; gap: 2px;
@@ -555,17 +558,21 @@
     #track-details.open .td-head::after { content: '▾'; }
     #track-details:not(.open) .td-body { display: none; }
     #track-details .td-body { margin-top: 8px; }
-    /* Break #controls out of the #top-right column (itself capped by the cover
-       thumbnail's width) so the button/volume row spans the full device width,
-       matching Invert's look — WITHOUT moving the cover art (Invert achieves it
-       by making the cover a full-width banner above; here we keep the thumbnail
-       in place and just let this one row bleed edge-to-edge under/past it).
-       Classic full-bleed trick: width 100vw + negative margins re-centers it on
-       the viewport regardless of the parent's constrained width. */
+    /* Full-width playback controls WITHOUT the old width:100vw full-bleed hack —
+       that overflowed a few px to the right (and clipped the snapcast button)
+       because #top-right is offset from the viewport's left edge by the cover
+       thumbnail, so the viewport-centred 100vw trick miscentred. Instead promote
+       #top-right's children into #top-zone's own flex-wrap row (display:contents):
+       #now-playing stays beside the cover, while #controls / #progress-wrap each
+       take their own real full-width row. This is how overprint/invert avoid the
+       overflow too (full-width parent, no negative margins). */
+    /* Scoped to the standard themes — overprint/invert have their own poster
+       layout (display:block #top-zone) and must NOT get display:contents here. */
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-right { display: contents; }
+    #now-playing { flex: 1 1 0; min-width: 0; }
+    #controls, #progress-wrap { flex: 0 0 100%; width: 100%; }
     #controls {
-      flex-wrap: wrap; gap: 16px; box-sizing: border-box;
-      width: 100vw; position: relative; left: 50%; right: 50%;
-      margin-left: -50vw; margin-right: -50vw;
+      flex-wrap: wrap; gap: 16px;
       padding: 8px max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
@@ -573,7 +580,7 @@
     /* ── Mobile accordion: Boxes / Mood / Tracklist ──
        The 3 headers are always-visible fixed rows that never move; one section is
        open at a time, its body fills the remaining height and scrolls internally. */
-    #scroll-area { display: flex; flex-direction: column; overflow: hidden; }
+    #scroll-area { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
     #main-cols { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
     /* padding:0 on every panel so the 3 headers align on the same left margin */
     #boxes-panel, #left-panel, #tracklist-col {
@@ -767,6 +774,7 @@
       -webkit-overflow-scrolling: touch; scrollbar-width: none;
       touch-action: pan-x;
       padding-top: 12px; padding-bottom: max(12px, env(safe-area-inset-bottom));
+      flex-shrink: 0;   /* never let the flex column squeeze the footer off-screen */
     }
     #footer-links::-webkit-scrollbar { display: none; }
     #footer-links > * { flex-shrink: 0; }
@@ -1174,12 +1182,12 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .obj-sub { font-size: 12px; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #obj-close, #obj-actions {
+  #obj-close, #obj-actions, #obj-prev, #obj-next {
     flex-shrink: 0; background: none; border: none; color: var(--muted);
     cursor: pointer; padding: 2px 4px; display: inline-flex;
   }
-  #obj-close svg, #obj-actions svg { width: 18px; height: 18px; display: block; }
-  #obj-actions:hover { color: var(--accent); }
+  #obj-close svg, #obj-actions svg, #obj-prev svg, #obj-next svg { width: 18px; height: 18px; display: block; }
+  #obj-actions:hover, #obj-prev:hover, #obj-next:hover { color: var(--accent); }
   /* Navigation rows (albums / spotify links) carry a chevron → clicking opens. */
   .obj-nav { align-items: center; }
   .obj-chevron { width: 16px; height: 16px; flex-shrink: 0; color: var(--muted); margin-left: auto; }
@@ -1352,6 +1360,23 @@
   #footer-links #link-full { display: none; }
   html.basic #footer-links #link-full { display: inline-flex; }
   html.basic #footer-links #link-basic { display: none; }
+
+  /* Content search — collapsed to an icon; expands the input in place when active. */
+  #footer-links #search-box { order: 1; display: inline-flex; align-items: center; gap: 0;
+    padding: 0; background: none; border: none; }
+  #search-box #btn-search { background: none; border: none; color: var(--muted); cursor: pointer;
+    display: inline-flex; padding: 3px 6px; }
+  #search-box #btn-search:hover, #search-box.open #btn-search { color: var(--accent); }
+  #search-box #btn-search svg { width: 15px; height: 15px; }
+  #search-input { width: 0; padding: 0; border: none; opacity: 0; background: var(--fill-1);
+    color: var(--text); font: inherit; font-size: 12px; outline: none;
+    transition: width .2s var(--ease, ease), opacity .2s, padding .2s; }
+  #search-box.open #search-input { width: 160px; padding: 4px 8px; opacity: 1;
+    border: 1px solid var(--border-strong); }
+  /* Search results inside the object modal. */
+  .search-section-label { font-family: var(--font-mono); text-transform: uppercase;
+    letter-spacing: .12em; font-size: 10px; color: var(--muted); margin: 14px 0 4px; }
+  .search-section-label:first-child { margin-top: 0; }
 </style>
 </head>
 <body>
@@ -1583,6 +1608,11 @@
     <div class="tb-brand">
       <span class="tb-mark">O2M</span>
     </div>
+    <!-- Content search: collapsed to an icon; expands to a text field in place. -->
+    <div id="search-box" class="footer-link">
+      <button id="btn-search" title="Search content" aria-label="Search content"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+      <input id="search-input" type="search" placeholder="Search…" autocomplete="off" spellcheck="false">
+    </div>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
       <button class="theme-chip" data-theme-set="creme">Light</button>
@@ -1621,6 +1651,8 @@
        Mobile: bottom-sheet like the track edit space. Read-only for now. -->
   <div id="obj-panel" aria-hidden="true">
     <div class="obj-head">
+      <button id="obj-prev" class="hide" title="Back" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button id="obj-next" class="hide" title="Forward" aria-label="Forward"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
       <div class="obj-head-main">
         <span class="obj-kind" id="obj-kind">—</span>
         <span class="obj-title" id="obj-title">—</span>
@@ -2100,11 +2132,15 @@ const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 const ICON_REMOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false }) {
+const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '' }) {
   const numHtml = isCurrent ? '<span class="eq-icon"><i></i><i></i><i></i></span>' : indexLabel;
   const aCls = 'tl-artist' + (artistUri ? ' obj-link' : '');
   const aAttr = artistUri ? ` data-artist-uri="${objEsc(artistUri)}"` : '';
-  const infoAttr = uri ? ` data-uri="${objEsc(uri)}"` : '';
+  // data-kind lets the shared ⓘ handler build a kind-aware menu (track vs
+  // artist/album/radio: the latter get Play next/now over the object's tracks +
+  // "See details"). Absent = plain track (tracklist, detail track lists).
+  const infoAttr = uri ? ` data-uri="${objEsc(uri)}"${kind ? ` data-kind="${objEsc(kind)}"` : ''}` : '';
   return `<div class="tl-num">${numHtml}</div>`
     + `<div class="tl-texts"><div class="tl-name">${objEsc(name || '?')}</div>`
     + `<div class="${aCls}"${aAttr}>${objEsc(artist)}</div>${statusHtml}</div>`
@@ -2635,6 +2671,32 @@ async function removeFromTracklist(tlid) {
     setFeedback('Removed');
     setTimeout(refreshNowPlaying, 200);
   } catch (e) { setFeedback('Remove error'); }
+}
+
+/* Kind-aware menu for a search-result row. track/radio act on the single uri;
+   artist/album resolve the object's tracks (mopidy lookup expands them) and
+   queue those, plus a "See details" that opens the existing detail sheet. */
+function objMenuItems(uri, kind) {
+  const single = (kind === 'track' || kind === 'radio' || !kind);
+  const items = [
+    { label: 'Play next', icon: ICON_PLAYNEXT, action: () => single ? playNext(uri) : objPlayObject(uri, 'next') },
+    { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => single ? playNow(uri)  : objPlayObject(uri, 'now') },
+  ];
+  if (kind === 'artist') items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openArtist(uri) });
+  if (kind === 'album')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openAlbum(uri, {}) });
+  items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
+  return items;
+}
+// Play an album/artist: resolve its tracks (mopidy expands album→tracks,
+// artist→all tracks, so cap it) then queue next / play now.
+async function objPlayObject(uri, mode) {
+  try {
+    const r = await rpc('core.library.lookup', { uris: [uri] });
+    let uris = (r?.result?.[uri] || []).map(t => t.uri).filter(Boolean);
+    if (!uris.length) { setFeedback('No tracks'); return; }
+    if (uris.length > 40) uris = uris.slice(0, 40);
+    if (mode === 'now') await playNow(uris); else await playNext(uris);
+  } catch (e) { setFeedback('Play error'); }
 }
 
 /* Object-level actions (album / artist / box header, the ⋯ button) — Play next
@@ -3423,6 +3485,7 @@ function openObjPanel() {
   document.getElementById('obj-panel')?.setAttribute('aria-hidden', 'false');
 }
 function closeObjPanel(fromPop) {
+  objClearNav();
   document.body.classList.remove('obj-open');
   document.getElementById('obj-panel')?.setAttribute('aria-hidden', 'true');
   if (fromPop !== true) modalHistoryConsume('obj');   // UI close → consume our entry
@@ -3434,6 +3497,49 @@ function objSetHead(kind, title, sub) {
 }
 function objBody()  { return document.getElementById('obj-body'); }
 function objLoading(msg) { objBody().innerHTML = `<div class="obj-loading">${msg || 'Loading…'}</div>`; }
+
+/* ── Modal navigation history (prev/next within the object modal) ──
+   Search → open an artist → Back returns to the search results; Forward returns
+   to the artist. Snapshots the rendered view (head + body + action state) so
+   navigation is instant and never re-fetches. Two-stack browser model. */
+const _objBack = [], _objFwd = [];
+let _objRestoring = false;
+function _objSnap() {
+  return {
+    kind:  document.getElementById('obj-kind').textContent,
+    title: document.getElementById('obj-title').textContent,
+    sub:   document.getElementById('obj-sub').textContent,
+    html:  objBody().innerHTML,
+    playUris: objCurrentPlayUris.slice(),
+    ownUri: objCurrentUri,
+  };
+}
+function _objApply(s) {
+  _objRestoring = true;
+  objSetHead(s.kind, s.title, s.sub);
+  objBody().innerHTML = s.html;
+  objSetActionUris(s.playUris, s.ownUri);
+  _objRestoring = false;
+  _objUpdateNav();
+}
+function _objUpdateNav() {
+  document.getElementById('obj-prev')?.classList.toggle('hide', _objBack.length === 0);
+  document.getElementById('obj-next')?.classList.toggle('hide', _objFwd.length === 0);
+}
+// Called at the top of each fresh modal navigation: bank the outgoing view.
+function objNavTo() {
+  if (_objRestoring) return;
+  if (document.body.classList.contains('obj-open')
+      && objBody().innerHTML.trim()
+      && !objBody().querySelector('.obj-loading')) {
+    _objBack.push(_objSnap());
+    _objFwd.length = 0;
+  }
+  _objUpdateNav();
+}
+function objBackNav() { if (_objBack.length) { _objFwd.push(_objSnap()); _objApply(_objBack.pop()); } }
+function objFwdNav()  { if (_objFwd.length)  { _objBack.push(_objSnap()); _objApply(_objFwd.pop()); } }
+function objClearNav() { _objBack.length = 0; _objFwd.length = 0; _objUpdateNav(); }
 const objEsc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -3449,7 +3555,7 @@ async function objCover(uri) {
 // Track list (album/artist) — same row pattern as the tracklist (.tl-item). The
 // row is NOT click-to-play (that was ambiguous): all actions are explicit and
 // labelled behind the info badge (Play next / Play now).
-function objRenderTracks(tracks) {
+function objRenderTracks(tracks, kind = '') {
   if (!tracks.length) return '<div class="obj-empty">No tracks.</div>';
   return '<div class="obj-tracks">' + tracks.map((t, i) => {
     // Per-track O2M cache fields (status/mood/energy/local) → compact meta line.
@@ -3469,6 +3575,7 @@ function objRenderTracks(tracks) {
       uri: t.uri,
       durText: t.length ? msToMin(t.length) : '',
       statusHtml,
+      kind,
     });
     return `<div class="tl-item">${inner}</div>`;
   }).join('') + '</div>';
@@ -3516,6 +3623,7 @@ function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = 
 // DB-first (O2M cache); falls back to a live Spotify browse when not cached.
 async function openArtist(uri, seedName) {
   if (!uri) { setFeedback('No artist link'); return; }
+  objNavTo();
   const title = seedName || 'Artist';
   objSetHead('Artist', title, '');
   openObjPanel();
@@ -3558,6 +3666,7 @@ function renderAlbum(uri, { name = 'Album', artist = '', image = '', release = '
 // DB-first (O2M cache); falls back to a live Spotify lookup when not cached.
 async function openAlbum(uri, seed) {
   if (!uri) { setFeedback('No album link'); return; }
+  objNavTo();
   objSetHead('Album', seed?.name || 'Album', seed?.artist || '');
   openObjPanel();
   if (objShowCached('album:' + uri)) return;
@@ -3686,6 +3795,7 @@ async function saveBox() {
 
 async function openBox(uid) {
   if (!uid) return;
+  objNavTo();
   objSetHead('Box', 'Box', '');
   openObjPanel(); objSetActionUris([], 'box:' + uid); objLoading();
   try {
@@ -3696,6 +3806,61 @@ async function openBox(uid) {
     if (editUnlocked) { objBody().innerHTML = renderBoxEditor(info); wireBoxEditor(); }
     else { objBody().innerHTML = renderBoxReadonly(info); }
   } catch(e) { objBody().innerHTML = '<div class="obj-empty">Could not load box.</div>'; }
+}
+
+/* ── Content search ────────────────────────────────────────────────────────
+   Renders /api/search results into the shared object modal, grouped by type,
+   reusing the exact same row components (and therefore the exact same click
+   behaviour) as everywhere else: tracks/podcast/info/radio as .tl-item rows
+   with the ⓘ actions menu; artists/albums as .obj-nav rows whose title-click
+   opens the existing detail sheet. No new click wiring — the #obj-body
+   delegated handler already dispatches all of these. */
+function _searchTracksNorm(list) {
+  // objRenderTracks expects artists as [{name}]; search returns [string].
+  return (list || []).map(t => ({ ...t, artists: (t.artists || []).map(n => (typeof n === 'string' ? { name: n } : n)) }));
+}
+// Artists/albums rendered with the SAME .tl-item row as tracks (harmonized size)
+// and a kind-tagged ⓘ badge, so they get Play next/now + See details instead of
+// a bare chevron. No click-to-navigate on the row itself — everything is behind ⓘ.
+function _searchObjRows(items, kind) {
+  if (!items.length) return '';
+  return '<div class="obj-tracks">' + items.map(a => {
+    const inner = trackRowInnerHTML({
+      name: a.name,
+      artist: a.artist || '',
+      uri: a.uri,
+      kind,
+    });
+    return `<div class="tl-item">${inner}</div>`;
+  }).join('') + '</div>';
+}
+async function openSearch(q) {
+  objNavTo();
+  objSetHead('Search', q, '');
+  objSetActionUris([]);          // a search view has no single object to act on
+  openObjPanel();
+  objLoading('Searching…');
+  let d;
+  try { d = await fetch(API + '/search?q=' + encodeURIComponent(q)).then(r => r.json()); }
+  catch(e) { objBody().innerHTML = '<div class="obj-empty">Search failed.</div>'; return; }
+  if (!d || d.error) { objBody().innerHTML = `<div class="obj-empty">${objEsc((d && d.error) || 'Search failed')}</div>`; return; }
+
+  // Merge DB-cache + live Spotify per music type, dedup by uri (cache wins).
+  const merge = (a, b) => { const seen = new Set((a || []).map(x => x.uri)); return (a || []).concat((b || []).filter(x => !seen.has(x.uri))); };
+  const sp = d.spotify || {};
+  const tracks  = merge(d.tracks, sp.tracks);
+  const artists = merge(d.artists, sp.artists);
+  const albums  = merge(d.albums, sp.albums);
+  const sec = (label, html) => html ? `<div class="search-section-label">${label}</div>${html}` : '';
+
+  let html = '';
+  if (tracks.length)          html += sec(`Tracks (${tracks.length})`,   objRenderTracks(_searchTracksNorm(tracks), 'track'));
+  if (artists.length)         html += sec(`Artists (${artists.length})`, _searchObjRows(artists, 'artist'));
+  if (albums.length)          html += sec(`Albums (${albums.length})`,   _searchObjRows(albums, 'album'));
+  if ((d.podcasts||[]).length)html += sec(`Podcasts (${d.podcasts.length})`, objRenderTracks(_searchTracksNorm(d.podcasts), 'track'));
+  if ((d.info||[]).length)    html += sec(`Info (${d.info.length})`,     objRenderTracks(_searchTracksNorm(d.info), 'track'));
+  if ((d.radios||[]).length)  html += sec(`Radios (${d.radios.length})`, objRenderTracks(_searchTracksNorm(d.radios), 'radio'));
+  objBody().innerHTML = html || '<div class="obj-empty">No results.</div>';
 }
 
 // Open the album of the currently playing track (from the cover).
@@ -4239,6 +4404,8 @@ async function init() {
   document.getElementById('td-fav')?.addEventListener('click', toggleFavorite);
   // Object detail overlay (album · artist · box)
   document.getElementById('obj-close')?.addEventListener('click', closeObjPanel);
+  document.getElementById('obj-prev')?.addEventListener('click', objBackNav);
+  document.getElementById('obj-next')?.addEventListener('click', objFwdNav);
   document.getElementById('obj-actions')?.addEventListener('click', (e) => { e.stopPropagation(); openObjActions(e.currentTarget); });
   document.getElementById('obj-backdrop')?.addEventListener('click', closeObjPanel);
   document.getElementById('artist-name')?.addEventListener('click', () => {
@@ -4250,7 +4417,13 @@ async function init() {
   // or play a track. Same info badge + row pattern as the tracklist.
   document.getElementById('obj-body')?.addEventListener('click', (e) => {
     const ib = e.target.closest('.tl-info');
-    if (ib) { openActionMenu(ib, trackMenuItems(ib.dataset.uri, null)); return; }
+    if (ib) {
+      // data-kind (search results) → kind-aware menu (artist/album get Play +
+      // See details); otherwise a plain track menu (detail track lists).
+      const items = ib.dataset.kind ? objMenuItems(ib.dataset.uri, ib.dataset.kind)
+                                     : trackMenuItems(ib.dataset.uri, null);
+      openActionMenu(ib, items); return;
+    }
     const row = e.target.closest('[data-artist-uri],[data-album-uri],[data-box-uid]');
     if (!row) return;
     if (row.dataset.artistUri) return openArtist(row.dataset.artistUri, (row.textContent || '').trim());
@@ -4260,6 +4433,18 @@ async function init() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.body.classList.contains('obj-open')) closeObjPanel();
   });
+  // Content search: expand the field on the icon, debounce input, Enter = now.
+  const searchBox = document.getElementById('search-box');
+  const searchInput = document.getElementById('search-input');
+  let _searchTimer = null;
+  document.getElementById('btn-search')?.addEventListener('click', () => {
+    const open = searchBox.classList.toggle('open');
+    if (open) searchInput.focus();
+    else { searchInput.value = ''; clearTimeout(_searchTimer); }
+  });
+  const runSearch = () => { const q = searchInput.value.trim(); if (q.length >= 2) openSearch(q); };
+  searchInput?.addEventListener('input', () => { clearTimeout(_searchTimer); _searchTimer = setTimeout(runSearch, 350); });
+  searchInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(_searchTimer); runSearch(); } });
   // Inline editing of the current track's mood/energy/valence (edit mode).
   document.getElementById('td-energy')?.addEventListener('click', () => editTrackNumber('energy'));
   document.getElementById('td-valence')?.addEventListener('click', () => editTrackNumber('valence'));
@@ -4436,27 +4621,6 @@ function updateFsBtn() {
 }
 
 init();
-
-// TEMP diagnostic for the display-cutout investigation — remove once resolved.
-// Shows, directly on screen (no devtools needed on the phone), which display-mode
-// the browser actually granted and what env(safe-area-inset-top) resolves to.
-// If inset=0px while a notch/camera is visible, the OS isn't handing us that
-// strip at all (not a CSS/color issue) — display-mode is the thing to fix.
-(function cutoutDebug() {
-  const modes = ['fullscreen', 'standalone', 'minimal-ui', 'browser'];
-  const mode = modes.find(m => window.matchMedia(`(display-mode: ${m})`).matches) || '?';
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);' +
-    'min-height:2px;background:red;z-index:99999;pointer-events:none;';
-  document.body.appendChild(probe);
-  const label = document.createElement('div');
-  label.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0px);left:4px;z-index:99999;' +
-    'font:11px monospace;color:#0f0;background:#000;padding:2px 5px;pointer-events:none;';
-  const insetPx = getComputedStyle(probe).height;
-  label.textContent = `mode=${mode} inset-top=${insetPx}`;
-  document.body.appendChild(label);
-  console.log('[cutout-debug]', mode, insetPx);
-})();
 
 // PWA : enregistre le service worker (uniquement en contexte sécurisé HTTPS).
 // En HTTP, navigator.serviceWorker est absent ou register() échoue → ignoré.
