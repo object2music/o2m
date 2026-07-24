@@ -346,6 +346,10 @@ if __name__ == "__main__":
         except Exception as e:
             results['radios'] = []
         try:
+            results['podcast_channels'] = o2mHandler.search_podcast_channels(q)
+        except Exception as e:
+            results['podcast_channels'] = []
+        try:
             results['spotify'] = o2mHandler.spotifyHandler.search_music(q)
         except Exception as e:
             results['spotify'] = {'tracks': [], 'artists': [], 'albums': []}
@@ -395,6 +399,7 @@ if __name__ == "__main__":
             'option_valence': box.option_valence,
             'favorite': box.favorite,
             'public': box.public,
+            'image_url': box.image_url,
         })
 
     BOX_OPTION_TYPES = ['library', 'favorites', 'new', 'incoming', 'hidden', 'trash', 'podcast', 'info']
@@ -445,6 +450,8 @@ if __name__ == "__main__":
             box.option_energy = _clamp(data['option_energy'], 0, 1); changed['option_energy'] = box.option_energy
         if 'option_valence' in data:
             box.option_valence = _clamp(data['option_valence'], 0, 1); changed['option_valence'] = box.option_valence
+        if 'image_url' in data:
+            box.image_url = (data['image_url'] or '').strip() or None; changed['image_url'] = box.image_url
         try:
             box.save()
         except Exception as e:

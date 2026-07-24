@@ -402,24 +402,31 @@ class DatabaseHandler():
         return []
 
     def get_uris_newrecent(self, limit=10, days=60):
-        """Spotify tracks cached recently (last N days) that have never been played.
+        """Spotify tracks from the user's LIBRARY that have never been played — the
+        'newrecent:library' novelty source (auto-launch / nouveauté).
 
-        Source: tracks populated by warmup (albums, playlists, artists) that haven't
-        been played yet, or queued but play never counted (read_count still 0).
-        Podcasts are excluded implicitly by the spotify:track URI filter.
+        Library membership is the signal, not cache recency: a track counts as
+        library if it's a liked track (Track.liked == 1) OR belongs to a saved album
+        (Album.saved == 1). This deliberately EXCLUDES albums merely browsed/searched
+        (lazy backfill sets neither flag), so casual exploration doesn't pollute the
+        novelty pool. Podcasts are excluded implicitly by the spotify:track filter.
+
+        `days` is kept for signature compatibility but no longer constrains the query
+        (the old cached_at window starved the pool — warmup caches library albums once,
+        so their cached_at quickly ages out even though they're still fresh, unplayed
+        library content).
         """
-        date_now = datetime.datetime.utcnow().timestamp()
-        cutoff = date_now - (days * 86400)
+        saved_albums = Album.select(Album.id).where(Album.saved == 1)
         query = Track.select().where(
             (Track.uri % '%spotify:track%')
-            & (Track.cached_at >= cutoff)
             & (Track.read_count == 0)
             & (Track.skipped_count == 0)
+            & ((Track.liked == 1) | (Track.album_id.in_(saved_albums)))
         ).order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
         if results:
             uris = [o.uri for o in results]
-            print(f"newrecent:library {len(uris)} unplayed tracks cached in last {days}d")
+            print(f"newrecent:library {len(uris)} unplayed library tracks")
             return uris
         return []
 
@@ -1039,7 +1046,12 @@ class DatabaseHandler():
         episodes by name (Track.option_type). Radio isn't Track-backed (a live
         stream is never logged like a played track) — see
         O2mToMopidy.search_radio_stations for that one."""
-        results = {'tracks': [], 'artists': [], 'albums': [], 'podcasts': [], 'info': []}
+        results = {'tracks': [], 'artists': [], 'albums': [], 'podcasts': [], 'info': [], 'boxes': []}
+        for b in Box.select().where(Box.description.contains(query)).limit(limit):
+            results['boxes'].append({
+                'uid': b.uid, 'description': b.description,
+                'option_type': b.option_type, 'image': b.image_url,
+            })
         for t in (Track.select()
                   .where(Track.name.contains(query) & ~(Track.option_type.in_(['podcast', 'info'])))
                   .limit(limit)):

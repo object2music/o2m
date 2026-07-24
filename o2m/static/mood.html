@@ -233,6 +233,11 @@
     padding: 12px 16px; display: flex; flex-direction: column; gap: 10px;
     background: var(--surface);
   }
+  /* Per-track mood matrix inside the details panel. */
+  #td-matrix, .obj-tmatrix { width: 100%; max-width: 200px; aspect-ratio: 1 / 1;
+    margin: 8px auto 2px; display: block; touch-action: none; }
+  body.edit-mode #td-matrix, body.edit-mode .obj-tmatrix { cursor: crosshair; }
+  .tl-item.obj-openable { cursor: pointer; }
   #track-details .td-head {
     display: flex; align-items: center; justify-content: space-between;
     font-family: var(--font-head); font-weight: 700; font-size: 13px;
@@ -1066,6 +1071,8 @@
   }
   .tl-info:hover { color: var(--accent); opacity: 1; }
   .tl-info svg { width: 15px; height: 15px; display: block; }
+  .tl-thumb { width: 30px; height: 30px; object-fit: cover; border-radius: 2px; display: block;
+    background: var(--card); }
   .tl-item:last-child { border-bottom: none; }
 
   @media (max-width: 699px) {
@@ -1182,6 +1189,13 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .obj-sub { font-size: 12px; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Inline search field in the modal header (search views only). */
+  .obj-search-input { display: none; width: 100%; margin-top: 2px; padding: 4px 0;
+    background: none; border: none; border-bottom: 1.5px solid var(--accent);
+    color: var(--text); font-size: 17px; font-weight: 600; font-family: inherit; outline: none; }
+  .obj-search-input::placeholder { color: var(--muted); font-weight: 400; }
+  #obj-panel.search-mode .obj-title, #obj-panel.search-mode .obj-sub { display: none; }
+  #obj-panel.search-mode .obj-search-input { display: block; }
   #obj-close, #obj-actions, #obj-prev, #obj-next {
     flex-shrink: 0; background: none; border: none; color: var(--muted);
     cursor: pointer; padding: 2px 4px; display: inline-flex;
@@ -1327,21 +1341,33 @@
   .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
   @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
-  #basic-dials { display: flex; justify-content: space-around; align-items: flex-start; }
+  /* Playback status line above the actuators: animated eq (freezes when paused
+     via body.is-paused) + track/box counts + network dot. */
+  #basic-status {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .04em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  #basic-status .eq-icon { position: static; }
+  #basic-status .bs-sep { opacity: .5; }
+  #basic-dials { display: flex; justify-content: center; gap: 24px; align-items: flex-start; }
   /* Both dials' viewBox is wider (label ring): give them their own size so the
      knob circle renders as large as a plain dial (.dial-svg caps at 108px). */
   #dial-bmood, #dial-bdl { width: 172px; height: 123px; }
   #txt-bmood, #txt-bdl { font-size: 11px; letter-spacing: .04em; }
   /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
      Sits on the status line of the now-playing header. */
-  #net-dot {
+  /* Network quality dot — colour driven by html[data-net], so several dots
+     (now-playing header + basic status line) stay in sync from one probe. */
+  .net-dot {
     display: inline-block; width: 9px; height: 9px; border-radius: 50%;
-    margin-top: 4px; background: var(--border-strong); vertical-align: middle;
-    transition: background .3s;
+    background: var(--border-strong); vertical-align: middle; transition: background .3s;
   }
-  #net-dot[data-level="green"]  { background: #3fbf6f; }
-  #net-dot[data-level="orange"] { background: #f0a000; }
-  #net-dot[data-level="red"]    { background: #e0245e; }
+  #net-dot { margin-top: 4px; }
+  html[data-net="green"]  .net-dot { background: #3fbf6f; }
+  html[data-net="orange"] .net-dot { background: #f0a000; }
+  html[data-net="red"]    .net-dot { background: #e0245e; }
+  html.basic #net-dot { display: none; }   /* basic shows it in the status line instead */
 
   /* Detent labels around a basic-view dial (Mood, Opening level) — the active
      one lights up. Shared by both dials for a consistent appearance. */
@@ -1350,6 +1376,7 @@
     cursor: pointer; user-select: none; transition: fill .15s;
   }
   .bmood-lbl.on, .bdl-lbl.on { fill: var(--accent); font-weight: 700; }
+  .bdl-tick { fill: var(--muted); opacity: .6; }
   /* Footer view-switch: show the counterpart link only. Sits right after the O2M
      brand (order 0 + DOM position) and stands out in accent. The #footer-links
      prefix is required to out-rank `#footer-links .footer-link { order: 2 }`. */
@@ -1400,7 +1427,7 @@
           <span id="album-name"></span>
         </div>
         <div id="track-status-badge"></div>
-        <span id="net-dot" title="Network quality"></span>
+        <span id="net-dot" class="net-dot" title="Network quality"></span>
         <div id="track-tags-row"><span id="track-ev"></span></div>
       </div>
       <button id="btn-details" title="Track details &amp; edit" aria-label="Track details">
@@ -1452,6 +1479,9 @@
         <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
         <div><dt>Library</dt><dd id="td-library">—</dd></div>
       </dl>
+      <!-- Mood matrix for this track: shows its energy/valence position; drag to
+           reposition manually when editing is unlocked (saves to track_features). -->
+      <canvas id="td-matrix" title="Drag to set the track's mood (edit mode)"></canvas>
       <div class="td-actions-row">
         <div id="td-playlists" class="td-playlists"></div>
         <button id="btn-track-menu" class="footer-link track-menu-trigger" title="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>More</button>
@@ -1465,6 +1495,15 @@
 
   <!-- ══ Basic view (/basic) : 4 actuators + 2 dials — replaces the 3 columns ══ -->
   <div id="basic-section">
+    <div id="basic-status">
+      <span class="eq-icon" id="bs-eq" title="Playback"><i></i><i></i><i></i></span>
+      <span class="bs-sep">·</span>
+      <span id="bs-tracks">0 tracks</span>
+      <span class="bs-sep">·</span>
+      <span id="bs-boxes">0 boxes</span>
+      <span class="bs-sep">·</span>
+      <span class="net-dot" title="Network"></span>
+    </div>
     <div class="basic-toggles" id="basic-toggles">
       <button class="basic-toggle" data-cat="music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Music</button>
       <button class="basic-toggle" data-cat="podcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Podcast</button>
@@ -1485,8 +1524,11 @@
           <circle class="dial-fill" id="fill-bdl" cx="55" cy="55" r="42"
                   stroke="#00bcd4" transform="rotate(135 55 55)"/>
           <text class="bdl-lbl" data-i="0" x="16" y="99"  text-anchor="end">focused</text>
-          <text class="bdl-lbl" data-i="1" x="55" y="-4"  text-anchor="middle">regular</text>
-          <text class="bdl-lbl" data-i="2" x="94" y="99"  text-anchor="start">crazy</text>
+          <text class="bdl-lbl" data-i="2" x="55" y="-4"  text-anchor="middle">regular</text>
+          <text class="bdl-lbl" data-i="4" x="94" y="99"  text-anchor="start">crazy</text>
+          <!-- 2 extra (unlabelled) detents between the 3 words -->
+          <circle class="bdl-tick" cx="16" cy="39" r="2"/>
+          <circle class="bdl-tick" cx="94" cy="39" r="2"/>
           <circle id="knob-bdl" cx="55" cy="13" r="7" fill="#00bcd4"/>
           <text x="55" y="60" text-anchor="middle" fill="#eaeaea" font-weight="700" id="txt-bdl">regular</text>
         </svg>
@@ -1657,6 +1699,9 @@
         <span class="obj-kind" id="obj-kind">—</span>
         <span class="obj-title" id="obj-title">—</span>
         <span class="obj-sub" id="obj-sub"></span>
+        <!-- Editable query, shown only in search views (obj-panel.search-mode) so the
+             search can be refined without closing the modal. -->
+        <input id="obj-search-input" class="obj-search-input" type="search" placeholder="Search…" autocomplete="off" spellcheck="false">
       </div>
       <button id="obj-actions" class="hide" title="Actions" aria-label="Actions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
       <button id="obj-close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -1829,9 +1874,10 @@ async function netProbe() {
   let level = 'green';
   if (ms > 1200 || conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') level = 'red';
   else if (ms > 400 || conn.effectiveType === '3g') level = 'orange';
-  el.dataset.level = level;
-  el.title = 'Network: ' + (ms === Infinity ? 'offline'
+  document.documentElement.dataset.net = level;   // drives every .net-dot via CSS
+  const title = 'Network: ' + (ms === Infinity ? 'offline'
     : Math.round(ms) + ' ms' + (conn.effectiveType ? ' · ' + conn.effectiveType : ''));
+  document.querySelectorAll('.net-dot').forEach(d => d.title = title);
 }
 
 /* ── Basic view (/basic — default on mobile) ─────────────────────────────────
@@ -1869,9 +1915,12 @@ function setBasicMoodDial(i) {
 
 // Opening level, presented the same way as Mood (detent labels around the dial)
 // — appearance only, still the same continuous discover_level(0-10) underneath.
-const BASIC_DL_LEVELS = [['focused', 0], ['regular', 5], ['crazy', 10]];
+// 5 detents but only 3 are labelled (focused/regular/crazy at indices 0/2/4);
+// the 2 in-between (indices 1/3) are extra stops shown as ticks, their centre
+// text is the numeric discover_level. Same underlying discover_level(0-10).
+const BASIC_DL_LEVELS = [['focused', 0], ['', 3], ['regular', 5], ['', 8], ['crazy', 10]];
 function basicDlIndex() {
-  let best = 1, bd = Infinity;
+  let best = 2, bd = Infinity;
   BASIC_DL_LEVELS.forEach(([, dl], i) => {
     const d = Math.abs((appState.dl ?? 5) - dl);
     if (d < bd) { bd = d; best = i; }
@@ -1880,19 +1929,45 @@ function basicDlIndex() {
 }
 function setBasicDlDial(i) {
   setDial('bdl', i / (BASIC_DL_LEVELS.length - 1));
+  const [label, dl] = BASIC_DL_LEVELS[i];
   const txt = document.getElementById('txt-bdl');
-  if (txt) txt.textContent = BASIC_DL_LEVELS[i][0];
+  if (txt) txt.textContent = label || String(dl);
   document.querySelectorAll('.bdl-lbl').forEach(l =>
     l.classList.toggle('on', Number(l.dataset.i) === i));
 }
 
 let basicLimit = 30;   // fill target — refreshed from api_result_limit via /api/basic_boxes
 
+function updateBasicStatus() {
+  const tl = document.getElementById('bs-tracks');
+  const bx = document.getElementById('bs-boxes');
+  if (tl) tl.textContent = `${currentTracklistLength} track${currentTracklistLength === 1 ? '' : 's'}`;
+  if (bx && basicCats) {
+    const n = ['music', 'podcast', 'info', 'radio']
+      .reduce((s, c) => s + (basicCats[c] || []).filter(b => b.active).length, 0);
+    bx.textContent = `${n} box${n === 1 ? '' : 'es'}`;
+  }
+}
+
+// Called from the now-playing refresh (10s + WS events): re-syncs the basic box
+// states/count from the server so changes made elsewhere (e.g. the full view on
+// another device) show up, without refetching on every rapid WS event.
+let _lastBasicRefresh = 0;
+function syncBasicFromNowPlaying() {
+  if (!isBasic()) return;
+  updateBasicStatus();                       // cheap, local: track count always fresh
+  const now = Date.now();
+  if (now - _lastBasicRefresh < 3000) return;
+  _lastBasicRefresh = now;
+  refreshBasicToggles();                      // refetch /basic_boxes → box states + count
+}
+
 async function refreshBasicToggles() {
   if (!isBasic()) return;
   try {
     basicCats = await fetch(API + '/basic_boxes').then(r => r.json());
     if (basicCats.limit) basicLimit = basicCats.limit;
+    updateBasicStatus();
     document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn => {
       const boxes = basicCats[btn.dataset.cat] || [];
       btn.classList.toggle('on', boxes.some(b => b.active));
@@ -2002,17 +2077,24 @@ function switchView(toBasic, push = true) {
     setBasicMoodDial(basicMoodIndex());
     refreshBasicToggles();
   } else {
-    // Mobile accordion: #left-panel (Mood, containing the matrix canvas) starts
-    // collapsed (only Tracklist is open by default) — with display:none its
-    // offsetWidth is 0, so the canvas never resizes/repaints until a panel is
-    // opened. Coming from the mood-centric basic view, open Mood directly
-    // instead of leaving the matrix invisible behind a collapsed accordion row.
-    // No-op visually on desktop (.open only matters in the ≤699px CSS).
-    document.querySelectorAll('#main-cols .collapsible').forEach(p =>
-      p.classList.toggle('open', p.id === 'left-panel'));
+    // Entering full. Default to the Tracklist panel scrolled to the current
+    // track — UNLESS the user has already chosen a panel in full view this
+    // session (_fullPanelTouched), in which case that prior state is preserved
+    // (the DOM keeps the open panel across in-place switches). No-op visually on
+    // desktop (.open only matters in the ≤699px accordion CSS).
+    if (!_fullPanelTouched) {
+      document.querySelectorAll('#main-cols .collapsible').forEach(p =>
+        p.classList.toggle('open', p.id === 'tracklist-col'));
+      lastScrolledTlid = null;   // force renderTracklist / the scroll below to re-center
+      requestAnimationFrame(() => {
+        const cur = document.querySelector('#tracklist-wrap .tl-item.current');
+        if (cur) scrollTracklistToCurrent(cur);
+      });
+    }
   }
   try { fitHeroTitle(); } catch (e) {}
 }
+let _fullPanelTouched = false;   // set once the user opens an accordion panel in full view
 
 /* ── Mopidy RPC ── */
 // ─── Mopidy WebSocket (real-time, Iris-style) ───────────────────────────────
@@ -2126,15 +2208,20 @@ let lastTracklistSig = null;
 /* Shared track-row markup — the single pattern reused by the tracklist AND the
    object modal (album/artist). Returns the row inner HTML:
    number (or eq-icon) · name + artist (+ optional status) · duration · info badge. */
-const TL_INFO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+// Options trigger: a plus-in-circle (replaces the former info ⓘ) — same circular
+// footprint, used for every row's actions menu (tracklist, search, object lists).
+const TL_INFO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const CHEVRON_SVG = '<svg class="obj-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
 const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>';
 const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 const ICON_REMOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '' }) {
-  const numHtml = isCurrent ? '<span class="eq-icon"><i></i><i></i><i></i></span>' : indexLabel;
+function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '' }) {
+  // Visual in the leading slot: eq-icon if current, else a thumbnail when the
+  // item has one (album/artist/box cover), else the index number.
+  const numHtml = isCurrent ? '<span class="eq-icon"><i></i><i></i><i></i></span>'
+    : (image ? `<img class="tl-thumb" src="${objEsc(image)}" alt="" loading="lazy">` : indexLabel);
   const aCls = 'tl-artist' + (artistUri ? ' obj-link' : '');
   const aAttr = artistUri ? ` data-artist-uri="${objEsc(artistUri)}"` : '';
   // data-kind lets the shared ⓘ handler build a kind-aware menu (track vs
@@ -2415,6 +2502,7 @@ async function refreshNowPlaying() {
   }
 
   renderTracklist(tracks, tlid);
+  if (typeof syncBasicFromNowPlaying === 'function') syncBasicFromNowPlaying();   // basic status line: tracks + boxes
 }
 
 /* ── Media Session API (Bluetooth / notification controls) ── */
@@ -2678,25 +2766,68 @@ async function removeFromTracklist(tlid) {
    queue those, plus a "See details" that opens the existing detail sheet. */
 function objMenuItems(uri, kind) {
   const single = (kind === 'track' || kind === 'radio' || !kind);
-  const items = [
-    { label: 'Play next', icon: ICON_PLAYNEXT, action: () => single ? playNext(uri) : objPlayObject(uri, 'next') },
-    { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => single ? playNow(uri)  : objPlayObject(uri, 'now') },
-  ];
+  const items = [];
+  // A box isn't directly playable/queueable as a uri — it's activated as a whole.
+  if (kind !== 'box') {
+    items.push({ label: 'Play next', icon: ICON_PLAYNEXT, action: () => single ? playNext(uri) : objPlayObject(uri, 'next') });
+    items.push({ label: 'Play now',  icon: ICON_PLAYNOW,  action: () => single ? playNow(uri)  : objPlayObject(uri, 'now') });
+  }
   if (kind === 'artist') items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openArtist(uri) });
   if (kind === 'album')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openAlbum(uri, {}) });
+  if (kind === 'box')    items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openBox(uri.replace(/^box:/, '')) });
+  if (kind === 'podcast')items.push({ label: 'See episodes', icon: ICON_DETAILS, action: () => openPodcast(uri) });
+  if (kind === 'track')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
 }
+// Open an object's detail view from its (uri, kind) — used by the row-click handler.
+function objOpenByKind(uri, kind, name) {
+  if (kind === 'artist')  return openArtist(uri, name);
+  if (kind === 'album')   return openAlbum(uri, { name });
+  if (kind === 'box')     return openBox(String(uri).replace(/^box:/, ''));
+  if (kind === 'podcast') return openPodcast(uri, { name });
+  return renderTrackObj(uri, { name });
+}
+// Track "See details" → a track view hosted in the shared object modal (with the
+// per-track mood matrix). Same modal = same height + the ◂ ▸ nav back to results,
+// and it is immune to the now-playing refresh that drives #track-details.
+function openTrackDetailSheet(uri, seed) { renderTrackObj(uri, seed); }
 // Play an album/artist: resolve its tracks (mopidy expands album→tracks,
 // artist→all tracks, so cap it) then queue next / play now.
 async function objPlayObject(uri, mode) {
   try {
     const r = await rpc('core.library.lookup', { uris: [uri] });
     let uris = (r?.result?.[uri] || []).map(t => t.uri).filter(Boolean);
+    if (!uris.length) {   // directory-like uri (podcast feed) → browse to its episode tracks
+      const b = await rpc('core.library.browse', { uri });
+      uris = (b?.result || []).filter(x => x.type === 'track').map(x => x.uri).filter(Boolean);
+    }
     if (!uris.length) { setFeedback('No tracks'); return; }
     if (uris.length > 40) uris = uris.slice(0, 40);
     if (mode === 'now') await playNow(uris); else await playNext(uris);
   } catch (e) { setFeedback('Play error'); }
+}
+
+// Podcast channel detail: browse the mopidy-podcast feed into its episodes and
+// render them as a track list (same rows as an album). Reached from search (a
+// podcast row) — See episodes / row click.
+async function openPodcast(uri, seed) {
+  if (!uri) return;
+  objNavTo();
+  objSetHead('Podcast', seed?.name || 'Podcast', '');
+  objSetActionUris([], uri);
+  openObjPanel();
+  objLoading();
+  try {
+    const [browseR, cover] = await Promise.all([ rpc('core.library.browse', { uri }), objCover(uri) ]);
+    const eps = (browseR?.result || []).filter(r => r.type === 'track');
+    objSetActionUris(eps.map(e => e.uri).filter(Boolean), uri);
+    const coverHtml = cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : '';
+    let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Podcast')}</b>`
+      + `<span>${eps.length} episode${eps.length === 1 ? '' : 's'}</span></div></div>`;
+    html += objRenderTracks(eps.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: [] })), 'track');
+    objBody().innerHTML = html;
+  } catch (e) { objBody().innerHTML = '<div class="obj-empty">Could not load podcast.</div>'; }
 }
 
 /* Object-level actions (album / artist / box header, the ⋯ button) — Play next
@@ -2832,7 +2963,8 @@ async function renderTrackDetails(uri) {
   const set = (id, v) => { const el = document.getElementById(id); if (el && !el.querySelector('input,select')) el.textContent = v; };
   if (!uri) {
     ['td-type','td-energy','td-valence','td-mood','td-popularity','td-plays','td-library'].forEach(id => set(id, '—'));
-    detailsUri = null; favLocal = false; favSpotify = null; renderFav(); 
+    detailsUri = null; favLocal = false; favSpotify = null; renderFav();
+    tdMatrixEV = null; drawTdMatrix();
     return;
   }
   try {
@@ -2860,6 +2992,12 @@ async function renderTrackDetails(uri) {
     }
     detailsUri = uri;
     renderFav();
+    // Position the per-track matrix dot from the freshly fetched features (a
+    // pending manual edit for this same uri wins, so a drag isn't clobbered).
+    if (matrixFeatures[uri]) tdMatrixEV = { ...matrixFeatures[uri] };
+    else tdMatrixEV = (info.energy != null && info.valence != null)
+      ? { energy: info.energy, valence: info.valence } : null;
+    drawTdMatrix();
   } catch(e) {
     ['td-type','td-energy','td-valence','td-mood','td-popularity','td-plays','td-library'].forEach(id => set(id, '—'));
   }
@@ -3152,6 +3290,166 @@ function matrixEditTrack(canvas, e) {
   matrixFeatures[matrixCurUri] = { energy, valence };
   const set = (id, x) => { const el = document.getElementById(id); if (el) el.textContent = Math.round(x * 10) + '/10'; };
   set('td-energy', energy); set('td-valence', valence);
+}
+
+/* ── Per-track mood matrix (in the track-details panel) ──
+   Shows the details track's energy/valence as a draggable dot; dragging (in edit
+   mode) repositions it and saves to /api/track_features for detailsUri. Reuses
+   the theme quadrant colours / moodColor of the big matrix. */
+let tdMatrixEV = null;      // {energy, valence} of the track shown in #track-details
+const TD_PAD = 10;
+// Pure renderer: draws the energy(X)/valence(Y) quadrant matrix onto `canvas`,
+// with an optional {energy,valence} dot. Shared by the details panel and the
+// modal track view so every mood matrix looks and behaves identically.
+function drawMoodMatrix(canvas, ev, pad) {
+  if (!canvas) return;
+  pad = pad || 10;
+  const cssW = canvas.offsetWidth;
+  if (cssW <= 0) return;                       // panel hidden / not laid out
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(cssW * dpr)) { canvas.width = Math.round(cssW * dpr); canvas.height = canvas.width; }
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width / dpr, inner = W - 2 * pad;
+  const mx = pad + inner / 2, my = pad + inner / 2;
+  ctx.save(); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, W, W);
+  [[pad, pad, themeColors.qCalm], [mx, pad, themeColors.qHappy],
+   [pad, my, themeColors.qDark], [mx, my, themeColors.qEnergetic]]
+    .forEach(([x, y, c]) => { ctx.fillStyle = c; ctx.fillRect(x, y, inner / 2, inner / 2); });
+  ctx.strokeStyle = themeColors.line; ctx.lineWidth = 1; ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(mx, pad); ctx.lineTo(mx, pad + inner);
+  ctx.moveTo(pad, my); ctx.lineTo(pad + inner, my); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = themeColors.border; ctx.strokeRect(pad, pad, inner, inner);
+  ctx.fillStyle = themeColors.label; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.font = '700 9px ' + MX_FONT;
+  ctx.fillText('CALM', pad + inner * 0.25, pad + inner * 0.1);
+  ctx.fillText('HAPPY', pad + inner * 0.75, pad + inner * 0.1);
+  ctx.fillText('INTENSE', pad + inner * 0.25, pad + inner * 0.9);
+  ctx.fillText('ENERGETIC', pad + inner * 0.75, pad + inner * 0.9);
+  if (ev) {
+    const x = pad + ev.energy * inner, y = pad + (1 - ev.valence) * inner;
+    const col = moodColor(ev.energy, ev.valence, 1);
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fillStyle = themeColors.dotCore; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+  } else {
+    ctx.fillStyle = themeColors.axis; ctx.font = '10px ' + MX_FONT;
+    ctx.fillText(editUnlocked ? 'tap to set' : 'no mood data', mx, my);
+  }
+  ctx.restore();
+}
+// Map a pointer/touch event to an {energy,valence} position inside `canvas`.
+function _matrixEVFromEvent(canvas, e, pad) {
+  pad = pad || 10;
+  const rect = canvas.getBoundingClientRect();
+  const inner = rect.width - 2 * pad;
+  const px = (e.touches ? e.touches[0].clientX : e.clientX);
+  const py = (e.touches ? e.touches[0].clientY : e.clientY);
+  return {
+    energy:  Math.min(1, Math.max(0, (px - rect.left - pad) / inner)),
+    valence: Math.min(1, Math.max(0, 1 - (py - rect.top - pad) / inner)),
+  };
+}
+function drawTdMatrix() { drawMoodMatrix(document.getElementById('td-matrix'), tdMatrixEV, TD_PAD); }
+function _tdMatrixSet(e) {
+  tdMatrixEV = _matrixEVFromEvent(document.getElementById('td-matrix'), e, TD_PAD);
+  const set = (id, x) => { const el = document.getElementById(id); if (el && !el.querySelector('input,select')) el.textContent = Math.round(x * 10) + '/10'; };
+  set('td-energy', tdMatrixEV.energy); set('td-valence', tdMatrixEV.valence);
+  drawTdMatrix();
+}
+async function _tdMatrixSave() {
+  if (!editUnlocked || !detailsUri || !tdMatrixEV) return;
+  try {
+    const r = await fetch(API + '/track_features', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ uri: detailsUri, energy: tdMatrixEV.energy, valence: tdMatrixEV.valence }),
+    });
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
+    setFeedback('Energy / valence saved');
+    matrixFeatures[detailsUri] = { energy: tdMatrixEV.energy, valence: tdMatrixEV.valence };  // sync the big matrix
+  } catch (e) { setFeedback('Save error'); }
+}
+function initTdMatrix() {
+  const canvas = document.getElementById('td-matrix');
+  if (!canvas) return;
+  let active = false;
+  canvas.addEventListener('pointerdown', e => {
+    if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+    active = true; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} _tdMatrixSet(e);
+  });
+  canvas.addEventListener('pointermove', e => { if (active) { e.preventDefault(); _tdMatrixSet(e); } });
+  canvas.addEventListener('pointerup', () => { if (active) { active = false; _tdMatrixSave(); } });
+  new ResizeObserver(drawTdMatrix).observe(canvas);
+}
+
+/* ── Modal track view (obj-panel) — the track "See details" sheet.
+   Lives in the shared object modal so it inherits the ◂ ▸ nav bar and the same
+   height as album/artist/box; and — unlike the now-playing #track-details panel —
+   it is never overwritten by the now-playing refresh (no more value reset). */
+let objTMatrixEV = null, objTMatrixUri = null;
+function drawObjTMatrix() { drawMoodMatrix(document.getElementById('obj-tmatrix'), objTMatrixEV, TD_PAD); }
+function initObjTMatrix() {
+  const canvas = document.getElementById('obj-tmatrix');
+  if (!canvas) return;
+  let active = false;
+  canvas.addEventListener('pointerdown', e => {
+    if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+    active = true; try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    objTMatrixEV = _matrixEVFromEvent(canvas, e, TD_PAD); drawObjTMatrix();
+  });
+  canvas.addEventListener('pointermove', e => { if (active) { e.preventDefault(); objTMatrixEV = _matrixEVFromEvent(canvas, e, TD_PAD); drawObjTMatrix(); } });
+  canvas.addEventListener('pointerup', async () => {
+    if (!active) return; active = false;
+    if (!editUnlocked || !objTMatrixUri || !objTMatrixEV) return;
+    try {
+      const r = await fetch(API + '/track_features', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ uri: objTMatrixUri, energy: objTMatrixEV.energy, valence: objTMatrixEV.valence }),
+      });
+      if (r.status === 401) { setFeedback('Editing not authorized'); return; }
+      setFeedback('Energy / valence saved');
+      matrixFeatures[objTMatrixUri] = { ...objTMatrixEV };   // sync the big matrix
+    } catch (e) { setFeedback('Save error'); }
+  });
+  new ResizeObserver(drawObjTMatrix).observe(canvas);
+}
+async function renderTrackObj(uri, seed) {
+  objNavTo();
+  objSetHead('Track', seed?.name || 'Track', seed?.artist || '');
+  objSetActionUris([uri], uri);
+  openObjPanel();
+  objLoading();
+  let info = {}, tr = null, cover = '';
+  try {
+    const [i, look, cov] = await Promise.all([
+      fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json()).catch(() => ({})),
+      rpc('core.library.lookup', { uris: [uri] }).then(r => (r?.result?.[uri] || [])[0]).catch(() => null),
+      objCover(uri),
+    ]);
+    info = i || {}; tr = look; cover = cov;
+  } catch (e) {}
+  const name = (tr && tr.name) || seed?.name || 'Track';
+  const artist = (tr && (tr.artists || []).map(a => a.name).join(', ')) || seed?.artist || '';
+  objSetHead('Track', name, artist);
+  objTMatrixUri = uri;
+  objTMatrixEV = matrixFeatures[uri] ? { ...matrixFeatures[uri] }
+    : (info.energy != null && info.valence != null) ? { energy: info.energy, valence: info.valence } : null;
+  const ev = x => (x === null || x === undefined) ? '—' : Math.round(x * 10) + '/10';
+  const coverHtml = cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : '';
+  const dlRows = [
+    ['Status', info.option_type || '—'],
+    ['Energy', ev(info.energy)],
+    ['Valence', ev(info.valence)],
+    ['Mood', info.mood || '—'],
+    ['Popularity', ev(info.popularity)],
+    ['Plays', (info.read_count_end ?? 0) + ''],
+    ['Library', info.library || '—'],
+  ];
+  const dl = `<div class="obj-dl">` + dlRows.map(([k, v]) => `<div><dt>${k}</dt><dd>${objEsc(v)}</dd></div>`).join('') + `</div>`;
+  objBody().innerHTML =
+    `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b><span>${objEsc(artist)}</span></div></div>`
+    + dl
+    + `<canvas id="obj-tmatrix" class="obj-tmatrix" title="Drag to set the track's mood (edit mode)"></canvas>`;
+  initObjTMatrix();
+  requestAnimationFrame(drawObjTMatrix);
 }
 
 async function saveCurrentTrackFeatures() {
@@ -3494,6 +3792,12 @@ function objSetHead(kind, title, sub) {
   document.getElementById('obj-kind').textContent  = kind;
   document.getElementById('obj-title').textContent = title || '—';
   document.getElementById('obj-sub').textContent   = sub || '';
+  // Search views get an editable query field in the header (refine without closing).
+  // Centralised here so it also re-applies when a search view is restored via ◂ ▸.
+  const searchMode = (kind === 'Search');
+  document.getElementById('obj-panel')?.classList.toggle('search-mode', searchMode);
+  const si = document.getElementById('obj-search-input');
+  if (si && searchMode && document.activeElement !== si) si.value = title || '';
 }
 function objBody()  { return document.getElementById('obj-body'); }
 function objLoading(msg) { objBody().innerHTML = `<div class="obj-loading">${msg || 'Loading…'}</div>`; }
@@ -3521,6 +3825,13 @@ function _objApply(s) {
   objSetActionUris(s.playUris, s.ownUri);
   _objRestoring = false;
   _objUpdateNav();
+  // A restored track view carries an inert canvas (innerHTML only) → re-wire it.
+  if (document.getElementById('obj-tmatrix')) {
+    objTMatrixUri = s.ownUri;
+    if (matrixFeatures[s.ownUri]) objTMatrixEV = { ...matrixFeatures[s.ownUri] };
+    initObjTMatrix();
+    requestAnimationFrame(drawObjTMatrix);
+  }
 }
 function _objUpdateNav() {
   document.getElementById('obj-prev')?.classList.toggle('hide', _objBack.length === 0);
@@ -3555,7 +3866,7 @@ async function objCover(uri) {
 // Track list (album/artist) — same row pattern as the tracklist (.tl-item). The
 // row is NOT click-to-play (that was ambiguous): all actions are explicit and
 // labelled behind the info badge (Play next / Play now).
-function objRenderTracks(tracks, kind = '') {
+function objRenderTracks(tracks, kind = '', placeholder = false) {
   if (!tracks.length) return '<div class="obj-empty">No tracks.</div>';
   return '<div class="obj-tracks">' + tracks.map((t, i) => {
     // Per-track O2M cache fields (status/mood/energy/local) → compact meta line.
@@ -3576,8 +3887,12 @@ function objRenderTracks(tracks, kind = '') {
       durText: t.length ? msToMin(t.length) : '',
       statusHtml,
       kind,
+      // In search results (placeholder=true) fall back to a reserve cover instead
+      // of the index; album/artist track lists keep the meaningful track number.
+      image: t.image || (placeholder ? placeholderForUri(t.uri) : ''),
     });
-    return `<div class="tl-item">${inner}</div>`;
+    // obj-openable → clicking the row (not the + / artist link) opens the track detail.
+    return `<div class="tl-item obj-openable" data-uri="${objEsc(t.uri)}" data-kind="${objEsc(kind || 'track')}">${inner}</div>`;
   }).join('') + '</div>';
 }
 
@@ -3613,9 +3928,9 @@ function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = 
   if (tracks.length)
     html += `<div><div class="obj-section-label">Tracks</div>${objRenderTracks(tracks)}</div>`;
   if (albums.length)
-    html += `<div><div class="obj-section-label">Albums</div><div class="obj-tracks">`
-      + albums.map(a => `<div class="obj-row obj-clickable obj-nav" data-album-uri="${objEsc(a.uri)}" data-name="${objEsc(a.name)}"><span class="ot-name">${objEsc(a.name)}</span>${CHEVRON_SVG}</div>`).join('')
-      + `</div></div>`;
+    html += `<div><div class="obj-section-label">Albums</div>`
+      + _searchObjRows(albums.map(a => ({ uri: a.uri, name: a.name, image: a.image || '' })), 'album')
+      + `</div>`;
   objBody().innerHTML = html || '<div class="obj-empty">No data.</div>';
   objStore('artist:' + uri, 'Artist', name, '');
 }
@@ -3735,6 +4050,7 @@ function renderBoxEditor(info) {
   const chk = (id, on) => `<input type="checkbox" id="bx-${id}"${on ? ' checked' : ''}>`;
   const field = (label, ctrl, cls) => `<div class="obj-field${cls ? ' ' + cls : ''}"><label class="obj-field-label">${label}</label><div class="obj-field-ctrl">${ctrl}</div></div>`;
   return field('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(info.description || '')}">`)
+    + field('Image URL', `<input class="bx-input bx-wide" type="url" id="bx-image_url" placeholder="https://…" value="${objEsc(info.image_url || '')}">`)
     + field('Type', typeSel)
     + field('Discover level', num('option_discover_level', info.option_discover_level, 'min="0" max="10" step="1"'))
     + field('Sort', sortSel)
@@ -3773,6 +4089,7 @@ async function saveBox() {
   const payload = {
     uid: _boxEditUid,
     description: el('description')?.value ?? '',
+    image_url: el('image_url')?.value ?? '',
     option_type: el('option_type')?.value,
     option_sort: el('option_sort')?.value ?? '',
     option_discover_level: numOrNull(el('option_discover_level')),
@@ -3830,16 +4147,20 @@ function _searchObjRows(items, kind) {
       artist: a.artist || '',
       uri: a.uri,
       kind,
+      image: a.image || placeholderForUri(a.uri),   // default cover from the reserve set
     });
-    return `<div class="tl-item">${inner}</div>`;
+    // obj-openable + data-* → a click anywhere on the row (except the +) opens the
+    // object's detail view, in addition to the + menu. data-name seeds the header
+    // so the title shows instantly (esp. podcasts, whose name isn't refetched).
+    return `<div class="tl-item obj-openable" data-uri="${objEsc(a.uri)}" data-kind="${objEsc(kind)}" data-name="${objEsc(a.name || '')}">${inner}</div>`;
   }).join('') + '</div>';
 }
-async function openSearch(q) {
-  objNavTo();
+async function openSearch(q, opts) {
+  const inPlace = !!(opts && opts.inPlace);   // live-edit from the header field: no nav push, no spinner
+  if (!inPlace) objNavTo();
   objSetHead('Search', q, '');
   objSetActionUris([]);          // a search view has no single object to act on
-  openObjPanel();
-  objLoading('Searching…');
+  if (!inPlace) { openObjPanel(); objLoading('Searching…'); }
   let d;
   try { d = await fetch(API + '/search?q=' + encodeURIComponent(q)).then(r => r.json()); }
   catch(e) { objBody().innerHTML = '<div class="obj-empty">Search failed.</div>'; return; }
@@ -3853,13 +4174,24 @@ async function openSearch(q) {
   const albums  = merge(d.albums, sp.albums);
   const sec = (label, html) => html ? `<div class="search-section-label">${label}</div>${html}` : '';
 
+  const boxToRow = b => ({ uri: 'box:' + b.uid, name: b.description || b.uid, image: b.image || '' });
+
   let html = '';
-  if (tracks.length)          html += sec(`Tracks (${tracks.length})`,   objRenderTracks(_searchTracksNorm(tracks), 'track'));
+  if (tracks.length)          html += sec(`Tracks (${tracks.length})`,   objRenderTracks(_searchTracksNorm(tracks), 'track', true));
   if (artists.length)         html += sec(`Artists (${artists.length})`, _searchObjRows(artists, 'artist'));
   if (albums.length)          html += sec(`Albums (${albums.length})`,   _searchObjRows(albums, 'album'));
-  if ((d.podcasts||[]).length)html += sec(`Podcasts (${d.podcasts.length})`, objRenderTracks(_searchTracksNorm(d.podcasts), 'track'));
-  if ((d.info||[]).length)    html += sec(`Info (${d.info.length})`,     objRenderTracks(_searchTracksNorm(d.info), 'track'));
-  if ((d.radios||[]).length)  html += sec(`Radios (${d.radios.length})`, objRenderTracks(_searchTracksNorm(d.radios), 'radio'));
+  // Podcasts: channels (browsable feeds, from #Label lines) first, then episodes.
+  const chans = d.podcast_channels || [];
+  const podCount = chans.length + (d.podcasts || []).length;
+  if (podCount) {
+    let podHtml = '';
+    if (chans.length)           podHtml += _searchObjRows(chans, 'podcast');
+    if ((d.podcasts||[]).length)podHtml += objRenderTracks(_searchTracksNorm(d.podcasts), 'track', true);
+    html += sec(`Podcasts (${podCount})`, podHtml);
+  }
+  if ((d.info||[]).length)    html += sec(`Info (${d.info.length})`,     objRenderTracks(_searchTracksNorm(d.info), 'track', true));
+  if ((d.radios||[]).length)  html += sec(`Radios (${d.radios.length})`, objRenderTracks(_searchTracksNorm(d.radios), 'radio', true));
+  if ((d.boxes||[]).length)   html += sec(`Boxes (${d.boxes.length})`,   _searchObjRows(d.boxes.map(boxToRow), 'box'));
   objBody().innerHTML = html || '<div class="obj-empty">No results.</div>';
 }
 
@@ -3880,7 +4212,7 @@ async function loadBoxes() {
       const btn = document.createElement('button');
       btn.className = 'box-btn';
       btn.innerHTML = `<span class="box-swatch sw-${box.option_type}"></span><span class="box-name">${box.description}</span>`
-        + `<span class="box-info-btn" role="button" tabindex="0" title="Box details" aria-label="Box details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>`;
+        + `<span class="box-info-btn" role="button" tabindex="0" title="Box details" aria-label="Box details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span>`;
       btn.dataset.uid = box.uid;
       btn.title = box.option_type;
       btn.addEventListener('click', (e) => {
@@ -4299,6 +4631,7 @@ function setupCollapsibles() {
         || e.target.closest('#btn-reset-mood')) return;   // don't toggle on a header action
     const panel = h.closest('.collapsible');
     if (!panel) return;
+    _fullPanelTouched = true;   // remember the user's explicit choice as prior state
     const willOpen = !panel.classList.contains('open');
     document.querySelectorAll('#main-cols .collapsible').forEach(p =>
       p.classList.toggle('open', p === panel && willOpen));
@@ -4323,6 +4656,7 @@ async function init() {
   makeDraggable('valence', v => { appState.valence = v; });
   makeDraggable('dl',     v => { appState.dl = Math.round(v * 10); });
   initMatrix();
+  initTdMatrix();
 
   document.getElementById('btn-clear-tl').addEventListener('click', clearTracklist);
   document.getElementById('btn-clear-boxes')?.addEventListener('click', (e) => { e.stopPropagation(); clearAllBoxes(); });
@@ -4424,6 +4758,11 @@ async function init() {
                                      : trackMenuItems(ib.dataset.uri, null);
       openActionMenu(ib, items); return;
     }
+    // Click on a harmonized object row (not the ⓘ, not the artist sublink) → open its detail.
+    const orow = e.target.closest('.tl-item.obj-openable');
+    if (orow && !e.target.closest('.tl-artist[data-artist-uri]')) {
+      objOpenByKind(orow.dataset.uri, orow.dataset.kind, orow.dataset.name); return;
+    }
     const row = e.target.closest('[data-artist-uri],[data-album-uri],[data-box-uid]');
     if (!row) return;
     if (row.dataset.artistUri) return openArtist(row.dataset.artistUri, (row.textContent || '').trim());
@@ -4443,8 +4782,17 @@ async function init() {
     else { searchInput.value = ''; clearTimeout(_searchTimer); }
   });
   const runSearch = () => { const q = searchInput.value.trim(); if (q.length >= 2) openSearch(q); };
-  searchInput?.addEventListener('input', () => { clearTimeout(_searchTimer); _searchTimer = setTimeout(runSearch, 350); });
+  searchInput?.addEventListener('input', () => { clearTimeout(_searchTimer); _searchTimer = setTimeout(runSearch, 550); });
   searchInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(_searchTimer); runSearch(); } });
+  // Header search field: refine the query in place (no modal close, no nav push).
+  const objSearchInput = document.getElementById('obj-search-input');
+  let _objSearchTimer = null;
+  const runObjSearch = () => { const q = objSearchInput.value.trim(); if (q.length >= 2) openSearch(q, { inPlace: true }); };
+  objSearchInput?.addEventListener('input', () => { clearTimeout(_objSearchTimer); _objSearchTimer = setTimeout(runObjSearch, 550); });
+  objSearchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { clearTimeout(_objSearchTimer); runObjSearch(); }
+    else if (e.key === 'Escape') { e.stopPropagation(); objSearchInput.blur(); }   // blur, don't close the modal
+  });
   // Inline editing of the current track's mood/energy/valence (edit mode).
   document.getElementById('td-energy')?.addEventListener('click', () => editTrackNumber('energy'));
   document.getElementById('td-valence')?.addEventListener('click', () => editTrackNumber('valence'));

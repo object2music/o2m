@@ -81,6 +81,7 @@ class Box(BaseModel):
     option_valence = FloatField(null=True)  # Target valence/ambiance 0.0-1.0 (NULL = inherit global mood context)
     favorite= IntegerField(default=0) #Bool (is the box pinned or not)
     public= IntegerField(default=0) #Bool (is the content shared or not)
+    image_url = TextField(null=True)  # optional cover/thumbnail URL for the box
 
     '''def __str__(self):
         #return "TAG UID : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(self.uid, self.data, self.description, self.read_count, self.option_type)
@@ -480,7 +481,11 @@ def _migration_v12(migrator):
     _add_column_safe(migrator, 'track', 'mood_edited_at', TimestampField(null=True, utc=True))
 
 
-SCHEMA_VERSION = 12
+def _migration_v13(migrator):
+    _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
+
+
+SCHEMA_VERSION = 13
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -495,6 +500,7 @@ _MIGRATIONS = [
     (10, "option_type_normal_to_library", _migration_v10),
     (11, "track_popularity_column", _migration_v11),
     (12, "track_mood_edited_at_column", _migration_v12),
+    (13, "box_image_url_column", _migration_v13),
 ]
 
 

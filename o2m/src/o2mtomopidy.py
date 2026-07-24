@@ -867,6 +867,36 @@ class O2mToMopidy:
                     label = None
         return results
 
+    def search_podcast_channels(self, query):
+        """Keyword search over podcast *channel* labels — the podcast half of the
+        content-search feature. Like radios, a channel has no Track record: it's a
+        '#Label' comment line immediately preceding an active 'podcast+<feed_url>'
+        line inside a box's data (podcast/info/hidden boxes). Returns the
+        mopidy-podcast URI (O2M's '?max_results=' hint stripped) so the result can
+        be browsed into episodes and played directly. Disabled ('#podcast+…') lines
+        are skipped."""
+        q = (query or '').lower()
+        if not q:
+            return []
+        results, seen = [], set()
+        for box in Box.select():
+            label = None
+            for raw in (box.data or '').splitlines():
+                line = raw.strip()
+                if not line:
+                    continue
+                if line.startswith('podcast+'):
+                    feed = re.sub(r'[?&]max_results=\d+', '', line)
+                    if label and q in label.lower() and feed not in seen:
+                        seen.add(feed)
+                        results.append({'uri': feed, 'name': label, 'box_uid': box.uid})
+                    label = None
+                elif line.startswith('#') and 'podcast+' not in line and 'yt' not in line.lower():
+                    label = line.lstrip('#').strip()
+                else:
+                    label = None
+        return results[:20]
+
     def _pick_box_by_recency(self, boxes):
         """Recency × chance: rank by last_read_date, halving weights per rank."""
         def ts(b):
