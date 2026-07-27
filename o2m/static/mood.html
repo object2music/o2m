@@ -182,6 +182,10 @@
   html, body { height: 100%; }
   body { background: var(--bg); color: var(--text); font-family: var(--font);
          display: flex; flex-direction: column; overflow: hidden; height: 100dvh;
+         /* svh = smallest viewport (URL bar shown): stable from the very first paint,
+            unlike dvh which some mobile browsers mis-measure on load → the footer was
+            pushed just below the fold until a reflow (refresh) fixed it. */
+         height: 100svh;
          transition: background .25s, color .25s; }
   /* NB: do NOT add horizontal padding to <body> — several rows use a full-bleed
      width:100vw trick (e.g. mobile #controls) that would then overflow by the
@@ -310,9 +314,12 @@
   .pl-trigger .pl-caret { flex-shrink: 0; }
   /* Fixed-position dropdown (same pattern as footer "More") */
   .pl-dropdown {
-    position: fixed; z-index: 200;
+    /* Same stacking level as .track-menu-dropdown: the picker now also lives in
+       the object modal (#obj-panel z-index 210), so at 200 it opened BEHIND the
+       sheet. max-height is set inline from the space actually available. */
+    position: fixed; z-index: 300;
     background: var(--surface); border: 1px solid var(--border);
-    padding: 8px; min-width: 200px; max-width: 280px; max-height: 50vh; overflow-y: auto;
+    padding: 8px; min-width: 200px; max-width: 280px; overflow-y: auto;
     display: flex; flex-direction: column; gap: 4px;
   }
   .pl-dropdown label {
@@ -357,6 +364,17 @@
   #album-name:not(:empty)::before { content: "· "; color: var(--muted); }
   #album-name:hover { color: var(--text); text-decoration: underline; }
   #album-name:empty { display: none; }
+
+  /* Status badge + network dot share one row. Both used to be siblings in the
+     inline flow, so a long badge (which wraps on mobile) pushed the dot onto a
+     line of its own. A flex row keeps them together: the badge takes the space it
+     needs, the dot stays pinned beside it and never wraps away. */
+  #status-line {
+    display: flex; align-items: flex-start; gap: 7px;
+    margin-top: 5px; min-width: 0;
+  }
+  #status-line #track-status-badge { margin-top: 0; min-width: 0; }
+  #status-line #net-dot { margin-top: 3px; flex-shrink: 0; }
 
   /* track status badge — texte plat lisible, avec carré de couleur en tête */
   #track-status-badge {
@@ -577,10 +595,18 @@
     #now-playing { flex: 1 1 0; min-width: 0; }
     #controls, #progress-wrap { flex: 0 0 100%; width: 100%; }
     #controls {
-      flex-wrap: wrap; gap: 16px;
-      padding: 8px max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
+      /* Vertical rhythm of the 3 control lines (play / volume / progress). The
+         play row is kept tight — 2px above and a small row-gap below — and the
+         space that frees up is handed to the two gaps underneath: volume↔progress
+         and progress↔next row (both set on #progress-wrap's padding). */
+      flex-wrap: wrap; column-gap: 16px; row-gap: 7px;
+      padding: 2px max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
+    /* Receives the space reclaimed around the play row: padding-top opens the
+       volume↔progress gap, padding-bottom the progress↔next-row one, so the two
+       lower gaps read as even instead of the play row hogging the air. */
+    #progress-wrap { padding-top: 16px; padding-bottom: 14px; }
 
     /* ── Mobile accordion: Boxes / Mood / Tracklist ──
        The 3 headers are always-visible fixed rows that never move; one section is
@@ -1006,7 +1032,8 @@
       font-size: 14px; margin: 0;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    [data-theme="overprint"] #track-status-badge { margin-top: 4px; }
+    /* Spacing now lives on the badge+dot row wrapper (see #status-line). */
+    [data-theme="overprint"] #status-line { margin-top: 4px; }
     [data-theme="overprint"] #track-tags-row { margin-top: 6px; }
     [data-theme="overprint"] #controls {
       justify-content: flex-start; flex-wrap: nowrap; gap: 12px; padding: 8px 0 0;
@@ -1111,11 +1138,13 @@
   }
 
   /* Inline editing of the current track's energy / valence / mood (edit mode). */
-  body.edit-mode #td-energy, body.edit-mode #td-valence, body.edit-mode #td-mood {
+  body.edit-mode #td-energy, body.edit-mode #td-valence, body.edit-mode #td-mood,
+  body.edit-mode #obj-td-energy, body.edit-mode #obj-td-valence, body.edit-mode #obj-td-mood {
     cursor: pointer; border-bottom: 1px dotted var(--border-strong);
   }
-  body.edit-mode #td-energy:hover, body.edit-mode #td-valence:hover,
-  body.edit-mode #td-mood:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  body.edit-mode #td-energy:hover, body.edit-mode #td-valence:hover, body.edit-mode #td-mood:hover,
+  body.edit-mode #obj-td-energy:hover, body.edit-mode #obj-td-valence:hover,
+  body.edit-mode #obj-td-mood:hover { color: var(--accent); border-bottom-color: var(--accent); }
   .td-edit-input, .td-edit-select {
     font: inherit; font-family: var(--font-mono); width: 56px;
     background: var(--card); color: var(--text); border: 1px solid var(--accent);
@@ -1312,7 +1341,10 @@
     /* Shrinkable with internal scroll, like the full-view accordion — otherwise on
        short viewports the section's natural height pushes the footer below the
        fold of the overflow-hidden #scroll-area (footer unreachable on phones). */
-    flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    /* overflow-x:hidden is required: with only overflow-y:auto set, CSS computes
+       overflow-x to 'auto' too → a phantom horizontal scrollbar appeared whenever
+       the dials row was a few px wider than the section. */
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
   }
   .basic-toggles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
     position: relative; }   /* anchor for the central ALL meta-button */
@@ -1426,8 +1458,10 @@
           <span id="artist-name">O2M</span>
           <span id="album-name"></span>
         </div>
-        <div id="track-status-badge"></div>
-        <span id="net-dot" class="net-dot" title="Network quality"></span>
+        <div id="status-line">
+          <div id="track-status-badge"></div>
+          <span id="net-dot" class="net-dot" title="Network quality"></span>
+        </div>
         <div id="track-tags-row"><span id="track-ev"></span></div>
       </div>
       <button id="btn-details" title="Track details &amp; edit" aria-label="Track details">
@@ -2687,10 +2721,25 @@ function _actionMenuOutside(e) {
       && !e.target.closest('.tl-info') && !e.target.closest('#obj-actions')
       && !e.target.closest('#btn-track-menu')) _closeActionMenu();
 }
-function _positionMenu(menu, btn) {
+/* Place a fixed popup under its trigger — or above it when there isn't enough
+   room below (rows near the bottom of a list, which is where the ⊕/ⓘ buttons
+   usually are). max-height is capped to the space available in the chosen
+   direction so the menu is always fully reachable by its own scroll.
+   The popup must already be in the DOM: scrollHeight is measured here. */
+function _placePopup(el, btn) {
   const rect = btn.getBoundingClientRect();
-  menu.style.right = (window.innerWidth - rect.right) + 'px';
-  menu.style.top   = (rect.bottom + 4) + 'px';
+  el.style.right = (window.innerWidth - rect.right) + 'px';
+  const spaceBelow = window.innerHeight - rect.bottom - 8;
+  const spaceAbove = rect.top - 8;
+  if (el.scrollHeight > spaceBelow && spaceAbove > spaceBelow) {
+    el.style.top = 'auto';
+    el.style.bottom    = (window.innerHeight - rect.top + 4) + 'px';
+    el.style.maxHeight = Math.max(120, spaceAbove) + 'px';
+  } else {
+    el.style.bottom = 'auto';
+    el.style.top       = (rect.bottom + 4) + 'px';
+    el.style.maxHeight = Math.max(120, spaceBelow) + 'px';
+  }
 }
 function openActionMenu(triggerBtn, items) {
   if (_actionMenuEl) { _closeActionMenu(); return; }
@@ -2701,8 +2750,9 @@ function openActionMenu(triggerBtn, items) {
     `<button type="button" data-i="${i}">${it.icon}${objEsc(it.label)}</button>`).join('');
   items.forEach((it, i) => menu.querySelector(`[data-i="${i}"]`)
     .addEventListener('click', () => { it.action(); _closeActionMenu(); }));
-  _positionMenu(menu, triggerBtn);
+  // Append first: _placePopup measures the menu's height to decide up vs down.
   document.body.appendChild(menu);
+  _placePopup(menu, triggerBtn);
   _actionMenuEl = menu;
   triggerBtn.setAttribute?.('aria-expanded', 'true');
   setTimeout(() => document.addEventListener('click', _actionMenuOutside, true), 0);
@@ -2750,6 +2800,7 @@ function trackMenuItems(uri, tlid) {
     { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => playNow(uri) },
   ];
   if (tlid != null) items.push({ label: 'Remove', icon: ICON_REMOVE, action: () => removeFromTracklist(tlid) });
+  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
 }
@@ -2876,11 +2927,22 @@ async function playNow(uri) {
   } catch(e) { setFeedback('Play error'); }
 }
 
-async function renderPlaylistEditor(uri) {
-  const box = document.getElementById('td-playlists');
-  if (!box) return;
+/* Playlist picker. Rendered into any container, so both track panels (the
+   now-playing column and the modal "See details" sheet) get the same control.
+   Each rendered box is registered with the uri it shows, so a membership change
+   can refresh every visible copy at once (both can be on screen together). */
+const _plBoxes = new Map();   // boxId -> uri currently rendered there
+
+function refreshPlaylistEditors(uri) {
+  for (const [boxId, u] of _plBoxes) if (u === uri) renderPlaylistEditor(uri, boxId);
+}
+
+async function renderPlaylistEditor(uri, boxId = 'td-playlists') {
+  const box = document.getElementById(boxId);
+  if (!box) { _plBoxes.delete(boxId); return; }
   _closePlDropdown();
-  if (!editUnlocked || !uri) { box.innerHTML = ''; return; }
+  if (!editUnlocked || !uri) { box.innerHTML = ''; _plBoxes.delete(boxId); return; }
+  _plBoxes.set(boxId, uri);
   const pls = await loadEditablePlaylists();
   const inSet = new Set();
   try {
@@ -2907,22 +2969,11 @@ async function renderPlaylistEditor(uri) {
       : '<span style="font-size:11px;color:var(--muted)">No editable playlists cached.</span>';
     dropdown.querySelectorAll('input[type=checkbox]').forEach(cb =>
       cb.addEventListener('change', () => togglePlaylistMembership(cb, uri)));
-    const rect = box.querySelector('.pl-trigger').getBoundingClientRect();
-    dropdown.style.right = (window.innerWidth - rect.right) + 'px';
+    // Append first, then place: _placePopup measures the list to decide up vs
+    // down and caps its height to the room actually available (shared with the
+    // ⊕/ⓘ action menus).
     document.body.appendChild(dropdown);
-    // Flip upward when there isn't enough room below (common on mobile, where
-    // the trigger sits low in the details panel) — and always cap max-height to
-    // the space actually available in the chosen direction, so the list is fully
-    // reachable by scroll instead of being clipped past the viewport edge.
-    const spaceBelow = window.innerHeight - rect.bottom - 8;
-    const spaceAbove = rect.top - 8;
-    if (dropdown.scrollHeight > spaceBelow && spaceAbove > spaceBelow) {
-      dropdown.style.bottom    = (window.innerHeight - rect.top + 4) + 'px';
-      dropdown.style.maxHeight = Math.max(120, spaceAbove) + 'px';
-    } else {
-      dropdown.style.top       = (rect.bottom + 4) + 'px';
-      dropdown.style.maxHeight = Math.max(120, spaceBelow) + 'px';
-    }
+    _placePopup(dropdown, box.querySelector('.pl-trigger'));
     _plDropdown = dropdown;
     setTimeout(() => document.addEventListener('click', _plOutsideClick, true), 0);
     box.querySelector('.pl-caret').textContent = '▾';
@@ -2941,7 +2992,7 @@ async function togglePlaylistMembership(cb, uri) {
     const j = await r.json().catch(() => ({}));
     if (j.error) { setFeedback('Playlist: ' + j.error); cb.checked = !add; return; }
     setFeedback(add ? 'Added to playlist' : 'Removed from playlist');
-    renderPlaylistEditor(uri);   // refresh active list + count
+    refreshPlaylistEditors(uri);   // refresh active list + count in every panel
   } catch(e) { setFeedback('Playlist error'); cb.checked = !add; }
   finally { cb.disabled = false; }
 }
@@ -2957,27 +3008,184 @@ function renderFav() {
            + (editUnlocked ? ' — click to toggle' : '');
 }
 
+/* ── Shared track-detail logic ────────────────────────────────────────────────
+   Two panels show a track's details: the now-playing column (#track-details,
+   cells td-*) and the modal "See details" sheet (cells obj-td-*). They list the
+   same fields, expose the same click-to-edit cells, draw the same mood matrix and
+   now offer the same playlist picker. All of that is written once here; a panel
+   only supplies its element ids and the uri it follows. */
+
+const fmtEV = x => (x === null || x === undefined) ? '—' : Math.round(x * 10) + '/10';
+
+// [label, cell key, value(info)] — the single source of truth for which rows a
+// track panel shows and in which order. The key is the cell-id suffix, so the
+// same descriptor drives td-* and obj-td-*. EDITABLE_FIELDS says which are
+// click-to-edit.
+const TRACK_FIELDS = [
+  ['Status',     'type',       i => i.option_type || '—'],
+  ['Energy',     'energy',     i => fmtEV(i.energy)],
+  ['Valence',    'valence',    i => fmtEV(i.valence)],
+  ['Mood',       'mood',       i => i.mood || '—'],
+  ['Popularity', 'popularity', i => fmtEV(i.popularity)],
+  ['Plays',      'plays',      i => (i.read_count_end ?? 0) + ''],
+  ['Library',    'library',    i => i.library || '—'],
+];
+const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
+
+/* One panel instance. `cellId(kind)` maps 'energy' → the dd element id used by
+   that panel, `getUri()` says which track it is currently showing. */
+function makeTrackPanel({ cellId, canvasId, getUri }) {
+  const p = {
+    ev: null,                      // {energy, valence} shown by this panel
+    cellId, canvasId, getUri,
+    el:  kind => document.getElementById(cellId(kind)),
+    // Never clobber a cell that holds an open inline editor.
+    set(kind, txt) {
+      const el = p.el(kind);
+      if (el && !el.querySelector('input,select')) el.textContent = txt;
+    },
+    canvas: () => document.getElementById(canvasId),
+    draw() { drawMoodMatrix(p.canvas(), p.ev, TD_PAD); },
+    // Seed the matrix dot: a pending manual edit for this uri wins over the
+    // server values, so an in-flight drag is never clobbered by a refresh.
+    seed(uri, info) {
+      p.ev = matrixFeatures[uri] ? { ...matrixFeatures[uri] }
+           : (info && info.energy != null && info.valence != null)
+             ? { energy: info.energy, valence: info.valence } : null;
+      p.draw();
+    },
+    async save(patch, okMsg) {
+      const uri = getUri();
+      if (!uri) return false;
+      try {
+        const r = await fetch(API + '/track_features', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(Object.assign({ uri }, patch)),
+        });
+        if (r.status === 401) { setFeedback('Editing not authorized'); return false; }
+        const d = await r.json().catch(() => ({}));
+        if (d.error) { setFeedback('Save error'); return false; }
+        setFeedback(okMsg || 'Saved');
+        return d || true;
+      } catch (e) { setFeedback('Save error'); return false; }
+    },
+    // Persist the current dot position and keep the big matrix in sync.
+    async saveEV(okMsg) {
+      const uri = getUri();
+      if (!uri || !p.ev) return;
+      const d = await p.save({ energy: p.ev.energy, valence: p.ev.valence }, okMsg);
+      if (d) {
+        matrixFeatures[uri] = { ...p.ev };
+        if (d.mood) p.set('mood', d.mood);   // backend derives mood from e/v
+      }
+    },
+  };
+  return p;
+}
+
+/* Drag-to-set mood matrix — identical behaviour in both panels. */
+function initTrackPanelMatrix(p) {
+  const canvas = p.canvas();
+  if (!canvas) return;
+  let active = false;
+  const apply = e => {
+    p.ev = _matrixEVFromEvent(canvas, e, TD_PAD);
+    p.set('energy',  fmtEV(p.ev.energy));
+    p.set('valence', fmtEV(p.ev.valence));
+    p.draw();
+  };
+  canvas.addEventListener('pointerdown', e => {
+    if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+    active = true; try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    apply(e);
+  });
+  canvas.addEventListener('pointermove', e => { if (active) { e.preventDefault(); apply(e); } });
+  canvas.addEventListener('pointerup', () => {
+    if (!active) return; active = false;
+    if (editUnlocked) p.saveEV('Energy / valence saved');
+  });
+  new ResizeObserver(() => p.draw()).observe(canvas);
+}
+
+/* Click-to-edit an Energy/Valence cell (0–10) — identical in both panels. */
+function editTrackPanelNumber(p, kind) {
+  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+  if (!p.getUri()) return;
+  const dd = p.el(kind);
+  if (!dd || dd.querySelector('input')) return;
+  const cur = p.ev ? p.ev[kind] : null;
+  dd.innerHTML = '<input class="td-edit-input" type="number" min="0" max="10" step="1" value="'
+    + (cur != null ? Math.round(cur * 10) : 5) + '">';
+  const inp = dd.querySelector('input'); inp.focus(); inp.select();
+  let done = false;
+  const commit = async () => {
+    if (done) return; done = true;
+    let v = parseInt(inp.value, 10);
+    // Assign textContent directly here: it must replace the live input.
+    if (isNaN(v)) { dd.textContent = fmtEV(cur); return; }
+    v = Math.min(10, Math.max(0, v)) / 10;
+    const base = p.ev || { energy: 0.5, valence: 0.5 };
+    p.ev = { energy: kind === 'energy' ? v : base.energy,
+             valence: kind === 'valence' ? v : base.valence };
+    dd.textContent = fmtEV(v);
+    p.set(kind === 'energy' ? 'valence' : 'energy',
+          fmtEV(kind === 'energy' ? p.ev.valence : p.ev.energy));
+    p.draw();
+    await p.saveEV();
+  };
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') inp.blur();
+    else if (e.key === 'Escape') { done = true; dd.textContent = fmtEV(cur); }
+  });
+}
+
+/* Click-to-edit the Mood cell — identical in both panels. */
+function editTrackPanelMood(p) {
+  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+  if (!p.getUri()) return;
+  const dd = p.el('mood');
+  if (!dd || dd.querySelector('select')) return;
+  const cur = (dd.textContent || '').trim().toLowerCase();
+  dd.innerHTML = '<select class="td-edit-select">'
+    + MOOD_EDIT_OPTIONS.map(([v, l]) =>
+        '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('')
+    + '</select>';
+  const sel = dd.querySelector('select'); sel.focus();
+  let done = false;
+  const commit = async () => {
+    if (done) return; done = true;
+    dd.textContent = sel.value || '—';   // direct → replaces the live select
+    await p.save({ mood: sel.value });
+  };
+  sel.addEventListener('change', commit);
+  sel.addEventListener('blur', commit);
+}
+
+/* Wire the three editable cells of a panel. */
+function wireTrackPanelEdits(p) {
+  p.el('energy')?.addEventListener('click',  () => editTrackPanelNumber(p, 'energy'));
+  p.el('valence')?.addEventListener('click', () => editTrackPanelNumber(p, 'valence'));
+  p.el('mood')?.addEventListener('click',    () => editTrackPanelMood(p));
+}
+
+// The two instances. The now-playing column follows the playing track; the modal
+// follows whichever track was opened in it.
+const tdPanel  = makeTrackPanel({ cellId: k => 'td-' + k,     canvasId: 'td-matrix',   getUri: () => matrixCurUri });
+const objPanel = makeTrackPanel({ cellId: k => 'obj-td-' + k, canvasId: 'obj-tmatrix', getUri: () => objTMatrixUri });
 
 async function renderTrackDetails(uri) {
-  // Skip elements that currently hold an open inline editor.
-  const set = (id, v) => { const el = document.getElementById(id); if (el && !el.querySelector('input,select')) el.textContent = v; };
+  const blank = () => TRACK_FIELDS.forEach(([, key]) => tdPanel.set(key, '—'));
   if (!uri) {
-    ['td-type','td-energy','td-valence','td-mood','td-popularity','td-plays','td-library'].forEach(id => set(id, '—'));
+    blank();
     detailsUri = null; favLocal = false; favSpotify = null; renderFav();
-    tdMatrixEV = null; drawTdMatrix();
+    tdPanel.ev = null; tdPanel.draw();
     return;
   }
   try {
     const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
-    const ev = x => (x === null || x === undefined) ? '—' : Math.round(x * 10) + '/10';
-    set('td-type',    info.option_type || '—');
-    set('td-energy',  ev(info.energy));
-    set('td-valence', ev(info.valence));
-    set('td-mood',    info.mood || '—');
-    set('td-popularity', ev(info.popularity));
-    set('td-plays',   (info.read_count_end ?? 0) + '');
-    set('td-library', info.library || '—');
-    
+    TRACK_FIELDS.forEach(([, key, val]) => tdPanel.set(key, val(info)));
+
     favLocal = !!info.liked;
     // Statut Spotify : seulement quand l'uri change, pour ne pas spammer l'API
     if (uri !== detailsUri) {
@@ -2988,18 +3196,13 @@ async function renderTrackDetails(uri) {
           .then(r => r.json()).then(d => { favSpotify = d.saved; renderFav(); })
           .catch(() => {});
       }
-      if (editUnlocked) renderPlaylistEditor(uri);
+      if (editUnlocked) renderPlaylistEditor(uri, 'td-playlists');
     }
     detailsUri = uri;
     renderFav();
-    // Position the per-track matrix dot from the freshly fetched features (a
-    // pending manual edit for this same uri wins, so a drag isn't clobbered).
-    if (matrixFeatures[uri]) tdMatrixEV = { ...matrixFeatures[uri] };
-    else tdMatrixEV = (info.energy != null && info.valence != null)
-      ? { energy: info.energy, valence: info.valence } : null;
-    drawTdMatrix();
+    tdPanel.seed(uri, info);
   } catch(e) {
-    ['td-type','td-energy','td-valence','td-mood','td-popularity','td-plays','td-library'].forEach(id => set(id, '—'));
+    blank();
   }
 }
 
@@ -3038,7 +3241,12 @@ function setEditUnlocked(on, id) {
   }
   document.body.classList.toggle('edit-mode', on);
   document.getElementById('btn-details')?.classList.toggle('has-edits', on);
-  if (typeof renderPlaylistEditor === 'function') renderPlaylistEditor(on ? detailsUri : null);
+  // Both track panels carry the picker, so both follow the lock state.
+  if (typeof renderPlaylistEditor === 'function') {
+    renderPlaylistEditor(on ? detailsUri : null, 'td-playlists');
+    if (document.getElementById('obj-playlists'))
+      renderPlaylistEditor(on ? objTMatrixUri : null, 'obj-playlists');
+  }
   if (typeof renderFav === 'function') renderFav();
 }
 
@@ -3294,9 +3502,9 @@ function matrixEditTrack(canvas, e) {
 
 /* ── Per-track mood matrix (in the track-details panel) ──
    Shows the details track's energy/valence as a draggable dot; dragging (in edit
-   mode) repositions it and saves to /api/track_features for detailsUri. Reuses
-   the theme quadrant colours / moodColor of the big matrix. */
-let tdMatrixEV = null;      // {energy, valence} of the track shown in #track-details
+   mode) repositions it and saves to /api/track_features. The state and the drag
+   handling live on the shared panel object (see makeTrackPanel /
+   initTrackPanelMatrix); only the pure renderer below is standalone. */
 const TD_PAD = 10;
 // Pure renderer: draws the energy(X)/valence(Y) quadrant matrix onto `canvas`,
 // with an optional {energy,valence} dot. Shared by the details panel and the
@@ -3348,69 +3556,18 @@ function _matrixEVFromEvent(canvas, e, pad) {
     valence: Math.min(1, Math.max(0, 1 - (py - rect.top - pad) / inner)),
   };
 }
-function drawTdMatrix() { drawMoodMatrix(document.getElementById('td-matrix'), tdMatrixEV, TD_PAD); }
-function _tdMatrixSet(e) {
-  tdMatrixEV = _matrixEVFromEvent(document.getElementById('td-matrix'), e, TD_PAD);
-  const set = (id, x) => { const el = document.getElementById(id); if (el && !el.querySelector('input,select')) el.textContent = Math.round(x * 10) + '/10'; };
-  set('td-energy', tdMatrixEV.energy); set('td-valence', tdMatrixEV.valence);
-  drawTdMatrix();
-}
-async function _tdMatrixSave() {
-  if (!editUnlocked || !detailsUri || !tdMatrixEV) return;
-  try {
-    const r = await fetch(API + '/track_features', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ uri: detailsUri, energy: tdMatrixEV.energy, valence: tdMatrixEV.valence }),
-    });
-    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
-    setFeedback('Energy / valence saved');
-    matrixFeatures[detailsUri] = { energy: tdMatrixEV.energy, valence: tdMatrixEV.valence };  // sync the big matrix
-  } catch (e) { setFeedback('Save error'); }
-}
-function initTdMatrix() {
-  const canvas = document.getElementById('td-matrix');
-  if (!canvas) return;
-  let active = false;
-  canvas.addEventListener('pointerdown', e => {
-    if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-    active = true; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} _tdMatrixSet(e);
-  });
-  canvas.addEventListener('pointermove', e => { if (active) { e.preventDefault(); _tdMatrixSet(e); } });
-  canvas.addEventListener('pointerup', () => { if (active) { active = false; _tdMatrixSave(); } });
-  new ResizeObserver(drawTdMatrix).observe(canvas);
-}
+// Thin aliases kept for the now-playing panel's call sites.
+function initTdMatrix() { initTrackPanelMatrix(tdPanel); }
 
 /* ── Modal track view (obj-panel) — the track "See details" sheet.
    Lives in the shared object modal so it inherits the ◂ ▸ nav bar and the same
    height as album/artist/box; and — unlike the now-playing #track-details panel —
    it is never overwritten by the now-playing refresh (no more value reset). */
-let objTMatrixEV = null, objTMatrixUri = null;
-function drawObjTMatrix() { drawMoodMatrix(document.getElementById('obj-tmatrix'), objTMatrixEV, TD_PAD); }
-function initObjTMatrix() {
-  const canvas = document.getElementById('obj-tmatrix');
-  if (!canvas) return;
-  let active = false;
-  canvas.addEventListener('pointerdown', e => {
-    if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-    active = true; try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-    objTMatrixEV = _matrixEVFromEvent(canvas, e, TD_PAD); drawObjTMatrix();
-  });
-  canvas.addEventListener('pointermove', e => { if (active) { e.preventDefault(); objTMatrixEV = _matrixEVFromEvent(canvas, e, TD_PAD); drawObjTMatrix(); } });
-  canvas.addEventListener('pointerup', async () => {
-    if (!active) return; active = false;
-    if (!editUnlocked || !objTMatrixUri || !objTMatrixEV) return;
-    try {
-      const r = await fetch(API + '/track_features', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ uri: objTMatrixUri, energy: objTMatrixEV.energy, valence: objTMatrixEV.valence }),
-      });
-      if (r.status === 401) { setFeedback('Editing not authorized'); return; }
-      setFeedback('Energy / valence saved');
-      matrixFeatures[objTMatrixUri] = { ...objTMatrixEV };   // sync the big matrix
-    } catch (e) { setFeedback('Save error'); }
-  });
-  new ResizeObserver(drawObjTMatrix).observe(canvas);
-}
+let objTMatrixUri = null;   // track currently shown in the modal sheet
+function drawObjTMatrix() { objPanel.draw(); }
+function initObjTMatrix() { initTrackPanelMatrix(objPanel); }
+function wireObjFeatureEdit() { wireTrackPanelEdits(objPanel); }
+
 async function renderTrackObj(uri, seed) {
   objNavTo();
   objSetHead('Track', seed?.name || 'Track', seed?.artist || '');
@@ -3430,25 +3587,22 @@ async function renderTrackObj(uri, seed) {
   const artist = (tr && (tr.artists || []).map(a => a.name).join(', ')) || seed?.artist || '';
   objSetHead('Track', name, artist);
   objTMatrixUri = uri;
-  objTMatrixEV = matrixFeatures[uri] ? { ...matrixFeatures[uri] }
-    : (info.energy != null && info.valence != null) ? { energy: info.energy, valence: info.valence } : null;
-  const ev = x => (x === null || x === undefined) ? '—' : Math.round(x * 10) + '/10';
   const coverHtml = cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : '';
-  const dlRows = [
-    ['Status', info.option_type || '—'],
-    ['Energy', ev(info.energy)],
-    ['Valence', ev(info.valence)],
-    ['Mood', info.mood || '—'],
-    ['Popularity', ev(info.popularity)],
-    ['Plays', (info.read_count_end ?? 0) + ''],
-    ['Library', info.library || '—'],
-  ];
-  const dl = `<div class="obj-dl">` + dlRows.map(([k, v]) => `<div><dt>${k}</dt><dd>${objEsc(v)}</dd></div>`).join('') + `</div>`;
+  // Same rows as the now-playing panel (TRACK_FIELDS is the single source of
+  // truth); the editable ones carry an id so they're click-to-edit in edit mode.
+  const dl = `<div class="obj-dl">` + TRACK_FIELDS.map(([label, key, val]) => {
+    const id = EDITABLE_FIELDS.includes(key) ? ` id="obj-td-${key}"` : '';
+    return `<div><dt>${label}</dt><dd${id}>${objEsc(val(info))}</dd></div>`;
+  }).join('') + `</div>`;
   objBody().innerHTML =
     `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b><span>${objEsc(artist)}</span></div></div>`
     + dl
-    + `<canvas id="obj-tmatrix" class="obj-tmatrix" title="Drag to set the track's mood (edit mode)"></canvas>`;
+    + `<canvas id="obj-tmatrix" class="obj-tmatrix" title="Drag to set the track's mood (edit mode)"></canvas>`
+    + `<div id="obj-playlists" class="td-playlists"></div>`;
+  objPanel.seed(uri, info);
   initObjTMatrix();
+  wireObjFeatureEdit();
+  renderPlaylistEditor(uri, 'obj-playlists');   // same picker as the now-playing panel
   requestAnimationFrame(drawObjTMatrix);
 }
 
@@ -3469,74 +3623,10 @@ async function saveCurrentTrackFeatures() {
 /* ── Inline editing of the current track's energy / valence / mood (edit mode) ── */
 const MOOD_EDIT_OPTIONS = [['calm','Calm'],['energetic','Energetic'],['dark','Intense'],['happy','Happy']];
 
-async function saveTrackFeature(patch) {
-  if (!matrixCurUri) return false;
-  try {
-    const r = await fetch(API + '/track_features', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(Object.assign({ uri: matrixCurUri }, patch))
-    });
-    if (r.status === 401) { setFeedback('Editing not authorized'); return false; }
-    const d = await r.json().catch(() => ({}));
-    if (d.error) { setFeedback('Save error'); return false; }
-    setFeedback('Saved');
-    return true;
-  } catch (e) { setFeedback('Save error'); return false; }
-}
-
-function editTrackNumber(kind) {            // kind = 'energy' | 'valence'
-  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-  if (!matrixCurUri) return;
-  const dd = document.getElementById('td-' + kind);
-  if (!dd || dd.querySelector('input')) return;
-  const f = matrixFeatures[matrixCurUri] || {};
-  const start = f[kind] != null ? Math.round(f[kind] * 10) : 5;
-  dd.innerHTML = '<input class="td-edit-input" type="number" min="0" max="10" step="1" value="' + start + '">';
-  const inp = dd.querySelector('input');
-  inp.focus(); inp.select();
-  let done = false;
-  const commit = async () => {
-    if (done) return; done = true;
-    let v = parseInt(inp.value, 10);
-    if (isNaN(v)) { renderTrackDetails(matrixCurUri); return; }
-    v = Math.min(10, Math.max(0, v));
-    const cur = matrixFeatures[matrixCurUri] || {};
-    const energy  = kind === 'energy'  ? v / 10 : (cur.energy  ?? 0.5);
-    const valence = kind === 'valence' ? v / 10 : (cur.valence ?? 0.5);
-    matrixFeatures[matrixCurUri] = { energy, valence };
-    document.getElementById('td-energy').textContent  = Math.round(energy * 10)  + '/10';
-    document.getElementById('td-valence').textContent = Math.round(valence * 10) + '/10';
-    
-    await saveTrackFeature({ energy, valence });
-  };
-  inp.addEventListener('blur', commit);
-  inp.addEventListener('keydown', e => {
-    if (e.key === 'Enter') inp.blur();
-    else if (e.key === 'Escape') { done = true; renderTrackDetails(matrixCurUri); }
-  });
-}
-
-function editTrackMood() {
-  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-  if (!matrixCurUri) return;
-  const dd = document.getElementById('td-mood');
-  if (!dd || dd.querySelector('select')) return;
-  const cur = (dd.textContent || '').trim().toLowerCase();
-  const opts = MOOD_EDIT_OPTIONS.map(([v, l]) =>
-    '<option value="' + v + '"' + (v === cur ? ' selected' : '') + '>' + l + '</option>').join('');
-  dd.innerHTML = '<select class="td-edit-select">' + opts + '</select>';
-  const sel = dd.querySelector('select');
-  sel.focus();
-  let done = false;
-  const commit = async () => {
-    if (done) return; done = true;
-    const v = sel.value;
-    dd.textContent = v || '—';
-    await saveTrackFeature({ mood: v });
-  };
-  sel.addEventListener('change', commit);
-  sel.addEventListener('blur', commit);
-}
+/* The now-playing panel's editors are the shared implementations, bound to its
+   panel instance. */
+function editTrackNumber(kind) { editTrackPanelNumber(tdPanel, kind); }
+function editTrackMood() { editTrackPanelMood(tdPanel); }
 
 function matrixResize(canvas, e) {
   const rect  = canvas.getBoundingClientRect();
@@ -3828,8 +3918,11 @@ function _objApply(s) {
   // A restored track view carries an inert canvas (innerHTML only) → re-wire it.
   if (document.getElementById('obj-tmatrix')) {
     objTMatrixUri = s.ownUri;
-    if (matrixFeatures[s.ownUri]) objTMatrixEV = { ...matrixFeatures[s.ownUri] };
+    if (matrixFeatures[s.ownUri]) objPanel.ev = { ...matrixFeatures[s.ownUri] };
     initObjTMatrix();
+    wireObjFeatureEdit();
+    // The restored markup includes the playlists container but no live handlers.
+    renderPlaylistEditor(s.ownUri, 'obj-playlists');
     requestAnimationFrame(drawObjTMatrix);
   }
 }

@@ -30,12 +30,12 @@ docker compose --profile dev up -d
 ```
 
 ### Run the o2m Python tests
-Tests live in `o2m/src/test_tracklistfill.py`. To run from the `o2m/` directory:
+Tests live in `o2m/src/test_popularity.py` (popularity scoring). Run from the repo root
+(package-prefixed, since it imports `src.popularity`):
 ```bash
-cd o2m/src
-python3 -m unittest test_tracklistfill
+cd o2m
+python3 -m unittest src.test_popularity
 ```
-The test file imports `o2mtomopidy` directly (not via package prefix), so it must be run from `o2m/src/`.
 
 ### Run o2m locally (outside Docker)
 ```bash
@@ -68,6 +68,71 @@ Config is read from `/etc/mopidy/o2m.conf` (Linux) or `~/.config/mopidy/o2m.conf
 
 ### Box `option_type` values
 `library`, `favorites`, `new`, `incoming`, `hidden`, `trash`, `podcast`, `info`
+
+## Popularity Algorithm (`o2m/src/popularity.py`)
+
+`compute_popularity(...)` → a single float in **[0, 1]**, pure/DB-free, recomputed in
+batch by `DatabaseHandler.recompute_popularity` and persisted on `Track.popularity`.
+It is the core ranking signal for selection (see below). Components (tunables at the
+top of the module):
+
+1. **Completion quality** — Bayesian shrinkage of `read_end` toward the cohort
+   completion mean (`prior_completion`, ~0.55): `q = (n·R + M·prior)/(n + M)` with
+   `n = read_count_end`, `M = PRIOR_M = 3`. Never-finished tracks collapse to the
+   neutral prior (explorable, not 0.5-arbitrary).
+2. **Volume** — saturating `log1p(read_count_end)/log1p(VOLUME_REF=20)`, capped at 1.
+3. **Base** = `QUALITY_W·quality + VOLUME_W·volume` (0.65 / 0.35).
+4. **Skip penalty** — `base ·= 1 − SKIP_W·skip_rate` (`SKIP_W=0.5`, `skip_rate =
+   skipped_count/read_count`).
+5. **Recency** — soft multiplier in `[REC_FLOOR=0.6, 1]`, half-life 120 days (old
+   favourites keep ≥60%).
+6. **Explicit / novelty / endorsement** — `+LIKE_BONUS(0.10)` if liked; a fading
+   first-play **novelty** boost (`NOVELTY_W=0.15`, 30-day half-life, ÷(1+completions));
+   a **playlist** endorsement boost (`+PLAYLIST_W=0.10 · min(playlist_count/4, 1)`).
+
+`option_type` stays OUT of the score (favourites already correlate with quality/volume),
+**except `trash` → forced 0**. Non-music (`podcast`/`info`, streams) is left unscored
+(`popularity = NULL`, `is_scorable` guard) and ignored by selection.
+
+## Auto-Selection Algorithm (`o2m/src/o2mtomopidy.py`)
+
+`tracklistfill_auto` composes the AUTO mix from sources whose **proportions vary with
+`discover_level` (DL)** — favorites/common ↓, news/incoming/albums_artists ↑ as DL rises
+(linear formulas, always summing to a fixed total). Within each source, tracks are drawn
+by one of two weighted samplers (Efraimidis-Spirakis, `_sample_by_weight`). Both realise
+the same principle: **DL0 → popularity-dominant, DL10 → pure random.**
+
+### `_mood_pick` (library sources: common/favorites/playlists/albums_artists/incoming/news)
+- Splits candidates into **in-mood** (energy/valence within `radius = DL/20 + 0.05`) and
+  the rest; picks in-mood first, rest as fallback (gentler pop exponent `rest_pop_factor`).
+- Weight = `popularity^k × cooldown`, temperature **`k = (10 − DL)/5`**: DL0→k=2 (favours
+  popular), DL5→1 (proportional), DL10→0 (uniform / pure random).
+
+### `_expand_pick` (tapped box/playlist/album `option_sort='smart'` + live recos)
+Variant = `expand_pick_mode`: **`hybrid` (P0, default)** | `temp` (P1) | `band` (P2).
+- **P0 hybrid**: `n_explore = round(n·DL/10)` picks are uniform (cooldown-only, no
+  popularity); the rest are exploit, sampled ∝ `affinity^exploit_sharpness(1.3)` where
+  `affinity = popularity + 0.15 mood-bonus`. DL0 → all exploit, DL10 → all explore.
+- P1 `temp`: one sample ∝ `affinity^k`, `k=(5−DL)/2.5`. P2 `band`: Gaussian around a DL-set
+  popularity target (p90 at DL0 → p10 at DL10).
+
+### Anti-repeat cooldown (`_cooldown_factor`, shared by both)
+Down-weight in (0,1], multiplicative:
+- **Played (multi-day, graduated)**: a just-played track sits at `cooldown_mult=0.05` and
+  eases **linearly back to 1.0 over `cooldown_days=2`**, stretched up to ~2× for
+  heavy-rotation tracks (`read_count → cooldown_rc_ref=20`) so comfort favourites don't
+  recur every session. (Replaced the old hard 8h step — `cooldown_hours` kept for reference.)
+- **Served (intra-session)**: just-selected tracks ×`served_mult=0.1` for `served_cooldown_min=30`min.
+
+### Known bias & mitigations
+- **Comfort-track over-recurrence**: a high-popularity favourite that's been played a lot
+  hits favorites + common + high-pop weighting simultaneously → recurs often. Two guards:
+  the multi-day cooldown above, and `get_stat_raw_by_hour` returns **DISTINCT** uris (the
+  raw play log has one row per play → a 14×-played track otherwise gets 14 draw tickets).
+- **Deep-library under-exposure**: unplayed library tracks surface only via `newrecent`
+  (uniform 1/pool, see the novelty section) and the tiny albums bucket; per-fill P is low.
+  `newrecent` is scoped to the library (`liked=1 OR album saved=1`) — browsed/lazy-filled
+  albums are excluded.
 
 ## Frontend (`frontend/`)
 

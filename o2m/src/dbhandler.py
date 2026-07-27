@@ -366,10 +366,14 @@ class DatabaseHandler():
 
     def get_stat_raw_by_hour(self, read_hour, window=0, limit=1, uri_pattern='track:'):
         print (f"Get stat raw by hour {read_hour} {window} {limit} {uri_pattern}")
+        # DISTINCT uri: Stats_Raw logs one row PER play, so a track played N times
+        # in this hour-window otherwise gets N tickets in the random draw and
+        # over-recurs (comfort-track bias). Dedup so each track counts once — the
+        # popularity/cooldown weighting in _mood_pick then does the ranking.
         if window > 0:
-            query = Stats_Raw.select().where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
+            query = Stats_Raw.select(Stats_Raw.uri).where((Stats_Raw.read_hour.between(read_hour - window, read_hour + window))&(Stats_Raw.uri.contains(uri_pattern))).distinct().order_by(fn.Rand()).limit(limit)
         else:
-            query = Stats_Raw.select().where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains(uri_pattern))).order_by(fn.Rand()).limit(limit)
+            query = Stats_Raw.select(Stats_Raw.uri).where((Stats_Raw.read_hour == read_hour)&(Stats_Raw.uri.contains(uri_pattern))).distinct().order_by(fn.Rand()).limit(limit)
         results = self.transform_query_to_list(query)
         #print (results)
         if len(results) > 0:

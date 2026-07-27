@@ -31,8 +31,10 @@ class O2mToMopidy:
     podcast_newest_first = False
     option_sort = "desc"
     expand_pick_mode = "hybrid"  # smart-selection variant: hybrid (P0) | temp (P1) | band (P2)
-    cooldown_hours = 8.0         # recently-PLAYED tracks are down-weighted in smart selection
-    cooldown_mult = 0.05         # weight multiplier applied within the played-cooldown window
+    cooldown_hours = 8.0         # (legacy) kept for reference; the played cooldown is now multi-day (cooldown_days)
+    cooldown_mult = 0.05         # weight floor: multiplier at age 0 (just played), ramps back to 1 over the window
+    cooldown_days = 2.0          # base played-cooldown window (days); a just-played track eases back to full over this
+    cooldown_rc_ref = 20         # read_count giving the max window stretch (heavy-rotation tracks rest ~2× longer)
     exploit_sharpness = 1.3      # P0 exploit weight exponent (affinity**this); 2 was too repetitive
     served_cooldown_min = 30.0   # minutes; tracks just SERVED (selected) are down-weighted
     served_mult = 0.1            # weight multiplier applied within the served-cooldown window
@@ -2022,10 +2024,10 @@ class O2mToMopidy:
 
         # Single query for energy/valence + popularity; drop hidden/trash from the pool
         # so explicitly rejected tracks never resurface.
-        feat, pop, last_read, excluded = {}, {}, {}, set()
+        feat, pop, last_read, rc, excluded = {}, {}, {}, {}, set()
         try:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
-                                   Track.option_type, Track.last_read_date)
+                                   Track.option_type, Track.last_read_date, Track.read_count)
                           .where(Track.uri << list(uris)).namedtuples()):
                 if t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
@@ -2036,6 +2038,8 @@ class O2mToMopidy:
                     pop[t.uri] = t.popularity
                 if t.last_read_date is not None:
                     last_read[t.uri] = t.last_read_date
+                if t.read_count is not None:
+                    rc[t.uri] = t.read_count
         except Exception as e:
             print(f"_mood_pick lookup error: {e}")
             return uris[:min(n, len(uris))]
@@ -2068,7 +2072,7 @@ class O2mToMopidy:
         # very-popular out-of-mood track doesn't systematically win the filler slots.
         def _w(u, exp):
             return (max(pop.get(u, 0.5), 1e-6) ** exp) \
-                   * self._cooldown_factor(u, last_read.get(u), now, now_ts, served)
+                   * self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
         w_in = {u: _w(u, k) for u in in_range}
         result = self._sample_by_weight(in_range, w_in, n)
         if len(result) < n:
@@ -2099,10 +2103,10 @@ class O2mToMopidy:
         """
         if not uris:
             return []
-        feat, pop, last_read, excluded = {}, {}, {}, set()
+        feat, pop, last_read, rc, excluded = {}, {}, {}, {}, set()
         try:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
-                                   Track.option_type, Track.last_read_date)
+                                   Track.option_type, Track.last_read_date, Track.read_count)
                           .where(Track.uri << list(uris)).namedtuples()):
                 if t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
@@ -2113,6 +2117,8 @@ class O2mToMopidy:
                     pop[t.uri] = t.popularity
                 if t.last_read_date is not None:
                     last_read[t.uri] = t.last_read_date
+                if t.read_count is not None:
+                    rc[t.uri] = t.read_count
         except Exception as e:
             print(f"_expand_pick lookup error: {e}")
             return list(uris[:min(n, len(uris))])
@@ -2136,7 +2142,7 @@ class O2mToMopidy:
             return f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius
 
         def cd(u):
-            return self._cooldown_factor(u, last_read.get(u), now, now_ts, served)
+            return self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
 
         def aff(u):  # affinity = popularity + soft mood bonus
             return pop.get(u, 0.5) + (MOOD_BONUS if in_mood(u) else 0.0)
@@ -2190,11 +2196,16 @@ class O2mToMopidy:
         keyed.sort(reverse=True)
         return [u for _, u in keyed[:n]]
 
-    def _cooldown_factor(self, uri, last_read_at, now, now_ts, served):
-        """Combined anti-repeat down-weight in (0,1]: a track recently PLAYED
-        (last_read_at within cooldown_hours) and/or recently SERVED (served map
-        within served_cooldown_min) is demoted, so successive selections rotate.
-        Shared by _expand_pick and _mood_pick."""
+    def _cooldown_factor(self, uri, last_read_at, now, now_ts, served, read_count=0):
+        """Combined anti-repeat down-weight in (0,1]: a track recently PLAYED and/or
+        recently SERVED is demoted, so successive selections rotate. Shared by
+        _expand_pick and _mood_pick.
+
+        Played cooldown is MULTI-DAY and graduated (not a hard step): a track played
+        just now sits at cooldown_mult and eases linearly back to 1.0 over the window.
+        The window is cooldown_days, stretched up to ~2× for heavy-rotation tracks
+        (read_count → cooldown_rc_ref) so comfort favourites don't recur every session.
+        Served cooldown (intra-session, minutes) is unchanged."""
         f = 1.0
         if last_read_at is not None:
             try:
@@ -2203,8 +2214,10 @@ class O2mToMopidy:
                     lr = datetime.datetime.utcfromtimestamp(lr)
                 if getattr(lr, 'tzinfo', None) is not None:
                     lr = lr.replace(tzinfo=None)
-                if (now - lr).total_seconds() / 3600.0 < self.cooldown_hours:
-                    f *= self.cooldown_mult
+                age_days = (now - lr).total_seconds() / 86400.0
+                cd_days = self.cooldown_days * (1.0 + min(read_count or 0, self.cooldown_rc_ref) / float(self.cooldown_rc_ref))
+                if 0.0 <= age_days < cd_days:
+                    f *= self.cooldown_mult + (1.0 - self.cooldown_mult) * (age_days / cd_days)
             except Exception:
                 pass
         sa = served.get(uri)
