@@ -237,6 +237,26 @@
     padding: 12px 16px; display: flex; flex-direction: column; gap: 10px;
     background: var(--surface);
   }
+  /* Track lifecycle scale (read-only): trash|hidden > new > incoming > library >
+     favorites. Dot centres sit at (i+0.5)/6 → 8.33%,25%,…,91.67%; the line/fill and
+     the trash|hidden divider are positioned against those fixed centres. */
+  .lc-scale { margin: 14px 0 2px; }
+  .lc-track { position: relative; }
+  .lc-line, .lc-line-fill { position: absolute; top: 5px; height: 2px; }  /* left/right/width set inline */
+  .lc-line { background: var(--border-strong); }
+  .lc-line-fill { background: var(--accent); }
+  .lc-line-fill.excl { background: var(--muted); }
+  .lc-sep { position: absolute; top: -2px; width: 1px; height: 16px; background: var(--border-strong); }
+  .lc-stops { position: relative; display: flex; }
+  .lc-stop { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  .lc-dot { width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
+    background: var(--surface); border: 2px solid var(--border-strong); transition: transform .15s; }
+  .lc-lab { font-family: var(--font-mono); font-size: 8px; letter-spacing: .01em;
+    text-transform: uppercase; color: var(--muted); text-align: center; line-height: 1.1; }
+  .lc-stop.current .lc-dot { background: var(--accent); border-color: var(--accent); transform: scale(1.2); }
+  .lc-stop.current.excl .lc-dot { background: var(--muted); border-color: var(--muted); }
+  .lc-stop.current .lc-lab { color: var(--accent); font-weight: 700; }
+  .lc-stop.current.excl .lc-lab { color: var(--text); }
   /* Per-track mood matrix inside the details panel. */
   #td-matrix, .obj-tmatrix { width: 100%; max-width: 200px; aspect-ratio: 1 / 1;
     margin: 8px auto 2px; display: block; touch-action: none; }
@@ -355,11 +375,15 @@
                 font-family: var(--font-head); font-weight: var(--head-weight);
                 text-transform: var(--head-transform); letter-spacing: var(--head-spacing); }
   /* Artist + album on a single line ("Artist · Album"). Both ellipsize; the album
-     is opened from its label (the cover click is taken by the color toggle). */
-  #artist-album { display: flex; align-items: baseline; gap: 5px; margin-top: 3px; min-width: 0; }
-  #artist-name { font-size: 14px; color: var(--muted); flex: 0 1 auto;
+     is opened from its label (the cover click is taken by the color toggle).
+     The font size is set ONCE on the row so artist and album always match — the
+     per-theme overrides below therefore also target #artist-album, not the artist
+     alone (which used to leave the album stuck at a smaller size). */
+  #artist-album { display: flex; align-items: baseline; gap: 5px; margin-top: 3px;
+                  min-width: 0; font-size: 14px; }
+  #artist-name { color: var(--muted); flex: 0 1 auto;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #album-name { font-size: 12px; color: var(--muted); cursor: pointer; flex: 0 1 auto;
+  #album-name { color: var(--muted); cursor: pointer; flex: 0 1 auto;
                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #album-name:not(:empty)::before { content: "· "; color: var(--muted); }
   #album-name:hover { color: var(--text); text-decoration: underline; }
@@ -539,10 +563,22 @@
 
   @media (min-width: 700px) {
     /* 3 colonnes scrollables indépendamment, footer fixe en bas */
-    #scroll-area { display: flex; flex-direction: column; overflow: hidden; }
+    #scroll-area { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
     #main-cols { flex-direction: row; align-items: stretch; flex: 1; min-height: 0; }
     .col { overflow-y: auto; min-height: 0; }
-    #footer-links { flex-shrink: 0; }
+
+    /* Cap the header. #top-zone's height is set by its tallest column — the details
+       column, which carries the field list + mood matrix + playlist picker + More —
+       and the square cover follows that height (height:100%, aspect-ratio 1/1). So a
+       taller details column inflated the whole header and pushed the three columns
+       down. Capping it keeps the cover reasonable and lets the details column scroll
+       on its own. Poster themes (overprint/invert) drive their own header height. */
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-zone {
+      max-height: 38vh;
+    }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #track-details {
+      overflow-y: auto; min-height: 0;
+    }
     #boxes-panel { flex: 0 0 25%; border-top: none; border-right: 1px solid var(--border);
                    padding: 0; }
     #left-panel  { flex: 0 0 35%; border-right: 1px solid var(--border); min-width: 0; }
@@ -773,9 +809,13 @@
   .tl-status.s-podcast   { color: #90a4ae; }
   .tl-status svg { width: 11px; height: 11px; vertical-align: -1px; }
 
-  /* ── Footer links ── */
+  /* ── Footer links ──
+     A direct child of <body> (not of #scroll-area): as a sibling of the header and
+     the columns it can never be squeezed out of view by a tall #top-zone — which is
+     what made it vanish in the Invert theme, whose full-width cover banner pushed
+     #scroll-area's height to zero. flex-shrink:0 keeps it at its natural height. */
   #footer-links {
-    position: relative;
+    position: relative; flex-shrink: 0;
     padding: 7px 14px; padding-bottom: max(7px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
@@ -958,7 +998,8 @@
   [data-theme="overprint"] #now-playing  { padding: 6px 6px 2px; }
   [data-theme="overprint"] #controls     { justify-content: flex-start; padding: 2px 6px; }
   [data-theme="overprint"] #progress-wrap { padding: 2px 6px 4px; }
-  [data-theme="overprint"] #artist-name  { font-size: 18px; font-weight: 600; color: var(--text); }
+  [data-theme="overprint"] #artist-album { font-size: 18px; }
+  [data-theme="overprint"] #artist-name  { font-weight: 600; color: var(--text); }
 
   /* Compact details column: Energy/Valence/Mood share one row. */
   [data-theme="overprint"] #track-details { padding: 8px 12px; gap: 6px; }
@@ -995,7 +1036,7 @@
     color: var(--hero-accent, #ffffff); mix-blend-mode: difference;
   }
   [data-theme="invert"] #now-playing { padding-top: 14px; }
-  [data-theme="invert"] #artist-name { font-size: 16px; }
+  [data-theme="invert"] #artist-album { font-size: 16px; }
 
   /* Affiches en mobile : grille → bloc, détails masqués (titre en haut, pleine largeur) */
   @media (max-width: 699px) {
@@ -1028,8 +1069,9 @@
     [data-theme="overprint"] #top-right { display: block; padding: 6px 14px 10px; }
     [data-theme="overprint"] #now-playing { padding: 0; gap: 0; }
     [data-theme="overprint"] #track-info { width: 100%; min-width: 0; padding: 0; }
+    [data-theme="overprint"] #artist-album { font-size: 14px; }
     [data-theme="overprint"] #artist-name {
-      font-size: 14px; margin: 0;
+      margin: 0;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     /* Spacing now lives on the badge+dot row wrapper (see #status-line). */
@@ -1679,6 +1721,30 @@
 
   </div><!-- /main-cols -->
 
+
+  <!-- ══ Object detail / edit overlay (album · artist · box) ══
+       Covers the lower area. Desktop: overlays the columns in place.
+       Mobile: bottom-sheet like the track edit space. Read-only for now. -->
+  <div id="obj-panel" aria-hidden="true">
+    <div class="obj-head">
+      <button id="obj-prev" class="hide" title="Back" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button id="obj-next" class="hide" title="Forward" aria-label="Forward"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+      <div class="obj-head-main">
+        <span class="obj-kind" id="obj-kind">—</span>
+        <span class="obj-title" id="obj-title">—</span>
+        <span class="obj-sub" id="obj-sub"></span>
+        <!-- Editable query, shown only in search views (obj-panel.search-mode) so the
+             search can be refined without closing the modal. -->
+        <input id="obj-search-input" class="obj-search-input" type="search" placeholder="Search…" autocomplete="off" spellcheck="false">
+      </div>
+      <button id="obj-actions" class="hide" title="Actions" aria-label="Actions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
+      <button id="obj-close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="obj-body" id="obj-body"></div>
+  </div>
+
+</div><!-- /scroll-area -->
+
   <!-- Footer links -->
   <div id="footer-links">
     <div class="tb-brand">
@@ -1721,29 +1787,6 @@
       </div>
     </div>
   </div>
-
-  <!-- ══ Object detail / edit overlay (album · artist · box) ══
-       Covers the lower area. Desktop: overlays the columns in place.
-       Mobile: bottom-sheet like the track edit space. Read-only for now. -->
-  <div id="obj-panel" aria-hidden="true">
-    <div class="obj-head">
-      <button id="obj-prev" class="hide" title="Back" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
-      <button id="obj-next" class="hide" title="Forward" aria-label="Forward"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
-      <div class="obj-head-main">
-        <span class="obj-kind" id="obj-kind">—</span>
-        <span class="obj-title" id="obj-title">—</span>
-        <span class="obj-sub" id="obj-sub"></span>
-        <!-- Editable query, shown only in search views (obj-panel.search-mode) so the
-             search can be refined without closing the modal. -->
-        <input id="obj-search-input" class="obj-search-input" type="search" placeholder="Search…" autocomplete="off" spellcheck="false">
-      </div>
-      <button id="obj-actions" class="hide" title="Actions" aria-label="Actions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
-      <button id="obj-close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-    <div class="obj-body" id="obj-body"></div>
-  </div>
-
-</div><!-- /scroll-area -->
 
 <div id="obj-backdrop"></div>
 
@@ -3563,6 +3606,47 @@ function initTdMatrix() { initTrackPanelMatrix(tdPanel); }
    Lives in the shared object modal so it inherits the ◂ ▸ nav bar and the same
    height as album/artist/box; and — unlike the now-playing #track-details panel —
    it is never overwritten by the now-playing refresh (no more value reset). */
+/* Read-only lifecycle scale: where the track sits on
+   trash|hidden > new > incoming > library > favorites. trash/hidden are the
+   "excluded" zone (muted dot) before a | divider; new→favorites is the forward
+   progression (accent dot + fill). Podcast/info/unknown → no scale. */
+const LC_STAGES = [
+  ['trash', 'Trash', true], ['hidden', 'Hidden', true],
+  ['new', 'New', false], ['incoming', 'Incoming', false],
+  ['library', 'Library', false], ['favorites', 'Favorites', false],
+];
+// Generic stop-scale renderer. stages = [[key,label,excl?]…]; dot centres at
+// (i+0.5)/n → the line/fill/divider are positioned against those centres inline
+// (so it works for any stop count). No caption.
+function _scaleHTML(stages, idx, divAfter) {
+  const n = stages.length;
+  const centre = i => (i + 0.5) / n * 100;
+  const edge = centre(0);
+  const excl = !!(stages[idx] && stages[idx][2]);
+  const sep = (divAfter != null && divAfter >= 0 && divAfter < n - 1)
+    ? `<div class="lc-sep" style="left:${(centre(divAfter) + centre(divAfter + 1)) / 2}%"></div>` : '';
+  const stops = stages.map((s, i) =>
+    `<div class="lc-stop${s[2] ? ' excl' : ''}${i === idx ? ' current' : ''}">`
+    + `<span class="lc-dot"></span><span class="lc-lab">${s[1]}</span></div>`).join('');
+  return `<div class="lc-scale"><div class="lc-track">
+    <div class="lc-line" style="left:${edge}%;right:${edge}%"></div>
+    <div class="lc-line-fill${excl ? ' excl' : ''}" style="left:${edge}%;width:${centre(idx) - edge}%"></div>
+    ${sep}<div class="lc-stops">${stops}</div>
+  </div></div>`;
+}
+function lifecycleScaleHTML(info) {
+  const ot = info && info.option_type;
+  // Podcast/info = consume-once → listening progress, not the affinity ladder.
+  if (ot === 'podcast' || ot === 'info') {
+    const done = (info.read_count_end || 0) >= 1;
+    const started = !done && (info.read_end || 0) > 0.02;
+    return _scaleHTML([['unplayed', 'Unplayed'], ['progress', 'In progress'], ['finished', 'Finished']],
+      done ? 2 : (started ? 1 : 0));
+  }
+  const idx = LC_STAGES.findIndex(s => s[0] === ot);
+  if (idx < 0) return '';   // unknown type → no scale
+  return _scaleHTML(LC_STAGES, idx, 1);   // divider after hidden (index 1)
+}
 let objTMatrixUri = null;   // track currently shown in the modal sheet
 function drawObjTMatrix() { objPanel.draw(); }
 function initObjTMatrix() { initTrackPanelMatrix(objPanel); }
@@ -3597,6 +3681,7 @@ async function renderTrackObj(uri, seed) {
   objBody().innerHTML =
     `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b><span>${objEsc(artist)}</span></div></div>`
     + dl
+    + lifecycleScaleHTML(info)
     + `<canvas id="obj-tmatrix" class="obj-tmatrix" title="Drag to set the track's mood (edit mode)"></canvas>`
     + `<div id="obj-playlists" class="td-playlists"></div>`;
   objPanel.seed(uri, info);
