@@ -111,7 +111,60 @@ class DatabaseHandler():
     def get_all_boxs(self):
         query = Box.select()
         return self.transform_query_to_list(query)
-    
+
+    def box_exists(self, uid):
+        return Box.select().where(Box.uid == uid).exists()
+
+    def new_box(self, uid):
+        """Create an empty box with the given uid. Unlike create_box, lets
+        IntegrityError propagate — callers must check box_exists first."""
+        return Box.create(uid=uid)
+
+    def delete_box(self, uid):
+        """Delete one box. Returns the number of rows removed (0 = unknown uid)."""
+        return Box.delete().where(Box.uid == uid).execute()
+
+    def count_boxes_referencing(self, uid):
+        """How many OTHER boxes cascade-include this one via a 'box:<uid>' line.
+        Those lines keep working (the cascade skips unknown uids) but the user
+        deserves to know the include will go dead."""
+        return (Box.select()
+                .where((Box.uid != uid) & (Box.data.contains('box:' + uid)))
+                .count())
+
+    def resolve_uris(self, uris):
+        """Batch-resolve data-line uris to display names, cache-only (never hits
+        Spotify). Returns {uri: {'name', 'kind', 'sub'}}; unresolved uris are absent."""
+        out = {}
+        for uri in uris:
+            if not isinstance(uri, str):
+                continue
+            try:
+                if uri.startswith('spotify:track:'):
+                    t = Track.get_or_none(Track.uri == uri)
+                    if t and t.name:
+                        out[uri] = {'name': t.name, 'kind': 'track', 'sub': None}
+                elif uri.startswith('spotify:album:'):
+                    a = Album.get_or_none(Album.id == uri.rsplit(':', 1)[1])
+                    if a and a.name:
+                        out[uri] = {'name': a.name, 'kind': 'album', 'sub': a.artist_name}
+                elif uri.startswith('spotify:artist:'):
+                    a = Artist.get_or_none(Artist.id == uri.rsplit(':', 1)[1])
+                    if a and a.name:
+                        out[uri] = {'name': a.name, 'kind': 'artist', 'sub': None}
+                elif uri.startswith('spotify:playlist:'):
+                    p = Playlist.get_or_none(Playlist.id == uri.rsplit(':', 1)[1])
+                    if p and p.name:
+                        out[uri] = {'name': p.name, 'kind': 'playlist', 'sub': None}
+                elif uri.startswith('box:'):
+                    b = Box.get_or_none(Box.uid == uri[4:])
+                    if b:
+                        out[uri] = {'name': b.description or b.uid, 'kind': 'box',
+                                    'sub': b.option_type}
+            except Exception as err:
+                self.log.error(f'resolve_uris: {uri}: {err}')
+        return out
+
     def get_box_by_uid(self, uid):
         #self.log.info('searching for box : {} '.format(uid))
         query = Box.select().where(Box.uid == uid)
@@ -1003,6 +1056,24 @@ class DatabaseHandler():
     def get_saved_album_ids(self):
         """Return list of album IDs where saved=1."""
         return [a.id for a in Album.select(Album.id).where(Album.saved == 1)]
+
+    def get_saved_albums(self, limit=200):
+        """Saved albums as picker rows (uri/name/sub/image) for the box editor."""
+        rows = (Album.select().where(Album.saved == 1)
+                .order_by(Album.name).limit(limit))
+        return [{'uri': a.uri or f'spotify:album:{a.id}',
+                 'name': a.name or a.id,
+                 'sub': a.artist_name or '',
+                 'image': a.image_url or ''} for a in rows]
+
+    def get_followed_artists(self, limit=200):
+        """Followed artists as picker rows (uri/name/image) for the box editor."""
+        rows = (Artist.select().where(Artist.followed == 1)
+                .order_by(Artist.name).limit(limit))
+        return [{'uri': a.uri or f'spotify:artist:{a.id}',
+                 'name': a.name or a.id,
+                 'sub': '',
+                 'image': a.image_url or ''} for a in rows]
 
     def save_album_track(self, album_id, track_uri, position=0):
         """Link a track_uri to an album_id in AlbumTrack cache."""

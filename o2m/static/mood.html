@@ -44,6 +44,7 @@
   :root, [data-theme="dark"] {
     --bg: #15120E; --surface: #1C1812; --card: #241F18; --raised: #2D2719;
     --accent: #FF5A00; --accent-press: #E64E00; --accent-soft: #FF5A0014; --on-accent: #190E04;
+    --danger: #E5484D;   /* destructive actions only (delete) — inherited by every theme */
     --text: #F3EEE3; --muted: #9C9486; --faint: #6E665A;
     --border: rgba(243,238,227,.13); --border-soft: rgba(243,238,227,.07); --border-strong: rgba(243,238,227,.30);
     --fill-1: rgba(243,238,227,.04); --fill-2: rgba(243,238,227,.08); --fill-3: rgba(243,238,227,.15);
@@ -258,9 +259,9 @@
   .lc-stop.current .lc-lab { color: var(--accent); font-weight: 700; }
   .lc-stop.current.excl .lc-lab { color: var(--text); }
   /* Per-track mood matrix inside the details panel. */
-  #td-matrix, .obj-tmatrix { width: 100%; max-width: 200px; aspect-ratio: 1 / 1;
+  .tp-matrix { width: 100%; max-width: 200px; aspect-ratio: 1 / 1;
     margin: 8px auto 2px; display: block; touch-action: none; }
-  body.edit-mode #td-matrix, body.edit-mode .obj-tmatrix { cursor: crosshair; }
+  body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
   #track-details .td-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -307,10 +308,10 @@
     text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
   }
-  #td-fav { line-height: 1; user-select: none; display: inline-flex; }
-  #td-fav svg { width: 16px; height: 16px; display: block; }
-  #td-fav.on { color: #e0245e; }
-  body.edit-mode #td-fav { cursor: pointer; }
+  .td-fav { line-height: 1; user-select: none; display: inline-flex; }
+  .td-fav svg { width: 16px; height: 16px; display: block; }
+  .td-fav.on { color: #e0245e; }
+  body.edit-mode .td-fav { cursor: pointer; }
   .td-playlists { display: none; }
   body.edit-mode .td-playlists {
     display: block; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
@@ -923,6 +924,13 @@
   #boxes-panel-label, #settings-label { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; }
   #boxes-panel-label > span:first-child, #settings-label > span:first-child { flex: 1; }
   #boxes-panel-label #btn-clear-boxes, #settings-label #btn-reset-mood { margin-left: auto; }
+  /* New box: a row at the END of the box list, only once editing is unlocked. */
+  .box-btn.box-new { display: none; color: var(--muted); border-top: 1px solid var(--border); margin-top: 4px; }
+  body.edit-mode .box-btn.box-new { display: flex; }
+  .box-btn.box-new:hover { color: var(--accent); }
+  .box-btn.box-new .box-name { font-weight: 500; }
+  .box-btn.box-new .box-new-icon { display: inline-flex; flex-shrink: 0; width: 14px; height: 14px; }
+  .box-btn.box-new .box-new-icon svg { width: 14px; height: 14px; display: block; }
   #boxes-count { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
 
   /* ── Footer link SVG icons ── */
@@ -1180,13 +1188,10 @@
   }
 
   /* Inline editing of the current track's energy / valence / mood (edit mode). */
-  body.edit-mode #td-energy, body.edit-mode #td-valence, body.edit-mode #td-mood,
-  body.edit-mode #obj-td-energy, body.edit-mode #obj-td-valence, body.edit-mode #obj-td-mood {
+  body.edit-mode .tp-editable {
     cursor: pointer; border-bottom: 1px dotted var(--border-strong);
   }
-  body.edit-mode #td-energy:hover, body.edit-mode #td-valence:hover, body.edit-mode #td-mood:hover,
-  body.edit-mode #obj-td-energy:hover, body.edit-mode #obj-td-valence:hover,
-  body.edit-mode #obj-td-mood:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  body.edit-mode .tp-editable:hover { color: var(--accent); border-bottom-color: var(--accent); }
   .td-edit-input, .td-edit-select {
     font: inherit; font-family: var(--font-mono); width: 56px;
     background: var(--card); color: var(--text); border: 1px solid var(--accent);
@@ -1290,7 +1295,7 @@
     font-size: 9px; color: var(--muted); margin-top: 3px; }
   .obj-src-db { color: var(--accent); }
 
-  .obj-dl { display: flex; flex-direction: column; }
+  .obj-dl { display: flex; flex-direction: column; margin: 0; }   /* reset <dl> default margin */
   .obj-dl > div { display: flex; justify-content: space-between; gap: 10px; font-size: 13px;
     padding: 7px 0; border-bottom: 1px solid var(--border); }
   .obj-dl dt { color: var(--muted); }
@@ -1315,10 +1320,23 @@
   .bx-data { width: 100%; resize: vertical; font-size: 15px; line-height: 1.7;
     min-height: 220px; max-height: 60vh; overflow-y: auto; padding: 8px 10px; }
   .obj-field input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
-  .obj-save-row { margin-top: 14px; }
+  .obj-save-row { margin-top: 14px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .obj-save-btn { background: var(--accent); color: #fff; border: none; padding: 8px 18px;
     font: inherit; font-weight: 600; cursor: pointer; border-radius: 0; }
   .obj-save-btn:hover { opacity: .9; }
+  /* Destructive action: quiet until armed, then unmistakable. */
+  .bx-danger-btn {
+    display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    font: inherit; font-size: 12px; padding: 7px 12px; border-radius: 6px;
+    cursor: pointer; transition: border-color .15s, color .15s, background .15s;
+  }
+  .bx-danger-btn svg { width: 13px; height: 13px; display: block; }
+  .bx-danger-btn:hover { color: var(--danger); border-color: var(--danger); }
+  .bx-danger-btn.armed {
+    background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600;
+  }
 
   .obj-tracks { display: flex; flex-direction: column; }
   .obj-row {
@@ -1354,6 +1372,135 @@
   }
   .box-info-btn:hover { color: var(--accent); }
   .box-info-btn svg { width: 15px; height: 15px; display: block; }
+
+  /* ── Structured box-data editor ── */
+  #bx-editor-host { width: 100%; }
+  .bx-line {
+    display: flex; align-items: center; gap: 8px; padding: 6px 2px;
+    border-bottom: 1px solid var(--border); min-width: 0;
+  }
+  .bx-line.disabled .bx-kind, .bx-line.disabled .bx-main { opacity: .45; }
+  .bx-kind { flex-shrink: 0; color: var(--muted); display: inline-flex; }
+  .bx-kind svg { width: 14px; height: 14px; display: block; }
+  .bx-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .bx-name { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bx-name-editable { cursor: text; }
+  .bx-name-editable:hover { color: var(--accent); }
+  .bx-sub {
+    font-family: var(--font-mono); font-size: 10px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .bx-label-input { width: 100%; font-size: 13px; }
+  .bx-line-btn {
+    flex-shrink: 0; background: none; border: none; color: var(--muted);
+    cursor: pointer; padding: 3px; display: inline-flex; transition: color .15s;
+  }
+  .bx-line-btn:hover { color: var(--accent); }
+  .bx-line-btn svg { width: 13px; height: 13px; display: block; }
+  .bx-empty { color: var(--muted); font-size: 12px; padding: 6px 2px; }
+  .bx-foot-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 6px;
+    cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .bx-foot-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .bx-foot-btn.ghost { color: var(--muted); }
+  .bx-foot-btn svg { width: 13px; height: 13px; display: block; }
+
+  /* ── Content editor organism: List/Raw · content · Add content ── */
+  .wc { width: 100%; }
+  .wc-toolbar { display: flex; gap: 6px; padding-bottom: 8px; }
+  .wc-seg {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px;
+    cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .wc-seg svg { width: 13px; height: 13px; display: block; }
+  .wc-seg:hover { color: var(--text); }
+  .wc-seg.on { color: var(--accent); border-color: var(--accent); }
+  .wc-main { min-width: 0; }
+  .wc-add { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .wc-add-head {
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .12em;
+    font-size: 10px; color: var(--muted); margin-bottom: 8px;
+  }
+  .wc-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+  .wc-tab {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    font: inherit; font-size: 12px; padding: 6px 12px; border-radius: 6px;
+    cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .wc-tab:hover { border-color: var(--accent); }
+  .wc-tab.on { border-color: var(--accent); color: var(--accent); }
+  .wc-tab svg { width: 13px; height: 13px; display: block; }
+  .wc-detail:empty { display: none; }
+  .wc-panel { min-width: 0; }
+  .wc-panel-head {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .12em;
+    font-size: 10px; color: var(--muted); margin-bottom: 8px;
+  }
+  .wc-back {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    padding: 0; display: inline-flex; flex-shrink: 0;
+  }
+  .wc-back:hover { color: var(--accent); }
+  .wc-back svg { width: 13px; height: 13px; display: block; }
+  .wc-hint { font-size: 11px; color: var(--muted); padding-bottom: 8px; }
+  #wc-search-input { margin-bottom: 8px; }
+  /* Result rows add content on click — no per-row action menu here. */
+  #bx-add-panel .tl-item { cursor: copy; }
+  #bx-add-panel .tl-info { display: none; }
+  #bx-add-panel .tl-item.picked { outline: 1px solid var(--accent); outline-offset: -1px; border-radius: 4px; }
+  /* Mobile: the panel stacks below, so content + tabs stay visible above it.
+     Desktop: it becomes a second column next to them. */
+  .wc-detail { margin-top: 14px; }
+  @media (min-width: 700px) {
+    .wc-body.has-detail {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 18px; align-items: start;
+    }
+    .wc-body.has-detail .wc-detail {
+      margin-top: 0; border-left: 1px solid var(--border); padding-left: 18px;
+      max-height: 46vh; overflow-y: auto;
+    }
+  }
+
+  /* ── New-box wizard ── */
+  .wiz-hint { font-size: 11px; color: var(--muted); padding: 4px 2px 8px; }
+  .wiz-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 8px; }
+  .bx-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 14px;
+    cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .bx-chip:hover { border-color: var(--accent); }
+  .bx-chip.on { border-color: var(--accent); color: var(--accent); }
+  .bx-chip svg { width: 12px; height: 12px; display: block; }
+  .wiz-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin-top: 16px;
+  }
+  .wiz-cards { display: flex; flex-direction: column; gap: 8px; padding-bottom: 10px; }
+  .wiz-card {
+    display: flex; align-items: center; gap: 12px; text-align: left; width: 100%;
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    font: inherit; padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .wiz-card:hover { border-color: var(--accent); }
+  .wiz-card.on { border-color: var(--accent); }
+  .wiz-card.on .wiz-card-icon { color: var(--accent); }
+  .wiz-card-icon { flex-shrink: 0; display: inline-flex; color: var(--muted); }
+  .wiz-card-icon svg { width: 18px; height: 18px; display: block; }
+  .wiz-card-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .wiz-card-text b { font-size: 14px; font-weight: 600; }
+  .wiz-card-text span { font-size: 11px; color: var(--muted); }
+
 
   /* Desktop / tablet: overlay the lower area in place (over the columns). */
   @media (min-width: 700px) {
@@ -1540,29 +1687,14 @@
     <div class="td-head">
       <span>Details</span>
       <div class="td-head-actions">
+        <!-- Actions live in the header (like the modal's obj-actions). -->
+        <button id="btn-track-menu" class="track-menu-trigger" title="More" aria-label="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
         <button id="btn-edit-lock" title="Enable editing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
         <button id="btn-details-close" title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
     </div>
-    <div class="td-body">
-      <dl class="td-list">
-        <div><dt>Status</dt><dd id="td-type">—</dd></div>
-        <div><dt>Favorite</dt><dd id="td-fav" class="td-fav">—</dd></div>
-        <div><dt>Energy</dt><dd id="td-energy">—</dd></div>
-        <div><dt>Valence</dt><dd id="td-valence">—</dd></div>
-        <div><dt>Mood</dt><dd id="td-mood">—</dd></div>
-        <div><dt>Popularity</dt><dd id="td-popularity">—</dd></div>
-        <div><dt>Plays</dt><dd id="td-plays">—</dd></div>
-        <div><dt>Library</dt><dd id="td-library">—</dd></div>
-      </dl>
-      <!-- Mood matrix for this track: shows its energy/valence position; drag to
-           reposition manually when editing is unlocked (saves to track_features). -->
-      <canvas id="td-matrix" title="Drag to set the track's mood (edit mode)"></canvas>
-      <div class="td-actions-row">
-        <div id="td-playlists" class="td-playlists"></div>
-        <button id="btn-track-menu" class="footer-link track-menu-trigger" title="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>More</button>
-      </div>
-    </div>
+    <!-- Body is generated by tdPanel.render() — same shared markup as the modal. -->
+    <div class="td-body"></div>
   </div>
 </div><!-- /top-zone -->
 
@@ -1807,6 +1939,20 @@ const ICON = {
   zap:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
   sun:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   heart:  f => `<svg viewBox="0 0 24 24" fill="${f ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>`,
+  plus:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  x:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  music:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+  disc:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>',
+  user:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  list:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  rss:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>',
+  radio:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>',
+  box:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  hash:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>',
+  eye:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+  code:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+  check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
 };
 
 /* ── State ── */
@@ -3040,13 +3186,13 @@ async function togglePlaylistMembership(cb, uri) {
   finally { cb.disabled = false; }
 }
 
-function renderFav() {
-  const el = document.getElementById('td-fav');
+function renderFav(p) {
+  const el = p && p.favEl();
   if (!el) return;
-  const fav = favLocal || favSpotify === true;
+  const fav = p.favLocal || p.favSpotify === true;
   el.innerHTML = ICON.heart(fav);
   el.classList.toggle('on', fav);
-  const src = [favLocal ? 'local' : null, favSpotify === true ? 'Spotify' : null].filter(Boolean).join(' + ');
+  const src = [p.favLocal ? 'local' : null, p.favSpotify === true ? 'Spotify' : null].filter(Boolean).join(' + ');
   el.title = (fav ? 'Favorite' + (src ? ' (' + src + ')' : '') : 'Not a favorite')
            + (editUnlocked ? ' — click to toggle' : '');
 }
@@ -3074,14 +3220,41 @@ const TRACK_FIELDS = [
   ['Library',    'library',    i => i.library || '—'],
 ];
 const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
+// Row order for the shared panel body (Favorite added to TRACK_FIELDS' text rows).
+const TRACK_PANEL_ROWS = [
+  ['Status', 'type'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
+  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Library', 'library'],
+];
+
+/* THE single source of the track-detail body markup, shared by both panels. The
+   ids come from the panel (cellId/canvasId/…) so the now-playing column and the
+   modal render byte-for-byte the same content; only the container skin (listClass)
+   and the optional hero differ per context. */
+function trackPanelBodyHTML(p, { hero, cover, name, artist } = {}) {
+  const heroHtml = hero
+    ? `<div class="obj-hero">${cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : ''}`
+      + `<div class="obj-meta"><b>${objEsc(name || '')}</b><span>${objEsc(artist || '')}</span></div></div>`
+    : '';
+  const rows = TRACK_PANEL_ROWS.map(([label, key]) => {
+    const cls = key === 'fav' ? 'td-fav' : (EDITABLE_FIELDS.includes(key) ? 'tp-editable' : '');
+    return `<div><dt>${label}</dt><dd id="${p.cellId(key)}"${cls ? ` class="${cls}"` : ''}>—</dd></div>`;
+  }).join('');
+  return heroHtml
+    + `<dl class="${p.listClass}">${rows}</dl>`
+    + `<div id="${p.lifecycleId}"></div>`
+    + `<canvas id="${p.canvasId}" class="tp-matrix" title="Drag to set the track's mood (edit mode)"></canvas>`
+    + `<div id="${p.playlistsId}" class="td-playlists"></div>`;
+}
 
 /* One panel instance. `cellId(kind)` maps 'energy' → the dd element id used by
-   that panel, `getUri()` says which track it is currently showing. */
-function makeTrackPanel({ cellId, canvasId, getUri }) {
+   that panel; `body()` is the container it fills; `getUri()` is the shown track. */
+function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass, body, getUri }) {
   const p = {
-    ev: null,                      // {energy, valence} shown by this panel
-    cellId, canvasId, getUri,
+    ev: null,                          // {energy, valence} shown by this panel
+    favLocal: false, favSpotify: null, // per-panel favourite state (own uri)
+    cellId, canvasId, playlistsId, lifecycleId, listClass, body, getUri,
     el:  kind => document.getElementById(cellId(kind)),
+    favEl: () => document.getElementById(cellId('fav')),
     // Never clobber a cell that holds an open inline editor.
     set(kind, txt) {
       const el = p.el(kind);
@@ -3089,6 +3262,33 @@ function makeTrackPanel({ cellId, canvasId, getUri }) {
     },
     canvas: () => document.getElementById(canvasId),
     draw() { drawMoodMatrix(p.canvas(), p.ev, TD_PAD); },
+    // Build the shared body once, then populate cells + lifecycle + matrix + fav +
+    // playlists and wire all interactions. Both panels go through this.
+    render(info, opts = {}) {
+      const host = p.body();
+      if (!host) return;
+      host.innerHTML = trackPanelBodyHTML(p, opts);
+      TRACK_FIELDS.forEach(([, key, val]) => p.set(key, val(info)));
+      const lc = document.getElementById(lifecycleId);
+      if (lc) lc.innerHTML = lifecycleScaleHTML(info);
+      p.seed(getUri(), info);
+      p.rewire();
+      p.favLocal = !!(info && info.liked); p.favSpotify = null;
+      renderFav(p);
+      const uri = getUri();
+      if (uri && uri.startsWith('spotify:track:')) {
+        fetch(API + '/track_saved?uri=' + encodeURIComponent(uri)).then(r => r.json())
+          .then(d => { p.favSpotify = d.saved; renderFav(p); }).catch(() => {});
+      }
+      renderPlaylistEditor(editUnlocked ? uri : null, playlistsId);
+    },
+    // Re-attach handlers to an already-rendered body (fresh render OR nav restore).
+    rewire() {
+      initTrackPanelMatrix(p);
+      wireTrackPanelEdits(p);
+      const f = p.favEl();
+      if (f && !f.dataset.wired) { f.dataset.wired = '1'; f.addEventListener('click', () => toggleFavorite(p)); }
+    },
     // Seed the matrix dot: a pending manual edit for this uri wins over the
     // server values, so an in-flight drag is never clobbered by a refresh.
     seed(uri, info) {
@@ -3214,58 +3414,54 @@ function wireTrackPanelEdits(p) {
 
 // The two instances. The now-playing column follows the playing track; the modal
 // follows whichever track was opened in it.
-const tdPanel  = makeTrackPanel({ cellId: k => 'td-' + k,     canvasId: 'td-matrix',   getUri: () => matrixCurUri });
-const objPanel = makeTrackPanel({ cellId: k => 'obj-td-' + k, canvasId: 'obj-tmatrix', getUri: () => objTMatrixUri });
+const tdPanel  = makeTrackPanel({ cellId: k => 'td-' + k, canvasId: 'td-matrix', playlistsId: 'td-playlists', lifecycleId: 'td-lifecycle', listClass: 'td-list', body: () => document.querySelector('#track-details .td-body'), getUri: () => matrixCurUri });
+const objPanel = makeTrackPanel({ cellId: k => 'obj-td-' + k, canvasId: 'obj-tmatrix', playlistsId: 'obj-playlists', lifecycleId: 'obj-lifecycle', listClass: 'obj-dl', body: () => document.getElementById('obj-body'), getUri: () => objTMatrixUri });
 
-async function renderTrackDetails(uri) {
-  const blank = () => TRACK_FIELDS.forEach(([, key]) => tdPanel.set(key, '—'));
-  if (!uri) {
-    blank();
-    detailsUri = null; favLocal = false; favSpotify = null; renderFav();
-    tdPanel.ev = null; tdPanel.draw();
-    return;
-  }
-  try {
-    const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
-    TRACK_FIELDS.forEach(([, key, val]) => tdPanel.set(key, val(info)));
-
-    favLocal = !!info.liked;
-    // Statut Spotify : seulement quand l'uri change, pour ne pas spammer l'API
-    if (uri !== detailsUri) {
-      favSpotify = null;
-      renderFav();
-      if (uri.startsWith('spotify:track:')) {
-        fetch(API + '/track_saved?uri=' + encodeURIComponent(uri))
-          .then(r => r.json()).then(d => { favSpotify = d.saved; renderFav(); })
-          .catch(() => {});
-      }
-      if (editUnlocked) renderPlaylistEditor(uri, 'td-playlists');
-    }
-    detailsUri = uri;
-    renderFav();
-    tdPanel.seed(uri, info);
-  } catch(e) {
-    blank();
-  }
+// Desktop only: match the details column width to the (square) cover on the left.
+// The cover's width = its height (aspect-ratio 1/1) = the top-zone height, so it
+// isn't a CSS-referenceable value → sync it here. Widening details doesn't change
+// its own height (rows fixed, matrix capped at 200px), so the top-zone height and
+// thus the cover width stay put — no feedback loop.
+function syncDetailsWidth() {
+  const cover = document.getElementById('cover-wrap');
+  const details = document.getElementById('track-details');
+  if (!cover || !details) return;
+  if (!window.matchMedia('(min-width: 700px)').matches) { details.style.flex = ''; return; }
+  const w = cover.offsetWidth;
+  if (w > 0) details.style.flex = '0 0 ' + w + 'px';
 }
 
-async function toggleFavorite() {
+async function renderTrackDetails(uri) {
+  const host = tdPanel.body();
+  if (!uri) { if (host) host.innerHTML = ''; detailsUri = null; tdPanel.ev = null; return; }
+  try {
+    const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
+    detailsUri = uri;
+    tdPanel.render(info, { hero: false });   // hero off: the now-playing cover is already up top
+    requestAnimationFrame(syncDetailsWidth);
+  } catch (e) { if (host) host.innerHTML = ''; }
+}
+
+// Per-panel favourite toggle. Reads the current state from the DOM (the cell's .on
+// class) so it stays correct even after a nav-stack restore (no captured state).
+async function toggleFavorite(p) {
   if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-  if (!detailsUri) return;
-  const next = !(favLocal || favSpotify === true);
+  const uri = p.getUri();
+  if (!uri) return;
+  const next = !p.favEl()?.classList.contains('on');
   try {
     const r = await fetch(API + '/track_favorite', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ uri: detailsUri, favorite: next })
+      body: JSON.stringify({ uri, favorite: next })
     });
     if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     const d = await r.json();
-    if ('liked_local' in d) favLocal = d.liked_local;
-    if ('liked_spotify' in d) favSpotify = d.liked_spotify;
-    else if (!detailsUri.startsWith('spotify:track:')) favSpotify = null;
-    renderFav();
+    if ('liked_local' in d) p.favLocal = d.liked_local;
+    if ('liked_spotify' in d) p.favSpotify = d.liked_spotify;
+    else if (!uri.startsWith('spotify:track:')) p.favSpotify = null;
+    renderFav(p);
     setFeedback(next ? 'Added to favorites' : 'Removed from favorites');
-  } catch(e) { setFeedback('Favorite error'); }
+  } catch (e) { setFeedback('Favorite error'); }
 }
 
 /* ── Édition : auth Spotify via proxy Iris (TEMPORAIRE — migrer en HTTPS) ── */
@@ -3290,7 +3486,7 @@ function setEditUnlocked(on, id) {
     if (document.getElementById('obj-playlists'))
       renderPlaylistEditor(on ? objTMatrixUri : null, 'obj-playlists');
   }
-  if (typeof renderFav === 'function') renderFav();
+  renderFav(tdPanel); renderFav(objPanel);   // refresh the heart title/affordance on both
 }
 
 async function checkEditStatus() {
@@ -3671,24 +3867,8 @@ async function renderTrackObj(uri, seed) {
   const artist = (tr && (tr.artists || []).map(a => a.name).join(', ')) || seed?.artist || '';
   objSetHead('Track', name, artist);
   objTMatrixUri = uri;
-  const coverHtml = cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : '';
-  // Same rows as the now-playing panel (TRACK_FIELDS is the single source of
-  // truth); the editable ones carry an id so they're click-to-edit in edit mode.
-  const dl = `<div class="obj-dl">` + TRACK_FIELDS.map(([label, key, val]) => {
-    const id = EDITABLE_FIELDS.includes(key) ? ` id="obj-td-${key}"` : '';
-    return `<div><dt>${label}</dt><dd${id}>${objEsc(val(info))}</dd></div>`;
-  }).join('') + `</div>`;
-  objBody().innerHTML =
-    `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b><span>${objEsc(artist)}</span></div></div>`
-    + dl
-    + lifecycleScaleHTML(info)
-    + `<canvas id="obj-tmatrix" class="obj-tmatrix" title="Drag to set the track's mood (edit mode)"></canvas>`
-    + `<div id="obj-playlists" class="td-playlists"></div>`;
-  objPanel.seed(uri, info);
-  initObjTMatrix();
-  wireObjFeatureEdit();
-  renderPlaylistEditor(uri, 'obj-playlists');   // same picker as the now-playing panel
-  requestAnimationFrame(drawObjTMatrix);
+  // Same shared body as the now-playing panel (one render path — see makeTrackPanel).
+  objPanel.render(info, { hero: true, cover, name, artist });
 }
 
 async function saveCurrentTrackFeatures() {
@@ -3951,6 +4131,7 @@ armBackTrap();
    bfcache copy (dead WebSockets, suspended audio, stale UI stuck on the splash).
    A persisted pageshow means exactly that → force a clean reload. */
 window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+window.addEventListener('resize', () => { try { syncDetailsWidth(); } catch (e) {} });
 
 function openObjPanel() {
   if (!document.body.classList.contains('obj-open')) modalHistoryPush('obj');
@@ -3984,6 +4165,9 @@ function objLoading(msg) { objBody().innerHTML = `<div class="obj-loading">${msg
 const _objBack = [], _objFwd = [];
 let _objRestoring = false;
 function _objSnap() {
+  // Banking the box editor away → keep its unsaved form edits in _boxEditInfo
+  // (the snapshot only stores innerHTML; typed values don't survive a restore).
+  if (document.getElementById('bx-editor-host') && !document.getElementById('bx-wizard')) _bxCaptureEditorFields();
   return {
     kind:  document.getElementById('obj-kind').textContent,
     title: document.getElementById('obj-title').textContent,
@@ -4000,20 +4184,37 @@ function _objApply(s) {
   objSetActionUris(s.playUris, s.ownUri);
   _objRestoring = false;
   _objUpdateNav();
-  // A restored track view carries an inert canvas (innerHTML only) → re-wire it.
+  // A restored track view carries an inert body (innerHTML only) → re-wire it.
   if (document.getElementById('obj-tmatrix')) {
     objTMatrixUri = s.ownUri;
     if (matrixFeatures[s.ownUri]) objPanel.ev = { ...matrixFeatures[s.ownUri] };
-    initObjTMatrix();
-    wireObjFeatureEdit();
-    // The restored markup includes the playlists container but no live handlers.
-    renderPlaylistEditor(s.ownUri, 'obj-playlists');
-    requestAnimationFrame(drawObjTMatrix);
+    objPanel.rewire();
+    renderPlaylistEditor(editUnlocked ? s.ownUri : null, 'obj-playlists');
+    requestAnimationFrame(() => objPanel.draw());
+  }
+  // Same for a restored wizard or box-editor view: re-render from live state
+  // (draft / edit info) so the buttons work and unsaved content is kept.
+  else if (document.getElementById('bx-wizard')) {
+    if (_boxDraft) renderWizardStep();
+  }
+  else if (document.getElementById('bx-editor-host')) {
+    const uid = (s.ownUri || '').startsWith('box:') ? s.ownUri.slice(4) : null;
+    if (_boxEditInfo && uid === _boxEditInfo.uid) {
+      _bxHost = 'editor';
+      objBody().innerHTML = renderBoxEditor(_boxEditInfo);
+      wireBoxEditor(_boxEditInfo);
+    } else if (uid) {
+      openBox(uid);   // a different box was edited since → reload this one fresh
+    }
   }
 }
 function _objUpdateNav() {
-  document.getElementById('obj-prev')?.classList.toggle('hide', _objBack.length === 0);
-  document.getElementById('obj-next')?.classList.toggle('hide', _objFwd.length === 0);
+  // The wizard drives its own sequence with Back/Next at the bottom; the modal's
+  // ◂ ▸ (which jump between *views*, not steps) would contradict it, so they are
+  // hidden for as long as a wizard is on screen.
+  const inWizard = !!document.getElementById('bx-wizard');
+  document.getElementById('obj-prev')?.classList.toggle('hide', inWizard || _objBack.length === 0);
+  document.getElementById('obj-next')?.classList.toggle('hide', inWizard || _objFwd.length === 0);
 }
 // Called at the top of each fresh modal navigation: bank the outgoing view.
 function objNavTo() {
@@ -4189,6 +4390,12 @@ async function openAlbum(uri, seed) {
 }
 
 let _boxEditUid = null;
+let _boxEditInfo = null;          // last /api/box_info payload (explicit re-render after picking)
+// ── Structured box-data editor state (shared by the box editor and the wizard) ──
+let _bxItems = null;              // parsed data items (aliases _boxDraft.items in the wizard)
+let _bxHost = 'editor';           // 'editor' | 'wizard' — where the content editor lives
+let _bxRawMode = false;           // true = raw textarea view
+const _resolveCache = new Map();  // uri → {name, kind, sub} from /api/resolve_uris
 
 function renderBoxContent(info) {
   const lines = String(info.data || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -4198,7 +4405,7 @@ function renderBoxContent(info) {
         let attr = '', cls = 'obj-row', nav = false;
         if (/^spotify:album:/.test(l))       { attr = ` data-album-uri="${objEsc(l)}"`;  nav = true; }
         else if (/^spotify:artist:/.test(l)) { attr = ` data-artist-uri="${objEsc(l)}"`; nav = true; }
-        else if (/^box:/.test(l))            { attr = ` data-box-uid="${objEsc(l.split(':', 2)[1].trim())}"`; nav = true; }
+        else if (/^box:/.test(l))            { attr = ` data-box-uid="${objEsc(l.slice(4).trim())}"`; nav = true; }
         if (nav) cls += ' obj-clickable obj-nav';
         return `<div class="${cls}"${attr}><span class="ot-name">${objEsc(l)}</span>${nav ? CHEVRON_SVG : ''}</div>`;
       }).join('')
@@ -4218,46 +4425,89 @@ function renderBoxReadonly(info) {
     </div>` + renderBoxContent(info);
 }
 
+// Form-field helpers shared by the box editor and the new-box wizard.
+const bxOpt = (v, l, cur) => `<option value="${objEsc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${objEsc(l)}</option>`;
+const bxNum = (id, val, attrs) => `<input class="bx-input bx-num" type="number" id="bx-${id}" value="${val == null ? '' : val}" ${attrs}>`;
+const bxChk = (id, on) => `<input type="checkbox" id="bx-${id}"${on ? ' checked' : ''}>`;
+const bxField = (label, ctrl, cls) => `<div class="obj-field${cls ? ' ' + cls : ''}"><label class="obj-field-label">${label}</label><div class="obj-field-ctrl">${ctrl}</div></div>`;
+const BX_TYPES = ['library','favorites','new','incoming','hidden','trash','podcast','info'];
+const bxTypeSel = cur => `<select class="bx-input" id="bx-option_type">` + BX_TYPES.map(t => bxOpt(t, t, cur)).join('') + `</select>`;
+/* Sort/order options in plain language. '' (stored NULL) and 'smart' both take
+   the smart selection path; 'smart' additionally forces a reshuffle, which is
+   the recommended default, so it leads. '' is kept as an explicit entry (it
+   follows the global shuffle setting) so existing boxes round-trip unchanged. */
+const BX_SORTS = [
+  ['smart',   'Smart shuffled (recommended)'],
+  ['',        'Smart'],
+  ['shuffle', 'Shuffle'],
+  ['asc',     'In order (A→Z, oldest first)'],
+  ['desc',    'Reverse (Z→A, newest first)'],
+];
+const bxSortSel = cur => `<select class="bx-input" id="bx-option_sort">`
+  + BX_SORTS.map(([v, l]) => bxOpt(v, l, cur || '')).join('') + `</select>`;
+
 function renderBoxEditor(info) {
-  const opt = (v, l, cur) => `<option value="${objEsc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${objEsc(l)}</option>`;
-  const types = ['library','favorites','new','incoming','hidden','trash','podcast','info'];
-  const typeSel = `<select class="bx-input" id="bx-option_type">` + types.map(t => opt(t, t, info.option_type)).join('') + `</select>`;
-  const sortSel = `<select class="bx-input" id="bx-option_sort">`
-    + [['','—'],['shuffle','shuffle'],['asc','asc'],['desc','desc']].map(([v,l]) => opt(v, l, info.option_sort || '')).join('') + `</select>`;
-  const num = (id, val, attrs) => `<input class="bx-input bx-num" type="number" id="bx-${id}" value="${val == null ? '' : val}" ${attrs}>`;
-  const chk = (id, on) => `<input type="checkbox" id="bx-${id}"${on ? ' checked' : ''}>`;
-  const field = (label, ctrl, cls) => `<div class="obj-field${cls ? ' ' + cls : ''}"><label class="obj-field-label">${label}</label><div class="obj-field-ctrl">${ctrl}</div></div>`;
-  return field('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(info.description || '')}">`)
-    + field('Image URL', `<input class="bx-input bx-wide" type="url" id="bx-image_url" placeholder="https://…" value="${objEsc(info.image_url || '')}">`)
-    + field('Type', typeSel)
-    + field('Discover level', num('option_discover_level', info.option_discover_level, 'min="0" max="10" step="1"'))
-    + field('Sort', sortSel)
-    + field('Max results', num('option_max_results', info.option_max_results, 'min="0" step="1" placeholder="default"'))
-    + field('Energy', num('option_energy', info.option_energy, 'min="0" max="1" step="0.05" placeholder="inherit"'))
-    + field('Ambiance', num('option_valence', info.option_valence, 'min="0" max="1" step="0.05" placeholder="inherit"'))
-    + field('Favorite', chk('favorite', info.favorite))
-    + field('Public', chk('public', info.public))
-    + field('Data (raw)', `<textarea class="bx-input bx-data" id="bx-data" rows="4" spellcheck="false">${objEsc(info.data || '')}</textarea>`, 'obj-data-field')
-    + `<div class="obj-save-row"><button class="obj-save-btn" id="bx-save">Save box</button></div>`;
+  return bxField('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(info.description || '')}">`)
+    + bxField('Image URL', `<input class="bx-input bx-wide" type="url" id="bx-image_url" placeholder="https://…" value="${objEsc(info.image_url || '')}">`)
+    + bxField('Type', bxTypeSel(info.option_type))
+    + bxField('Discover level', bxNum('option_discover_level', info.option_discover_level, 'min="0" max="10" step="1"'))
+    + bxField('Sort', bxSortSel(info.option_sort))
+    + bxField('Max results', bxNum('option_max_results', info.option_max_results, 'min="0" step="1" placeholder="default"'))
+    + bxField('Energy', bxNum('option_energy', info.option_energy, 'min="0" max="1" step="0.05" placeholder="inherit"'))
+    + bxField('Ambiance', bxNum('option_valence', info.option_valence, 'min="0" max="1" step="0.05" placeholder="inherit"'))
+    + bxField('Favorite', bxChk('favorite', info.favorite))
+    + bxField('Public', bxChk('public', info.public))
+    + bxField('Content', `<div id="bx-editor-host">${renderDataEditor(_bxItems || [])}</div>`, 'obj-data-field')
+    + `<div class="obj-save-row">`
+    +   `<button class="obj-save-btn" id="bx-save">Save box</button>`
+    +   `<button class="bx-danger-btn" id="bx-delete" data-armed="0">${ICON.x}<span>Delete box</span></button>`
+    + `</div>`;
 }
 
-function wireBoxEditor() {
+function wireBoxEditor(info) {
   document.getElementById('bx-save')?.addEventListener('click', saveBox);
-  // Auto-size the raw-data textarea to its content (no huge empty area, no scroll
-  // until it hits max-height) — grows/shrinks as you type.
-  const ta = document.getElementById('bx-data');
-  if (ta) {
-    const grow = () => {
-      ta.style.height = 'auto';
-      const max = Math.round(window.innerHeight * 0.6);
-      // Honour the CSS min-height so short data still gets a comfortable box.
-      const min = parseInt(getComputedStyle(ta).minHeight, 10) || 0;
-      ta.style.height = Math.min(Math.max(ta.scrollHeight + 2, min), max) + 'px';
-    };
-    ta.addEventListener('input', grow);
-    // Run after layout settles (the panel slides in) so scrollHeight is correct on desktop.
-    requestAnimationFrame(() => requestAnimationFrame(grow));
-  }
+  document.getElementById('bx-delete')?.addEventListener('click', armDeleteBox);
+  wireDataEditor();
+  resolveDataItems();
+}
+
+/* Deleting is irreversible, so the button double-checks itself: the first click
+   arms it ("Confirm delete"), the second one goes through. It disarms on its own
+   after a few seconds so a stray tap can't leave a live trigger sitting there. */
+let _bxDeleteTimer = null;
+function armDeleteBox() {
+  const btn = document.getElementById('bx-delete');
+  if (!btn) return;
+  if (btn.dataset.armed === '1') { clearTimeout(_bxDeleteTimer); deleteBox(); return; }
+  btn.dataset.armed = '1';
+  btn.classList.add('armed');
+  btn.querySelector('span').textContent = 'Confirm delete';
+  clearTimeout(_bxDeleteTimer);
+  _bxDeleteTimer = setTimeout(() => {
+    btn.dataset.armed = '0';
+    btn.classList.remove('armed');
+    const s = btn.querySelector('span');
+    if (s) s.textContent = 'Delete box';
+  }, 5000);
+}
+
+async function deleteBox() {
+  if (!_boxEditUid) return;
+  try {
+    const r = await fetch(API + '/box_delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ uid: _boxEditUid }),
+    }).then(r => r.json());
+    if (r.ok) {
+      const extra = r.referenced_by ? ` (${r.referenced_by} box${r.referenced_by > 1 ? 'es' : ''} referenced it)` : '';
+      setFeedback('Box deleted' + extra);
+      _boxEditUid = null; _boxEditInfo = null;
+      if (typeof loadBoxes === 'function') loadBoxes();
+      closeObjPanel();
+    }
+    else if (r.error === 'edit_auth_required') setFeedback('Editing not authorized');
+    else setFeedback(r.error || 'Delete failed');
+  } catch(e) { setFeedback('Delete error'); }
 }
 
 async function saveBox() {
@@ -4276,13 +4526,15 @@ async function saveBox() {
     option_valence: numOrNull(el('option_valence')),
     favorite: !!el('favorite')?.checked,
     public: !!el('public')?.checked,
-    data: el('data')?.value ?? '',
+    data: getDataEditorValue(),
   };
   try {
     const r = await fetch(API + '/box_edit', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
     }).then(r => r.json());
-    if (r.ok) { setFeedback('Box saved'); if (typeof loadBoxes === 'function') loadBoxes(); openBox(_boxEditUid); }
+    // Saving is the end of the task → close the modal instead of re-opening the
+    // editor (which would also leave a stale form in the ◂ ▸ history).
+    if (r.ok) { setFeedback('Box saved'); if (typeof loadBoxes === 'function') loadBoxes(); closeObjPanel(); }
     else if (r.error === 'edit_auth_required') setFeedback('Editing not authorized');
     else setFeedback(r.error || 'Save failed');
   } catch(e) { setFeedback('Save error'); }
@@ -4297,10 +4549,820 @@ async function openBox(uid) {
     const info = await fetch(API + '/box_info?uid=' + encodeURIComponent(uid)).then(r => r.json());
     if (info.error) { objBody().innerHTML = `<div class="obj-empty">${objEsc(info.error)}</div>`; return; }
     _boxEditUid = uid;
+    _boxEditInfo = info;
     objSetHead('Box', info.description || uid, info.option_type || '');
-    if (editUnlocked) { objBody().innerHTML = renderBoxEditor(info); wireBoxEditor(); }
+    if (editUnlocked) {
+      _bxItems = parseBoxData(info.data);
+      _bxHost = 'editor';
+      _bxRawMode = false;
+      _bxTab = null; _bxBrowseNode = null; _bxSearchQ = '';
+      objBody().innerHTML = renderBoxEditor(info);
+      wireBoxEditor(info);
+    }
     else { objBody().innerHTML = renderBoxReadonly(info); }
   } catch(e) { objBody().innerHTML = '<div class="obj-empty">Could not load box.</div>'; }
+}
+
+/* ── Structured box-data editor ───────────────────────────────────────────
+   Box `data` is a multi-line text where each line is a directive (spotify uri,
+   podcast+feed, stream url, special keyword, box include) and a '#Text' line
+   right before a directive is its human label (the convention the radio/podcast
+   search already consumes). parseBoxData/serializeBoxData round-trip that text
+   losslessly: anything unrecognized is kept verbatim as a raw line. */
+const BOX_KEYWORDS = {
+  'auto:library':          'Auto mix',
+  'auto_simple:library':   'Auto mix (simple)',
+  'auto_podcast:library':  'Auto podcasts',
+  'spotify:library':       'Spotify library (albums + artists)',
+  'spotify:library2':      'Spotify library (albums + artists + liked)',
+  'o2m:favorites':         'O2M favorites',
+  'spotify:favorites':     'O2M favorites (legacy)',
+  'newrecent:library':     'Recent additions',
+  'newnotcompleted:library': 'New, not finished yet',
+  'now:library':           'Usual tracks for this hour',
+  'herenow:library':       'Daily habits',
+  'albums:spotify':        'Random saved album / artist',
+  'albums:local':          'Local albums',
+  'podcasts:unfinished':   'Unfinished podcasts',
+  'podcasts:channel':      'Podcast channels of this box',
+  'infos:library':         'News flash (scheduled)',
+  'meta_podcasts':         'All podcast sources',
+  'meta_infos':            'All info sources',
+  'meta_radios':           'All radio sources',
+};
+const _bxIsKeyword = line => Object.prototype.hasOwnProperty.call(BOX_KEYWORDS, line);
+function _bxIsDirective(line) {
+  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:)/.test(line)
+      || _bxIsKeyword(line);
+}
+function _bxNewItem(line, label, disabled) {
+  if (_bxIsKeyword(line)) return { kind: 'keyword', value: line, label: label || null, disabled: !!disabled };
+  if (/^(spotify:(album|artist|track|playlist):|box:)/.test(line))
+    return { kind: 'uri', uri: line, label: label || null, disabled: !!disabled };
+  return { kind: 'pair', uri: line, label: label || null, disabled: !!disabled };   // podcast+/stream/local…
+}
+function parseBoxData(text) {
+  const items = [];
+  let pending = null;   // last '#' line that wasn't itself a directive → label candidate
+  const flushPending = () => { if (pending) { items.push({ kind: 'comment', text: pending.raw }); pending = null; } };
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;   // like the backend scanners, blank lines don't break a label
+    if (line.startsWith('#')) {
+      const stripped = line.replace(/^#+\s*/, '');
+      if (_bxIsDirective(stripped)) {   // '#'-disabled directive
+        items.push(_bxNewItem(stripped, pending ? pending.text : null, true));
+        pending = null;
+      } else {
+        flushPending();                 // the previous '#' line was a plain comment after all
+        pending = { raw: line, text: stripped };
+      }
+      continue;
+    }
+    if (_bxIsDirective(line)) {
+      items.push(_bxNewItem(line, pending ? pending.text : null, false));
+      pending = null;
+    } else {
+      flushPending();
+      items.push({ kind: 'raw', text: line });
+    }
+  }
+  flushPending();
+  return items;
+}
+function serializeBoxData(items) {
+  const out = [];
+  for (const it of (items || [])) {
+    if (it.kind === 'comment' || it.kind === 'raw') { out.push(it.text); continue; }
+    const line = it.kind === 'keyword' ? it.value : it.uri;
+    if (it.label) out.push('#' + it.label);
+    out.push(it.disabled ? '#' + line : line);
+  }
+  return out.join('\n');
+}
+
+// Display metadata for one item: kind glyph + main text (label > resolved name > raw).
+function _bxItemMeta(it) {
+  if (it.kind === 'comment') return { icon: ICON.hash, tag: 'comment', name: it.text.replace(/^#+\s*/, ''), sub: '' };
+  if (it.kind === 'raw')     return { icon: ICON.hash, tag: 'raw', name: it.text, sub: '' };
+  if (it.kind === 'keyword') return { icon: ICON.zap, tag: 'auto', name: it.label || BOX_KEYWORDS[it.value], sub: it.value };
+  const u = it.uri;
+  const res = _resolveCache.get(u);
+  const resolved = res ? (res.name + (res.sub ? ' — ' + res.sub : '')) : null;
+  let icon = ICON.hash, tag = 'uri';
+  if (u.startsWith('spotify:track:'))         { icon = ICON.music; tag = 'track'; }
+  else if (u.startsWith('spotify:album:'))    { icon = ICON.disc;  tag = 'album'; }
+  else if (u.startsWith('spotify:artist:'))   { icon = ICON.user;  tag = 'artist'; }
+  else if (u.startsWith('spotify:playlist:')) { icon = ICON.list;  tag = 'playlist'; }
+  else if (u.startsWith('box:'))              { icon = ICON.box;   tag = 'box'; }
+  else if (u.startsWith('podcast+'))          { icon = ICON.rss;   tag = 'podcast'; }
+  else if (/^(https?:|tunein:)/.test(u))      { icon = ICON.radio; tag = 'stream'; }
+  else if (/^(local:|m3u:|file:)/.test(u))    { icon = ICON.music; tag = 'local'; }
+  return { icon, tag, name: it.label || resolved || u, sub: (it.label || resolved) ? u : '' };
+}
+
+/* ── Content editor + inline "Add content" browser ────────────────────────
+   Layout (same organism in the wizard's content step and in the box editor):
+     1. List / Raw switch
+     2. the box's current content (or "No content yet")
+     3. "Add content" → Search · Browse · Smart patterns
+   Opening one of the 3 panels never hides 1/2 or the tab row: the panel is
+   rendered into its own container, which stacks below on mobile and becomes a
+   second column on desktop. Sources depend on the box kind, and 'hybrid'
+   (advanced mode / box editor) offers every source at once. */
+let _bxTab = null;         // null | 'search' | 'browse' | 'patterns'
+let _bxBrowseNode = null;  // null = subsection list, a WC_BROWSE_NODES key, or 'podgenre:<id>'
+let _bxGenreName = '';
+let _bxSearchQ = '';
+let _wcSearchTimer = null;
+
+const WC_BROWSE_NODES = {
+  playlists:   { label: 'Your playlists',         icon: ICON.list },
+  artists:     { label: 'Your artists',           icon: ICON.user },
+  albums:      { label: 'Your albums',            icon: ICON.disc },
+  podtop:      { label: 'Top podcasts',           icon: ICON.rss },
+  podnews:     { label: 'Top news podcasts',      icon: ICON.rss },
+  podgenres:   { label: 'Podcast genres',         icon: ICON.list },
+  podchannels: { label: 'Channels in your boxes', icon: ICON.hash },
+  radiotop:    { label: 'Top stations near you',  icon: ICON.radio },
+};
+const WC_BROWSE_BY_KIND = {
+  music:   ['playlists', 'artists', 'albums', 'radiotop'],
+  podcast: ['podtop', 'podgenres', 'podchannels', 'radiotop'],
+  info:    ['podnews', 'podgenres', 'podchannels', 'radiotop'],
+  radio:   ['radiotop'],
+  hybrid:  ['playlists', 'artists', 'albums', 'podtop', 'podgenres', 'podchannels', 'radiotop'],
+};
+// Which result sections a search shows, in order. Radios are offered for every
+// kind (a stream is welcome in any box); hybrid shows the lot.
+const WC_SEARCH_BY_KIND = {
+  music:   ['tracks', 'artists', 'albums', 'radios'],
+  podcast: ['channels', 'podcasts', 'radios'],
+  info:    ['channels', 'info', 'podcasts', 'radios'],
+  radio:   ['radios'],
+  hybrid:  ['tracks', 'artists', 'albums', 'channels', 'podcasts', 'info', 'radios', 'boxes'],
+};
+const WC_PATTERNS_BY_KIND = {
+  music:   ['auto:library', 'spotify:library', 'o2m:favorites', 'newrecent:library', 'now:library', 'herenow:library'],
+  podcast: ['podcasts:unfinished', 'meta_podcasts'],
+  info:    ['infos:library', 'meta_infos'],
+  radio:   ['meta_radios'],
+  hybrid:  ['auto:library', 'spotify:library', 'o2m:favorites', 'newrecent:library', 'now:library',
+            'herenow:library', 'podcasts:unfinished', 'meta_podcasts', 'infos:library', 'meta_infos', 'meta_radios'],
+};
+
+/* Simple mode commits to one kind; advanced mode and the box editor build
+   hybrid boxes, so they get every source. */
+function _bxKind() {
+  if (_bxHost === 'wizard' && _boxDraft && _boxDraft.mode === 'simple' && _boxDraft.kind) return _boxDraft.kind;
+  return 'hybrid';
+}
+
+function _bxRowsHtml(items) {
+  if (_bxRawMode) {
+    return `<textarea class="bx-input bx-data" id="bx-data" rows="4" spellcheck="false">${objEsc(serializeBoxData(items))}</textarea>`;
+  }
+  if (!(items || []).length) return '<div class="bx-empty">No content yet.</div>';
+  return items.map((it, i) => {
+    const m = _bxItemMeta(it);
+    const editable = (it.kind !== 'comment' && it.kind !== 'raw');
+    const sub = m.sub ? `<span class="bx-sub">${objEsc(m.sub)}</span>` : '';
+    const nameAttr = editable ? ` data-bx-label="${i}" title="Edit label"` : '';
+    const toggleBtn = editable
+      ? `<button type="button" class="bx-line-btn" data-bx-toggle="${i}" title="${it.disabled ? 'Enable' : 'Disable'}">${it.disabled ? ICON.eyeOff : ICON.eye}</button>`
+      : '';
+    return `<div class="bx-line${it.disabled ? ' disabled' : ''}" data-idx="${i}">`
+      + `<span class="bx-kind" title="${objEsc(m.tag)}">${m.icon}</span>`
+      + `<span class="bx-main"><span class="bx-name${editable ? ' bx-name-editable' : ''}"${nameAttr}>${objEsc(m.name)}</span>${sub}</span>`
+      + toggleBtn
+      + `<button type="button" class="bx-line-btn" data-bx-remove="${i}" title="Remove">${ICON.x}</button>`
+      + `</div>`;
+  }).join('');
+}
+
+function renderDataEditor(items) {
+  const tab = (id, icon, label) =>
+    `<button type="button" class="wc-tab${_bxTab === id ? ' on' : ''}" data-wc-tab="${id}">${icon}<span>${label}</span></button>`;
+  const addSection = _bxRawMode ? '' :
+    `<div class="wc-add">`
+    + `<div class="wc-add-head">Add content</div>`
+    + `<div class="wc-tabs">`
+    +   tab('search', ICON.plus, 'Search')
+    +   tab('browse', ICON.list, 'Browse')
+    +   tab('patterns', ICON.zap, 'Smart patterns')
+    + `</div></div>`;
+  return `<div class="wc">`
+    + `<div class="wc-toolbar">`
+    +   `<button type="button" class="wc-seg${!_bxRawMode ? ' on' : ''}" data-wc-view="list">${ICON.list}<span>List</span></button>`
+    +   `<button type="button" class="wc-seg${_bxRawMode ? ' on' : ''}" data-wc-view="raw">${ICON.code}<span>Raw</span></button>`
+    + `</div>`
+    + `<div class="wc-body${_bxTab && !_bxRawMode ? ' has-detail' : ''}">`
+    +   `<div class="wc-main"><div id="bx-rows">${_bxRowsHtml(items || [])}</div>${addSection}</div>`
+    +   `<div class="wc-detail" id="bx-add-panel">${_bxDetailHtml()}</div>`
+    + `</div></div>`;
+}
+
+/* Shell of the active panel. Result lists are filled in asynchronously by the
+   loaders, so opening a panel is instant. */
+function _bxDetailHtml() {
+  if (_bxRawMode || !_bxTab) return '';
+  const kind = _bxKind();
+  if (_bxTab === 'search') {
+    return `<div class="wc-panel"><div class="wc-panel-head">Search</div>`
+      + `<input class="bx-input bx-wide" type="search" id="wc-search-input" placeholder="Search…" autocomplete="off" value="${objEsc(_bxSearchQ)}">`
+      + `<div id="wc-results"><div class="obj-empty">Type at least 2 characters.</div></div></div>`;
+  }
+  if (_bxTab === 'patterns') {
+    const keys = WC_PATTERNS_BY_KIND[kind] || WC_PATTERNS_BY_KIND.hybrid;
+    return `<div class="wc-panel"><div class="wc-panel-head">Smart patterns</div>`
+      + `<div class="wc-hint">Dynamic sources — the box refills itself from your library instead of a fixed list.</div>`
+      + `<div class="wiz-chips">` + keys.map(k => {
+          const on = (_bxItems || []).some(it => it.kind === 'keyword' && it.value === k);
+          return `<button type="button" class="bx-chip${on ? ' on' : ''}" data-wc-pattern="${objEsc(k)}">`
+            + `${on ? ICON.check : ICON.plus}<span>${objEsc(BOX_KEYWORDS[k] || k)}</span></button>`;
+        }).join('') + `</div></div>`;
+  }
+  // browse
+  if (!_bxBrowseNode) {
+    const nodes = WC_BROWSE_BY_KIND[kind] || WC_BROWSE_BY_KIND.hybrid;
+    return `<div class="wc-panel"><div class="wc-panel-head">Browse</div><div class="obj-tracks">`
+      + nodes.map(n => {
+          const c = WC_BROWSE_NODES[n];
+          return `<div class="obj-row obj-clickable" data-wc-browse="${n}"><span class="bx-kind">${c.icon}</span>`
+            + `<span class="ot-name">${objEsc(c.label)}</span>${CHEVRON_SVG}</div>`;
+        }).join('') + `</div></div>`;
+  }
+  const isGenre = String(_bxBrowseNode).startsWith('podgenre:');
+  const title = isGenre ? (_bxGenreName || 'Genre') : (WC_BROWSE_NODES[_bxBrowseNode]?.label || 'Browse');
+  return `<div class="wc-panel"><div class="wc-panel-head">`
+    + `<button type="button" class="wc-back" data-wc-back title="Back">${ICON.x}</button><span>${objEsc(title)}</span></div>`
+    + `<div id="wc-results"><div class="obj-loading">Loading…</div></div></div>`;
+}
+
+function _bxRenderRows() {
+  const el = document.getElementById('bx-rows');
+  if (el) el.innerHTML = _bxRowsHtml(_bxItems || []);
+  resolveDataItems();
+}
+
+/* Only the panel is re-rendered when a tab/section changes, so the content list
+   above it (and any pending edit) stays untouched. */
+function _bxRenderDetail() {
+  const p = document.getElementById('bx-add-panel');
+  if (!p) return;
+  p.innerHTML = _bxDetailHtml();
+  document.querySelectorAll('#bx-editor-host [data-wc-tab]').forEach(b =>
+    b.classList.toggle('on', b.dataset.wcTab === _bxTab));
+  document.querySelector('#bx-editor-host .wc-body')
+    ?.classList.toggle('has-detail', !!_bxTab && !_bxRawMode);
+  if (_bxTab === 'search') {
+    // The panel was re-created → its input needs its listeners back.
+    _wcWireSearchInput();
+    document.getElementById('wc-search-input')?.focus();
+    if (_bxSearchQ.length >= 2) _wcRunSearch(_bxSearchQ);
+  } else if (_bxTab === 'browse' && _bxBrowseNode) {
+    _wcLoadBrowse(_bxBrowseNode);
+  }
+}
+
+// Debounced inline search (the panel keeps its own field — no modal nav).
+function _wcWireSearchInput() {
+  const inp = document.getElementById('wc-search-input');
+  if (!inp || inp.dataset.wired) return;
+  inp.dataset.wired = '1';
+  const run = () => { clearTimeout(_wcSearchTimer); if (_bxSearchQ.length >= 2) _wcRunSearch(_bxSearchQ); };
+  inp.addEventListener('input', () => {
+    _bxSearchQ = inp.value.trim();
+    clearTimeout(_wcSearchTimer);
+    _wcSearchTimer = setTimeout(run, 450);
+  });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); run(); }
+    else if (e.key === 'Escape') e.stopPropagation();   // don't close the modal
+  });
+}
+
+function _bxRerender() {
+  const host = document.getElementById('bx-editor-host');
+  if (!host) return;
+  host.innerHTML = renderDataEditor(_bxItems || []);
+  wireDataEditor();
+  resolveDataItems();
+  if (_bxTab === 'search') document.getElementById('wc-search-input')?.focus();
+  else if (_bxTab === 'browse' && _bxBrowseNode) _wcLoadBrowse(_bxBrowseNode);
+}
+
+function wireDataEditor() {
+  const host = document.getElementById('bx-editor-host');
+  if (!host) return;
+  // onclick (not addEventListener): the host element survives re-renders, so a
+  // property assignment stays idempotent.
+  host.onclick = (e) => {
+    // ── content rows ──
+    const rm = e.target.closest('[data-bx-remove]');
+    if (rm) { _bxItems.splice(Number(rm.dataset.bxRemove), 1); _bxRenderRows(); _bxSyncPanelState(); return; }
+    const tg = e.target.closest('[data-bx-toggle]');
+    if (tg) { const it = _bxItems[Number(tg.dataset.bxToggle)]; if (it) it.disabled = !it.disabled; _bxRenderRows(); return; }
+    const lb = e.target.closest('[data-bx-label]');
+    if (lb) { editBxLabel(Number(lb.dataset.bxLabel), lb); return; }
+    // ── list / raw ──
+    const vw = e.target.closest('[data-wc-view]');
+    if (vw) { setRawMode(vw.dataset.wcView === 'raw'); return; }
+    // ── add-content tabs & panels ──
+    const tb = e.target.closest('[data-wc-tab]');
+    if (tb) {
+      const id = tb.dataset.wcTab;
+      _bxTab = (_bxTab === id) ? null : id;   // clicking the open tab closes it
+      if (_bxTab !== 'browse') _bxBrowseNode = null;
+      _bxRenderDetail();
+      return;
+    }
+    const br = e.target.closest('[data-wc-browse]');
+    if (br) { _bxBrowseNode = br.dataset.wcBrowse; _bxRenderDetail(); return; }
+    if (e.target.closest('[data-wc-back]')) {
+      // A genre's results go back to the genre list, everything else to the menu.
+      _bxBrowseNode = String(_bxBrowseNode).startsWith('podgenre:') ? 'podgenres' : null;
+      _bxRenderDetail(); return;
+    }
+    const gn = e.target.closest('[data-wc-genre]');
+    if (gn) { _bxBrowseNode = 'podgenre:' + gn.dataset.wcGenre; _bxGenreName = gn.dataset.genreName; _bxRenderDetail(); return; }
+    const pt = e.target.closest('[data-wc-pattern]');
+    if (pt) {
+      const k = pt.dataset.wcPattern;
+      const i = (_bxItems || []).findIndex(it => it.kind === 'keyword' && it.value === k);
+      if (i >= 0) _bxItems.splice(i, 1);
+      else _bxItems.push({ kind: 'keyword', value: k, label: null, disabled: false });
+      _bxRenderRows(); _bxRenderDetail();
+      return;
+    }
+    // ── a result row: add it to the box ──
+    const row = e.target.closest('#bx-add-panel .tl-item[data-uri]');
+    if (row) {
+      const name = row.dataset.name || row.querySelector('.tl-name')?.textContent || '';
+      if (_wcAdd(row.dataset.uri, name.trim())) row.classList.add('picked');
+    }
+  };
+  _wcWireSearchInput();
+  // Auto-size the raw-mode textarea to its content (grows/shrinks as you type).
+  const ta = document.getElementById('bx-data');
+  if (ta) {
+    const grow = () => {
+      ta.style.height = 'auto';
+      const max = Math.round(window.innerHeight * 0.6);
+      const min = parseInt(getComputedStyle(ta).minHeight, 10) || 0;
+      ta.style.height = Math.min(Math.max(ta.scrollHeight + 2, min), max) + 'px';
+    };
+    ta.addEventListener('input', grow);
+    requestAnimationFrame(() => requestAnimationFrame(grow));
+  }
+}
+
+// Keep the patterns panel's on/off chips in sync after a removal.
+function _bxSyncPanelState() {
+  if (_bxTab === 'patterns') _bxRenderDetail();
+}
+
+// Add one picked row to the box. Returns false when it was already there.
+function _wcAdd(uri, name) {
+  if (!uri || !_bxItems) return false;
+  if (_bxItems.some(it => it.uri === uri)) { setFeedback('Already added'); return false; }
+  _bxItems.push(_bxNewItem(uri, (name || '').trim() || null, false));
+  setFeedback('Added: ' + ((name || '').trim() || uri));
+  _bxRenderRows();
+  return true;
+}
+
+function setRawMode(on) {
+  if (on === _bxRawMode) return;
+  if (on) {
+    _bxTab = null; _bxBrowseNode = null;
+  } else {
+    const ta = document.getElementById('bx-data');
+    _bxItems = parseBoxData(ta ? ta.value : serializeBoxData(_bxItems));
+    if (_bxHost === 'wizard' && _boxDraft) _boxDraft.items = _bxItems;   // keep the draft alias
+  }
+  _bxRawMode = on;
+  _bxRerender();
+}
+
+function getDataEditorValue() {
+  if (_bxRawMode) {
+    const ta = document.getElementById('bx-data');
+    if (ta) return ta.value;
+  }
+  return serializeBoxData(_bxItems || []);
+}
+
+// Mirror the box-editor form fields back into _boxEditInfo, so that a re-render
+// (after a ◂ ▸ restore) keeps unsaved edits.
+function _bxCaptureEditorFields() {
+  if (_bxHost !== 'editor' || !_boxEditInfo) return;
+  const el = id => document.getElementById('bx-' + id);
+  if (!el('description')) return;   // editor form not in the DOM
+  const numOrNull = e => (e && e.value !== '' ? Number(e.value) : null);
+  _boxEditInfo.description = el('description').value;
+  _boxEditInfo.image_url = el('image_url')?.value ?? _boxEditInfo.image_url;
+  _boxEditInfo.option_type = el('option_type')?.value ?? _boxEditInfo.option_type;
+  _boxEditInfo.option_sort = el('option_sort')?.value || null;
+  _boxEditInfo.option_discover_level = numOrNull(el('option_discover_level'));
+  _boxEditInfo.option_max_results = numOrNull(el('option_max_results'));
+  _boxEditInfo.option_energy = numOrNull(el('option_energy'));
+  _boxEditInfo.option_valence = numOrNull(el('option_valence'));
+  _boxEditInfo.favorite = el('favorite')?.checked ? 1 : 0;
+  _boxEditInfo.public = el('public')?.checked ? 1 : 0;
+}
+
+// Inline label edit — same commit/revert pattern as the track panel number edits.
+function editBxLabel(idx, span) {
+  const it = (_bxItems || [])[idx];
+  if (!it) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'bx-input bx-label-input';
+  input.value = it.label || '';
+  input.placeholder = 'Label';
+  span.replaceWith(input);
+  input.focus(); input.select();
+  let done = false;
+  const commit = () => {
+    if (done) return; done = true;
+    it.label = input.value.trim() || null;
+    _bxRenderRows();
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.stopPropagation(); done = true; _bxRenderRows(); }
+  });
+}
+
+// One batched cache-only lookup for unlabelled uris; patches the rendered rows
+// in place (never re-renders — the user may be mid-edit).
+async function resolveDataItems() {
+  if (_bxRawMode) return;
+  const uris = [...new Set((_bxItems || [])
+    .filter(it => it.kind === 'uri' && !it.label && !_resolveCache.has(it.uri))
+    .map(it => it.uri))];
+  if (!uris.length) return;
+  try {
+    const r = await fetch(API + '/resolve_uris', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ uris }),
+    }).then(r => r.json());
+    const res = r?.results || {};
+    Object.keys(res).forEach(u => _resolveCache.set(u, res[u]));
+    document.querySelectorAll('#bx-rows .bx-line').forEach(row => {
+      const it = (_bxItems || [])[Number(row.dataset.idx)];
+      if (!it || it.kind !== 'uri' || it.label || !_resolveCache.has(it.uri)) return;
+      const m = _bxItemMeta(it);
+      const nameEl = row.querySelector('.bx-name');
+      if (nameEl) nameEl.textContent = m.name;
+      if (m.sub) {
+        let subEl = row.querySelector('.bx-sub');
+        if (!subEl) {
+          subEl = document.createElement('span'); subEl.className = 'bx-sub';
+          row.querySelector('.bx-main')?.appendChild(subEl);
+        }
+        subEl.textContent = m.sub;
+      }
+    });
+  } catch(e) {}
+}
+
+/* ── Add-content data sources ─────────────────────────────────────────────
+   Everything below returns rows shaped for _searchObjRows / objRenderTracks,
+   whose data-uri is already a valid box data line ('spotify:…', 'podcast+<feed>',
+   a stream URL or 'box:<uid>'), so a click goes straight through _wcAdd. */
+function _wcResults(html) {
+  const el = document.getElementById('wc-results');
+  if (el) el.innerHTML = html;
+}
+const _wcSection = (label, html) => html ? `<div class="search-section-label">${label}</div>${html}` : '';
+const _wcDirRows = items => (items || []).map(i => ({ uri: i.uri, name: i.name, artist: i.sub || '', image: i.image || '' }));
+
+async function _wcJson(url) {
+  try { return await fetch(API + url).then(r => r.json()); } catch(e) { return null; }
+}
+
+async function _wcRunSearch(q) {
+  const kind = _bxKind();
+  const want = WC_SEARCH_BY_KIND[kind] || WC_SEARCH_BY_KIND.hybrid;
+  _wcResults('<div class="obj-loading">Searching…</div>');
+  const jobs = [_wcJson('/search?q=' + encodeURIComponent(q))];
+  jobs.push(want.includes('radios') ? _wcJson('/directory?kind=radio&q=' + encodeURIComponent(q)) : null);
+  jobs.push(want.includes('channels') ? _wcJson('/directory?kind=podcast&q=' + encodeURIComponent(q)) : null);
+  const [d, radioDir, podDir] = await Promise.all(jobs);
+  if (_bxSearchQ !== q) return;    // a newer query already fired
+  if (!d || d.error) { _wcResults(`<div class="obj-empty">${objEsc((d && d.error) || 'Search failed')}</div>`); return; }
+
+  const merge = (a, b) => { const seen = new Set((a || []).map(x => x.uri)); return (a || []).concat((b || []).filter(x => !seen.has(x.uri))); };
+  const sp = d.spotify || {};
+  // Local channels (from existing boxes) first, then the external directory.
+  const channels = merge(d.podcast_channels, (podDir && podDir.items) || []);
+  const radios = merge(_wcDirRows(d.radios), _wcDirRows((radioDir && radioDir.items) || []));
+  const build = {
+    tracks:   () => _wcSection('Tracks', objRenderTracks(_searchTracksNorm(merge(d.tracks, sp.tracks)), 'track', true)),
+    artists:  () => _wcSection('Artists', _searchObjRows(merge(d.artists, sp.artists), 'artist')),
+    albums:   () => _wcSection('Albums', _searchObjRows(merge(d.albums, sp.albums), 'album')),
+    channels: () => _wcSection('Podcast channels', _searchObjRows(_wcDirRows(channels), 'podcast')),
+    podcasts: () => _wcSection('Episodes', objRenderTracks(_searchTracksNorm(d.podcasts || []), 'track', true)),
+    info:     () => _wcSection('Info', objRenderTracks(_searchTracksNorm(d.info || []), 'track', true)),
+    radios:   () => _wcSection('Radios', _searchObjRows(radios, 'radio')),
+    boxes:    () => _wcSection('Boxes', _searchObjRows((d.boxes || []).map(b => ({ uri: 'box:' + b.uid, name: b.description || b.uid, image: b.image || '' })), 'box')),
+  };
+  let html = '';
+  want.forEach(sec => { try { if (build[sec]) html += build[sec](); } catch(e) {} });
+  _wcResults(html || '<div class="obj-empty">No results.</div>');
+}
+
+async function _wcLoadBrowse(node) {
+  _wcResults('<div class="obj-loading">Loading…</div>');
+  const done = (html) => { if (_bxBrowseNode === node) _wcResults(html); };   // ignore a stale response
+  const rowsOr = (rows, kindTag, empty) => rows.length
+    ? _searchObjRows(rows, kindTag) : `<div class="obj-empty">${empty}</div>`;
+
+  if (node === 'playlists' || node === 'albums' || node === 'artists') {
+    const d = await _wcJson('/library_browse?kind=' + node);
+    const rows = _wcDirRows((d && d.items) || []);
+    const tag = node === 'playlists' ? 'playlist' : (node === 'albums' ? 'album' : 'artist');
+    done(rowsOr(rows, tag, 'Nothing cached yet — use Search instead.'));
+    return;
+  }
+  if (node === 'podchannels') {
+    const d = await _wcJson('/podcast_channels');
+    done(rowsOr(_wcDirRows(Array.isArray(d) ? d : []), 'podcast', 'No channels referenced in your boxes yet.'));
+    return;
+  }
+  if (node === 'radiotop') {
+    const d = await _wcJson('/directory?kind=radio');
+    done(rowsOr(_wcDirRows((d && d.items) || []), 'radio', 'Radio directory unavailable.'));
+    return;
+  }
+  if (node === 'podgenres') {
+    const d = await _wcJson('/directory_genres');
+    const genres = (d && d.genres) || [];
+    done(genres.length
+      ? `<div class="obj-tracks">` + genres.map(g =>
+          `<div class="obj-row obj-clickable" data-wc-genre="${objEsc(g.id)}" data-genre-name="${objEsc(g.name)}">`
+          + `<span class="bx-kind">${ICON.rss}</span><span class="ot-name">${objEsc(g.name)}</span>${CHEVRON_SVG}</div>`
+        ).join('') + `</div>`
+      : '<div class="obj-empty">Genres unavailable.</div>');
+    return;
+  }
+  // Top podcasts — whole store, the News genre (info boxes), or a picked genre.
+  let url = '/directory?kind=podcast';
+  if (node === 'podnews') url += '&genre=1489';
+  else if (String(node).startsWith('podgenre:')) url += '&genre=' + encodeURIComponent(String(node).slice(9));
+  const d = await _wcJson(url);
+  done(rowsOr(_wcDirRows((d && d.items) || []), 'podcast', 'Podcast directory unavailable.'));
+}
+
+/* ── New-box wizard ───────────────────────────────────────────────────────
+   4 steps rendered in the object modal from a module-level draft (the modal's
+   snapshot nav doesn't keep typed input values, so every step re-renders from
+   _boxDraft). Step 1 picks the route:
+     simple   → kind (music/podcast/info/radio) → content → essentials
+     advanced → name+type → content → all options
+   Creation is one atomic POST /api/box_new at the end. */
+let _boxDraft = null;
+const WIZ_STEPS = {
+  simple:   [null, 'mode', 'kind', 'content', 'finish'],
+  advanced: [null, 'mode', 'basics', 'content', 'options'],
+};
+const WIZ_TYPE_HINTS = {
+  library:   'Music box — plays tracks, albums, artists, playlists.',
+  favorites: 'Its tracks are marked as favorites.',
+  new:       'Discovery box — plays new tracks only.',
+  incoming:  'Incoming queue — content to sort later.',
+  hidden:    'Played but excluded from listening stats.',
+  trash:     'Content you never want to hear again.',
+  podcast:   'Podcast box — episodes from channel feeds.',
+  info:      'News / info flashes (short items).',
+};
+/* The 4 simple kinds. `type` is the stored option_type; radio has no dedicated
+   option_type — a box counts as radio because its data holds stream URLs (see
+   _box_category), and option_type 'info' would override that, so radio uses
+   'library'. `name` pre-fills the box name (editable). */
+const WIZ_KINDS = {
+  music:   { label: 'Music',    icon: ICON.music, type: 'library', name: 'Music',
+             hint: 'Albums, artists, playlists and tracks.' },
+  podcast: { label: 'Podcasts', icon: ICON.rss,   type: 'podcast', name: 'Podcasts',
+             hint: 'Long episodes, from channel feeds.' },
+  info:    { label: 'Info',     icon: ICON.zap,   type: 'info',    name: 'Info',
+             hint: 'Short news flashes.' },
+  radio:   { label: 'Radio',    icon: ICON.radio, type: 'library', name: 'Radio',
+             hint: 'Live streams, played as-is.' },
+};
+
+function wizStepName() {
+  const d = _boxDraft;
+  if (!d || d.step === 1) return 'mode';
+  return (WIZ_STEPS[d.mode] || WIZ_STEPS.advanced)[d.step] || 'mode';
+}
+
+function openBoxWizard() {
+  _boxDraft = {
+    step: 1, mode: null, kind: null,
+    description: '', option_type: 'library', items: [],
+    option_sort: 'smart', option_discover_level: 5, option_max_results: null,
+    option_energy: null, option_valence: null, favorite: true, public: false, image_url: '',
+  };
+  _bxHost = 'wizard';
+  _bxRawMode = false;
+  _bxTab = null; _bxBrowseNode = null; _bxSearchQ = '';
+  _bxItems = _boxDraft.items;
+  objNavTo();
+  openObjPanel();
+  renderWizardStep();
+}
+
+function _wizCard(attr, icon, label, hint, on) {
+  return `<button type="button" class="wiz-card${on ? ' on' : ''}" ${attr}>`
+    + `<span class="wiz-card-icon">${icon}</span>`
+    + `<span class="wiz-card-text"><b>${objEsc(label)}</b><span>${objEsc(hint)}</span></span></button>`;
+}
+
+function renderWizardStep() {
+  const d = _boxDraft;
+  if (!d) return;
+  const step = wizStepName();
+  objSetHead('New box', d.description || 'New box', `Step ${d.step} of 4`);
+  objSetActionUris([]);
+  let body = '';
+
+  if (step === 'mode') {
+    body = `<div class="wiz-hint">How do you want to create this box?</div><div class="wiz-cards">`
+      + _wizCard('data-wiz-mode="simple"', ICON.check, 'Guided',
+                 'Pick a kind, add content, done. Sensible defaults.', d.mode === 'simple')
+      + _wizCard('data-wiz-mode="advanced"', ICON.code, 'Advanced',
+                 'All box types and options — and hybrid boxes, mixing music, podcasts, info and radio in one box.', d.mode === 'advanced')
+      + `</div>`;
+
+  } else if (step === 'kind') {
+    body = `<div class="wiz-hint">What kind of box is it?</div><div class="wiz-cards">`
+      + Object.keys(WIZ_KINDS).map(k => {
+          const c = WIZ_KINDS[k];
+          return _wizCard(`data-wiz-kind="${k}"`, c.icon, c.label, c.hint, d.kind === k);
+        }).join('')
+      + `</div>`
+      + bxField('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(d.description)}" placeholder="Box name" autocomplete="off">`);
+
+  } else if (step === 'basics') {
+    body = bxField('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(d.description)}" placeholder="e.g. Sunday morning" autocomplete="off">`)
+      + bxField('Type', bxTypeSel(d.option_type))
+      + `<div class="wiz-hint" id="wiz-type-hint">${objEsc(WIZ_TYPE_HINTS[d.option_type] || '')}</div>`;
+
+  } else if (step === 'content') {
+    _bxItems = d.items;   // re-point the shared editor at the draft
+    body = `<div id="bx-editor-host">${renderDataEditor(d.items)}</div>`;
+
+  } else if (step === 'finish') {
+    // Simple mode: only the two questions that really change playback.
+    body = bxField('Order', bxSortSel(d.option_sort))
+      + `<div class="wiz-hint">Smart picks tracks by taste and mood; the others play the content plainly.</div>`
+      + bxField('Max tracks', bxNum('option_max_results', d.option_max_results, 'min="0" step="1" placeholder="default"'))
+      + `<div class="wiz-hint">How many items this box adds to the tracklist. Leave empty for the default.</div>`;
+
+  } else {
+    body = bxField('Order', bxSortSel(d.option_sort))
+      + bxField('Max tracks', bxNum('option_max_results', d.option_max_results, 'min="0" step="1" placeholder="default"'))
+      + bxField('Discover level', bxNum('option_discover_level', d.option_discover_level, 'min="0" max="10" step="1"'))
+      + bxField('Energy', bxNum('option_energy', d.option_energy, 'min="0" max="1" step="0.05" placeholder="inherit"'))
+      + bxField('Ambiance', bxNum('option_valence', d.option_valence, 'min="0" max="1" step="0.05" placeholder="inherit"'))
+      + bxField('Favorite', bxChk('favorite', d.favorite))
+      + `<div class="wiz-hint">Favorite boxes are shown in the Boxes panel.</div>`
+      + bxField('Public', bxChk('public', d.public))
+      + bxField('Image URL', `<input class="bx-input bx-wide" type="url" id="bx-image_url" placeholder="https://…" value="${objEsc(d.image_url)}">`);
+  }
+
+  const last = (d.step === 4);
+  const foot = `<div class="wiz-foot">`
+    + (d.step > 1 ? `<button type="button" class="bx-foot-btn ghost" id="wiz-back">Back</button>` : '<span></span>')
+    + (step === 'mode' ? '<span></span>'      // the mode cards advance on their own
+       : last ? `<button type="button" class="obj-save-btn" id="wiz-create">Create box</button>`
+              : `<button type="button" class="obj-save-btn" id="wiz-next">Next</button>`)
+    + `</div>`;
+  objBody().innerHTML = `<div id="bx-wizard">${body}${foot}</div>`;
+  wireWizardStep();
+  _objUpdateNav();   // the wizard is now on screen → hide the modal's ◂ ▸
+}
+
+function _wizReadStep() {
+  const d = _boxDraft;
+  if (!d) return;
+  const step = wizStepName();
+  const el = id => document.getElementById('bx-' + id);
+  const numOrNull = e => (e && e.value !== '' ? Number(e.value) : null);
+  if (step === 'kind') {
+    if (el('description')) d.description = el('description').value.trim();
+  } else if (step === 'basics') {
+    if (el('description')) d.description = el('description').value.trim();
+    if (el('option_type')) d.option_type = el('option_type').value;
+  } else if (step === 'content') {
+    // Leaving the content step with the raw textarea open → parse it back.
+    if (_bxRawMode) {
+      const ta = document.getElementById('bx-data');
+      if (ta) { _bxItems = parseBoxData(ta.value); d.items = _bxItems; }
+      _bxRawMode = false;
+    }
+  } else if (step === 'finish' || step === 'options') {
+    if (el('option_sort')) d.option_sort = el('option_sort').value;
+    d.option_max_results = numOrNull(el('option_max_results'));
+    if (step === 'options') {
+      d.option_discover_level = numOrNull(el('option_discover_level')) ?? 5;
+      d.option_energy = numOrNull(el('option_energy'));
+      d.option_valence = numOrNull(el('option_valence'));
+      if (el('favorite')) d.favorite = !!el('favorite').checked;
+      if (el('public')) d.public = !!el('public').checked;
+      if (el('image_url')) d.image_url = el('image_url').value.trim();
+    }
+  }
+}
+
+function _wizSetKind(k) {
+  const c = WIZ_KINDS[k];
+  if (!c) return;
+  const d = _boxDraft;
+  const nameEl = document.getElementById('bx-description');
+  const typed = (nameEl?.value || '').trim();
+  d.kind = k;
+  d.option_type = c.type;
+  // Pre-fill the name from the kind, unless the user typed their own.
+  const isPreset = !typed || Object.keys(WIZ_KINDS).some(o => WIZ_KINDS[o].name === typed);
+  d.description = isPreset ? c.name : typed;
+  renderWizardStep();
+}
+
+function wireWizardStep() {
+  const d = _boxDraft;
+  const step = wizStepName();
+  document.getElementById('wiz-back')?.addEventListener('click', () => { _wizReadStep(); d.step--; renderWizardStep(); });
+  document.getElementById('wiz-next')?.addEventListener('click', () => {
+    if ((step === 'kind' || step === 'basics') && !(document.getElementById('bx-description')?.value || '').trim()) {
+      setFeedback('Give the box a name first');
+      document.getElementById('bx-description')?.focus();
+      return;
+    }
+    if (step === 'kind' && !d.kind) { setFeedback('Pick a kind first'); return; }
+    _wizReadStep(); d.step++; renderWizardStep();
+  });
+  document.getElementById('wiz-create')?.addEventListener('click', createBoxSubmit);
+
+  if (step === 'mode') {
+    document.querySelectorAll('#bx-wizard [data-wiz-mode]').forEach(card => card.addEventListener('click', () => {
+      d.mode = card.dataset.wizMode;
+      d.step = 2;
+      renderWizardStep();
+    }));
+  }
+  if (step === 'kind') {
+    document.querySelectorAll('#bx-wizard [data-wiz-kind]').forEach(card =>
+      card.addEventListener('click', () => _wizSetKind(card.dataset.wizKind)));
+  }
+  if (step === 'basics') {
+    document.getElementById('bx-option_type')?.addEventListener('change', (e) => {
+      d.option_type = e.target.value;
+      const h = document.getElementById('wiz-type-hint');
+      if (h) h.textContent = WIZ_TYPE_HINTS[e.target.value] || '';
+    });
+  }
+  if (step === 'content') {
+    wireDataEditor();
+    resolveDataItems();
+    if (_bxTab === 'browse' && _bxBrowseNode) _wcLoadBrowse(_bxBrowseNode);
+  }
+}
+
+async function createBoxSubmit() {
+  _wizReadStep();
+  const d = _boxDraft;
+  if (!d) return;
+  if (!d.description) { setFeedback('Give the box a name first'); return; }
+  const payload = {
+    description: d.description,
+    option_type: d.option_type,
+    option_sort: d.option_sort ?? '',
+    option_discover_level: d.option_discover_level,
+    option_max_results: d.option_max_results,
+    option_energy: d.option_energy,
+    option_valence: d.option_valence,
+    favorite: !!d.favorite,
+    public: !!d.public,
+    image_url: d.image_url || '',
+    data: getDataEditorValue(),
+  };
+  try {
+    const r = await fetch(API + '/box_new', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    }).then(r => r.json());
+    if (r.ok) {
+      _boxDraft = null;
+      setFeedback('Box created');
+      if (typeof loadBoxes === 'function') loadBoxes();
+      closeObjPanel();   // last step done → leave the modal (same as Save/Delete)
+    }
+    else if (r.error === 'edit_auth_required') setFeedback('Editing not authorized');
+    else setFeedback(r.error || 'Create failed');
+  } catch(e) { setFeedback('Create error'); }
 }
 
 /* ── Content search ────────────────────────────────────────────────────────
@@ -4403,6 +5465,14 @@ async function loadBoxes() {
       // Refresh active state every 10min (same as o2m.js)
       setInterval(() => checkBoxActive(box.uid, btn), 600000);
     });
+    // "New box" sits at the end of the list (CSS-gated on edit mode).
+    const add = document.createElement('button');
+    add.className = 'box-btn box-new';
+    add.type = 'button';
+    add.title = 'Create a new box';
+    add.innerHTML = `<span class="box-new-icon">${ICON.plus}</span><span class="box-name">New box</span>`;
+    add.addEventListener('click', (e) => { e.stopPropagation(); openBoxWizard(); });
+    wrap.appendChild(add);
   } catch(e) {}
 }
 
@@ -4913,7 +5983,7 @@ async function init() {
   });
   document.getElementById('btn-details-close')?.addEventListener('click', closeDetails);
   document.getElementById('details-backdrop')?.addEventListener('click', closeDetails);
-  document.getElementById('td-fav')?.addEventListener('click', toggleFavorite);
+  // (td-fav + energy/valence/mood cells are wired per-render by tdPanel.render → rewire)
   // Object detail overlay (album · artist · box)
   document.getElementById('obj-close')?.addEventListener('click', closeObjPanel);
   document.getElementById('obj-prev')?.addEventListener('click', objBackNav);
@@ -4928,6 +5998,11 @@ async function init() {
   // Delegated clicks inside the overlay → info menu, drill into albums/artists/boxes,
   // or play a track. Same info badge + row pattern as the tracklist.
   document.getElementById('obj-body')?.addEventListener('click', (e) => {
+    // Pick mode: a click on any result row ADDS it to the box-content editor
+    // instead of navigating; everything else (ⓘ menus…) is swallowed.
+    // The box-content editor (list rows + inline Add-content panels) handles
+    // its own clicks — a result row there adds content instead of navigating.
+    if (e.target.closest('#bx-editor-host')) return;
     const ib = e.target.closest('.tl-info');
     if (ib) {
       // data-kind (search results) → kind-aware menu (artist/album get Play +
@@ -4971,10 +6046,6 @@ async function init() {
     if (e.key === 'Enter') { clearTimeout(_objSearchTimer); runObjSearch(); }
     else if (e.key === 'Escape') { e.stopPropagation(); objSearchInput.blur(); }   // blur, don't close the modal
   });
-  // Inline editing of the current track's mood/energy/valence (edit mode).
-  document.getElementById('td-energy')?.addEventListener('click', () => editTrackNumber('energy'));
-  document.getElementById('td-valence')?.addEventListener('click', () => editTrackNumber('valence'));
-  document.getElementById('td-mood')?.addEventListener('click', editTrackMood);
   checkEditStatus();
   await loadGenres();
   await loadBoxes();

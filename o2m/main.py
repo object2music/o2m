@@ -355,6 +355,88 @@ if __name__ == "__main__":
             results['spotify'] = {'tracks': [], 'artists': [], 'albums': []}
         return jsonify(results)
 
+    @api.route('/api/podcast_channels')
+    def api_podcast_channels():
+        """All referenced podcast channels (browse list for the content picker)."""
+        from flask import jsonify
+        try:
+            return jsonify(o2mHandler.list_podcast_channels())
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/directory')
+    def api_directory():
+        """External content directories for the box wizard — the local cache is
+        empty on a fresh install, so podcast/radio content has to be discovered
+        outside the DB. kind=podcast|radio; with q= it searches, without it
+        browses (podcast: top charts of ?genre=, radio: top stations of the
+        country). Items are ready-to-use box data lines."""
+        from flask import jsonify
+        from src import directory
+        kind = (request.args.get('kind') or '').strip()
+        q = (request.args.get('q') or '').strip()
+        country = (request.args.get('country') or '').strip() or None
+        try:
+            if kind == 'podcast':
+                if q:
+                    return jsonify({'items': directory.search_podcasts(q), 'mode': 'search'})
+                genre = (request.args.get('genre') or '').strip() or None
+                return jsonify({'items': directory.top_podcasts(genre, country), 'mode': 'top'})
+            if kind == 'radio':
+                if q:
+                    return jsonify({'items': directory.search_radios(q), 'mode': 'search'})
+                return jsonify({'items': directory.top_radios(country), 'mode': 'top'})
+            return jsonify({'error': 'unknown kind'}), 400
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/library_browse')
+    def api_library_browse():
+        """Cached library listings for the box-content browser:
+        kind=playlists|albums|artists. Rows are ready-to-pick (uri/name/sub/image).
+        Empty when the Spotify cache hasn't been warmed up yet."""
+        from flask import jsonify
+        kind = (request.args.get('kind') or '').strip()
+        db = o2mHandler.dbHandler
+        try:
+            if kind == 'playlists':
+                rows = [{'uri': p['uri'], 'name': p['name'], 'sub': '', 'image': ''}
+                        for p in db.get_playlists_for_select(owner_id=getattr(o2mHandler, 'username', None))]
+            elif kind == 'albums':
+                rows = db.get_saved_albums()
+            elif kind == 'artists':
+                rows = db.get_followed_artists()
+            else:
+                return jsonify({'error': 'unknown kind'}), 400
+            return jsonify({'items': rows})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/directory_genres')
+    def api_directory_genres():
+        """Localized podcast genre list (iTunes), for browsing the directory."""
+        from flask import jsonify
+        from src import directory
+        try:
+            country = (request.args.get('country') or '').strip() or None
+            return jsonify({'genres': directory.podcast_genres(country)})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/resolve_uris', methods=['POST'])
+    def api_resolve_uris():
+        """Batch-resolve data-line uris to display names, DB cache only (used by
+        the structured box-data editor). Never hits Spotify."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uris = data.get('uris')
+        if not isinstance(uris, list):
+            return jsonify({'error': 'uris must be a list'}), 400
+        try:
+            return jsonify({'results': o2mHandler.dbHandler.resolve_uris(uris[:200])})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/debug/tracklist_ownership')
     def api_debug_tracklist_ownership():
         """Diagnostic (read-only): current tracklist cross-referenced with
@@ -403,22 +485,14 @@ if __name__ == "__main__":
         })
 
     BOX_OPTION_TYPES = ['library', 'favorites', 'new', 'incoming', 'hidden', 'trash', 'podcast', 'info']
-    BOX_SORTS = ['shuffle', 'asc', 'desc']
+    # 'smart' is an explicit variant of the smart path (NULL/'' also select it,
+    # but 'smart' additionally forces a reshuffle) — whitelisted so the ~34 boxes
+    # already using it aren't silently reset to NULL when saved from the UI.
+    BOX_SORTS = ['shuffle', 'asc', 'desc', 'smart']
 
-    @api.route('/api/box_edit', methods=['POST'])
-    @require_edit_auth
-    def api_box_edit():
-        """Update editable box fields. Gated on edit rights (same as track edits).
-        Only whitelisted fields are written, each validated/clamped."""
-        from flask import jsonify
-        data = request.get_json(silent=True) or {}
-        uid = (data.get('uid') or '').strip()
-        if not uid:
-            return jsonify({'error': 'uid required'}), 400
-        box = o2mHandler.dbHandler.get_box_by_uid(uid)
-        if box is None:
-            return jsonify({'error': 'box not found'}), 404
-
+    def _apply_box_fields(box, data):
+        """Apply whitelisted box fields from a request payload, each
+        validated/clamped. Returns the dict of changed fields (not saved)."""
         def _clamp(v, lo, hi):
             try: v = float(v)
             except (TypeError, ValueError): return None
@@ -452,11 +526,71 @@ if __name__ == "__main__":
             box.option_valence = _clamp(data['option_valence'], 0, 1); changed['option_valence'] = box.option_valence
         if 'image_url' in data:
             box.image_url = (data['image_url'] or '').strip() or None; changed['image_url'] = box.image_url
+        return changed
+
+    @api.route('/api/box_edit', methods=['POST'])
+    @require_edit_auth
+    def api_box_edit():
+        """Update editable box fields. Gated on edit rights (same as track edits)."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uid = (data.get('uid') or '').strip()
+        if not uid:
+            return jsonify({'error': 'uid required'}), 400
+        box = o2mHandler.dbHandler.get_box_by_uid(uid)
+        if box is None:
+            return jsonify({'error': 'box not found'}), 404
+        changed = _apply_box_fields(box, data)
         try:
             box.save()
         except Exception as e:
             return jsonify({'error': str(e)}), 500
         return jsonify({'ok': True, 'uid': uid, 'changed': changed})
+
+    @api.route('/api/box_new', methods=['POST'])
+    @require_edit_auth
+    def api_box_new():
+        """Create a box from the UI. uid is a generated random hex id (same family
+        as NFC tag uids, no prefix); a physical tag can be associated later.
+        Defaults: favorite=1 so the new box shows up in the boxes panel."""
+        from flask import jsonify
+        import secrets
+        data = request.get_json(silent=True) or {}
+        if not (data.get('description') or '').strip():
+            return jsonify({'error': 'description required'}), 400
+        # Never test existence via get_box_by_uid — it silently auto-creates.
+        uid = secrets.token_hex(8)
+        while o2mHandler.dbHandler.box_exists(uid):
+            uid = secrets.token_hex(8)
+        try:
+            box = o2mHandler.dbHandler.new_box(uid)
+            _apply_box_fields(box, data)
+            if 'favorite' not in data:
+                box.favorite = 1
+            box.save()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({'ok': True, 'uid': uid})
+
+    @api.route('/api/box_delete', methods=['POST'])
+    @require_edit_auth
+    def api_box_delete():
+        """Delete a box. It is deactivated first (same path as a manual toggle
+        off, so its tracks leave the tracklist), then the row is dropped."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uid = (data.get('uid') or '').strip()
+        if not uid:
+            return jsonify({'error': 'uid required'}), 400
+        if not o2mHandler.dbHandler.box_exists(uid):
+            return jsonify({'error': 'box not found'}), 404
+        try:
+            referenced = o2mHandler.dbHandler.count_boxes_referencing(uid)
+            api_box_action(uid=uid, mode='remove')     # deactivate + drop its tracks
+            o2mHandler.dbHandler.delete_box(uid)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({'ok': True, 'uid': uid, 'referenced_by': referenced})
 
     #Register a local file download for a Spotify track (called by spotdl cache service)
     @api.route('/api/register_local_track', methods=['POST'])
@@ -987,8 +1121,19 @@ if __name__ == "__main__":
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
             info = next((v for v in o2mHandler._track_info.values() if v.get('uri') == uri), None)
             library = (info.get('library_display') if info else None) or (str(stat.in_library) if stat and stat.in_library else '')
+            # Classification for display: the LIVE box context (_track_info) wins over
+            # the stored stat — a stat can lag/mis-tag (e.g. a podcast served from an
+            # info box that got written 'new'). Fall back to the stat, then to a
+            # uri-derived type so a podcast/info stream never shows the music 'new'.
+            opt = (str(info.get('option_type')) if (info and info.get('option_type')) else
+                   (str(stat.option_type) if stat else None))
+            if (not opt or opt in ('new', 'new_mopidy')) and \
+               (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)):
+                opt = 'podcast'
+            if not opt:
+                opt = 'new'
             return jsonify({
-                'option_type':    str(stat.option_type) if stat else 'new',
+                'option_type':    opt,
                 'read_end':       round(float(stat.read_end), 2) if stat else 0.0,
                 'read_count_end': int(stat.read_count_end) if stat else 0,
                 'mood':           str(stat.mood) if stat and stat.mood and stat.mood != '_' else None,
