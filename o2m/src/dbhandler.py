@@ -1121,7 +1121,7 @@ class DatabaseHandler():
         episodes by name (Track.option_type). Radio isn't Track-backed (a live
         stream is never logged like a played track) — see
         O2mToMopidy.search_radio_stations for that one."""
-        results = {'tracks': [], 'artists': [], 'albums': [], 'podcasts': [], 'info': [], 'boxes': []}
+        results = {'tracks': [], 'artists': [], 'albums': [], 'playlists': [], 'podcasts': [], 'info': [], 'boxes': []}
         for b in Box.select().where(Box.description.contains(query)).limit(limit):
             results['boxes'].append({
                 'uid': b.uid, 'description': b.description,
@@ -1147,6 +1147,11 @@ class DatabaseHandler():
             results['albums'].append({
                 'uri': al.uri or f'spotify:album:{al.id}', 'name': al.name,
                 'artist': al.artist_name, 'image': al.image_url,
+            })
+        for pl in Playlist.select().where(Playlist.name.contains(query)).order_by(Playlist.name).limit(limit):
+            results['playlists'].append({
+                'uri': pl.uri or f'spotify:playlist:{pl.id}', 'name': pl.name or pl.id,
+                'image': pl.image_url,
             })
         return results
 

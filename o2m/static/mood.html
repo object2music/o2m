@@ -971,7 +971,8 @@
   [data-theme="overprint"] #top-zone {
     --ovp-w: min(31.4vh, 27.6vw);
     display: grid; align-items: start;
-    grid-template-columns: auto 1fr minmax(190px, 240px);
+    /* details column = cover width (both --ovp-w) so the two sides are symmetric. */
+    grid-template-columns: var(--ovp-w) 1fr var(--ovp-w);
     grid-template-areas: "cover mid details";
   }
   /* align-self:start → la colonne épouse la hauteur du carré (plus de bande vide
@@ -1009,8 +1010,11 @@
   [data-theme="overprint"] #artist-album { font-size: 18px; }
   [data-theme="overprint"] #artist-name  { font-weight: 600; color: var(--text); }
 
-  /* Compact details column: Energy/Valence/Mood share one row. */
-  [data-theme="overprint"] #track-details { padding: 8px 12px; gap: 6px; }
+  /* Compact details column: Energy/Valence/Mood share one row. Capped to the cover
+     square height (internal scroll) so the grid row = cover height → the centre
+     controls (align-self:end) sit at the cover's bottom instead of floating below. */
+  [data-theme="overprint"] #track-details { padding: 8px 12px; gap: 6px;
+    max-height: var(--ovp-w); overflow-y: auto; }
   [data-theme="overprint"] #track-details .td-list {
     display: flex; flex-wrap: wrap; gap: 6px 10px;
   }
@@ -1045,6 +1049,10 @@
   }
   [data-theme="invert"] #now-playing { padding-top: 14px; }
   [data-theme="invert"] #artist-album { font-size: 16px; }
+  /* Cap the details column (internal scroll) so a populated panel (lifecycle +
+     matrix) can't grow the top-zone past the viewport and push the footer off —
+     the cover already takes ~54vh above it. */
+  [data-theme="invert"] #track-details { max-height: 30vh; overflow-y: auto; }
 
   /* Affiches en mobile : grille → bloc, détails masqués (titre en haut, pleine largeur) */
   @media (max-width: 699px) {
@@ -3016,6 +3024,7 @@ function objMenuItems(uri, kind) {
   if (kind === 'album')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openAlbum(uri, {}) });
   if (kind === 'box')    items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openBox(uri.replace(/^box:/, '')) });
   if (kind === 'podcast')items.push({ label: 'See episodes', icon: ICON_DETAILS, action: () => openPodcast(uri) });
+  if (kind === 'playlist')items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openPlaylist(uri) });
   if (kind === 'track')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
@@ -3026,6 +3035,7 @@ function objOpenByKind(uri, kind, name) {
   if (kind === 'album')   return openAlbum(uri, { name });
   if (kind === 'box')     return openBox(String(uri).replace(/^box:/, ''));
   if (kind === 'podcast') return openPodcast(uri, { name });
+  if (kind === 'playlist')return openPlaylist(uri, { name });
   return renderTrackObj(uri, { name });
 }
 // Track "See details" → a track view hosted in the shared object modal (with the
@@ -3068,6 +3078,28 @@ async function openPodcast(uri, seed) {
     html += objRenderTracks(eps.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: [] })), 'track');
     objBody().innerHTML = html;
   } catch (e) { objBody().innerHTML = '<div class="obj-empty">Could not load podcast.</div>'; }
+}
+
+// Playlist detail: resolve the playlist's tracks (mopidy lookup on the
+// spotify:playlist uri) and render them as a track list, like an album.
+async function openPlaylist(uri, seed) {
+  if (!uri) return;
+  objNavTo();
+  objSetHead('Playlist', seed?.name || 'Playlist', '');
+  objSetActionUris([], uri);
+  openObjPanel();
+  objLoading();
+  try {
+    const [lookupR, cover] = await Promise.all([ rpc('core.library.lookup', { uris: [uri] }), objCover(uri) ]);
+    let tracks = lookupR?.result?.[uri] || [];
+    if (!Array.isArray(tracks)) tracks = [];
+    objSetActionUris(tracks.map(t => t.uri).filter(Boolean), uri);
+    const coverHtml = cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : '';
+    let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Playlist')}</b>`
+      + `<span>${tracks.length} track${tracks.length === 1 ? '' : 's'}</span></div></div>`;
+    html += objRenderTracks(tracks.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists })), 'track');
+    objBody().innerHTML = html;
+  } catch (e) { objBody().innerHTML = '<div class="obj-empty">Could not load playlist.</div>'; }
 }
 
 /* Object-level actions (album / artist / box header, the ⋯ button) — Play next
@@ -3426,7 +3458,11 @@ function syncDetailsWidth() {
   const cover = document.getElementById('cover-wrap');
   const details = document.getElementById('track-details');
   if (!cover || !details) return;
-  if (!window.matchMedia('(min-width: 700px)').matches) { details.style.flex = ''; return; }
+  // overprint/invert use a CSS grid (width driven by grid-template-columns) — leave them.
+  const theme = document.documentElement.getAttribute('data-theme');
+  if (theme === 'overprint' || theme === 'invert' || !window.matchMedia('(min-width: 700px)').matches) {
+    details.style.flex = ''; return;
+  }
   const w = cover.offsetWidth;
   if (w > 0) details.style.flex = '0 0 ' + w + 'px';
 }
@@ -5420,6 +5456,7 @@ async function openSearch(q, opts) {
   if (tracks.length)          html += sec(`Tracks (${tracks.length})`,   objRenderTracks(_searchTracksNorm(tracks), 'track', true));
   if (artists.length)         html += sec(`Artists (${artists.length})`, _searchObjRows(artists, 'artist'));
   if (albums.length)          html += sec(`Albums (${albums.length})`,   _searchObjRows(albums, 'album'));
+  if ((d.playlists||[]).length) html += sec(`Playlists (${d.playlists.length})`, _searchObjRows(d.playlists, 'playlist'));
   // Podcasts: channels (browsable feeds, from #Label lines) first, then episodes.
   const chans = d.podcast_channels || [];
   const podCount = chans.length + (d.podcasts || []).length;
@@ -5849,6 +5886,7 @@ function applyTheme(name) {
   document.getElementById('top-zone')?.classList.remove('cover-lit');  // reset overprint recolor toggle
   readThemeColors();
   requestAnimationFrame(fitHeroTitle);
+  requestAnimationFrame(syncDetailsWidth);   // standard themes: re-match details↔cover width
 }
 function setupThemeSwitcher() {
   document.querySelectorAll('.theme-chip').forEach(c =>
