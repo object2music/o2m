@@ -6014,14 +6014,24 @@ function renderWelcome(s) {
   const c = s.counts || {};
   const synced = (c.liked || 0) + (c.albums || 0) + (c.playlists || 0) > 0;
   if (!connected) {
-    _wcStopPoll();
+    // Keep polling while we wait for the Spotify OAuth to complete — the poll re-renders
+    // and auto-advances the moment `spotify_connected`/`editUnlocked` flips. (Do NOT stop
+    // the poll here, or the connect step would kill its own auto-detection on the 1st tick.)
     body.innerHTML = `<div class="wc-logo">O2M</div>
       <div class="wc-step">Step 1 / 5 · Connect</div>
       <div class="wc-title">Welcome</div>
       <div class="wc-sub">Connect your Spotify account to play your music and podcasts and sync your library. Everything else builds on this.</div>
       <button class="wc-btn" id="wc-connect">Connect Spotify</button>
+      <button class="wc-skip" id="wc-recheck">I've connected — continue</button>
       <button class="wc-skip" id="wc-skip">Explore first</button>`;
     document.getElementById('wc-connect').addEventListener('click', () => { startEditAuth(); _wcStartPoll(); });
+    // Manual fallback: if the popup/redirect flow didn't auto-detect, re-check on demand.
+    document.getElementById('wc-recheck').addEventListener('click', async (e) => {
+      e.target.disabled = true; e.target.textContent = 'Checking…';
+      try { await checkEditStatus(); } catch (_) {}
+      try { renderWelcome(await fetch(API + '/onboarding').then(r => r.json())); } catch (_) {}
+      if (!editUnlocked) { e.target.disabled = false; e.target.textContent = "I've connected — continue"; }
+    });
     document.getElementById('wc-skip').addEventListener('click', _wcSkip);
   } else if (s.onboarding_done) {
     // ── Step 4 · First box (done wins over sync/setup, whatever the counts read) ──
