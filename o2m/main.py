@@ -301,7 +301,7 @@ if __name__ == "__main__":
         DB itself (no Spotify library ever synced) rather than a stored flag — this is
         per-DB, so an already-populated instance (incl. the o2m_0/o2m_1 shared prod DB)
         is never treated as fresh, and there's nothing to keep in sync."""
-        from flask import jsonify
+        from flask import jsonify, request
         from src.o2mmodels import Playlist
         try:
             liked = o2mHandler.dbHandler.count_cached('liked')
@@ -309,11 +309,24 @@ if __name__ == "__main__":
             playlists = Playlist.select().count()
         except Exception:
             liked = albums = playlists = 0
+        # Spotify OAuth redirect sanity: the configured SPOTIPY_REDIRECT_URI must point at the
+        # host the user is actually on, or the login round-trip lands on another instance and
+        # the "connect" step can never complete. We only DETECT + report (never edit secrets).
+        host = (request.headers.get('X-Forwarded-Host') or request.host).split(':')[0]
+        proto = 'https' if request.headers.get('X-Forwarded-Proto', '') == 'https' else request.scheme
+        cfg_redirect = (os.getenv('SPOTIPY_REDIRECT_URI') or '').strip()
+        cfg_host = cfg_redirect.split('://', 1)[-1].split('/', 1)[0].lower() if cfg_redirect else ''
+        expected_redirect = f'{proto}://{host}/api/spotipy_init'
+        # host-only comparison; a local 127.0.0.1 access is treated as unknown (not a mismatch)
+        redirect_ok = bool(cfg_host) and (host.lower() in ('127.0.0.1', 'localhost') or cfg_host == host.lower())
         return jsonify({
             'first_launch': (liked == 0 and albums == 0 and playlists == 0),
             'onboarding_done': o2mHandler.dbHandler.box_exists('o2m_onboarding'),
             'spotify_connected': _edit_current_user() is not None,
             'counts': {'liked': liked, 'albums': albums, 'playlists': playlists},
+            'redirect_ok': redirect_ok,
+            'redirect_configured': cfg_redirect,
+            'redirect_expected': expected_redirect,
         })
 
     # Seed boxes pointing to the ORIGINAL owner's playlists (foreign to a new user) +

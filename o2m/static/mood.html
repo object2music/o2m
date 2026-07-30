@@ -286,6 +286,13 @@
   .wc-counts { display: flex; gap: 22px; justify-content: center; margin: 20px 0; font-family: var(--font-mono); }
   .wc-counts b { display: block; font-size: 24px; color: var(--accent); }
   .wc-counts span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .wc-warn { text-align: left; font-size: 12.5px; line-height: 1.5; margin: 0 0 20px;
+    padding: 12px 14px; border: 1px solid var(--accent); border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .wc-warn b { display: block; margin-bottom: 6px; }
+  .wc-warn code { font-family: var(--font-mono); font-size: 11px; word-break: break-all;
+    background: color-mix(in srgb, var(--text) 8%, transparent); padding: 1px 4px; border-radius: 3px; }
+  .wc-warn-fix { margin-top: 8px; color: var(--muted); }
   #track-details .td-head {
     display: flex; align-items: center; justify-content: space-between;
     font-family: var(--font-head); font-weight: 700; font-size: 13px;
@@ -6017,10 +6024,20 @@ function renderWelcome(s) {
     // Keep polling while we wait for the Spotify OAuth to complete — the poll re-renders
     // and auto-advances the moment `spotify_connected`/`editUnlocked` flips. (Do NOT stop
     // the poll here, or the connect step would kill its own auto-detection on the 1st tick.)
+    // Read-only diagnostic: if the app's Spotify redirect doesn't match this host, the
+    // OAuth round-trip will fail. Tell the operator how to fix it — we never write secrets.
+    const mismatch = (s.redirect_ok === false && s.redirect_expected) ? `
+      <div class="wc-warn">
+        <b>Spotify redirect misconfigured — connecting will fail until fixed.</b>
+        <div>Configured: <code>${objEsc(s.redirect_configured || '(unset)')}</code></div>
+        <div>Expected for this host: <code>${objEsc(s.redirect_expected)}</code></div>
+        <div class="wc-warn-fix">Fix (host operator): set <code>O2M_PUBLIC_URL=${objEsc(location.origin)}</code> in this instance's <code>.env</code> and recreate the <code>o2m</code> container, then register <code>${objEsc(s.redirect_expected)}</code> in the Spotify app dashboard.</div>
+      </div>` : '';
     body.innerHTML = `<div class="wc-logo">O2M</div>
       <div class="wc-step">Step 1 / 5 · Connect</div>
       <div class="wc-title">Welcome</div>
       <div class="wc-sub">Connect your Spotify account to play your music and podcasts and sync your library. Everything else builds on this.</div>
+      ${mismatch}
       <button class="wc-btn" id="wc-connect">Connect Spotify</button>
       <button class="wc-skip" id="wc-recheck">I've connected — continue</button>
       <button class="wc-skip" id="wc-skip">Explore first</button>`;
