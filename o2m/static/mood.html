@@ -258,11 +258,34 @@
   .lc-stop.current.excl .lc-dot { background: var(--muted); border-color: var(--muted); }
   .lc-stop.current .lc-lab { color: var(--accent); font-weight: 700; }
   .lc-stop.current.excl .lc-lab { color: var(--text); }
-  /* Per-track mood matrix inside the details panel. */
+  /* Per-track mood matrix inside the details panel. The quadrants are painted at
+     3–10% opacity and dark's --mx-border is transparent, so on the panel surface
+     the canvas was all but invisible. Giving it the matrix background + a hairline
+     makes it read as a control in every theme. */
   .tp-matrix { width: 100%; max-width: 200px; aspect-ratio: 1 / 1;
-    margin: 8px auto 2px; display: block; touch-action: none; }
+    margin: 8px auto 2px; display: block; touch-action: none;
+    background: var(--mx-bg); border: 1px solid var(--border); }
   body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
+  /* ── First-launch welcome overlay ── */
+  #welcome { position: fixed; inset: 0; z-index: 400; display: none;
+    background: var(--bg); color: var(--text); align-items: center; justify-content: center; padding: 24px; }
+  #welcome.show { display: flex; }
+  .wc-card { width: 100%; max-width: 460px; text-align: center; }
+  .wc-logo { font-family: var(--font-head, var(--font)); font-weight: 900; font-size: 42px;
+    color: var(--accent); letter-spacing: -.03em; line-height: 1; }
+  .wc-step { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); margin: 18px 0 6px; }
+  .wc-title { font-size: 22px; font-weight: 700; margin: 4px 0 10px; }
+  .wc-sub { color: var(--muted); font-size: 14px; line-height: 1.55; margin-bottom: 22px; }
+  .wc-btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px;
+    background: var(--accent); color: #fff; border: none; font: inherit; font-weight: 700; cursor: pointer; }
+  .wc-btn:disabled { opacity: .5; cursor: default; }
+  .wc-skip { display: block; margin: 16px auto 0; color: var(--muted); font-size: 12px;
+    background: none; border: none; cursor: pointer; text-decoration: underline; }
+  .wc-counts { display: flex; gap: 22px; justify-content: center; margin: 20px 0; font-family: var(--font-mono); }
+  .wc-counts b { display: block; font-size: 24px; color: var(--accent); }
+  .wc-counts span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
   #track-details .td-head {
     display: flex; align-items: center; justify-content: space-between;
     font-family: var(--font-head); font-weight: 700; font-size: 13px;
@@ -313,8 +336,12 @@
   .td-fav.on { color: #e0245e; }
   body.edit-mode .td-fav { cursor: pointer; }
   .td-playlists { display: none; }
+  /* Right-aligned like the "More" trigger it sits under: the panel body renders
+     this as a plain block child, so without the flex row the trigger hugged the
+     left edge instead of the panel's right rail. */
   body.edit-mode .td-playlists {
-    display: block; border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
+    display: flex; justify-content: flex-end;
+    border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
   }
   /* Trigger button — same look as footer-link / footer-more-toggle */
   .pl-trigger {
@@ -572,18 +599,25 @@
        column, which carries the field list + mood matrix + playlist picker + More —
        and the square cover follows that height (height:100%, aspect-ratio 1/1). So a
        taller details column inflated the whole header and pushed the three columns
-       down. Capping it keeps the cover reasonable and lets the details column scroll
-       on its own. Poster themes (overprint/invert) drive their own header height. */
-    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-zone {
-      max-height: 38vh;
-    }
-    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #track-details {
+       down. A fixed height makes every header block exactly the cover thumbnail's
+       size, and the details column scrolls inside it instead of stretching it.
+       Invert is excluded: its full-width cover banner sets its own header height. */
+    :root:not([data-theme="invert"]) #top-zone { height: 38vh; }
+    :root:not([data-theme="invert"]) #track-details {
       overflow-y: auto; min-height: 0;
     }
-    #boxes-panel { flex: 0 0 25%; border-top: none; border-right: 1px solid var(--border);
-                   padding: 0; }
-    #left-panel  { flex: 0 0 35%; border-right: 1px solid var(--border); min-width: 0; }
-    #tracklist-col { flex: 0 0 40%; min-width: 0; }
+    /* Overprint keeps its poster grid: there the details column matches the cover
+       square (--ovp-w) rather than the whole header. `:root[...]` is needed to
+       out-rank both the `:not()` rule above and the generic overprint
+       `#track-details { height: 100% }` declared further down. */
+    :root[data-theme="overprint"] #top-zone { height: auto; }
+    :root[data-theme="overprint"] #track-details { height: var(--ovp-w); }
+
+    /* The three columns are exactly equal thirds (flex-basis 0 + equal grow). */
+    #boxes-panel { flex: 1 1 0; border-top: none; border-right: 1px solid var(--border);
+                   padding: 0; min-width: 0; }
+    #left-panel  { flex: 1 1 0; border-right: 1px solid var(--border); min-width: 0; }
+    #tracklist-col { flex: 1 1 0; min-width: 0; }
     /* En-têtes de colonnes : alignés (même top/left) et statiques au scroll */
     #boxes-panel-label, #settings-label, #tracklist-label {
       position: sticky; top: 0; z-index: 6; background: var(--bg);
@@ -1216,10 +1250,16 @@
     #btn-details svg { width: 18px; height: 18px; }
     #btn-details.has-edits { border-color: var(--accent); color: var(--accent); }
 
-    /* Details column → bottom-sheet modal (works in every theme, incl. posters). */
+    /* Details column → bottom-sheet modal (works in every theme, incl. posters).
+       Anchored to --sheet-top (the header's height, published by watchSheetTop)
+       rather than sized by its content: every sheet then opens at the same line —
+       just under the playback controls — with the same height, whatever it holds
+       and wherever the button that opened it sits. */
     #track-details {
-      position: fixed !important; left: 0; right: 0; bottom: 0; top: auto !important;
-      z-index: 200; max-height: 84vh; overflow-y: auto;
+      position: fixed !important; left: 0; right: 0; bottom: 0;
+      /* min(): a very tall header (poster themes) must not squeeze the sheet. */
+      top: min(var(--sheet-top, 32vh), 45vh) !important;
+      z-index: 200; overflow-y: auto;
       background: var(--surface); border-top: 1px solid var(--border-strong); border-left: none;
       box-shadow: 0 -12px 40px rgba(0,0,0,.45);
       transform: translateY(101%); transition: transform .26s var(--ease, ease);
@@ -1248,9 +1288,12 @@
      like the track edit space. Desktop/tablet: overlays the columns in place.
      Read-only for now; edit affordances land later. */
   #obj-backdrop { display: none; }
+  /* Same geometry as the details sheet (see --sheet-top there): fixed top line,
+     fixed height — never content- or trigger-dependent. */
   #obj-panel {
-    position: fixed; left: 0; right: 0; bottom: 0; top: auto;
-    z-index: 210; max-height: 86vh; overflow-y: auto;
+    position: fixed; left: 0; right: 0; bottom: 0;
+    top: min(var(--sheet-top, 32vh), 45vh);
+    z-index: 210; overflow-y: auto;
     background: var(--surface); border-top: 1px solid var(--border-strong);
     box-shadow: 0 -12px 40px rgba(0,0,0,.45);
     transform: translateY(101%); transition: transform .26s var(--ease, ease);
@@ -1929,6 +1972,9 @@
   </div>
 
 <div id="obj-backdrop"></div>
+
+<!-- First-launch welcome flow (filled by renderWelcome; shown only on a fresh instance) -->
+<div id="welcome"><div class="wc-card"><div class="wc-body"></div></div></div>
 
 <div id="matrix-tooltip">
   <div class="tt-name"></div>
@@ -2841,6 +2887,22 @@ function pauseFromRouteLoss(source) {
   _snapBtnOff();
   setFeedback('Paused (' + source + ')');
   setTimeout(refreshNowPlaying, 300);
+}
+
+/* Publish the playback header's height as --sheet-top. Every bottom sheet (track
+   details, object modal) anchors its top edge there, so they all open at the same
+   line — right under the controls — with the same height, instead of each one
+   sizing itself from its content. Kept in sync because the header's height changes
+   with the theme, the track (wrapped titles) and orientation. */
+function watchSheetTop() {
+  const tz = document.getElementById('top-zone');
+  if (!tz) return;
+  const publish = () =>
+    document.documentElement.style.setProperty('--sheet-top', tz.offsetHeight + 'px');
+  publish();
+  try { new ResizeObserver(publish).observe(tz); } catch (e) {}
+  window.addEventListener('resize', publish);
+  window.addEventListener('orientationchange', () => setTimeout(publish, 200));
 }
 
 /* Fallback detector: Bluetooth audio devices almost always expose a microphone
@@ -5924,6 +5986,94 @@ function setupCollapsibles() {
   }));
 }
 
+/* ── First-launch onboarding (increment ①: detect + connect + sync progress) ──
+   Fresh-instance detection is server-side (/api/onboarding, no stored flag). The
+   flow is a stepped welcome overlay; steps ③-⑤ (box wiring / first box / tour) plug
+   into renderWelcome later. */
+let _wcPoll = null;
+async function initOnboarding() {
+  let s;
+  try { s = await fetch(API + '/onboarding').then(r => r.json()); } catch (e) { return; }
+  if (!s || !s.first_launch) return;                  // populated instance → no onboarding
+  if (sessionStorage.getItem('o2m-wc-skip')) return;  // user chose to explore first
+  renderWelcome(s);
+  document.getElementById('welcome')?.classList.add('show');
+}
+function _wcStopPoll() { if (_wcPoll) { clearInterval(_wcPoll); _wcPoll = null; } }
+function _wcStartPoll() {
+  if (_wcPoll) return;
+  _wcPoll = setInterval(async () => {
+    try { renderWelcome(await fetch(API + '/onboarding').then(r => r.json())); } catch (e) {}
+  }, 4000);
+}
+function _wcSkip() { _wcStopPoll(); sessionStorage.setItem('o2m-wc-skip', '1'); document.getElementById('welcome')?.classList.remove('show'); }
+function renderWelcome(s) {
+  const body = document.querySelector('#welcome .wc-body');
+  if (!body || !s) return;
+  const connected = s.spotify_connected || editUnlocked;
+  const c = s.counts || {};
+  const synced = (c.liked || 0) + (c.albums || 0) + (c.playlists || 0) > 0;
+  if (!connected) {
+    _wcStopPoll();
+    body.innerHTML = `<div class="wc-logo">O2M</div>
+      <div class="wc-step">Step 1 / 5 · Connect</div>
+      <div class="wc-title">Welcome</div>
+      <div class="wc-sub">Connect your Spotify account to play your music and podcasts and sync your library. Everything else builds on this.</div>
+      <button class="wc-btn" id="wc-connect">Connect Spotify</button>
+      <button class="wc-skip" id="wc-skip">Explore first</button>`;
+    document.getElementById('wc-connect').addEventListener('click', () => { startEditAuth(); _wcStartPoll(); });
+    document.getElementById('wc-skip').addEventListener('click', _wcSkip);
+  } else if (s.onboarding_done) {
+    // ── Step 4 · First box (done wins over sync/setup, whatever the counts read) ──
+    _wcStopPoll();
+    body.innerHTML = `<div class="wc-logo">O2M</div>
+      <div class="wc-step">Step 4 / 5 · Your first box</div>
+      <div class="wc-title">All set</div>
+      <div class="wc-sub">Your starter boxes are in place. Now create your own box (music, podcast or radio) — or finish and explore the interface.</div>
+      <button class="wc-btn" id="wc-firstbox">Create a box</button>
+      <button class="wc-skip" id="wc-finish">Finish</button>`;
+    const close = () => { _wcStopPoll(); document.getElementById('welcome')?.classList.remove('show'); };
+    document.getElementById('wc-firstbox').addEventListener('click', () => { close(); if (typeof openBoxWizard === 'function') openBoxWizard(); });
+    document.getElementById('wc-finish').addEventListener('click', close);
+  } else if (!synced) {
+    _wcStartPoll();
+    body.innerHTML = `<div class="wc-logo">O2M</div>
+      <div class="wc-step">Step 2 / 5 · Sync</div>
+      <div class="wc-title">Syncing your library…</div>
+      <div class="wc-sub">Albums, liked tracks and playlists are being cached (in the background). You can continue as soon as content appears.</div>
+      <div class="wc-counts">
+        <div><b>${c.albums || 0}</b><span>albums</span></div>
+        <div><b>${c.liked || 0}</b><span>liked</span></div>
+        <div><b>${c.playlists || 0}</b><span>playlists</span></div>
+      </div>
+      <button class="wc-btn" id="wc-cont">Continue</button>`;
+    document.getElementById('wc-cont').addEventListener('click', _wcSkip);
+  } else if (!s.onboarding_done) {
+    // ── Step 3 · Boxes: sanitize + create the O2M playlists + starter boxes ──
+    _wcStopPoll();
+    body.innerHTML = `<div class="wc-logo">O2M</div>
+      <div class="wc-step">Step 3 / 5 · Boxes</div>
+      <div class="wc-title">Setting up your boxes</div>
+      <div class="wc-sub" id="wc-plan">Analyzing your setup…</div>
+      <button class="wc-btn" id="wc-setup">Set up my boxes</button>
+      <button class="wc-skip" id="wc-skip3">Skip</button>`;
+    // Preview via dry-run (no side effects).
+    fetch(API + '/onboarding/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dry_run: true }) })
+      .then(r => r.json()).then(p => {
+        const pl = (p && p.plan) || {};
+        const el = document.getElementById('wc-plan');
+        if (el) el.innerHTML = `We'll clean up <b>${(pl.delete || []).length}</b> imported box(es), create your <b>O2M Incoming / Trash</b> playlists (in your Spotify account) and <b>${(pl.create_boxes || []).length}</b> starter boxes (Auto, New, Podcasts, Radio…).`;
+      }).catch(() => {});
+    document.getElementById('wc-setup').addEventListener('click', async (e) => {
+      e.target.disabled = true; e.target.textContent = 'Setting up…';
+      try { await fetch(API + '/onboarding/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }).then(r => r.json()); } catch (_) {}
+      try { if (typeof loadBoxes === 'function') loadBoxes(); } catch (_) {}
+      try { renderWelcome(await fetch(API + '/onboarding').then(r => r.json())); } catch (_) {}
+    });
+    document.getElementById('wc-skip3').addEventListener('click', _wcSkip);
+  }
+}
+
 async function init() {
   // Pochette de remplacement dès le chargement (évite l'image vide) + repli si un visuel casse
   const coverEl = document.getElementById('cover');
@@ -6085,6 +6235,7 @@ async function init() {
     else if (e.key === 'Escape') { e.stopPropagation(); objSearchInput.blur(); }   // blur, don't close the modal
   });
   checkEditStatus();
+  initOnboarding();
   await loadGenres();
   await loadBoxes();
   // Laisse au WS le temps de s'ouvrir (≤300ms) → préfère WS sur HTTP mais ne bloque plus longtemps
@@ -6104,6 +6255,7 @@ async function init() {
   }
   armMediaAnchor();
   watchAudioDevices();
+  watchSheetTop();
 
   let fitTimer = null;
   window.addEventListener('resize', () => {

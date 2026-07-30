@@ -295,6 +295,129 @@ if __name__ == "__main__":
         uid = _edit_current_user()
         return jsonify({'unlocked': uid is not None, 'id': uid})
 
+    @api.route('/api/onboarding')
+    def api_onboarding():
+        """First-launch state for the welcome flow. `first_launch` is derived from the
+        DB itself (no Spotify library ever synced) rather than a stored flag — this is
+        per-DB, so an already-populated instance (incl. the o2m_0/o2m_1 shared prod DB)
+        is never treated as fresh, and there's nothing to keep in sync."""
+        from flask import jsonify
+        from src.o2mmodels import Playlist
+        try:
+            liked = o2mHandler.dbHandler.count_cached('liked')
+            albums = o2mHandler.dbHandler.count_cached('albums')
+            playlists = Playlist.select().count()
+        except Exception:
+            liked = albums = playlists = 0
+        return jsonify({
+            'first_launch': (liked == 0 and albums == 0 and playlists == 0),
+            'onboarding_done': o2mHandler.dbHandler.box_exists('o2m_onboarding'),
+            'spotify_connected': _edit_current_user() is not None,
+            'counts': {'liked': liked, 'albums': albums, 'playlists': playlists},
+        })
+
+    # Seed boxes pointing to the ORIGINAL owner's playlists (foreign to a new user) +
+    # the deprecated Spotify-recommendation seed box.
+    _ONBOARDING_FOREIGN = (
+        'spotify:playlist:4CAjrciXNfqiDdr757UwBx', 'spotify:playlist:0zM5DUb7FYRVvVjBg3ULp3',
+        'spotify:playlist:4oXELBuV9B6QtxYwMdzsoE', 'spotify:playlist:2YndOajMlJlkj7x6WyevW6',
+    )
+    # Generic starter boxes that work for any authenticated user (no foreign content).
+    _ONBOARDING_EXAMPLES = [
+        {'description': 'Auto',        'data': 'auto:library\ninfos:library', 'option_type': 'library', 'option_sort': 'smart'},
+        {'description': 'Auto albums', 'data': 'albums:spotify',              'option_type': 'library', 'option_sort': 'asc'},
+        {'description': 'New',         'data': 'newrecent:library\nnewnotcompleted:library', 'option_type': 'new_mopidy'},
+        {'description': 'Podcasts',    'data': 'podcasts:unfinished',          'option_type': 'podcast'},
+        {'description': 'Radio France Inter', 'data': 'tunein:station:s24875', 'option_type': 'library'},
+    ]
+
+    @api.route('/api/onboarding/setup', methods=['POST'])
+    @require_edit_auth
+    def api_onboarding_setup():
+        """First-launch box setup (idempotent). Sanitizes the foreign-playlist seed
+        boxes, creates the user's own writable playlists (Incoming/Trash) + wires the
+        system boxes to them, and creates the generic starter boxes. Pass dry_run=1 to
+        get the plan without side effects. A marker box makes it a no-op once done."""
+        from flask import jsonify
+        from src.o2mmodels import Box, Playlist
+        data = request.get_json(silent=True) or {}
+        dry = bool(data.get('dry_run'))
+        db = o2mHandler.dbHandler
+
+        if db.box_exists('o2m_onboarding') and not dry:
+            return jsonify({'ok': True, 'skipped': 'already_done'})
+
+        # 1. Sanitize: seed boxes pointing to foreign playlists / deprecated reco seeds.
+        to_delete = [{'uid': b.uid, 'description': b.description} for b in Box.select()
+                     if any(f in (b.data or '') for f in _ONBOARDING_FOREIGN)
+                     or 'spotify:recommendation:seeds' in (b.data or '')]
+        # 2. Writable playlists to create for the system boxes (skip if a same-name one exists).
+        existing_pl = {(p.name or '').strip() for p in Playlist.select(Playlist.name)}
+        want_pl = [('O2M Incoming', 'incoming'), ('O2M Trash', 'trash')]
+        to_create_pl = [{'name': n, 'option_type': ot} for n, ot in want_pl if n not in existing_pl]
+        # 3. Starter boxes to create (skip existing by description).
+        have_boxes = {(b.description or '').strip() for b in Box.select(Box.description)}
+        to_create_boxes = [ex for ex in _ONBOARDING_EXAMPLES if ex['description'] not in have_boxes]
+
+        if dry:
+            return jsonify({'dry_run': True, 'plan': {
+                'delete': to_delete,
+                'create_playlists': to_create_pl,
+                'create_boxes': [b['description'] for b in to_create_boxes],
+            }})
+
+        result = {'deleted': [], 'playlists': [], 'boxes': [], 'errors': []}
+        # --- execute: sanitize ---
+        for b in to_delete:
+            try:
+                api_box_action(uid=b['uid'], mode='remove')
+                db.delete_box(b['uid'])
+                result['deleted'].append(b['uid'])
+            except Exception as e:
+                result['errors'].append(f"delete {b['uid']}: {e}")
+        # --- create writable playlists + wire the system box of that option_type ---
+        sp = getattr(o2mHandler.spotifyHandler, 'sp', None)
+        username = getattr(o2mHandler, 'username', None)
+        for pl in to_create_pl:
+            try:
+                uri = None
+                if sp and username:
+                    created = sp.user_playlist_create(username, pl['name'], public=False,
+                                                       description='O2M — auto-managed')
+                    uri = created.get('uri')
+                if uri:
+                    box = db.get_box_by_option_type(pl['option_type'])
+                    if box is None:
+                        box = db.new_box('o2m_' + pl['option_type'])
+                        box.option_type = pl['option_type']; box.description = pl['name']; box.favorite = 0
+                    box.data = uri
+                    box.save()
+                    result['playlists'].append({'name': pl['name'], 'uri': uri, 'box': box.uid})
+            except Exception as e:
+                result['errors'].append(f"playlist {pl['name']}: {e}")
+        # --- create starter boxes ---
+        import secrets
+        for ex in to_create_boxes:
+            try:
+                uid = secrets.token_hex(8)
+                while db.box_exists(uid):
+                    uid = secrets.token_hex(8)
+                box = db.new_box(uid)
+                _apply_box_fields(box, ex)
+                box.favorite = 1
+                box.save()
+                result['boxes'].append(ex['description'])
+            except Exception as e:
+                result['errors'].append(f"box {ex['description']}: {e}")
+        # --- mark done (marker box, ignored by selection) ---
+        try:
+            m = db.new_box('o2m_onboarding')
+            m.description = 'onboarding'; m.option_type = 'hidden'; m.data = 'done'; m.favorite = 0; m.public = 0
+            m.save()
+        except Exception as e:
+            result['errors'].append(f"marker: {e}")
+        return jsonify({'ok': True, **result})
+
     @api.route('/api/edit_logout', methods=['POST'])
     def api_edit_logout():
         from flask import jsonify, make_response
