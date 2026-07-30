@@ -1127,8 +1127,11 @@ if __name__ == "__main__":
             # uri-derived type so a podcast/info stream never shows the music 'new'.
             opt = (str(info.get('option_type')) if (info and info.get('option_type')) else
                    (str(stat.option_type) if stat else None))
-            if (not opt or opt in ('new', 'new_mopidy')) and \
-               (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)):
+            # Spoken content never shows a music tag: a podcast/video URI carrying a
+            # music type (new/library/favorites/incoming/…) is displayed as 'podcast'
+            # ('info' is kept — it's a legitimate spoken classification).
+            if (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)) and \
+               opt not in ('info', 'podcast'):
                 opt = 'podcast'
             if not opt:
                 opt = 'new'

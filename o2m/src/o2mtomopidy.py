@@ -511,8 +511,9 @@ class O2mToMopidy:
                     replaced_tlids = set()  # Track which tlids were replaced
 
                     #Exclude if DL is on extreme values which has special behaviours and other cases
-                    # 'new' excluded: the new context must play unheard tracks, not recommendations
-                    if discover_level > 0 and discover_level < 10 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash','new']:
+                    # 'new' excluded: the new context must play unheard tracks, not recommendations.
+                    # podcast/info excluded: they are spoken content — never inject music recos there.
+                    if discover_level > 0 and discover_level < 10 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash','new','podcast','info']:
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
@@ -1373,9 +1374,9 @@ class O2mToMopidy:
         for item in unread_shows:
             stat_pod = self.dbHandler.get_stat_by_uri(item.uri)
             if (stat_pod):
-                #Keep podcasts when 
-                #This is a podcast and read_end proportion < 0.9 and not a promotion podcast
-                if (stat_pod.option_type == "podcast" and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
+                #Keep podcasts when
+                #This is a podcast, never finished (read_count_end == 0), last listen < 0.9, not a promo
+                if (stat_pod.option_type == "podcast" and not stat_pod.read_count_end > 0 and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
                 #This is an info and podcast and read_end proportion < 0.9 and not a promotion podcast
                 elif (not stat_pod.read_count_end > 0 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
             elif ("app_rf_promotion" not in item.uri): uris.append(item.uri)
@@ -2361,11 +2362,14 @@ class O2mToMopidy:
 
         #Harmonize option_type if new
         if 'new' in option_type: option_type='new'
-        # Content activated outside any box (e.g. Iris search) has no context, so option_type
-        # falls back to 'new'. A podcast/video URI is never a Spotify 'new' discovery — classify
-        # it by type so it stays resumable and out of the 'new' removal/reco flow.
-        if option_type == 'new' and (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)):
-            option_type = 'podcast'
+        # Spoken content (podcast/video URI) must NEVER carry a music tag, whatever box
+        # or bucket it was drawn from (auto→'library', news→'new', Iris search→'new'…):
+        # force it to a non-music type so it stays resumable and out of the music
+        # removal/reco/promotion flow. The sticky rule below keeps an existing 'info'
+        # classification (info-box episodes) when we pass the generic 'podcast'.
+        if (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)) \
+                and option_type in ('new', 'new_mopidy', 'library', 'favorites', 'incoming', 'normal', ''):
+            option_type = self._spoken_type_for_uri(uri, getattr(track, 'length', None))
         new_stat = False
 
         #Get stats
@@ -2386,9 +2390,17 @@ class O2mToMopidy:
         rate = 0.5
         stat.username = self.username
 
-        if hasattr(track, "length"):
+        if hasattr(track, "length") and track.length:
             rate = pos / track.length
             if rate > 0.9: track_finished = True
+            # Persist duration from the Mopidy track (podcasts carry .length here even
+            # though the metadata cache skips non-spotify URIs) → fills duration_ms
+            # incrementally on each playback, enabling proportion-based logic later.
+            try:
+                if not stat.duration_ms:
+                    stat.duration_ms = int(track.length)
+            except Exception:
+                pass
             #Probably an artefact of auto adding track : so no adding stat needed and exit function
             #if (rate < 0.05) and (new_stat==False): 
             if (rate < 0.05) : 
@@ -2606,7 +2618,36 @@ class O2mToMopidy:
         stat.update()
         stat.save()
 
-    # Auto Filling playlist 
+    def _spoken_type_for_uri(self, uri, length_ms=None):
+        """Classify spoken content (podcast+/youtube URI) as 'info' or 'podcast' when
+        the box context is lost. Resolution order:
+          1. HERITAGE — the type of the box whose data references this feed ('info'
+             wins over 'podcast': actuality is the stronger claim).
+          2. DURATION — short (< 20 min) → 'info', long → 'podcast' (live only; old
+             stats have no duration).
+          3. Fallback → 'podcast' (generic spoken; at least out of the music flow)."""
+        try:
+            if 'podcast+' in uri:
+                feed = re.sub(r'[?&]max_results=\d+', '', uri.split('podcast+', 1)[1].split('#')[0]).strip().rstrip('/')
+                if feed:
+                    found = None
+                    for b in Box.select().where(Box.data.contains(feed)):
+                        if b.option_type == 'info':
+                            return 'info'
+                        if b.option_type == 'podcast':
+                            found = 'podcast'
+                    if found:
+                        return found
+        except Exception:
+            pass
+        try:
+            if length_ms and int(length_ms) < 20 * 60 * 1000:
+                return 'info'
+        except Exception:
+            pass
+        return 'podcast'
+
+    # Auto Filling playlist
     def remove_spotify_playlist(self, playlist_uri,uri):
         # Defensive: strip control chars and whitespace, then delegate to SpotifyHandler normalizer
         try:

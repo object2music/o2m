@@ -1,3 +1,4 @@
+import math
 import logging, pprint, datetime, random, json, re as _re, unicodedata as _unicodedata
 
 from peewee import IntegrityError, fn, JOIN
@@ -487,32 +488,51 @@ class DatabaseHandler():
             return uris
         return []
 
+    # Absolute position (ms) marking a "real engagement" with an episode. read_end is
+    # unreliable for podcasts (duration unknown → it stays ~0), so progress is measured
+    # by read_position, NOT by proportion.
+    PODCAST_RESUME_POS_MS = 120000   # 2 minutes
+
     def get_uris_podcasts_notread(self, limit=15, discover_level=5):
-        # "Unfinished / resume": the LAST listen didn't finish (read_end < 0.9) and there is a
-        # real position. This OVERRIDES past completions — an episode finished-then-restarted
-        # (e.g. ended by accident) is eligible again, whatever its read_count_end.
-        # info-typed items are handled by the news/actuality window, not here.
-        # Soft ranking instead of hard skip/age thresholds: bring the most recent and
-        # least-skipped to the top, THEN apply the selection window (limit). The per-skip
-        # recency cost shrinks as discover_level rises (more tolerant when exploring more).
+        # Resume pool of UNFINISHED podcast/video episodes. Eligibility + ranking are
+        # driven by the absolute read_position (ms), which is the only reliable progress
+        # signal for podcasts. info-typed items go through the news/actuality window.
         skip_penalty = max(1, 8 - discover_level) * 86400  # seconds of recency lost per skip
-        # skipped_count is inflated for long episodes listened over several sessions
-        # (each interrupted session counts as a "skip": read_count - read_count_end).
-        # An episode with REAL progress is a resume, not a rejection — exempt it from
-        # the skip penalty so it ranks by recency (bug: Sismique/Védrine, listened the
-        # same morning, ranked as 9 days old and fell out of the selection window).
+        # Engagement (position ≥ 2 min) = a genuine resume → exempt from the skip penalty
+        # so it ranks by recency (fixes Sismique/Védrine: the old read_end≥0.15 exemption
+        # never fired because read_end stays ~0 for podcasts). Below 2 min, skips push it back.
         from peewee import Case
-        penalized_skips = Case(None, [(Track.read_end >= 0.15, 0)], Track.skipped_count)
+        RES = self.PODCAST_RESUME_POS_MS
+        penalized_skips = Case(None, [(Track.read_position >= RES, 0)], Track.skipped_count)
         effective_recency = Track.last_read_date - (penalized_skips * skip_penalty)
+        pool_size = min(max(limit, 1) * 4, 60)
         query = Track.select().where(
             ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%') | (Track.uri % '%yt:%'))
+            # read_count_end == 0 → finished at least once = DONE, never re-served.
+            & (Track.read_count_end == 0)
             & (Track.read_end < 0.9)
             & (Track.read_position > 0)
+            # REPEATED EARLY-SKIP = rejection: started ≥2 times, never got past 2 min →
+            # the user keeps dropping it, don't resurface it (a single early skip is
+            # tolerated — could be accidental).
+            & ~((Track.skipped_count >= 2) & (Track.read_position < RES))
             & (Track.option_type != "library")
             & (Track.option_type != "info")
-        ).order_by(effective_recency.desc()).limit(limit)
-        results = self.transform_query_to_list(query)
-        return [o.uri for o in results] if results else []
+        ).order_by(effective_recency.desc()).limit(pool_size)
+        pool = [o.uri for o in self.transform_query_to_list(query)]
+        if not pool:
+            return []
+        # DL-scaled stochastic pick over the recency-ranked pool (Efraimidis-Spirakis):
+        # weight = exp(-rank * alpha), alpha = (10-DL)/10 * 0.7 → DL0 sharp (resume the
+        # newest unfinished, alpha=0.7), DL5 moderate, DL10 alpha=0 → uniform (pure
+        # hasard among unfinished episodes). Randomness grows linearly with DL.
+        alpha = (10 - discover_level) / 10.0 * 0.7
+        keyed = []
+        for i, uri in enumerate(pool):
+            w = math.exp(-i * alpha)
+            keyed.append((random.random() ** (1.0 / max(w, 1e-9)), uri))
+        keyed.sort(reverse=True)
+        return [u for _, u in keyed[:limit]]
 
     # ─── Cache helpers ─────────────────────────────────────────────────────────
 
