@@ -2891,6 +2891,7 @@ function pauseFromRouteLoss(source) {
   rpc('core.playback.pause').catch(() => {});
   try { snapPlayer.stop(); } catch (e) {}
   snapPlayer = null;
+  _releaseWakeLock();
   _snapBtnOff();
   setFeedback('Paused (' + source + ')');
   setTimeout(refreshNowPlaying, 300);
@@ -5742,9 +5743,39 @@ function _snapBtnOff() {
   btn.innerHTML = SNAP_SVG; btn.classList.remove('playing');
 }
 
+/* Screen Wake Lock — best-effort. iOS Safari suspends the WebAudio AudioContext
+   as soon as the screen locks (and WebAudio can't play in the background at all),
+   so a phone used as a Snapcast speaker goes silent on auto-lock. Holding a wake
+   lock while playing keeps the screen on and avoids that. The browser releases the
+   lock whenever the page is hidden, so we re-acquire it on visibilitychange. */
+let _wakeLock = null;
+async function _acquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+      _wakeLock = await navigator.wakeLock.request('screen');
+      _wakeLock.addEventListener?.('release', () => { _wakeLock = null; });
+    }
+  } catch (e) { /* unsupported or blocked (needs a recent iOS + user gesture) */ }
+}
+function _releaseWakeLock() {
+  try { _wakeLock?.release?.(); } catch (e) {}
+  _wakeLock = null;
+}
+
+// Returning to the foreground: re-arm the wake lock and resume the audio context
+// that iOS suspended while backgrounded (best-effort; may need a tap on iOS).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !snapPlayer) return;
+  _acquireWakeLock();
+  try {
+    if (snapPlayer.ctx && snapPlayer.ctx.state === 'suspended') snapPlayer.ctx.resume();
+  } catch (e) {}
+});
+
 function _snapStart() {
   if (snapPlayer || !snapWsUrl || !window.SnapStream) return;
   snapPlayer = new window.SnapStream(snapWsUrl);
+  _acquireWakeLock();
   startMediaAnchor();
   // Pousse les métadonnées une fois la session média devenue active
   setTimeout(refreshNowPlaying, 600);
@@ -5756,6 +5787,7 @@ function _snapStart() {
 function toggleSnapcast() {
   if (snapPlayer) {
     snapPlayer.stop(); snapPlayer = null;
+    _releaseWakeLock();
     stopMediaAnchor();
     _snapBtnOff(); setFeedback('Snapcast stopped');
     localStorage.setItem('snap-autoconnect', '0');  // arrêt explicite (≠ « jamais décidé »)
