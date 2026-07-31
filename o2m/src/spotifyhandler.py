@@ -805,6 +805,24 @@ class SpotifyHandler:
             self.sp.current_user_saved_tracks_delete(tid)
         return True
 
+    def set_album_saved(self, album_uri, saved=True):
+        """Add/remove an album from the user's saved albums (Spotify library)."""
+        aid = [album_uri.rsplit(':', 1)[1]]
+        if saved:
+            self.sp.current_user_saved_albums_add(albums=aid)
+        else:
+            self.sp.current_user_saved_albums_delete(albums=aid)
+        return True
+
+    def set_artist_followed(self, artist_uri, followed=True):
+        """Follow/unfollow an artist on the user's account."""
+        aid = [artist_uri.rsplit(':', 1)[1]]
+        if followed:
+            self.sp.user_follow_artists(ids=aid)
+        else:
+            self.sp.user_unfollow_artists(ids=aid)
+        return True
+
 ################### PLAYLISTS #############################
 
     def add_tracks_playlist(self, username, playlist_uri, track_uris):
@@ -1037,6 +1055,8 @@ class SpotifyHandler:
 
                 before = cached
                 position = 0
+                current_uris = set()
+                pl_complete = True
                 while items_response:
                     for item in (items_response.get('items') or []):
                         if self._is_rate_limited():
@@ -1044,6 +1064,7 @@ class SpotifyHandler:
                         track = (item.get('track') or item.get('item')) if item else None
                         if track and track.get('uri'):
                             self._cache_track(track)
+                            current_uris.add(track['uri'])
                             if self._db:
                                 added_at = item.get('added_at')
                                 self._db.save_playlist_track(
@@ -1060,9 +1081,18 @@ class SpotifyHandler:
                         if e.http_status == 429:
                             self._on_rate_limit(e)
                             return cached
+                        pl_complete = False
                         break
                     except Exception:
+                        pl_complete = False
                         break
+                # Reconcile removals done directly on Spotify: drop links no longer
+                # in the playlist. Only on a COMPLETE fetch (a partial page must not
+                # delete the tracks it simply didn't reach).
+                if pl_complete and self._db:
+                    removed = self._db.reconcile_playlist_tracks(playlist['id'], current_uris)
+                    if removed:
+                        print(f"cache_all_playlists: '{playlist.get('name')}' → removed {removed} stale link(s)")
                 print(f"cache_all_playlists: '{playlist.get('name')}' → {cached - before} tracks cached")
 
             if response.get('next'):
@@ -1307,15 +1337,18 @@ class SpotifyHandler:
             return
         print("warmup: syncing liked tracks…")
         count = 0
+        liked_uris = set()
+        complete = False
         try:
             response = self.sp.current_user_saved_tracks(limit=50)
             while response and response.get('items'):
                 for item in response['items']:
                     if self._is_rate_limited():
-                        return
+                        return   # partial → no reconciliation (avoid false un-likes)
                     track = item.get('track')
                     if track and track.get('uri'):
                         self._cache_track(track)
+                        liked_uris.add(track['uri'])
                         if self._db:
                             self._db.mark_track_liked(track['uri'], item.get('added_at'))
                         count += 1
@@ -1323,6 +1356,7 @@ class SpotifyHandler:
                     response = self.sp.next(response)
                 else:
                     break
+            complete = True   # reached only if we paged everything without early return
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -1331,6 +1365,13 @@ class SpotifyHandler:
             print(f"warmup_liked_tracks error: {e}")
             return
         print(f"warmup: {count} liked tracks synced")
+        # Reconcile un-likes done directly on Spotify: clear liked=1 rows absent
+        # from the freshly-synced set. Only after a COMPLETE fetch, and never from
+        # an empty set (guarded in reconcile_liked) so a glitch can't wipe all likes.
+        if complete and self._db:
+            cleared = self._db.reconcile_liked(liked_uris)
+            if cleared:
+                print(f"warmup: cleared {cleared} stale like(s) un-liked on Spotify")
         if self._db:
             self._db.set_cache_meta('warmup_liked_at', count)
 

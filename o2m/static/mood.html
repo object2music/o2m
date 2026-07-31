@@ -1269,10 +1269,16 @@
       z-index: 200; overflow-y: auto;
       background: var(--surface); border-top: 1px solid var(--border-strong); border-left: none;
       box-shadow: 0 -12px 40px rgba(0,0,0,.45);
-      transform: translateY(101%); transition: transform .26s var(--ease, ease);
+      /* visibility (not just the slide) is what actually hides a closed sheet: the
+         translate is a percentage of the sheet's own height, so it can only be
+         trusted while that height is content-driven. Now that the height is pinned
+         (top+bottom), the explicit hidden state is what guarantees a closed sheet
+         never shows through. */
+      transform: translateY(101%); visibility: hidden;
+      transition: transform .26s var(--ease, ease), visibility .26s var(--ease, ease);
       display: flex !important; flex-direction: column; padding: 16px 16px 28px; gap: 0;
     }
-    body.details-open #track-details { transform: translateY(0); }
+    body.details-open #track-details { transform: translateY(0); visibility: visible; }
     #track-details .td-body { display: block !important; margin-top: 12px; }
     #track-details .td-head { cursor: default; padding-right: 0; }
     #track-details .td-head::after { display: none !important; }
@@ -1303,10 +1309,13 @@
     z-index: 210; overflow-y: auto;
     background: var(--surface); border-top: 1px solid var(--border-strong);
     box-shadow: 0 -12px 40px rgba(0,0,0,.45);
-    transform: translateY(101%); transition: transform .26s var(--ease, ease);
+    /* Explicit hidden state, like the details sheet: the height is pinned now, so
+       the percentage slide alone can't be relied on to keep a closed sheet away. */
+    transform: translateY(101%); visibility: hidden;
+    transition: transform .26s var(--ease, ease), visibility .26s var(--ease, ease);
     display: flex; flex-direction: column; padding: 14px 16px 26px;
   }
-  body.obj-open #obj-panel { transform: translateY(0); }
+  body.obj-open #obj-panel { transform: translateY(0); visibility: visible; }
   #obj-backdrop {
     position: fixed; inset: 0; z-index: 205; background: rgba(0,0,0,.5);
     opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s;
@@ -1634,6 +1643,20 @@
      knob circle renders as large as a plain dial (.dial-svg caps at 108px). */
   #dial-bmood, #dial-bdl { width: 172px; height: 123px; }
   #txt-bmood, #txt-bdl { font-size: 11px; letter-spacing: .04em; }
+  /* Desktop: the basic view was pinned to the phone-sized 560px column, leaving
+     most of the window empty. Scale the whole block up by roughly the same factor
+     (~1.4×) so actuators, the ALL knob and the dials keep their proportions. */
+  @media (min-width: 700px) {
+    html.basic #basic-section { max-width: 820px; gap: 36px; padding: 34px 24px 40px; }
+    .basic-toggle { padding: 26px 10px 21px; font-size: 15px; gap: 12px; }
+    .basic-toggle svg { width: 36px; height: 36px; }
+    .basic-toggles { gap: 14px; }
+    #basic-all { width: 86px; height: 86px; font-size: 11px; }
+    #basic-all svg { width: 27px; height: 27px; }
+    #basic-dials { gap: 40px; }
+    #dial-bmood, #dial-bdl { width: 240px; height: 172px; }
+    #txt-bmood, #txt-bdl { font-size: 13px; }
+  }
   /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
      Sits on the status line of the now-playing header. */
   /* Network quality dot — colour driven by html[data-net], so several dots
@@ -2500,6 +2523,7 @@ const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 const ICON_REMOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '' }) {
   // Visual in the leading slot: eq-icon if current, else a thumbnail when the
@@ -3092,12 +3116,39 @@ function objMenuItems(uri, kind) {
   }
   if (kind === 'artist') items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openArtist(uri) });
   if (kind === 'album')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openAlbum(uri, {}) });
+  // Add to library (synchronized to Spotify): albums → saved albums, artists → follow.
+  if (kind === 'album')  items.push({ label: 'Add to library', icon: ICON_ADD, action: () => addAlbumToLibrary(uri) });
+  if (kind === 'artist') items.push({ label: 'Add to library', icon: ICON_ADD, action: () => followArtistToLibrary(uri) });
   if (kind === 'box')    items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openBox(uri.replace(/^box:/, '')) });
   if (kind === 'podcast')items.push({ label: 'See episodes', icon: ICON_DETAILS, action: () => openPodcast(uri) });
   if (kind === 'playlist')items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openPlaylist(uri) });
   if (kind === 'track')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
+}
+// Add an album to the library (Spotify saved albums + local DB), write-through.
+async function addAlbumToLibrary(uri) {
+  try {
+    const r = await fetch(API + '/album_save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri, saved: true }),
+    });
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
+    const d = await r.json().catch(() => ({}));
+    setFeedback(d.error ? 'Save error' : 'Album added to library');
+  } catch (e) { setFeedback('Save error'); }
+}
+// Follow an artist (Spotify follow + local DB), write-through.
+async function followArtistToLibrary(uri) {
+  try {
+    const r = await fetch(API + '/artist_follow', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri, followed: true }),
+    });
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
+    const d = await r.json().catch(() => ({}));
+    setFeedback(d.error ? 'Follow error' : 'Artist added to library');
+  } catch (e) { setFeedback('Follow error'); }
 }
 // Open an object's detail view from its (uri, kind) — used by the row-click handler.
 function objOpenByKind(uri, kind, name) {

@@ -1429,6 +1429,20 @@ class DatabaseHandler():
             (PlaylistTrack.playlist_id == playlist_id) & (PlaylistTrack.track_uri == track_uri)
         ).execute()
 
+    def reconcile_playlist_tracks(self, playlist_id, current_uris):
+        """Drop playlist↔track links no longer present in the Spotify playlist
+        (tracks removed directly on Spotify). `current_uris` = the FULL current
+        set of the playlist — callers MUST pass it only after a complete fetch.
+        An empty set legitimately means the playlist was emptied."""
+        try:
+            cond = (PlaylistTrack.playlist_id == playlist_id)
+            if current_uris:
+                cond = cond & (PlaylistTrack.track_uri.not_in(list(current_uris)))
+            return PlaylistTrack.delete().where(cond).execute()
+        except Exception as e:
+            self.log.error(f"reconcile_playlist_tracks: {e}")
+            return 0
+
     def get_random_played_track_uris(self, limit):
         """Last-resort fallback: random spotify tracks from play history."""
         rows = list(Track.select(Track.uri)
@@ -1474,6 +1488,22 @@ class DatabaseHandler():
             action='update',
             update=updates,
         ).execute()
+
+    def reconcile_liked(self, liked_uris):
+        """Clear liked=1 on tracks no longer in the Spotify liked set (un-likes
+        done directly on Spotify). `liked_uris` = the COMPLETE set currently
+        liked. Callers MUST pass it only after a complete fetch, and skip the
+        call when the set is empty (guarded here too) so a transient empty API
+        response can never wipe every like."""
+        if not liked_uris:
+            return 0
+        try:
+            return (Track.update(liked=0, liked_at=None)
+                    .where((Track.liked == 1) & (Track.uri.not_in(list(liked_uris))))
+                    .execute())
+        except Exception as e:
+            self.log.error(f"reconcile_liked: {e}")
+            return 0
 
     def get_liked_track_uris(self):
         """Return list of URIs where liked=1."""
