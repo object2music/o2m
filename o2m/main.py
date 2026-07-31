@@ -1261,8 +1261,18 @@ if __name__ == "__main__":
             # the stored stat — a stat can lag/mis-tag (e.g. a podcast served from an
             # info box that got written 'new'). Fall back to the stat, then to a
             # uri-derived type so a podcast/info stream never shows the music 'new'.
-            opt = (str(info.get('option_type')) if (info and info.get('option_type')) else
-                   (str(stat.option_type) if stat else None))
+            live_ot = str(info.get('option_type')) if (info and info.get('option_type')) else None
+            db_ot   = str(stat.option_type) if stat else None
+            opt = live_ot or db_ot
+            # A transient 'new' live context (e.g. a track currently served as a
+            # reco-after-track) must NOT mask a stronger persisted status: a track
+            # promoted to library/favorites/incoming — or hidden/trashed — keeps
+            # that badge even while replayed as a reco. Mirrors the anti-downgrade
+            # guard on the write side (o2mtomopidy.update_stat_track). The live
+            # override still applies for spoken-content correction (below) and for
+            # genuine upgrades.
+            if live_ot == 'new' and db_ot in ('library', 'favorites', 'incoming', 'hidden', 'trash'):
+                opt = db_ot
             # Spoken content never shows a music tag: a podcast/video URI carrying a
             # music type (new/library/favorites/incoming/…) is displayed as 'podcast'
             # ('info' is kept — it's a legitimate spoken classification).
