@@ -1718,7 +1718,7 @@ if __name__ == "__main__":
 
     @api.route('/api/clear_today_history')
     def api_clear_today_history():
-        o2mHandler.dbHandler.clear_lasthour_stats_raw()
+        o2mHandler.dbHandler.clear_today_stats_raw()
         return ("cleared")
 
     #SPOTIPY

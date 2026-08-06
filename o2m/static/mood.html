@@ -864,7 +864,7 @@
   }
   /* Order: brand · styles (themes) · nav buttons all on the LEFT; the 3 warmups are
      grouped and glued to the RIGHT (margin-left:auto absorbs the free space).
-     .footer-extra wraps "Clear last hour" + the warmups group; display:contents on
+     .footer-extra wraps "Clear today" + the warmups group; display:contents on
      desktop/mobile keeps them as plain flex children of #footer-links (no visual
      change) — only the tablet breakpoint below turns it into a collapsible panel. */
   #footer-links .tb-brand       { order: 0; }
@@ -894,7 +894,7 @@
     #footer-links #theme-switcher { margin-left: 0; }
   }
   /* Tablet: too many items to fit (or wrap) gracefully on one line → fold the
-     secondary actions (Clear last hour, pick-mode, warmups) into a "More" dropdown
+     secondary actions (Clear today, pick-mode, warmups) into a "More" dropdown
      so the bar stays a single row. */
   @media (min-width: 700px) and (max-width: 1024px) {
     #footer-links { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
@@ -1602,11 +1602,13 @@
        the dials row was a few px wider than the section. */
     flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
   }
+  /* Always 2×2, desktop included: the ALL meta-button is centred in absolute
+     position, so only a 2×2 grid puts it on a real crossing between the four
+     actuators. In a single 4-column row it landed on top of the middle two. */
   .basic-toggles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;
     position: relative; }   /* anchor for the central ALL meta-button */
-  @media (min-width: 700px) { .basic-toggles { grid-template-columns: repeat(4, 1fr); } }
-  /* ALL meta-button: round, floating at the center of the 2×2 grid (mid-row on
-     desktop). One tap = everything on / everything off. */
+  /* ALL meta-button: round, floating at the centre of the 2×2 grid.
+     One tap = everything on / everything off. */
   #basic-all {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
     width: 62px; height: 62px; border-radius: 50%; z-index: 2;
@@ -1984,7 +1986,7 @@
     <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
     <button class="footer-link footer-more-toggle" id="footer-more-toggle" title="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>More</button>
     <div class="footer-extra" id="footer-extra">
-      <button class="footer-link" onclick="clearLastHour(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Clear last hour</button>
+      <button class="footer-link" onclick="clearTodayHistory(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Clear today</button>
       <div class="footer-warmups">
         <label class="footer-pick" title="Tapped object filter variant (A/B test)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
@@ -5779,10 +5781,10 @@ async function clearAllBoxes() {
   setTimeout(() => { refreshBoxStates(); refreshNowPlaying(); }, 400);
 }
 
-/* Clear the last hour of listening history (stats_raw) — same as the old o2m.js button. */
-async function clearLastHour() {
-  if (!confirm('Clear the last hour of listening history (stats_raw)?')) return;
-  try { await fetch(API + '/clear_today_history'); setFeedback('Last hour cleared'); }
+/* Clear today's listening history (stats_raw since 00:00). */
+async function clearTodayHistory() {
+  if (!confirm("Clear today's listening history (stats_raw since 00:00)?")) return;
+  try { await fetch(API + '/clear_today_history'); setFeedback("Today's history cleared"); }
   catch(e) { setFeedback('Error clearing history'); }
 }
 
@@ -6212,7 +6214,7 @@ async function init() {
     document.getElementById('top-zone')?.classList.toggle('cover-lit'));
   document.getElementById('btn-snapcast')?.addEventListener('click', toggleSnapcast);
   document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
-  // Tablet "More" dropdown (Clear last hour / pick-mode / warmups folded out of the
+  // Tablet "More" dropdown (Clear today / pick-mode / warmups folded out of the
   // single-line footer — see the (min-width:700px) and (max-width:1024px) CSS rule).
   document.getElementById('footer-more-toggle')?.addEventListener('click', (e) => {
     e.stopPropagation();

@@ -394,10 +394,14 @@ class DatabaseHandler():
         return True
 
     #STATS_RAW
-    def clear_lasthour_stats_raw(self):
-        one_hour_ago = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
-        deleted = Stats_Raw.delete().where(Stats_Raw.read_date >= one_hour_ago).execute()
-        print(f"clear_lasthour_stats_raw: {deleted} rows deleted")
+    def clear_today_stats_raw(self):
+        """Delete raw listening rows recorded since the start of the current day
+        (00:00). The server runs in UTC and read_date/read_hour are stored in UTC,
+        so 'today' is the UTC calendar day — consistent with the rest of the app."""
+        start_of_day = datetime.datetime.now(datetime.timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        deleted = Stats_Raw.delete().where(Stats_Raw.read_date >= start_of_day).execute()
+        print(f"clear_today_stats_raw: {deleted} rows deleted (since {start_of_day.isoformat()})")
         return deleted
 
     def create_stat_raw(self, uri, read_time, read_hour, username):
