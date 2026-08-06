@@ -1209,14 +1209,28 @@ if __name__ == "__main__":
             result['saved_spotify'] = saved
         except Exception as e:
             result['saved_spotify_error'] = str(e)
-        # Local DB marker (only the add path has a helper; keeps warmup in sync)
+        # Local DB marker, kept in sync with the Spotify action.
         try:
+            aid = uri.rsplit(':', 1)[1]
             if saved:
-                o2mHandler.dbHandler.mark_album_saved(uri.rsplit(':', 1)[1])
+                o2mHandler.dbHandler.mark_album_saved(aid)
+            else:
+                o2mHandler.dbHandler.mark_album_unsaved(aid)
             result['saved_local'] = saved
         except Exception as e:
             result['saved_local_error'] = str(e)
         return jsonify(result)
+
+    @api.route('/api/album_saved')
+    def api_album_saved():
+        from flask import jsonify
+        uri = (request.args.get('uri') or '').strip()
+        if not uri.startswith('spotify:album:'):
+            return jsonify({'saved': None})
+        try:
+            return jsonify({'saved': o2mHandler.spotifyHandler.is_album_saved(uri)})
+        except Exception as e:
+            return jsonify({'saved': None, 'error': str(e)})
 
     # ─── Follow an artist (add to library) : DB locale + Spotify ───
     @api.route('/api/artist_follow', methods=['POST'])
@@ -1235,12 +1249,26 @@ if __name__ == "__main__":
         except Exception as e:
             result['followed_spotify_error'] = str(e)
         try:
+            aid = uri.rsplit(':', 1)[1]
             if followed:
-                o2mHandler.dbHandler.mark_artist_followed(uri.rsplit(':', 1)[1])
+                o2mHandler.dbHandler.mark_artist_followed(aid)
+            else:
+                o2mHandler.dbHandler.mark_artist_unfollowed(aid)
             result['followed_local'] = followed
         except Exception as e:
             result['followed_local_error'] = str(e)
         return jsonify(result)
+
+    @api.route('/api/artist_followed')
+    def api_artist_followed():
+        from flask import jsonify
+        uri = (request.args.get('uri') or '').strip()
+        if not uri.startswith('spotify:artist:'):
+            return jsonify({'followed': None})
+        try:
+            return jsonify({'followed': o2mHandler.spotifyHandler.is_artist_followed(uri)})
+        except Exception as e:
+            return jsonify({'followed': None, 'error': str(e)})
 
     # ─── Playlists : liste éditable + appartenance + add/remove ───
     @api.route('/api/playlists')

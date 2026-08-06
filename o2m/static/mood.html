@@ -1339,6 +1339,10 @@
   .obj-search-input::placeholder { color: var(--muted); font-weight: 400; }
   #obj-panel.search-mode .obj-title, #obj-panel.search-mode .obj-sub { display: none; }
   #obj-panel.search-mode .obj-search-input { display: block; }
+  /* Hero views (artist/album/playlist/podcast) already repeat the name + details
+     in the vignette card, so the header keeps only the kind label (line 1) and
+     drops the duplicate title/sub. */
+  #obj-panel.hero-head .obj-title, #obj-panel.hero-head .obj-sub { display: none; }
   #obj-close, #obj-actions, #obj-prev, #obj-next {
     flex-shrink: 0; background: none; border: none; color: var(--muted);
     cursor: pointer; padding: 2px 4px; display: inline-flex;
@@ -3118,9 +3122,8 @@ function objMenuItems(uri, kind) {
   }
   if (kind === 'artist') items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openArtist(uri) });
   if (kind === 'album')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openAlbum(uri, {}) });
-  // Add to library (synchronized to Spotify): albums → saved albums, artists → follow.
-  if (kind === 'album')  items.push({ label: 'Add to library', icon: ICON_ADD, action: () => addAlbumToLibrary(uri) });
-  if (kind === 'artist') items.push({ label: 'Add to library', icon: ICON_ADD, action: () => followArtistToLibrary(uri) });
+  // The library/favorite toggle is appended asynchronously by the menu opener
+  // (menuItemsWithLibrary) so its label reflects the live saved/followed state.
   if (kind === 'box')    items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openBox(uri.replace(/^box:/, '')) });
   if (kind === 'podcast')items.push({ label: 'See episodes', icon: ICON_DETAILS, action: () => openPodcast(uri) });
   if (kind === 'playlist')items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openPlaylist(uri) });
@@ -3128,29 +3131,50 @@ function objMenuItems(uri, kind) {
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
 }
-// Add an album to the library (Spotify saved albums + local DB), write-through.
-async function addAlbumToLibrary(uri) {
+// Library toggle (write-through to Spotify + local DB). `add` = desired state.
+// Album → saved albums, artist → follow, track → liked. All synchronized.
+async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
   try {
-    const r = await fetch(API + '/album_save', {
+    const r = await fetch(API + endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uri, saved: true }),
+      body: JSON.stringify({ uri, [key]: add }),
     });
     if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     const d = await r.json().catch(() => ({}));
-    setFeedback(d.error ? 'Save error' : 'Album added to library');
-  } catch (e) { setFeedback('Save error'); }
+    setFeedback(d.error ? 'Error' : (add ? okAdd : okRemove));
+  } catch (e) { setFeedback('Error'); }
 }
-// Follow an artist (Spotify follow + local DB), write-through.
-async function followArtistToLibrary(uri) {
+const setAlbumInLibrary  = (uri, add) => _libToggle('/album_save',   'saved',    uri, add, 'Album added to library',  'Album removed from library');
+const setArtistInLibrary = (uri, add) => _libToggle('/artist_follow','followed', uri, add, 'Artist added to library', 'Artist removed from library');
+const setTrackFavorite   = (uri, add) => _libToggle('/track_favorite','favorite',uri, add, 'Added to favorites',      'Removed from favorites');
+
+// Live library state for a (uri, kind): true = in library, false = not, null = unknown.
+async function fetchLibState(uri, kind) {
   try {
-    const r = await fetch(API + '/artist_follow', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uri, followed: true }),
-    });
-    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
-    const d = await r.json().catch(() => ({}));
-    setFeedback(d.error ? 'Follow error' : 'Artist added to library');
-  } catch (e) { setFeedback('Follow error'); }
+    if (kind === 'album')  return !!(await fetch(API + '/album_saved?uri='     + encodeURIComponent(uri)).then(r => r.json())).saved;
+    if (kind === 'artist') return !!(await fetch(API + '/artist_followed?uri=' + encodeURIComponent(uri)).then(r => r.json())).followed;
+    if (kind === 'track')  return !!(await fetch(API + '/track_saved?uri='     + encodeURIComponent(uri)).then(r => r.json())).saved;
+  } catch (e) {}
+  return null;
+}
+// The library/favorite toggle item, label + icon reflecting current state.
+function libraryToggleItem(uri, kind, inLib) {
+  const add = !inLib;
+  const label = kind === 'track'
+    ? (inLib ? 'Remove from favorites' : 'Add to favorites')
+    : (inLib ? 'Remove from library'   : 'Add to library');
+  const fn = kind === 'album' ? setAlbumInLibrary : kind === 'artist' ? setArtistInLibrary : setTrackFavorite;
+  return { label, icon: inLib ? ICON_REMOVE : ICON_ADD, action: () => fn(uri, add) };
+}
+// Base menu items + the async library/favorite toggle (album/artist/track only).
+async function menuItemsWithLibrary(uri, kind) {
+  const items = kind ? objMenuItems(uri, kind) : trackMenuItems(uri, null);
+  const k = kind || 'track';
+  if (['album', 'artist', 'track'].includes(k) && uri.startsWith('spotify:')) {
+    const inLib = await fetchLibState(uri, k);
+    if (inLib !== null) items.push(libraryToggleItem(uri, k, inLib));
+  }
+  return items;
 }
 // Open an object's detail view from its (uri, kind) — used by the row-click handler.
 function objOpenByKind(uri, kind, name) {
@@ -3236,12 +3260,18 @@ function objSetActionUris(list, uri) {
   document.getElementById('obj-actions')?.classList.toggle('hide',
     objCurrentPlayUris.length === 0 && !objCurrentUri);
 }
-function openObjActions(btn) {
+async function openObjActions(btn) {
   const items = [];
   if (objCurrentPlayUris.length)
     items.push({ label: 'Play next', icon: ICON_PLAYNEXT, action: () => playNext(objCurrentPlayUris) });
   if (objCurrentUri)
     items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(objCurrentUri) });
+  // Library toggle for the whole object (album saved / artist followed), live state.
+  const kind = (document.getElementById('obj-kind')?.textContent || '').toLowerCase();
+  if (objCurrentUri && (kind === 'album' || kind === 'artist')) {
+    const inLib = await fetchLibState(objCurrentUri, kind);
+    if (inLib !== null) items.push(libraryToggleItem(objCurrentUri, kind, inLib));
+  }
   openActionMenu(btn, items);
 }
 
@@ -4311,6 +4341,10 @@ function objSetHead(kind, title, sub) {
   // Centralised here so it also re-applies when a search view is restored via ◂ ▸.
   const searchMode = (kind === 'Search');
   document.getElementById('obj-panel')?.classList.toggle('search-mode', searchMode);
+  // Views whose body already shows the name in a hero card → hide the redundant
+  // header title/sub (kept in the DOM for snapshots + search-input seeding).
+  document.getElementById('obj-panel')?.classList.toggle('hero-head',
+    ['Artist', 'Album', 'Playlist', 'Podcast'].includes(kind));
   const si = document.getElementById('obj-search-input');
   if (si && searchMode && document.activeElement !== si) si.value = title || '';
 }
@@ -4485,8 +4519,12 @@ async function openArtist(uri, seedName) {
   try {
     const d = await fetch(API + '/artist_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
     if (d && d.cached) {
+      // Cached rows often lack an image_url (Last.fm genre warmup stores no cover);
+      // fetch the real cover live so the vignette is never a blank/placeholder.
+      let image = d.image;
+      if (!image) { try { image = await objCover(uri); } catch (e) {} }
       renderArtist(uri, {
-        name: d.name || title, image: d.image, genres: d.genres || [], albums: d.albums || [], source: 'db',
+        name: d.name || title, image, genres: d.genres || [], albums: d.albums || [], source: 'db',
         tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: (t.artists || []).map(n => ({ name: n })) })),
       });
       return;
@@ -4527,8 +4565,10 @@ async function openAlbum(uri, seed) {
   try {
     const d = await fetch(API + '/album_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
     if (d && d.cached && !d.partial) {   // full album cached → serve from DB; partial → live
+      let image = d.image;
+      if (!image) { try { image = await objCover(uri); } catch (e) {} }
       renderAlbum(uri, {
-        name: d.name || seed?.name, artist: d.artist || seed?.artist, image: d.image, release: d.release, source: 'db',
+        name: d.name || seed?.name, artist: d.artist || seed?.artist, image, release: d.release, source: 'db',
         tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: (t.artists || []).map(n => ({ name: n })) })),
       });
       return;
@@ -6297,7 +6337,7 @@ async function init() {
   document.getElementById('album-name')?.addEventListener('click', openCurrentAlbum);
   // Delegated clicks inside the overlay → info menu, drill into albums/artists/boxes,
   // or play a track. Same info badge + row pattern as the tracklist.
-  document.getElementById('obj-body')?.addEventListener('click', (e) => {
+  document.getElementById('obj-body')?.addEventListener('click', async (e) => {
     // Pick mode: a click on any result row ADDS it to the box-content editor
     // instead of navigating; everything else (ⓘ menus…) is swallowed.
     // The box-content editor (list rows + inline Add-content panels) handles
@@ -6306,9 +6346,9 @@ async function init() {
     const ib = e.target.closest('.tl-info');
     if (ib) {
       // data-kind (search results) → kind-aware menu (artist/album get Play +
-      // See details); otherwise a plain track menu (detail track lists).
-      const items = ib.dataset.kind ? objMenuItems(ib.dataset.uri, ib.dataset.kind)
-                                     : trackMenuItems(ib.dataset.uri, null);
+      // See details); otherwise a plain track menu (detail track lists). The
+      // library/favorite toggle is appended with its live state (async).
+      const items = await menuItemsWithLibrary(ib.dataset.uri, ib.dataset.kind || null);
       openActionMenu(ib, items); return;
     }
     // Click on a harmonized object row (not the ⓘ, not the artist sublink) → open its detail.

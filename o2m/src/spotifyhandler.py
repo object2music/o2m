@@ -814,6 +814,15 @@ class SpotifyHandler:
             self.sp.current_user_saved_albums_delete(albums=aid)
         return True
 
+    def is_album_saved(self, album_uri):
+        """True/False if the album is in the user's saved albums, None on error."""
+        try:
+            return bool(self.sp.current_user_saved_albums_contains(
+                albums=[album_uri.rsplit(':', 1)[1]])[0])
+        except Exception as e:
+            print(f"is_album_saved error: {e}")
+            return None
+
     def set_artist_followed(self, artist_uri, followed=True):
         """Follow/unfollow an artist on the user's account."""
         aid = [artist_uri.rsplit(':', 1)[1]]
@@ -822,6 +831,15 @@ class SpotifyHandler:
         else:
             self.sp.user_unfollow_artists(ids=aid)
         return True
+
+    def is_artist_followed(self, artist_uri):
+        """True/False if the user follows the artist, None on error."""
+        try:
+            return bool(self.sp.current_user_following_artists(
+                ids=[artist_uri.rsplit(':', 1)[1]])[0])
+        except Exception as e:
+            print(f"is_artist_followed error: {e}")
+            return None
 
 ################### PLAYLISTS #############################
 

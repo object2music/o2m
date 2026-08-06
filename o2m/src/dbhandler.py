@@ -595,6 +595,10 @@ class DatabaseHandler():
             action='update', update=updates,
         ).execute()
 
+    def mark_artist_unfollowed(self, artist_id):
+        """Clear followed=0 on an artist row (no-op if the row doesn't exist)."""
+        Artist.update(followed=0, followed_at=None).where(Artist.id == artist_id).execute()
+
     def get_followed_artist_ids(self):
         """Return list of artist IDs where followed=1."""
         return [a.id for a in Artist.select(Artist.id).where(Artist.followed == 1)]
@@ -1076,6 +1080,10 @@ class DatabaseHandler():
         Album.insert({**updates, 'id': album_id}).on_conflict(
             action='update', update=updates,
         ).execute()
+
+    def mark_album_unsaved(self, album_id):
+        """Clear saved=0 on an album row (no-op if the row doesn't exist)."""
+        Album.update(saved=0, saved_at=None).where(Album.id == album_id).execute()
 
     def get_saved_album_ids(self):
         """Return list of album IDs where saved=1."""
