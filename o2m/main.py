@@ -1358,6 +1358,47 @@ if __name__ == "__main__":
                 opt = 'podcast'
             if not opt:
                 opt = 'new'
+
+            # Human-readable provenance ("why is this in the library"). ~48% of
+            # library rows have no stored in_library, and the stored ones are
+            # inconsistent ('Reco'/'Reco After Track'/'o2m:reco_after_track', the
+            # garbage '0', 'spotify:library'…). Normalise what's stored and, when
+            # absent, DERIVE it from liked / saved-album / playlists / play history
+            # so a 'library' track always explains itself.
+            def _clean_source(raw):
+                s = (raw or '').strip()
+                if s in ('', '0', 'None'):
+                    return ''
+                low = s.lower()
+                if 'reco' in low:
+                    return 'Reco after track'
+                if low in ('history', 'o2m:history'):
+                    return 'History'
+                if low == 'spotify:library':
+                    return 'Saved on Spotify'
+                if low == 'favorites':
+                    return 'Favorites'
+                for pfx, lbl in (('album:', 'Album'), ('playlist:', 'Playlist'), ('artist:', 'Artist')):
+                    if s.startswith(pfx):
+                        return f'{lbl} · ' + s.split(':', 1)[1]
+                return s
+            source = _clean_source(library)
+            if not source and stat:
+                if stat.liked:
+                    source = 'Liked'
+                elif getattr(stat, 'album_id', None) and o2mHandler.dbHandler.is_album_saved_local(stat.album_id):
+                    source = 'Saved album'
+                else:
+                    try:
+                        pls = o2mHandler.dbHandler.get_playlists_with_track(uri)
+                    except Exception:
+                        pls = None
+                    if pls:
+                        names = [p.get('name') or p.get('id') for p in pls[:2]]
+                        source = 'Playlist · ' + ', '.join(n for n in names if n)
+                    elif stat.read_count_end and int(stat.read_count_end) > 0:
+                        source = 'History'
+
             return jsonify({
                 'option_type':    opt,
                 'read_end':       round(float(stat.read_end), 2) if stat else 0.0,
@@ -1368,6 +1409,7 @@ if __name__ == "__main__":
                 'popularity':     round(float(stat.popularity), 3) if stat and stat.popularity is not None else None,
                 'liked':          bool(stat.liked) if stat else False,
                 'library':        library,
+                'source':         source,
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500

@@ -1085,6 +1085,14 @@ class DatabaseHandler():
         """Clear saved=0 on an album row (no-op if the row doesn't exist)."""
         Album.update(saved=0, saved_at=None).where(Album.id == album_id).execute()
 
+    def is_album_saved_local(self, album_id):
+        """True if the album row is marked saved (local cache)."""
+        try:
+            a = Album.get_or_none(Album.id == album_id)
+            return bool(a and a.saved)
+        except Exception:
+            return False
+
     def get_saved_album_ids(self):
         """Return list of album IDs where saved=1."""
         return [a.id for a in Album.select(Album.id).where(Album.saved == 1)]

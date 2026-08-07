@@ -1355,6 +1355,8 @@
   .obj-body { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
 
   .obj-hero { display: flex; gap: 12px; align-items: flex-start; }
+  .obj-link { cursor: pointer; }
+  .obj-link:hover { color: var(--accent); text-decoration: underline; }
   .obj-cover {
     width: 84px; height: 84px; flex-shrink: 0; object-fit: cover;
     background: var(--card); border: 1px solid var(--border);
@@ -1653,14 +1655,17 @@
      most of the window empty. Scale the whole block up by roughly the same factor
      (~1.4×) so actuators, the ALL knob and the dials keep their proportions. */
   @media (min-width: 700px) {
-    html.basic #basic-section { max-width: 820px; gap: 36px; padding: 34px 24px 40px; }
-    .basic-toggle { padding: 26px 10px 21px; font-size: 15px; gap: 12px; }
+    /* Vertically centred + trimmed so the whole block fits under the (kept)
+       top-zone without a phantom internal scrollbar on typical desktop heights;
+       overflow-y:auto stays as a safety net for genuinely short windows. */
+    html.basic #basic-section { max-width: 820px; gap: 24px; padding: 20px 24px 24px; justify-content: center; }
+    .basic-toggle { padding: 22px 10px 17px; font-size: 15px; gap: 11px; }
     .basic-toggle svg { width: 36px; height: 36px; }
     .basic-toggles { gap: 14px; }
     #basic-all { width: 86px; height: 86px; font-size: 11px; }
     #basic-all svg { width: 27px; height: 27px; }
     #basic-dials { gap: 40px; }
-    #dial-bmood, #dial-bdl { width: 240px; height: 172px; }
+    #dial-bmood, #dial-bdl { width: 224px; height: 158px; }
     #txt-bmood, #txt-bdl { font-size: 13px; }
   }
   /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
@@ -3402,23 +3407,32 @@ const TRACK_FIELDS = [
   ['Mood',       'mood',       i => i.mood || '—'],
   ['Popularity', 'popularity', i => fmtEV(i.popularity)],
   ['Plays',      'plays',      i => (i.read_count_end ?? 0) + ''],
-  ['Library',    'library',    i => i.library || '—'],
+  // Provenance ("why is this in the library" — album/playlist/liked/history/reco),
+  // derived server-side when not stored. Labelled 'Source' to disambiguate it
+  // from the 'Status' row (which shows the library/new/… bucket).
+  ['Source',     'source',     i => i.source || i.library || '—'],
 ];
 const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 // Row order for the shared panel body (Favorite added to TRACK_FIELDS' text rows).
 const TRACK_PANEL_ROWS = [
   ['Status', 'type'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
-  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Library', 'library'],
+  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Source', 'source'],
 ];
 
 /* THE single source of the track-detail body markup, shared by both panels. The
    ids come from the panel (cellId/canvasId/…) so the now-playing column and the
    modal render byte-for-byte the same content; only the container skin (listClass)
    and the optional hero differ per context. */
-function trackPanelBodyHTML(p, { hero, cover, name, artist } = {}) {
+function trackPanelBodyHTML(p, { hero, cover, name, artist, artistUri, album, albumUri } = {}) {
+  // Artist and album are clickable when their uri is known (the #obj-body handler
+  // opens them via data-artist-uri / data-album-uri). Shown as "artist · album".
+  const link = (txt, attr) => `<span class="obj-link" ${attr}>${objEsc(txt)}</span>`;
+  const artistHtml = artist ? (artistUri ? link(artist, `data-artist-uri="${objEsc(artistUri)}"`) : objEsc(artist)) : '';
+  const albumHtml  = album  ? (albumUri  ? link(album,  `data-album-uri="${objEsc(albumUri)}" data-name="${objEsc(album)}"`) : objEsc(album)) : '';
+  const sub = [artistHtml, albumHtml].filter(Boolean).join(' · ');
   const heroHtml = hero
     ? `<div class="obj-hero">${cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : ''}`
-      + `<div class="obj-meta"><b>${objEsc(name || '')}</b><span>${objEsc(artist || '')}</span></div></div>`
+      + `<div class="obj-meta"><b>${objEsc(name || '')}</b><span>${sub}</span></div></div>`
     : '';
   const rows = TRACK_PANEL_ROWS.map(([label, key]) => {
     const cls = key === 'fav' ? 'td-fav' : (EDITABLE_FIELDS.includes(key) ? 'tp-editable' : '');
@@ -4054,10 +4068,13 @@ async function renderTrackObj(uri, seed) {
   } catch (e) {}
   const name = (tr && tr.name) || seed?.name || 'Track';
   const artist = (tr && (tr.artists || []).map(a => a.name).join(', ')) || seed?.artist || '';
+  const artistUri = (tr && (tr.artists || [])[0]?.uri) || '';
+  const album = (tr && tr.album && tr.album.name) || '';
+  const albumUri = (tr && tr.album && tr.album.uri) || '';
   objSetHead('Track', name, artist);
   objTMatrixUri = uri;
   // Same shared body as the now-playing panel (one render path — see makeTrackPanel).
-  objPanel.render(info, { hero: true, cover, name, artist });
+  objPanel.render(info, { hero: true, cover, name, artist, artistUri, album, albumUri });
 }
 
 async function saveCurrentTrackFeatures() {
