@@ -4344,7 +4344,7 @@ function objSetHead(kind, title, sub) {
   // Views whose body already shows the name in a hero card → hide the redundant
   // header title/sub (kept in the DOM for snapshots + search-input seeding).
   document.getElementById('obj-panel')?.classList.toggle('hero-head',
-    ['Artist', 'Album', 'Playlist', 'Podcast'].includes(kind));
+    ['Artist', 'Album', 'Playlist', 'Podcast', 'Track'].includes(kind));
   const si = document.getElementById('obj-search-input');
   if (si && searchMode && document.activeElement !== si) si.value = title || '';
 }
