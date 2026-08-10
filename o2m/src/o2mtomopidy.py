@@ -2062,28 +2062,32 @@ class O2mToMopidy:
         if served is None:
             self._served_at = served = {}
 
-        if energy is None or valence is None:
-            in_range, rest = list(uris), []
-        else:
-            in_range, rest = [], []
-            for u in uris:
-                f = feat.get(u)
-                if f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius:
-                    in_range.append(u)
-                else:
-                    rest.append(u)
+        # Concentric mood weighting (replaces the old hard ±radius band): a DL-scaled
+        # Gaussian around the (energy, valence) target. σ = radius (tight at DL0 →
+        # broad at DL10), so the closest tracks are favoured and farther ones fade
+        # smoothly instead of being cut off. `floor` rises with DL so mood stops
+        # mattering at DL10 (discovery); unknown-mood (NULL) tracks sit at the floor
+        # as low-weight fillers, so the pool is never empty even when few tracks carry
+        # energy/valence (the sparse-coverage case). Single weighted draw — no split.
+        mood_on = (energy is not None and valence is not None)
+        sigma = max(radius, 1e-3)
+        floor = 0.05 + 0.95 * (min(max(discover_level, 0), 10) / 10.0)
 
-        # Weight = popularity**exp × anti-repeat cooldown (played + served). The off-mood
-        # fallback (rest) uses a gentler popularity exponent (rest_pop_factor) so a merely
-        # very-popular out-of-mood track doesn't systematically win the filler slots.
-        def _w(u, exp):
-            return (max(pop.get(u, 0.5), 1e-6) ** exp) \
+        def _mood_w(u):
+            if not mood_on:
+                return 1.0
+            f = feat.get(u)
+            if f is None:
+                return floor
+            d2 = (f[0] - energy) ** 2 + (f[1] - valence) ** 2
+            return max(math.exp(-d2 / (2.0 * sigma * sigma)), floor)
+
+        # Weight = popularity**k × concentric-mood × anti-repeat cooldown (played + served).
+        def _w(u):
+            return (max(pop.get(u, 0.5), 1e-6) ** k) * _mood_w(u) \
                    * self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
-        w_in = {u: _w(u, k) for u in in_range}
-        result = self._sample_by_weight(in_range, w_in, n)
-        if len(result) < n:
-            w_rest = {u: _w(u, k * self.rest_pop_factor) for u in rest}
-            result += self._sample_by_weight(rest, w_rest, n - len(result))
+        weights = {u: _w(u) for u in uris}
+        result = self._sample_by_weight(uris, weights, n)
         for u in result:
             served[u] = now_ts  # served-cooldown for subsequent selections
         return result
@@ -2140,18 +2144,23 @@ class O2mToMopidy:
         served = getattr(self, '_served_at', None)
         if served is None:
             self._served_at = served = {}
-        radius = discover_level / 20.0 + 0.05
+        sigma = max(discover_level / 20.0 + 0.05, 1e-3)
         MOOD_BONUS = 0.15  # soft, features-only; unknown mood = neutral
 
-        def in_mood(u):
+        def mood_g(u):  # concentric Gaussian proximity to the target in (0,1]; 0 if unknown
+            if energy is None or valence is None:
+                return 0.0
             f = feat.get(u)
-            return f is not None and abs(f[0] - energy) <= radius and abs(f[1] - valence) <= radius
+            if f is None:
+                return 0.0
+            d2 = (f[0] - energy) ** 2 + (f[1] - valence) ** 2
+            return math.exp(-d2 / (2.0 * sigma * sigma))
 
         def cd(u):
             return self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
 
-        def aff(u):  # affinity = popularity + soft mood bonus
-            return pop.get(u, 0.5) + (MOOD_BONUS if in_mood(u) else 0.0)
+        def aff(u):  # affinity = popularity + soft, distance-graded mood bonus
+            return pop.get(u, 0.5) + MOOD_BONUS * mood_g(u)
 
         if mode == 'temp':
             k = (5 - discover_level) / 2.5  # +2 (favour top) .. 0 (uniform) .. -2 (favour obscure)
@@ -2162,9 +2171,9 @@ class O2mToMopidy:
             p10 = vals[int(0.10 * (len(vals) - 1))]
             p90 = vals[int(0.90 * (len(vals) - 1))]
             target = p90 - (p90 - p10) * (discover_level / 10.0)  # DL0→top, DL10→bottom
-            sigma = 0.15
-            weights = {u: math.exp(-((pop.get(u, 0.5) - target) ** 2) / (2 * sigma * sigma))
-                          * (1.0 + (MOOD_BONUS if in_mood(u) else 0.0)) * cd(u) for u in uris}
+            sigma_pop = 0.15  # popularity-band spread (distinct from the mood sigma above)
+            weights = {u: math.exp(-((pop.get(u, 0.5) - target) ** 2) / (2 * sigma_pop * sigma_pop))
+                          * (1.0 + MOOD_BONUS * mood_g(u)) * cd(u) for u in uris}
             sel = self._sample_by_weight(uris, weights, m)
         else:  # 'hybrid' (P0): stochastic exploit + uniform explore
             n_explore = int(round(m * discover_level / 10.0))

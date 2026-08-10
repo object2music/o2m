@@ -103,10 +103,15 @@ by one of two weighted samplers (Efraimidis-Spirakis, `_sample_by_weight`). Both
 the same principle: **DL0 → popularity-dominant, DL10 → pure random.**
 
 ### `_mood_pick` (library sources: common/favorites/playlists/albums_artists/incoming/news)
-- Splits candidates into **in-mood** (energy/valence within `radius = DL/20 + 0.05`) and
-  the rest; picks in-mood first, rest as fallback (gentler pop exponent `rest_pop_factor`).
-- Weight = `popularity^k × cooldown`, temperature **`k = (10 − DL)/5`**: DL0→k=2 (favours
-  popular), DL5→1 (proportional), DL10→0 (uniform / pure random).
+- **Concentric mood weighting** (single weighted draw, no hard band): a DL-scaled
+  **Gaussian** around the `(energy, valence)` target, `σ = radius = DL/20 + 0.05` (tight at
+  DL0 → broad at DL10). `mood_w = max(exp(−d²/2σ²), floor)` with Euclidean `d`;
+  `floor = 0.05 + 0.95·DL/10` rises with DL so mood stops mattering at DL10 (discovery).
+  Unknown-mood (NULL energy/valence) tracks sit at `floor` as low-weight fillers, so the
+  pool is never empty despite sparse coverage (~1.6% of tracks carry energy/valence).
+  Replaced the old hard ±radius in-mood/rest split (`rest_pop_factor` now unused).
+- Weight = `popularity^k × mood_w × cooldown`, temperature **`k = (10 − DL)/5`**: DL0→k=2
+  (favours popular), DL5→1 (proportional), DL10→0 (uniform / pure random).
 
 ### `_expand_pick` (tapped box/playlist/album `option_sort='smart'` + live recos)
 Variant = `expand_pick_mode`: **`hybrid` (P0, default)** | `temp` (P1) | `band` (P2).
