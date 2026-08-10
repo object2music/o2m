@@ -1257,7 +1257,7 @@ class O2mToMopidy:
                         # Smart only: expand the artist's cached tracks and stochastically pick.
                         cached = self.dbHandler.get_artist_track_uris(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
+                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
                         else:
                             # Basic / cache-miss: legacy top + all tracks (may hit the API)
                             tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
@@ -1266,7 +1266,7 @@ class O2mToMopidy:
                         # Smart only: expand album sub-tracks from AlbumTrack and stochastically pick.
                         cached = self.dbHandler.get_album_tracks(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
+                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole album
                     elif media_parts[1] == "playlist":
@@ -1277,7 +1277,7 @@ class O2mToMopidy:
                         else:
                             cached = None
                         if cached:
-                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level))
+                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole playlist
                     else:
@@ -2092,7 +2092,7 @@ class O2mToMopidy:
             served[u] = now_ts  # served-cooldown for subsequent selections
         return result
 
-    def _expand_pick(self, uris, n, energy, valence, discover_level):
+    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True):
         """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
         DL-controlled popularity target. Always SAMPLES max_results at random from
         the pool (no deterministic block) so a large playlist ROTATES around the
@@ -2109,7 +2109,11 @@ class O2mToMopidy:
           - 'band'   (P2): one sample weighted by a Gaussian around a target
                        popularity P*(DL) (≈p90 at DL0 → ≈p10 at DL10).
         Mood adds a small bonus only when features exist (unknown = neutral).
-        hidden/trash are excluded; recently-played tracks are down-weighted (cooldown).
+        recently-played tracks are down-weighted (cooldown). hidden/trash are
+        excluded ONLY when exclude_hidden=True (recos/discovery): a directly-tapped
+        box whose OWN tracks are hidden/trash (e.g. a box with option_type='hidden')
+        passes exclude_hidden=False so it can still play its own content — otherwise
+        the exclusion would gut it (bug: 60/66 hidden → only 6 playable).
         """
         if not uris:
             return []
@@ -2118,7 +2122,7 @@ class O2mToMopidy:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
                                    Track.option_type, Track.last_read_date, Track.read_count)
                           .where(Track.uri << list(uris)).namedtuples()):
-                if t.option_type in ('hidden', 'trash'):
+                if exclude_hidden and t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
                     continue
                 if t.energy is not None and t.valence is not None:
