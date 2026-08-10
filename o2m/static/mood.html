@@ -3402,21 +3402,21 @@ const fmtEV = x => (x === null || x === undefined) ? '—' : Math.round(x * 10) 
 // click-to-edit.
 const TRACK_FIELDS = [
   ['Status',     'type',       i => i.option_type || '—'],
+  // Source = strict live provenance (the box/source it's served from right now);
+  // '—' when the track isn't in the running mix. Status is the persisted state,
+  // Source the live one — a clean dichotomy. Placed under Status for readability.
+  ['Source',     'source',     i => i.source || '—'],
   ['Energy',     'energy',     i => fmtEV(i.energy)],
   ['Valence',    'valence',    i => fmtEV(i.valence)],
   ['Mood',       'mood',       i => i.mood || '—'],
   ['Popularity', 'popularity', i => fmtEV(i.popularity)],
   ['Plays',      'plays',      i => (i.read_count_end ?? 0) + ''],
-  // Provenance ("why is this in the library" — album/playlist/liked/history/reco),
-  // derived server-side when not stored. Labelled 'Source' to disambiguate it
-  // from the 'Status' row (which shows the library/new/… bucket).
-  ['Source',     'source',     i => i.source || i.library || '—'],
 ];
 const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 // Row order for the shared panel body (Favorite added to TRACK_FIELDS' text rows).
 const TRACK_PANEL_ROWS = [
-  ['Status', 'type'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
-  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Source', 'source'],
+  ['Status', 'type'], ['Source', 'source'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
+  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'],
 ];
 
 /* THE single source of the track-detail body markup, shared by both panels. The
@@ -4175,7 +4175,7 @@ function drawMatrix(ts) {
   /* Axis labels */
   ctx.font = '11px ' + MX_FONT; ctx.fillStyle = themeColors.axis;
   ctx.textAlign = 'left';   ctx.fillText('◀ Calm',  2, my + 4);
-  ctx.textAlign = 'right';  ctx.fillText('Intense ▶', W - 2, my + 4);
+  ctx.textAlign = 'right';  ctx.fillText('Rapid ▶', W - 2, my + 4);
   ctx.textAlign = 'center';
   ctx.fillText('▲ Bright', mx, 12);
   ctx.fillText('▼ Dark',   mx, PAD + inner + PAD - 2);
