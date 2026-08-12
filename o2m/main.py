@@ -53,13 +53,19 @@ if __name__ == "__main__":
             return not any(p in msg for p in _SILENCED_LOG_PATHS)
     logging.getLogger('werkzeug').addFilter(_SilencePollingFilter())
 
+    # `mopidy` (and the background WS listener thread it starts) is built only
+    # once: retrying used to recreate MopidyAPI() on every failed attempt below,
+    # leaking one WS listener thread per retry with no way to stop the previous
+    # one. On a 32-bit process this exhausts the ~2GB virtual address space
+    # (thread stacks) within an hour of repeated failures, after which *all*
+    # thread creation in the process fails ("can't start new thread"), silently
+    # killing the Flask API despite systemd still reporting the service active.
+    mopidy = None
     while True:
         strer = 1
         try:
-            #mopidy = MopidyAPI(host='mopidy', port=6680)
-            mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
-            #mopidy = MopidyAPI(host='51.15.205.150', port='6680')
-            #mopidy = MopidyAPI()
+            if mopidy is None:
+                mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
             o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
             strer = 0
         except Exception as err_value:
