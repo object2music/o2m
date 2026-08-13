@@ -4909,8 +4909,12 @@ const WC_BROWSE_BY_KIND = {
   radio:   ['radiotop'],
   hybrid:  ['playlists', 'artists', 'albums', 'podtop', 'podgenres', 'podchannels', 'radiotop'],
 };
-// Which result sections a search shows, in order. Radios are offered for every
-// kind (a stream is welcome in any box); hybrid shows the lot.
+/* Which result sections a search shows, in order. Radios are offered for every
+   kind (a stream is welcome in any box). Podcast channels are deliberately NOT:
+   during guided creation the box has committed to a kind, so channels only show
+   for podcast/info. 'hybrid' — the box editor and advanced creation, where a box
+   may hold anything — shows the lot, so an existing box of any kind can still be
+   given a podcast. */
 const WC_SEARCH_BY_KIND = {
   music:   ['tracks', 'artists', 'albums', 'radios'],
   podcast: ['channels', 'podcasts', 'radios'],
@@ -5263,17 +5267,17 @@ async function _wcRunSearch(q) {
   const kind = _bxKind();
   const want = WC_SEARCH_BY_KIND[kind] || WC_SEARCH_BY_KIND.hybrid;
   _wcResults('<div class="obj-loading">Searching…</div>');
+  // /api/search already merges the podcast directory into podcast_channels;
+  // only the radio directory still needs its own call.
   const jobs = [_wcJson('/search?q=' + encodeURIComponent(q))];
   jobs.push(want.includes('radios') ? _wcJson('/directory?kind=radio&q=' + encodeURIComponent(q)) : null);
-  jobs.push(want.includes('channels') ? _wcJson('/directory?kind=podcast&q=' + encodeURIComponent(q)) : null);
-  const [d, radioDir, podDir] = await Promise.all(jobs);
+  const [d, radioDir] = await Promise.all(jobs);
   if (_bxSearchQ !== q) return;    // a newer query already fired
   if (!d || d.error) { _wcResults(`<div class="obj-empty">${objEsc((d && d.error) || 'Search failed')}</div>`); return; }
 
   const merge = (a, b) => { const seen = new Set((a || []).map(x => x.uri)); return (a || []).concat((b || []).filter(x => !seen.has(x.uri))); };
   const sp = d.spotify || {};
-  // Local channels (from existing boxes) first, then the external directory.
-  const channels = merge(d.podcast_channels, (podDir && podDir.items) || []);
+  const channels = d.podcast_channels || [];
   const radios = merge(_wcDirRows(d.radios), _wcDirRows((radioDir && radioDir.items) || []));
   const build = {
     tracks:   () => _wcSection('Tracks', objRenderTracks(_searchTracksNorm(merge(d.tracks, sp.tracks)), 'track', true)),

@@ -487,10 +487,21 @@ if __name__ == "__main__":
             results['radios'] = o2mHandler.search_radio_stations(q)
         except Exception as e:
             results['radios'] = []
+        # Podcast channels: the ones already referenced in boxes first, then the
+        # external directory. Without the directory half, searching a podcast the
+        # user doesn't own yet returns nothing — the cache only knows what has
+        # already been added, which is empty on a fresh install.
         try:
             results['podcast_channels'] = o2mHandler.search_podcast_channels(q)
         except Exception as e:
             results['podcast_channels'] = []
+        try:
+            from src import directory
+            seen = {c.get('uri') for c in results['podcast_channels']}
+            results['podcast_channels'] += [c for c in directory.search_podcasts(q, timeout=6)
+                                            if c.get('uri') not in seen]
+        except Exception as e:
+            pass
         try:
             results['spotify'] = o2mHandler.spotifyHandler.search_music(q)
         except Exception as e:

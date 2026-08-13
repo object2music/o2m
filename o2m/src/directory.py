@@ -61,8 +61,8 @@ def _cached(key, fn):
     return value
 
 
-def _get(url, params=None):
-    r = requests.get(url, params=params, timeout=TIMEOUT,
+def _get(url, params=None, timeout=None):
+    r = requests.get(url, params=params, timeout=timeout or TIMEOUT,
                      headers={'User-Agent': USER_AGENT})
     r.raise_for_status()
     return r.json()
@@ -135,8 +135,9 @@ def top_podcasts(genre_id=None, country=None, limit=25):
     return _cached(f'ptop:{cc}:{genre}:{limit}', fetch)
 
 
-def search_podcasts(query, limit=20):
-    """Keyword search over the fyyd.de podcast directory."""
+def search_podcasts(query, limit=20, timeout=None):
+    """Keyword search over the fyyd.de podcast directory. `timeout` lets the
+    general search keep a tighter budget than a deliberate directory browse."""
     q = (query or '').strip()
     if len(q) < 2:
         return []
@@ -144,7 +145,7 @@ def search_podcasts(query, limit=20):
 
     def fetch():
         try:
-            data = _get(FYYD_SEARCH, {'title': q, 'count': limit})
+            data = _get(FYYD_SEARCH, {'title': q, 'count': limit}, timeout=timeout)
         except Exception as err:
             log.error(f'search_podcasts: {err}')
             return []
