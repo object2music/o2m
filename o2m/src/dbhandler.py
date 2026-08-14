@@ -201,6 +201,12 @@ class DatabaseHandler():
             r = random.randint(0, len(results)-1)
             return results[r]
 
+    def get_boxes_by_option_type(self, option_type):
+        """All boxes with this option_type (deterministic list — unlike
+        get_box_by_option_type which returns a RANDOM one)."""
+        return self.transform_query_to_list(
+            Box.select().where(Box.option_type == option_type))
+
     def get_box_by_data_contains(self, needle):
         """Return the first box whose data field contains `needle` (e.g. 'auto:library')."""
         query = Box.select().where(Box.data.contains(needle))

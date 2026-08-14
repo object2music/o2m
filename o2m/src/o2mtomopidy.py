@@ -2682,13 +2682,30 @@ class O2mToMopidy:
         return 'podcast'
 
     # Auto Filling playlist
+    def _new_target_box(self):
+        """The CANONICAL 'new' box, deterministically: the discovery box carrying the
+        newrecent/newnotcompleted directives (e.g. 'Nouveautés' → ToListen perso),
+        NOT the ad-hoc 'new'-tagged mood boxes. get_box_by_option_type('new') can't be
+        used here — it returns a RANDOM 'new' box. Falls back to the first 'new' box."""
+        boxes = self.dbHandler.get_boxes_by_option_type('new') or []
+        for b in boxes:
+            d = getattr(b, 'data', '') or ''
+            if 'newrecent' in d or 'newnotcompleted' in d:
+                return b
+        return boxes[0] if boxes else None
+
+    def _new_target_playlist(self):
+        """The canonical 'new' editable playlist uri (ToListen perso), or ''."""
+        box = self._new_target_box()
+        return self.get_spotify_playlist_from_box(box) if box else ''
+
     def _remove_from_new_playlists(self, uri, exclude_uri, from_type, track_name):
         """Transfer, not duplicate: when a 'new' track is promoted, remove it from the
-        editable playlist(s) of the 'new' box. Non-editable / Spotify-owned playlists
-        just fail inside remove_spotify_playlist and are ignored. `exclude_uri` skips
-        a playlist we just added to (the library-link case)."""
+        editable playlist(s) of the CANONICAL 'new' box. Non-editable / Spotify-owned
+        playlists just fail inside remove_spotify_playlist and are ignored. `exclude_uri`
+        skips a playlist we just added to (the library-link case)."""
         try:
-            box = self.dbHandler.get_box_by_option_type('new')
+            box = self._new_target_box()
             if not box or not getattr(box, 'data', None):
                 return
             for line in box.data.split('\n'):
@@ -2882,10 +2899,9 @@ class O2mToMopidy:
             return
         top = tracks[0]
         uri = top['uri']
-        # 1) add to the playlist of the box tagged 'new'
+        # 1) add to the canonical 'new' playlist (ToListen perso, deterministic)
         try:
-            box = self.dbHandler.get_box_by_option_type('new')
-            playlist = self.get_spotify_playlist_from_box(box) if box else ''
+            playlist = self._new_target_playlist()
             if playlist:
                 self.autofill_spotify_playlist(playlist, [uri])
         except Exception as e:
