@@ -2783,18 +2783,22 @@ async function refreshNowPlaying() {
   }
 
   if (track) {
-    document.getElementById('track-name').textContent  = track.name || '—';
-    document.getElementById('hero-title').textContent   = track.name || '';
+    // For radios the mopidy "track" IS the stream; its header (title/artist/album)
+    // is driven live by maybeShowRadioTitle. Skip the raw stream-name writes here so
+    // the title doesn't flip stream-name↔song on every refresh (that was the flicker).
+    if (!_isStreamUri(track.uri)) {
+      document.getElementById('track-name').textContent  = track.name || '—';
+      document.getElementById('hero-title').textContent   = track.name || '';
+      fitHeroTitle();
+      const artistEl = document.getElementById('artist-name');
+      artistEl.textContent = (track.artists || []).map(a => a.name).join(', ') || '—';
+      artistEl.classList.toggle('obj-link', !!((track.artists || [])[0]?.uri));
+      const albumEl = document.getElementById('album-name');
+      if (albumEl) albumEl.textContent = (track.album && track.album.uri) ? (track.album.name || '') : '';
+    }
     updateHeroAccent(track.uri);
-    fitHeroTitle();
-    const artistEl = document.getElementById('artist-name');
-    artistEl.textContent = (track.artists || []).map(a => a.name).join(', ') || '—';
-    artistEl.classList.toggle('obj-link', !!((track.artists || [])[0]?.uri));
-    const albumEl = document.getElementById('album-name');
-    if (albumEl) albumEl.textContent = (track.album && track.album.uri) ? (track.album.name || '') : '';
 
-    // Radios: the mopidy "track" is the stream itself → overlay the LIVE now-playing
-    // title/artist (FIP livemeta or ICY), so the header shows the current song.
+    // Radios: live now-playing (song title on line 1, "STATION · artist" on line 2).
     maybeShowRadioTitle(track);
 
     // O2M metadata (status badge, cover, details): only on track change —
@@ -3433,21 +3437,36 @@ function _isStreamUri(u) {
 // Radios: overlay the LIVE now-playing title/artist (from /api/radio_now_playing —
 // FIP livemeta or ICY stream title) into the header, in place of the stream's own
 // name/artist. Runs on every now-playing refresh so it follows song changes live.
+let _radioLast = { title: null, artist: null, album: null };
 async function maybeShowRadioTitle(track) {
-  if (!track || !_isStreamUri(track.uri)) return;
+  if (!track || !_isStreamUri(track.uri)) { _radioLast = { title: null, artist: null, album: null }; return; }
   try {
     const d = await fetch(API + '/radio_now_playing').then(r => r.json());
     if (!d || !d.playing || !d.title) return;
-    const heroEl = document.getElementById('hero-title');
-    const nameEl = document.getElementById('track-name');
-    const artistEl = document.getElementById('artist-name');
-    const albumEl = document.getElementById('album-name');
-    // Keep the radio/station name visible alongside the live song: "artist · STATION".
     const station = d.station || (track.name && !_isStreamUri(track.name) ? track.name : '');
-    if (heroEl) { heroEl.textContent = d.title; fitHeroTitle(); }
-    if (nameEl) nameEl.textContent = d.title;
-    if (artistEl) { artistEl.textContent = [d.artist, station].filter(Boolean).join(' · '); artistEl.classList.remove('obj-link'); }
-    if (albumEl) albumEl.textContent = d.album || '';
+    // Title line = song; next line starts with the STATION then the song artist.
+    const artistLine = [station, d.artist].filter(Boolean).join(' · ');
+    const albumLine  = d.album || '';
+    // Only touch the DOM when a value actually changes → the title stays static
+    // (no flicker) between refreshes and updates cleanly on each new song.
+    if (d.title !== _radioLast.title) {
+      const heroEl = document.getElementById('hero-title');
+      const nameEl = document.getElementById('track-name');
+      if (heroEl) heroEl.textContent = d.title;
+      if (nameEl) nameEl.textContent = d.title;
+      fitHeroTitle();
+      _radioLast.title = d.title;
+    }
+    if (artistLine !== _radioLast.artist) {
+      const artistEl = document.getElementById('artist-name');
+      if (artistEl) { artistEl.textContent = artistLine; artistEl.classList.remove('obj-link'); }
+      _radioLast.artist = artistLine;
+    }
+    if (albumLine !== _radioLast.album) {
+      const albumEl = document.getElementById('album-name');
+      if (albumEl) albumEl.textContent = albumLine;
+      _radioLast.album = albumLine;
+    }
   } catch (e) {}
 }
 

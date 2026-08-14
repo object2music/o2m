@@ -2552,6 +2552,13 @@ class O2mToMopidy:
                                         if result: stat.option_type = 'library'
                         '''
 
+                    # Transfer, not duplicate: a track promoted out of 'new' →
+                    # incoming/library is removed from the 'new' box's editable
+                    # playlist(s) (skip the one just added to in the library case;
+                    # non-editable/Spotify-owned playlists fail silently and are ignored).
+                    if _from_option_type == 'new' and stat.option_type in ('incoming', 'library'):
+                        self._remove_from_new_playlists(uri, library_link if stat.option_type == 'library' else None, _from_option_type, _track_name)
+
                 #NORMAL > FAVORITES : Adding any track to favorites if played many times
                 if self.threshold_adding_favorites(stat,self.discover_level)==True :
                     print(f"Autofilling Favorites")
@@ -2675,6 +2682,27 @@ class O2mToMopidy:
         return 'podcast'
 
     # Auto Filling playlist
+    def _remove_from_new_playlists(self, uri, exclude_uri, from_type, track_name):
+        """Transfer, not duplicate: when a 'new' track is promoted, remove it from the
+        editable playlist(s) of the 'new' box. Non-editable / Spotify-owned playlists
+        just fail inside remove_spotify_playlist and are ignored. `exclude_uri` skips
+        a playlist we just added to (the library-link case)."""
+        try:
+            box = self.dbHandler.get_box_by_option_type('new')
+            if not box or not getattr(box, 'data', None):
+                return
+            for line in box.data.split('\n'):
+                line = line.strip()
+                if not line.startswith('spotify:playlist:'):
+                    continue
+                if exclude_uri and line == exclude_uri:
+                    continue
+                res = self.remove_spotify_playlist(line, uri)
+                if res:
+                    self._log_playlist_change(uri[0], line, 'remove', from_type, 'new', track_name)
+        except Exception as e:
+            print(f"_remove_from_new_playlists error: {e}")
+
     def remove_spotify_playlist(self, playlist_uri,uri):
         # Defensive: strip control chars and whitespace, then delegate to SpotifyHandler normalizer
         try:
