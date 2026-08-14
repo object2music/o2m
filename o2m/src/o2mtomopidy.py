@@ -2682,41 +2682,67 @@ class O2mToMopidy:
         return 'podcast'
 
     # Auto Filling playlist
-    def _new_target_box(self):
-        """The CANONICAL 'new' box, deterministically: the discovery box carrying the
-        newrecent/newnotcompleted directives (e.g. 'Nouveautés' → ToListen perso),
-        NOT the ad-hoc 'new'-tagged mood boxes. get_box_by_option_type('new') can't be
-        used here — it returns a RANDOM 'new' box. Falls back to the first 'new' box."""
-        boxes = self.dbHandler.get_boxes_by_option_type('new') or []
-        for b in boxes:
+    def _new_discovery_boxes(self):
+        """The DISCOVERY 'new' boxes — those carrying the newrecent/newnotcompleted
+        directives (e.g. 'Nouveautés'), i.e. the real "new inbox". Excludes ad-hoc
+        'new'-tagged mood boxes ('0 Party'/'0 Chill') whose Spotify playlists must
+        never be edited. get_box_by_option_type('new') can't be used — it returns a
+        RANDOM 'new' box."""
+        out = []
+        for b in (self.dbHandler.get_boxes_by_option_type('new') or []):
             d = getattr(b, 'data', '') or ''
             if 'newrecent' in d or 'newnotcompleted' in d:
-                return b
-        return boxes[0] if boxes else None
+                out.append(b)
+        return out
+
+    def _new_discovery_playlists(self):
+        """All spotify:playlist uris across the discovery 'new' boxes (ToListen,
+        Shazam, …) — the editable inboxes a 'new' track can come from."""
+        seen, out = set(), []
+        for b in self._new_discovery_boxes():
+            for line in (getattr(b, 'data', '') or '').split('\n'):
+                line = line.strip()
+                if line.startswith('spotify:playlist:') and line not in seen:
+                    seen.add(line)
+                    out.append(line)
+        return out
+
+    def _new_target_box(self):
+        """Canonical discovery box (first), or any 'new' box as a fallback."""
+        boxes = self._new_discovery_boxes()
+        if boxes:
+            return boxes[0]
+        allnew = self.dbHandler.get_boxes_by_option_type('new') or []
+        return allnew[0] if allnew else None
 
     def _new_target_playlist(self):
-        """The canonical 'new' editable playlist uri (ToListen perso), or ''."""
+        """The canonical 'new' editable playlist uri for the ADD (ToListen perso)."""
         box = self._new_target_box()
         return self.get_spotify_playlist_from_box(box) if box else ''
 
     def _remove_from_new_playlists(self, uri, exclude_uri, from_type, track_name):
-        """Transfer, not duplicate: when a 'new' track is promoted, remove it from the
-        editable playlist(s) of the CANONICAL 'new' box. Non-editable / Spotify-owned
-        playlists just fail inside remove_spotify_playlist and are ignored. `exclude_uri`
-        skips a playlist we just added to (the library-link case)."""
+        """Transfer, not duplicate: remove a promoted track from EVERY discovery-'new'
+        playlist that actually CONTAINS it (ToListen, Shazam, …) — tied to where the
+        'new' track really lives, robust to several editable inboxes. Only removes
+        where present (is_track_in_playlist), skips the playlist just added to
+        (exclude_uri, library case); non-editable playlists fail silently."""
         try:
-            box = self._new_target_box()
-            if not box or not getattr(box, 'data', None):
+            if not uri or 'spotify:track' not in uri[0]:
                 return
-            for line in box.data.split('\n'):
-                line = line.strip()
-                if not line.startswith('spotify:playlist:'):
+            track_id = uri[0].split(':')[2]
+            for pl in self._new_discovery_playlists():
+                if exclude_uri and pl == exclude_uri:
                     continue
-                if exclude_uri and line == exclude_uri:
+                pid = pl.split(':')[2]
+                try:
+                    inside = self.spotifyHandler.is_track_in_playlist(self.username, track_id, pid)
+                except Exception:
+                    inside = False
+                if not inside:
                     continue
-                res = self.remove_spotify_playlist(line, uri)
+                res = self.remove_spotify_playlist(pl, uri)
                 if res:
-                    self._log_playlist_change(uri[0], line, 'remove', from_type, 'new', track_name)
+                    self._log_playlist_change(uri[0], pl, 'remove', from_type, 'new', track_name)
         except Exception as e:
             print(f"_remove_from_new_playlists error: {e}")
 
