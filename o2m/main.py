@@ -1811,6 +1811,7 @@ if __name__ == "__main__":
                 return jsonify({'playing': False})
             return jsonify({'playing': True, 'title': np.get('title', ''),
                             'artist': np.get('artist', ''), 'album': np.get('album', ''),
+                            'station': np.get('station', ''),
                             'source': np.get('source', ''), 'visual': np.get('visual', '')})
         except Exception as e:
             return jsonify({'playing': False, 'error': str(e)})

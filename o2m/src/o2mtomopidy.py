@@ -96,6 +96,9 @@ class O2mToMopidy:
         self._RF_STATIONS = {'fip': (7, True), 'francemusique': (5, True),
                              'franceinter': (1, False), 'franceinfo': (2, False),
                              'franceculture': (4, False)}
+        self._RF_NAMES = {'fip': 'FIP', 'francemusique': 'France Musique',
+                          'franceinter': 'France Inter', 'franceinfo': 'France Info',
+                          'franceculture': 'France Culture'}
 
         if "podcast_newest_first" in self.configO2M:
             self.podcast_newest_first = self.configO2M["podcast_newest_first"] 
@@ -2798,12 +2801,17 @@ class O2mToMopidy:
         uri = getattr(cur, 'uri', '') if cur else ''
         if not uri or not (uri.startswith('http') or uri.startswith('tunein:')):
             return None
+        # Friendly station name (kept visible in the UI even when a song plays).
+        station = (getattr(cur, 'name', '') or '')
+        if station.startswith('http') or station.startswith('tunein:'):
+            station = ''
         st = self._rf_station_for_uri(uri)
         if st:
-            sid, is_music, _ = st
+            sid, is_music, key = st
             meta = self._rf_livemeta(sid)
             if meta and meta.get('title'):
                 meta['is_music'] = is_music
+                meta['station'] = self._RF_NAMES.get(key, key.upper())
                 return meta
         # Fallback: ICY stream title (other Icecast/Shoutcast radios).
         try:
@@ -2814,9 +2822,9 @@ class O2mToMopidy:
             artist, sep, track = title.partition(' - ')
             if sep:
                 return {'title': track.strip(), 'artist': artist.strip(), 'album': '',
-                        'key': title, 'is_music': True, 'source': 'icy'}
+                        'key': title, 'is_music': True, 'source': 'icy', 'station': station}
             return {'title': title.strip(), 'artist': '', 'album': '',
-                    'key': title, 'is_music': True, 'source': 'icy'}
+                    'key': title, 'is_music': True, 'source': 'icy', 'station': station}
         return None
 
     def _on_radio_track_finished(self, meta):

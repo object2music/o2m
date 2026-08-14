@@ -3442,9 +3442,11 @@ async function maybeShowRadioTitle(track) {
     const nameEl = document.getElementById('track-name');
     const artistEl = document.getElementById('artist-name');
     const albumEl = document.getElementById('album-name');
+    // Keep the radio/station name visible alongside the live song: "artist · STATION".
+    const station = d.station || (track.name && !_isStreamUri(track.name) ? track.name : '');
     if (heroEl) { heroEl.textContent = d.title; fitHeroTitle(); }
     if (nameEl) nameEl.textContent = d.title;
-    if (artistEl) { artistEl.textContent = d.artist || (track.name || ''); artistEl.classList.remove('obj-link'); }
+    if (artistEl) { artistEl.textContent = [d.artist, station].filter(Boolean).join(' · '); artistEl.classList.remove('obj-link'); }
     if (albumEl) albumEl.textContent = d.album || '';
   } catch (e) {}
 }
