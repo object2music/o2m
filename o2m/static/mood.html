@@ -2793,6 +2793,10 @@ async function refreshNowPlaying() {
     const albumEl = document.getElementById('album-name');
     if (albumEl) albumEl.textContent = (track.album && track.album.uri) ? (track.album.name || '') : '';
 
+    // Radios: the mopidy "track" is the stream itself → overlay the LIVE now-playing
+    // title/artist (FIP livemeta or ICY), so the header shows the current song.
+    maybeShowRadioTitle(track);
+
     // O2M metadata (status badge, cover, details): only on track change —
     // avoids /track_status and /track_info being refetched every 10s.
     // Fetches run in PARALLEL (they were sequential → the cover lagged behind).
@@ -3423,6 +3427,28 @@ const TRACK_PANEL_ROWS = [
    ids come from the panel (cellId/canvasId/…) so the now-playing column and the
    modal render byte-for-byte the same content; only the container skin (listClass)
    and the optional hero differ per context. */
+function _isStreamUri(u) {
+  return typeof u === 'string' && (/^https?:/.test(u) || u.startsWith('tunein:'));
+}
+// Radios: overlay the LIVE now-playing title/artist (from /api/radio_now_playing —
+// FIP livemeta or ICY stream title) into the header, in place of the stream's own
+// name/artist. Runs on every now-playing refresh so it follows song changes live.
+async function maybeShowRadioTitle(track) {
+  if (!track || !_isStreamUri(track.uri)) return;
+  try {
+    const d = await fetch(API + '/radio_now_playing').then(r => r.json());
+    if (!d || !d.playing || !d.title) return;
+    const heroEl = document.getElementById('hero-title');
+    const nameEl = document.getElementById('track-name');
+    const artistEl = document.getElementById('artist-name');
+    const albumEl = document.getElementById('album-name');
+    if (heroEl) { heroEl.textContent = d.title; fitHeroTitle(); }
+    if (nameEl) nameEl.textContent = d.title;
+    if (artistEl) { artistEl.textContent = d.artist || (track.name || ''); artistEl.classList.remove('obj-link'); }
+    if (albumEl) albumEl.textContent = d.album || '';
+  } catch (e) {}
+}
+
 function trackPanelBodyHTML(p, { hero, cover, name, artist, artistUri, album, albumUri } = {}) {
   // Artist and album are clickable when their uri is known (the #obj-body handler
   // opens them via data-artist-uri / data-album-uri). Shown as "artist · album".

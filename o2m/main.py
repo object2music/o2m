@@ -154,6 +154,12 @@ if __name__ == "__main__":
 
     threading.Thread(target=_popularity_scheduler, daemon=True).start()
 
+    # Radio now-playing watcher (stream title for all radios + auto-save on FIP).
+    try:
+        o2mHandler.start_radio_watcher()
+    except Exception as e:
+        print(f"start_radio_watcher error: {e}")
+
 #API DEF AND LISTENER (to be move in a dedicated part)
     #API BOX ACTION (mode : toogle, add, remove) AND SHOW
     def api_box_action(uid='',option_type='',mode='toogle'):
@@ -1791,6 +1797,23 @@ if __name__ == "__main__":
     def api_clear_today_history():
         o2mHandler.dbHandler.clear_today_stats_raw()
         return ("cleared")
+
+    # Current track on the active radio (Radio France livemeta API, or ICY title).
+    # Cached by the background watcher; falls back to a live fetch if not warm yet.
+    @api.route('/api/radio_now_playing')
+    def api_radio_now_playing():
+        from flask import jsonify
+        try:
+            np = getattr(o2mHandler, '_radio_np', None)
+            if np is None:
+                np = o2mHandler.radio_now_playing()
+            if not np:
+                return jsonify({'playing': False})
+            return jsonify({'playing': True, 'title': np.get('title', ''),
+                            'artist': np.get('artist', ''), 'album': np.get('album', ''),
+                            'source': np.get('source', ''), 'visual': np.get('visual', '')})
+        except Exception as e:
+            return jsonify({'playing': False, 'error': str(e)})
 
     #SPOTIPY
     if o2mHandler.spotifyHandler.spotipy_config:

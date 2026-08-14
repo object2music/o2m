@@ -86,6 +86,17 @@ class O2mToMopidy:
         self.mood_valence = 0.5    # float 0.0-1.0 target valence (ambiance)
         self.mood_genres = []      # list of genre name strings
 
+        # ── Radio now-playing + auto-save to library ─────────────────────────
+        self._radio_np = None          # last known {title,artist,album,key,is_music,source} for the UI
+        self._radio_last_key = None     # step/title id of the track currently on air (change = prev finished)
+        self._radio_last_meta = None    # meta of the track currently on air
+        self.radio_poll_sec = 15        # how often the watcher polls the active radio
+        self.radio_save_min_dl = 5      # discover_level threshold to auto-save a finished radio track
+        # Radio France livemeta station ids + is_music flag (music stations auto-save).
+        self._RF_STATIONS = {'fip': (7, True), 'francemusique': (5, True),
+                             'franceinter': (1, False), 'franceinfo': (2, False),
+                             'franceculture': (4, False)}
+
         if "podcast_newest_first" in self.configO2M:
             self.podcast_newest_first = self.configO2M["podcast_newest_first"] 
 
@@ -2694,6 +2705,192 @@ class O2mToMopidy:
             print(f"Erreur : {val_e}")
 
     # Auto Filling playlist 
+    # ── Radio now-playing + auto-save ────────────────────────────────────────
+    def start_radio_watcher(self):
+        """Spawn the background radio watcher (once)."""
+        if getattr(self, '_radio_watcher_started', False):
+            return
+        self._radio_watcher_started = True
+        import threading
+        threading.Thread(target=self._radio_watch_loop, daemon=True).start()
+
+    def _radio_watch_loop(self):
+        """While a radio stream is playing, poll its now-playing metadata. When the
+        current track changes, the PREVIOUS one just finished on air ("terminé en
+        lecture") → if it's a music radio and discover_level ≥ radio_save_min_dl,
+        auto-save it to the library."""
+        import time as _t
+        _t.sleep(20)  # let startup settle
+        while True:
+            try:
+                playing = False
+                try:
+                    playing = (self.mopidyHandler.playback.get_state() == 'playing')
+                except Exception:
+                    playing = False
+                np = self.radio_now_playing() if playing else None
+                if np and np.get('key'):
+                    self._radio_np = np
+                    if np['key'] != self._radio_last_key:
+                        # Track changed → the previous track played through to its end.
+                        prev = self._radio_last_meta
+                        if prev and prev.get('is_music'):
+                            try:
+                                self._on_radio_track_finished(prev)
+                            except Exception as e:
+                                print(f"radio auto-save error: {e}")
+                        self._radio_last_key = np['key']
+                        self._radio_last_meta = np
+                else:
+                    self._radio_np = None
+                    self._radio_last_key = None
+                    self._radio_last_meta = None
+            except Exception as e:
+                print(f"_radio_watch_loop error: {e}")
+            _t.sleep(self.radio_poll_sec)
+
+    def _rf_station_for_uri(self, uri):
+        """(station_id, is_music, key) for a Radio France stream URI, else None."""
+        if not uri or 'radiofrance' not in uri.lower():
+            return None
+        low = uri.lower()
+        for key, (sid, is_music) in self._RF_STATIONS.items():
+            if key in low:
+                return (sid, is_music, key)
+        return None
+
+    def _rf_livemeta(self, sid):
+        """Current on-air track for a Radio France station via the livemeta API."""
+        import urllib.request, json, time
+        try:
+            req = urllib.request.Request(f'https://api.radiofrance.fr/livemeta/pull/{sid}',
+                                         headers={'User-Agent': 'Mozilla/5.0'})
+            d = json.load(urllib.request.urlopen(req, timeout=6))
+        except Exception as e:
+            print(f"_rf_livemeta({sid}) error: {e}")
+            return None
+        steps = d.get('steps') or {}
+        now = int(time.time())
+        cur = None
+        for s in steps.values():
+            if s.get('title') and s.get('start', 0) <= now <= s.get('end', 10 ** 12):
+                cur = s
+                break
+        if not cur:  # no exact window match → most recent titled step
+            titled = [s for s in steps.values() if s.get('title')]
+            cur = max(titled, key=lambda s: s.get('start', 0)) if titled else None
+        if not cur:
+            return None
+        artist = (cur.get('authors') or (cur.get('highlightedArtists') or [''])[0]
+                  or cur.get('performers') or '').strip()
+        return {'title': (cur.get('title') or '').strip(), 'artist': artist,
+                'album': (cur.get('titreAlbum') or '').strip(),
+                'key': cur.get('stepId') or cur.get('uuid') or f"{artist}-{cur.get('title')}",
+                'visual': cur.get('visual') or '', 'source': 'radiofrance'}
+
+    def radio_now_playing(self):
+        """Current track on the active radio. Radio France stations → livemeta API;
+        any other radio → ICY stream title (get_stream_title, 'Artist - Title')."""
+        try:
+            cur = self.mopidyHandler.playback.get_current_track()
+        except Exception:
+            cur = None
+        uri = getattr(cur, 'uri', '') if cur else ''
+        if not uri or not (uri.startswith('http') or uri.startswith('tunein:')):
+            return None
+        st = self._rf_station_for_uri(uri)
+        if st:
+            sid, is_music, _ = st
+            meta = self._rf_livemeta(sid)
+            if meta and meta.get('title'):
+                meta['is_music'] = is_music
+                return meta
+        # Fallback: ICY stream title (other Icecast/Shoutcast radios).
+        try:
+            title = self.mopidyHandler.playback.get_stream_title()
+        except Exception:
+            title = None
+        if title:
+            artist, sep, track = title.partition(' - ')
+            if sep:
+                return {'title': track.strip(), 'artist': artist.strip(), 'album': '',
+                        'key': title, 'is_music': True, 'source': 'icy'}
+            return {'title': title.strip(), 'artist': '', 'album': '',
+                    'key': title, 'is_music': True, 'source': 'icy'}
+        return None
+
+    def _on_radio_track_finished(self, meta):
+        """A music-radio track just played through. Gate on discover_level then save."""
+        if self.discover_level < self.radio_save_min_dl:
+            print(f"radio: skip save (DL {self.discover_level} < {self.radio_save_min_dl}): "
+                  f"{meta.get('artist')} - {meta.get('title')}")
+            return
+        title = (meta.get('title') or '').strip()
+        if not title:
+            return
+        self._save_radio_track((meta.get('artist') or '').strip(), title)
+
+    def _save_radio_track(self, artist, title):
+        """Resolve a radio track to Spotify, add it to the 'new' box playlist and
+        record it in the DB as a 'new' track played once through — exactly like a
+        track heard for the first time to completion."""
+        query = (artist + ' ' + title).strip()
+        try:
+            res = self.spotifyHandler.search_music(query, limit=5)
+        except Exception as e:
+            print(f"radio save: search error for {query!r}: {e}")
+            return
+        tracks = (res or {}).get('tracks') or []
+        if not tracks:
+            print(f"radio save: no Spotify match for {query!r}")
+            return
+        top = tracks[0]
+        uri = top['uri']
+        # 1) add to the playlist of the box tagged 'new'
+        try:
+            box = self.dbHandler.get_box_by_option_type('new')
+            playlist = self.get_spotify_playlist_from_box(box) if box else ''
+            if playlist:
+                self.autofill_spotify_playlist(playlist, [uri])
+        except Exception as e:
+            print(f"radio save: playlist add error: {e}")
+        # 2) record it in the DB as a 'new' track completed once
+        self._record_new_once(uri, top)
+        print(f"radio save: {query!r} → {uri} (added to 'new')")
+
+    def _record_new_once(self, uri, tinfo):
+        """Persist a stat identical to a first complete play: option_type 'new'
+        (never downgrading a stronger existing type), one completed read."""
+        stat = self.dbHandler.get_stat_by_uri(uri)
+        if stat is None:
+            stat = self.dbHandler.create_stat(uri)
+        if stat is None:
+            return
+        try:
+            if not getattr(stat, 'name', None):
+                stat.name = tinfo.get('name')
+            if not getattr(stat, 'duration_ms', None) and tinfo.get('length'):
+                stat.duration_ms = int(tinfo['length'])
+        except Exception:
+            pass
+        rate = 1.0  # heard through to the end on the radio
+        prev_count = stat.read_count or 0
+        if prev_count <= 1:
+            stat.read_end = rate
+        else:
+            stat.read_end = ((stat.read_end * prev_count) + rate) / (prev_count + 1)
+        stat.read_count = prev_count + 1
+        stat.read_count_end = (stat.read_count_end or 0) + 1
+        stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
+        stat.username = self.username
+        # Only set 'new' when unset — never downgrade a promoted/rejected status.
+        if not stat.option_type or stat.option_type in ('', 'normal'):
+            stat.option_type = 'new'
+        try:
+            stat.save()
+        except Exception as e:
+            print(f"radio save: stat save error: {e}")
+
     def autofill_spotify_playlist(self, playlist_uri,uri):
         try: 
             #Toadd : test if writable
