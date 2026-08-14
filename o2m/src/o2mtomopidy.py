@@ -2926,15 +2926,24 @@ class O2mToMopidy:
         top = tracks[0]
         uri = top['uri']
         # 1) add to the canonical 'new' playlist (ToListen perso, deterministic)
+        playlist, added = '', None
         try:
             playlist = self._new_target_playlist()
             if playlist:
-                self.autofill_spotify_playlist(playlist, [uri])
+                added = self.autofill_spotify_playlist(playlist, [uri])
         except Exception as e:
             print(f"radio save: playlist add error: {e}")
         # 2) record it in the DB as a 'new' track completed once
         self._record_new_once(uri, top)
-        print(f"radio save: {query!r} → {uri} (added to 'new')")
+        # Honest logging: autofill returns falsy when the write failed/was refused
+        # (e.g. Spotify 403 on playlist-modify) — don't claim success then.
+        if playlist and added:
+            print(f"radio save: {query!r} → {uri} added to {playlist}")
+        elif playlist:
+            print(f"radio save: {query!r} → {uri} recorded in DB but NOT added to "
+                  f"{playlist} (Spotify write failed/refused — check playlist-modify scope)")
+        else:
+            print(f"radio save: {query!r} → {uri} recorded in DB (no 'new' playlist configured)")
 
     def _record_new_once(self, uri, tinfo):
         """Persist a stat identical to a first complete play: option_type 'new'
