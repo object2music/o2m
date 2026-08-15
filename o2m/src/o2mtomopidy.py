@@ -92,13 +92,23 @@ class O2mToMopidy:
         self._radio_last_meta = None    # meta of the track currently on air
         self.radio_poll_sec = 15        # how often the watcher polls the active radio
         self.radio_save_min_dl = 5      # discover_level threshold to auto-save a finished radio track
-        # Radio France livemeta station ids + is_music flag (music stations auto-save).
-        self._RF_STATIONS = {'fip': (7, True), 'francemusique': (5, True),
-                             'franceinter': (1, False), 'franceinfo': (2, False),
-                             'franceculture': (4, False)}
-        self._RF_NAMES = {'fip': 'FIP', 'francemusique': 'France Musique',
-                          'franceinter': 'France Inter', 'franceinfo': 'France Info',
-                          'franceculture': 'France Culture'}
+        # Radio France stations: URL substring → (livemeta id, is_music, full name).
+        # FIP webradios MUST come before the generic 'fip' (first match wins), else
+        # 'fip' would swallow 'fipgroove' etc. and always show 'FIP' + wrong metadata.
+        self._RF_STATIONS = {
+            'fiprock':       (64, True,  'FIP Rock'),
+            'fipjazz':       (65, True,  'FIP Jazz'),
+            'fipgroove':     (66, True,  'FIP Groove'),
+            'fipworld':      (69, True,  'FIP Monde'),
+            'fipnouveautes': (70, True,  'FIP Nouveautés'),
+            'fipreggae':     (71, True,  'FIP Reggae'),
+            'fipelectro':    (74, True,  'FIP Electro'),
+            'fip':           (7,  True,  'FIP'),
+            'francemusique': (5,  True,  'France Musique'),
+            'franceinter':   (1,  False, 'France Inter'),
+            'franceinfo':    (2,  False, 'France Info'),
+            'franceculture': (4,  False, 'France Culture'),
+        }
 
         if "podcast_newest_first" in self.configO2M:
             self.podcast_newest_first = self.configO2M["podcast_newest_first"] 
@@ -2824,13 +2834,14 @@ class O2mToMopidy:
             _t.sleep(self.radio_poll_sec)
 
     def _rf_station_for_uri(self, uri):
-        """(station_id, is_music, key) for a Radio France stream URI, else None."""
+        """(station_id, is_music, full_name) for a Radio France stream URI, else None.
+        Iterates in dict order so FIP webradios match before the generic 'fip'."""
         if not uri or 'radiofrance' not in uri.lower():
             return None
         low = uri.lower()
-        for key, (sid, is_music) in self._RF_STATIONS.items():
+        for key, (sid, is_music, name) in self._RF_STATIONS.items():
             if key in low:
-                return (sid, is_music, key)
+                return (sid, is_music, name)
         return None
 
     def _rf_livemeta(self, sid):
@@ -2878,11 +2889,11 @@ class O2mToMopidy:
             station = ''
         st = self._rf_station_for_uri(uri)
         if st:
-            sid, is_music, key = st
+            sid, is_music, name = st
             meta = self._rf_livemeta(sid)
             if meta and meta.get('title'):
                 meta['is_music'] = is_music
-                meta['station'] = self._RF_NAMES.get(key, key.upper())
+                meta['station'] = name   # full sub-station name (e.g. 'FIP Groove')
                 return meta
         # Fallback: ICY stream title (other Icecast/Shoutcast radios).
         try:

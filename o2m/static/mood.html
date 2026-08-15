@@ -3437,9 +3437,9 @@ function _isStreamUri(u) {
 // Radios: overlay the LIVE now-playing title/artist (from /api/radio_now_playing —
 // FIP livemeta or ICY stream title) into the header, in place of the stream's own
 // name/artist. Runs on every now-playing refresh so it follows song changes live.
-let _radioLast = { title: null, artist: null, album: null };
+let _radioLast = { title: null, artist: null, album: null, visual: null };
 async function maybeShowRadioTitle(track) {
-  if (!track || !_isStreamUri(track.uri)) { _radioLast = { title: null, artist: null, album: null }; return; }
+  if (!track || !_isStreamUri(track.uri)) { _radioLast = { title: null, artist: null, album: null, visual: null }; return; }
   try {
     const d = await fetch(API + '/radio_now_playing').then(r => r.json());
     if (!d || !d.playing || !d.title) return;
@@ -3456,6 +3456,12 @@ async function maybeShowRadioTitle(track) {
       if (nameEl) nameEl.textContent = d.title;
       fitHeroTitle();
       _radioLast.title = d.title;
+    }
+    // Cover = the current song's artwork (livemeta visual), so the "logo" tracks
+    // the song instead of a blank placeholder. Updated only when it changes.
+    if (d.visual && d.visual !== _radioLast.visual) {
+      try { setCoverSmooth(d.visual); } catch (e) {}
+      _radioLast.visual = d.visual;
     }
     if (artistLine !== _radioLast.artist) {
       const artistEl = document.getElementById('artist-name');
