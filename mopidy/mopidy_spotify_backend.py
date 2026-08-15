@@ -1,7 +1,11 @@
+import logging
+
 import pykka
 from mopidy import backend
 
 from mopidy_spotify import Extension, library, playlists, web
+
+logger = logging.getLogger(__name__)
 
 
 class SpotifyBackend(pykka.ThreadingActor, backend.Backend):
@@ -63,18 +67,43 @@ class SpotifyPlaybackProvider(backend.PlaybackProvider):
         if not self._credentials_dir.exists():
             self._credentials_dir.mkdir(mode=0o700)
 
+    def _o2m_get(self, path):
+        import urllib.request as _ureq
+        try:
+            return _ureq.urlopen(f"http://o2m:6681{path}", timeout=4).read().decode().strip()
+        except Exception:
+            return None
+
+    def _sync_credentials_cache(self, identity):
+        """Wipe librespot's cached credentials when the streaming identity changes.
+
+        The blob is derived from the access token that minted it, so a blob created
+        with our own client_id stays rejected by login5 (mopidy-spotify#437) even
+        once a valid keymaster token is supplied. Purge it exactly once per switch.
+        """
+        if not identity:
+            return
+        marker = self._data_location / "stream-identity"
+        try:
+            if marker.exists() and marker.read_text().strip() == identity:
+                return
+            for entry in self._credentials_dir.iterdir():
+                if entry.is_file():
+                    entry.unlink()
+            marker.write_text(identity)
+            logger.info("Spotify streaming identity changed — cleared cached credentials.")
+        except Exception as e:
+            logger.warning(f"Could not sync Spotify credentials cache: {e}")
+
     def on_source_setup(self, source):
         source.set_property("bitrate", str(self._config["bitrate"]))
         source.set_property("cache-credentials", self._credentials_dir)
-        # o2m: prefer the USER token (from o2m /api/spotify_stream_token) so librespot
+        # o2m: prefer the streaming token from o2m (/api/spotify_stream_token) so librespot
         # authenticates as the user and mints the durable credentials blob; fall back to
         # the client_credentials token if o2m is unreachable / not yet authenticated.
-        _ut = None
-        try:
-            import urllib.request as _ureq
-            _ut = _ureq.urlopen("http://o2m:6681/api/spotify_stream_token", timeout=4).read().decode().strip()
-        except Exception:
-            _ut = None
+        _ut = self._o2m_get("/api/spotify_stream_token")
+        if _ut:
+            self._sync_credentials_cache(self._o2m_get("/api/spotify_stream_identity"))
         source.set_property("access-token", _ut or self.backend._web_client.token())
         if self._config["allow_cache"]:
             source.set_property("cache-files", self._cache_location)

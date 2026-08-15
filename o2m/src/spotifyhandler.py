@@ -12,6 +12,9 @@ class SpotifyHandler:
         # Instance baseline = the fixed "house" account. Streaming (librespot blob) is pinned
         # to it, and the Web API falls back to it when no per-user overlay is signed in.
         self.instance_cache_path = ".cache_spotify_instance"
+        # Streaming identity (librespot/login5) — separate PKCE token, see below.
+        self.stream_cache_path = ".cache_spotify_stream"
+        self.stream_pending_path = ".cache_spotify_stream_pending"
         # Unified scope: Web API (Spotipy) + streaming (librespot/mopidy-spotify) + identity (edit-auth /v1/me)
         self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify streaming user-read-private user-read-email"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
@@ -428,6 +431,165 @@ class SpotifyHandler:
     def init_token_sp(self):
         self.seed_instance_cache_if_absent()
         self.reload_sp()
+
+    # ── Streaming identity (librespot / login5) ───────────────────────────────
+    # Since 2026-08-10 Spotify's login5 rejects every access token minted by a
+    # third-party client_id, which killed playback (mopidy-spotify#437,
+    # go-librespot#364). Only tokens obtained through the desktop ("keymaster")
+    # client are still accepted, so streaming gets its OWN PKCE identity, kept
+    # strictly apart from the Web API one: desktop credentials are rate-limited
+    # (429) on api.spotify.com, so this token must never be used for Web API calls.
+    # Constants mirror librespot (core/src/config.rs, src/main.rs).
+    KEYMASTER_CLIENT_ID = "65b708073fc0480ea92a077233ca87bd"
+    KEYMASTER_REDIRECT_URI = "http://127.0.0.1:8898/login"
+    KEYMASTER_SCOPES = (
+        "app-remote-control playlist-modify playlist-modify-private "
+        "playlist-modify-public playlist-read playlist-read-collaborative "
+        "playlist-read-private streaming ugc-image-upload user-follow-modify "
+        "user-follow-read user-library-modify user-library-read user-modify "
+        "user-modify-playback-state user-modify-private user-personalized "
+        "user-read-birthdate user-read-currently-playing user-read-email "
+        "user-read-play-history user-read-playback-position "
+        "user-read-playback-state user-read-private user-read-recently-played "
+        "user-top-read"
+    )
+    _TOKEN_URL = "https://accounts.spotify.com/api/token"
+
+    @staticmethod
+    def _b64url(raw):
+        import base64
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    def _read_json(self, path):
+        try:
+            with open(path) as fh:
+                return json.load(fh)
+        except Exception:
+            return None
+
+    def _write_json(self, path, data):
+        with open(path, "w") as fh:
+            json.dump(data, fh)
+        try:
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+
+    def stream_authorize_url(self):
+        """Start the PKCE pairing: return the Spotify authorize URL and stash the
+        verifier. The redirect is a loopback URI that nothing listens on — the
+        operator pastes the resulting URL back into stream_exchange()."""
+        import hashlib, secrets, urllib.parse
+        verifier = self._b64url(secrets.token_bytes(64))
+        challenge = self._b64url(hashlib.sha256(verifier.encode()).digest())
+        state = self._b64url(secrets.token_bytes(16))
+        self._write_json(self.stream_pending_path, {"verifier": verifier, "state": state})
+        params = {
+            "response_type": "code",
+            "client_id": self.KEYMASTER_CLIENT_ID,
+            "redirect_uri": self.KEYMASTER_REDIRECT_URI,
+            "scope": self.KEYMASTER_SCOPES,
+            "code_challenge_method": "S256",
+            "code_challenge": challenge,
+            "state": state,
+        }
+        return "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode(params)
+
+    def stream_exchange(self, redirect_url):
+        """Finish the pairing from the pasted redirect URL. Returns (ok, message)."""
+        import urllib.parse, requests
+        pending = self._read_json(self.stream_pending_path)
+        if not pending:
+            return False, "No pairing in progress — request a new sign-in link."
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(redirect_url.strip()).query)
+        if "error" in qs:
+            return False, f"Spotify refused the authorization: {qs['error'][0]}"
+        code = (qs.get("code") or [None])[0]
+        if not code:
+            return False, "No 'code' found in that URL."
+        if (qs.get("state") or [None])[0] != pending.get("state"):
+            return False, "State mismatch — request a new sign-in link and retry."
+        try:
+            resp = requests.post(self._TOKEN_URL, timeout=20, data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": self.KEYMASTER_REDIRECT_URI,
+                "client_id": self.KEYMASTER_CLIENT_ID,
+                "code_verifier": pending["verifier"],
+            })
+        except Exception as e:
+            return False, f"Spotify unreachable: {e}"
+        if resp.status_code != 200:
+            return False, f"Token exchange failed ({resp.status_code}): {resp.text[:200]}"
+        tok = resp.json()
+        if "streaming" not in (tok.get("scope") or ""):
+            return False, "Token granted without the 'streaming' scope — playback would still fail."
+        tok["expires_at"] = int(time.time()) + int(tok.get("expires_in", 3600))
+        # Stable id for this pairing. Not derived from the refresh_token: Spotify rotates
+        # it on every refresh, which would make the identity (and so the credentials-cache
+        # purge downstream) churn hourly.
+        import secrets
+        tok["pair_id"] = secrets.token_hex(6)
+        self._write_json(self.stream_cache_path, tok)
+        try:
+            os.remove(self.stream_pending_path)
+        except Exception:
+            pass
+        print(f"Spotify streaming identity paired (keymaster), id {self.stream_identity()}.")
+        return True, "Streaming identity paired."
+
+    def stream_token(self):
+        """Valid keymaster access token for librespot, refreshed on demand.
+        Returns None when no streaming identity is paired (callers fall back)."""
+        import requests
+        tok = self._read_json(self.stream_cache_path)
+        if not tok or not tok.get("refresh_token"):
+            return None
+        if int(tok.get("expires_at", 0)) - 60 > time.time():
+            return tok.get("access_token")
+        try:
+            resp = requests.post(self._TOKEN_URL, timeout=20, data={
+                "grant_type": "refresh_token",
+                "refresh_token": tok["refresh_token"],
+                "client_id": self.KEYMASTER_CLIENT_ID,
+            })
+        except Exception as e:
+            print(f"stream token refresh error: {e}")
+            return None
+        if resp.status_code != 200:
+            print(f"stream token refresh failed ({resp.status_code}): {resp.text[:200]}")
+            return None
+        new = resp.json()
+        # Spotify may omit refresh_token on refresh — keep the current one (librespot#1732).
+        new.setdefault("refresh_token", tok["refresh_token"])
+        new["expires_at"] = int(time.time()) + int(new.get("expires_in", 3600))
+        if tok.get("pair_id"):
+            new["pair_id"] = tok["pair_id"]
+        self._write_json(self.stream_cache_path, new)
+        return new.get("access_token")
+
+    def stream_identity(self):
+        """Short stable id of the paired streaming identity, or None. The mopidy
+        backend keys its credentials-cache purge on this: the librespot blob is
+        derived from the token, so a blob minted by the old client_id stays
+        rejected by login5 until it is wiped. Stable across token refreshes —
+        it only changes when the operator re-pairs."""
+        import secrets
+        tok = self._read_json(self.stream_cache_path)
+        if not tok or not tok.get("refresh_token"):
+            return None
+        if not tok.get("pair_id"):  # cache written before pair_id existed
+            tok["pair_id"] = secrets.token_hex(6)
+            self._write_json(self.stream_cache_path, tok)
+        return "km-" + tok["pair_id"]
+
+    def stream_unpair(self):
+        """Drop the streaming identity — playback falls back to the legacy token."""
+        for path in (self.stream_cache_path, self.stream_pending_path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
     def refresh_token0(self):
         cached_token = self.spo.get_cached_token()

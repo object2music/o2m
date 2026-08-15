@@ -1906,10 +1906,16 @@ if __name__ == "__main__":
         def api_spotify_stream_token():
             try:
                 sh = o2mHandler.spotifyHandler
-                # Streaming is pinned to the fixed INSTANCE baseline (never the per-user
-                # overlay), so playback keeps running on the house Premium account even when a
-                # free-tier user is signed in only for Web-API/edit. Fall back to the overlay
-                # cache only if the baseline file does not exist yet.
+                # Preferred path: the keymaster (desktop client) identity. Since 2026-08-10
+                # login5 rejects tokens minted by any third-party client_id, so a token from
+                # our own app can no longer play anything (mopidy-spotify#437).
+                km = sh.stream_token()
+                if km:
+                    return (km, 200)
+                # Legacy fallback, kept for instances not paired yet: streaming pinned to the
+                # fixed INSTANCE baseline (never the per-user overlay), so playback keeps
+                # running on the house Premium account even when a free-tier user is signed in
+                # only for Web-API/edit. Falls back to the overlay cache if no baseline yet.
                 path = sh.instance_cache_path if os.path.exists(sh.instance_cache_path) else sh.cache_path
                 ch = spotipy.cache_handler.CacheFileHandler(cache_path=path)
                 am = spotipy.oauth2.SpotifyOAuth(scope=sh.scope, cache_handler=ch)
@@ -1922,7 +1928,82 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"spotify_stream_token error: {e}")
                 return ("", 503)
-    
+
+        # Short id of the paired streaming identity. The mopidy backend compares it with
+        # what it last saw and wipes librespot's credentials-cache when it changes: the
+        # cached blob is derived from the token, so a blob minted by the old client_id
+        # keeps being rejected by login5 until it is purged.
+        @api.route('/api/spotify_stream_identity')
+        def api_spotify_stream_identity():
+            try:
+                return (o2mHandler.spotifyHandler.stream_identity() or "", 200)
+            except Exception as e:
+                print(f"spotify_stream_identity error: {e}")
+                return ("", 503)
+
+        # Admin page: pair the streaming identity (PKCE against Spotify's desktop client).
+        # Headless flow — the redirect URI is a loopback nothing listens on, so the operator
+        # copies the failed redirect URL back here.
+        @api.route('/api/spotify_stream_auth', methods=['GET', 'POST'])
+        def api_spotify_stream_auth():
+            from flask import make_response
+            sh = o2mHandler.spotifyHandler
+            if _edit_current_user() is None:
+                return make_response(
+                    '<h2>Sign in first</h2><p>Open <a href="/api/spotipy_init">/api/spotipy_init</a> '
+                    'with an admin Spotify account, then come back.</p>', 401)
+
+            msg, ok = "", None
+            if request.method == 'POST':
+                if request.form.get('action') == 'unpair':
+                    sh.stream_unpair()
+                    ok, msg = True, "Streaming identity removed — playback falls back to the legacy token."
+                else:
+                    ok, msg = sh.stream_exchange(request.form.get('redirect_url', ''))
+
+            ident = sh.stream_identity()
+            icon = ('<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" '
+                    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+                    'stroke-linejoin="round"><path d="{}"/></svg>')
+            check = icon.format('M20 6 9 17l-5-5')
+            alert = icon.format('M12 9v4 M12 17h.01 M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z')
+            status = (f'<p class="ok">{check} Paired — identity <code>{ident}</code></p>' if ident
+                      else f'<p class="warn">{alert} Not paired — playback still uses the legacy token '
+                           f'(rejected by Spotify since 2026-08-10).</p>')
+            banner = (f'<p class="{"ok" if ok else "warn"}">{check if ok else alert} {msg}</p>') if msg else ''
+            auth_url = sh.stream_authorize_url()
+            unpair = ('<form method="post" class="row"><input type="hidden" name="action" value="unpair">'
+                      '<button type="submit" class="ghost">Unpair</button></form>') if ident else ''
+            return f'''<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O2M — Spotify streaming pairing</title><style>
+body{{font-family:system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;line-height:1.5;
+color:#e8e8e8;background:#141414}}
+a{{color:#7fd7a4}} code{{background:#222;padding:.1rem .3rem;border-radius:3px;word-break:break-all}}
+svg{{vertical-align:-3px}} .ok{{color:#7fd7a4}} .warn{{color:#e8b45a}}
+textarea{{width:100%;min-height:5rem;background:#1d1d1d;color:#e8e8e8;border:1px solid #333;
+border-radius:6px;padding:.6rem;font-family:ui-monospace,monospace;font-size:.85rem}}
+button{{background:#7fd7a4;color:#0f0f0f;border:0;border-radius:6px;padding:.55rem 1rem;
+font-weight:600;cursor:pointer}} button.ghost{{background:transparent;color:#999;border:1px solid #333}}
+.row{{margin-top:1rem}} ol{{padding-left:1.2rem}} li{{margin:.5rem 0}}</style></head><body>
+<h1>Spotify streaming pairing</h1>
+{status}{banner}
+<p>Playback needs a token minted by Spotify's desktop client — tokens from our own app are
+refused by <code>login5</code>. This pairing is only used for playback; the Web API keeps
+using the regular O2M sign-in.</p>
+<ol>
+<li>Open the <a href="{auth_url}" target="_blank" rel="noopener">Spotify sign-in link</a>
+with the house Premium account.</li>
+<li>The browser will fail to reach <code>127.0.0.1:8898</code> — that is expected.</li>
+<li>Copy the full address-bar URL (it contains <code>code=…</code>) and paste it below.</li>
+</ol>
+<form method="post" class="row">
+<textarea name="redirect_url" placeholder="http://127.0.0.1:8898/login?code=..." required></textarea>
+<div class="row"><button type="submit">Pair streaming</button></div>
+</form>
+{unpair}
+</body></html>'''
+
     #MOPIDY LISTENERS
         # Fonction called when track started
         @mopidy.on_event("track_playback_started")
