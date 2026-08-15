@@ -1,4 +1,5 @@
 import logging
+import os
 
 import pykka
 from mopidy import backend
@@ -6,6 +7,15 @@ from mopidy import backend
 from mopidy_spotify import Extension, library, playlists, web
 
 logger = logging.getLogger(__name__)
+
+# Where the o2m API lives, tried in order: Docker service name first, then localhost
+# for installs that run mopidy and o2m side by side on the same host (Raspberry Pi
+# without Docker). Set O2M_API_URL to pin it explicitly.
+O2M_API_BASES = (
+    [os.environ["O2M_API_URL"].rstrip("/")]
+    if os.environ.get("O2M_API_URL")
+    else ["http://o2m:6681", "http://127.0.0.1:6681"]
+)
 
 
 class SpotifyBackend(pykka.ThreadingActor, backend.Backend):
@@ -66,13 +76,26 @@ class SpotifyPlaybackProvider(backend.PlaybackProvider):
         self._credentials_dir = self._data_location / "credentials-cache"
         if not self._credentials_dir.exists():
             self._credentials_dir.mkdir(mode=0o700)
+        self._o2m_base = None
 
     def _o2m_get(self, path):
+        """GET a small text payload from the o2m API.
+
+        Under Docker the o2m service is reachable by name; on a bare-metal install
+        (Raspberry Pi without Docker) both run on the same host. Probe the candidates
+        once, then stick to whichever answered. O2M_API_URL overrides both.
+        """
         import urllib.request as _ureq
-        try:
-            return _ureq.urlopen(f"http://o2m:6681{path}", timeout=4).read().decode().strip()
-        except Exception:
-            return None
+        bases = [self._o2m_base] if self._o2m_base else O2M_API_BASES
+        for base in bases:
+            try:
+                data = _ureq.urlopen(f"{base}{path}", timeout=4).read().decode().strip()
+                self._o2m_base = base
+                return data
+            except Exception:
+                continue
+        self._o2m_base = None  # re-probe on the next call
+        return None
 
     def _sync_credentials_cache(self, identity):
         """Wipe librespot's cached credentials when the streaming identity changes.
