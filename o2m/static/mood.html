@@ -3456,6 +3456,8 @@ async function maybeShowRadioTitle(track) {
       if (nameEl) nameEl.textContent = d.title;
       fitHeroTitle();
       _radioLast.title = d.title;
+      // Keep the radio-adapted DETAILS panel's song in sync with the header.
+      if (_isStreamUri(track.uri)) renderRadioDetails(d);
     }
     // Cover = the current song's artwork (livemeta visual), so the "logo" tracks
     // the song instead of a blank placeholder. Updated only when it changes.
@@ -3687,9 +3689,37 @@ function syncDetailsWidth() {
   if (w > 0) details.style.flex = '0 0 ' + w + 'px';
 }
 
+// Radio-adapted DETAILS: a stream isn't a library track, so show the station +
+// current song + Source=Radio, and DROP the lifecycle fields (status/plays/energy/
+// library scale) which don't apply. `d` = /api/radio_now_playing payload.
+function renderRadioDetails(d) {
+  const host = tdPanel.body();
+  if (!host) return;
+  const rows = [];
+  const station = (d && d.station) || '';
+  const song = d && d.title ? (d.artist ? d.artist + ' — ' + d.title : d.title) : '';
+  if (station) rows.push(['Station', station]);
+  if (song)    rows.push(['Song', song]);
+  if (d && d.album) rows.push(['Album', d.album]);
+  rows.push(['Source', 'Radio']);
+  host.innerHTML = '<dl class="td-list">' + rows.map(([l, v]) =>
+    `<div><dt>${objEsc(l)}</dt><dd>${objEsc(v)}</dd></div>`).join('') + '</dl>';
+  tdPanel.ev = null;
+}
+
 async function renderTrackDetails(uri) {
   const host = tdPanel.body();
   if (!uri) { if (host) host.innerHTML = ''; detailsUri = null; tdPanel.ev = null; return; }
+  // Radios: render the radio-context panel instead of the (meaningless) stream stats.
+  if (_isStreamUri(uri)) {
+    detailsUri = uri;
+    try {
+      const d = await fetch(API + '/radio_now_playing').then(r => r.json());
+      renderRadioDetails(d);
+    } catch (e) { renderRadioDetails(null); }
+    requestAnimationFrame(syncDetailsWidth);
+    return;
+  }
   try {
     const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
     detailsUri = uri;
