@@ -2910,33 +2910,41 @@ class O2mToMopidy:
         return None
 
     def _on_radio_track_finished(self, meta):
-        """A music-radio track just played through. Gate on discover_level then save."""
-        if self.discover_level < self.radio_save_min_dl:
-            print(f"radio: skip save (DL {self.discover_level} < {self.radio_save_min_dl}): "
-                  f"{meta.get('artist')} - {meta.get('title')}")
-            return
+        """A music-radio track just played through. Three discover_level tiers:
+          - lower third (DL < 10/3 ≈ 3.3): no tracking at all;
+          - middle third (10/3 ≤ DL < 20/3 ≈ 6.7): DB only (record the stat);
+          - upper third (DL ≥ 20/3): DB + add to the 'new' playlist."""
+        frac = (self.discover_level or 0) / 10.0
+        if frac < 1.0 / 3.0:
+            return  # tier 1 — no tracking
         title = (meta.get('title') or '').strip()
         if not title:
             return
-        self._save_radio_track((meta.get('artist') or '').strip(), title)
+        to_playlist = frac >= 2.0 / 3.0  # tier 3 → playlist too; tier 2 → DB only
+        self._save_radio_track((meta.get('artist') or '').strip(), title, to_playlist=to_playlist)
 
-    def _save_radio_track(self, artist, title):
-        """Resolve a radio track to Spotify, add it to the 'new' box playlist and
-        record it in the DB as a 'new' track played once through — exactly like a
-        track heard for the first time to completion."""
+    def _save_radio_track(self, artist, title, to_playlist=True):
+        """Resolve a radio track to Spotify and record it in the DB as a 'new' track
+        played once through (always). When `to_playlist` (upper DL tier), also add it
+        to the canonical 'new' playlist (ToListen). Returns the resolved uri or None."""
         query = (artist + ' ' + title).strip()
         try:
             res = self.spotifyHandler.search_music(query, limit=5)
         except Exception as e:
             print(f"radio save: search error for {query!r}: {e}")
-            return
+            return None
         tracks = (res or {}).get('tracks') or []
         if not tracks:
             print(f"radio save: no Spotify match for {query!r}")
-            return
+            return None
         top = tracks[0]
         uri = top['uri']
-        # 1) add to the canonical 'new' playlist (ToListen perso, deterministic)
+        # DB tracking (tiers 2 & 3): record as a 'new' track completed once.
+        self._record_new_once(uri, top)
+        if not to_playlist:
+            print(f"radio save: {query!r} → {uri} recorded in DB (tier 2, no playlist)")
+            return uri
+        # Playlist (tier 3): add to the canonical 'new' playlist (ToListen).
         playlist, added = '', None
         try:
             playlist = self._new_target_playlist()
@@ -2944,17 +2952,16 @@ class O2mToMopidy:
                 added = self.autofill_spotify_playlist(playlist, [uri])
         except Exception as e:
             print(f"radio save: playlist add error: {e}")
-        # 2) record it in the DB as a 'new' track completed once
-        self._record_new_once(uri, top)
         # Honest logging: autofill returns falsy when the write failed/was refused
         # (e.g. Spotify 403 on playlist-modify) — don't claim success then.
         if playlist and added:
-            print(f"radio save: {query!r} → {uri} added to {playlist}")
+            print(f"radio save: {query!r} → {uri} recorded in DB + added to {playlist}")
         elif playlist:
             print(f"radio save: {query!r} → {uri} recorded in DB but NOT added to "
                   f"{playlist} (Spotify write failed/refused — check playlist-modify scope)")
         else:
             print(f"radio save: {query!r} → {uri} recorded in DB (no 'new' playlist configured)")
+        return uri
 
     def _record_new_once(self, uri, tinfo):
         """Persist a stat identical to a first complete play: option_type 'new'

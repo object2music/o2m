@@ -1439,6 +1439,10 @@
   #artist-name.obj-link:hover { color: var(--text); text-decoration: underline; }
   .tl-artist.obj-link { cursor: pointer; }
   .tl-artist.obj-link:hover { color: var(--text); text-decoration: underline; }
+  /* Radio now-playing: the header artist/album are the live SONG's (not openable
+     O2M objects), so make them inert — no pointer/hover, no dead clicks. */
+  #now-playing.radio-np #artist-name,
+  #now-playing.radio-np #album-name { cursor: default; pointer-events: none; text-decoration: none; }
   .box-info-btn {
     margin-left: auto; flex-shrink: 0; background: none; border: none;
     color: var(--muted); cursor: pointer; padding: 2px; display: inline-flex;
@@ -2796,6 +2800,8 @@ async function refreshNowPlaying() {
       const albumEl = document.getElementById('album-name');
       if (albumEl) albumEl.textContent = (track.album && track.album.uri) ? (track.album.name || '') : '';
     }
+    // Radio → header artist/album inert (see .radio-np CSS).
+    document.getElementById('now-playing')?.classList.toggle('radio-np', _isStreamUri(track.uri));
     updateHeroAccent(track.uri);
 
     // Radios: live now-playing (song title on line 1, "STATION · artist" on line 2).
@@ -3696,15 +3702,46 @@ function renderRadioDetails(d) {
   const host = tdPanel.body();
   if (!host) return;
   const rows = [];
-  const station = (d && d.station) || '';
-  const song = d && d.title ? (d.artist ? d.artist + ' — ' + d.title : d.title) : '';
-  if (station) rows.push(['Station', station]);
-  if (song)    rows.push(['Song', song]);
-  if (d && d.album) rows.push(['Album', d.album]);
+  // Distinct rows (song / artist / album) — clearer than a combined line.
+  if (d && d.title)   rows.push(['Song', d.title]);
+  if (d && d.artist)  rows.push(['Artist', d.artist]);
+  if (d && d.album)   rows.push(['Album', d.album]);
+  if (d && d.station) rows.push(['Station', d.station]);
   rows.push(['Source', 'Radio']);
-  host.innerHTML = '<dl class="td-list">' + rows.map(([l, v]) =>
-    `<div><dt>${objEsc(l)}</dt><dd>${objEsc(v)}</dd></div>`).join('') + '</dl>';
+  // + manual Favorite + Playlists on the resolved current song, so the user can
+  // trigger the attach by hand (same controls as a normal track).
+  host.innerHTML = '<dl class="td-list">'
+    + rows.map(([l, v]) => `<div><dt>${objEsc(l)}</dt><dd>${objEsc(v)}</dd></div>`).join('')
+    + `<div><dt>Favorite</dt><dd class="td-fav" id="radio-fav">${ICON.heart(false)}</dd></div>`
+    + `<div><dt>Playlists</dt><dd id="radio-playlists"></dd></div>`
+    + '</dl>';
   tdPanel.ev = null;
+  if (!d || !d.title) return;
+  wireRadioActions();
+}
+
+// Resolve the current radio song → Spotify track, then wire the manual Favorite
+// heart + playlist picker onto it (both hit the same endpoints as normal tracks).
+async function wireRadioActions() {
+  const favEl = document.getElementById('radio-fav');
+  let uri = null;
+  try { uri = ((await fetch(API + '/radio_resolve').then(r => r.json())) || {}).uri; } catch (e) {}
+  if (!uri) { if (favEl) favEl.title = 'No Spotify match for this song'; return; }
+  if (favEl) {
+    let saved = false;
+    try { saved = !!(((await fetch(API + '/track_saved?uri=' + encodeURIComponent(uri)).then(r => r.json())) || {}).saved); } catch (e) {}
+    favEl.innerHTML = ICON.heart(saved);
+    favEl.classList.toggle('on', saved);
+    favEl.title = editUnlocked ? 'Click to toggle favorite' : 'Enable editing to favorite';
+    favEl.addEventListener('click', async () => {
+      if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+      const on = !favEl.classList.contains('on');
+      await setTrackFavorite(uri, on);
+      favEl.classList.toggle('on', on);
+      favEl.innerHTML = ICON.heart(on);
+    });
+  }
+  renderPlaylistEditor(uri, 'radio-playlists');   // no-op unless editing is unlocked
 }
 
 async function renderTrackDetails(uri) {

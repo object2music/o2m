@@ -1816,6 +1816,23 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'playing': False, 'error': str(e)})
 
+    # Resolve the current radio song to a Spotify track URI (for the manual
+    # favorite / add-to-playlist controls in the radio DETAILS panel).
+    @api.route('/api/radio_resolve')
+    def api_radio_resolve():
+        from flask import jsonify
+        try:
+            np = getattr(o2mHandler, '_radio_np', None) or o2mHandler.radio_now_playing()
+            if not np or not np.get('title'):
+                return jsonify({'uri': None})
+            q = ((np.get('artist') or '') + ' ' + (np.get('title') or '')).strip()
+            res = o2mHandler.spotifyHandler.search_music(q, limit=1)
+            tracks = (res or {}).get('tracks') or []
+            return jsonify({'uri': (tracks[0]['uri'] if tracks else None),
+                            'title': np.get('title'), 'artist': np.get('artist')})
+        except Exception as e:
+            return jsonify({'uri': None, 'error': str(e)})
+
     #SPOTIPY
     if o2mHandler.spotifyHandler.spotipy_config:
         @api.route('/api/spotipy_check')
