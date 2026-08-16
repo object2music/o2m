@@ -1423,6 +1423,18 @@ class DatabaseHandler():
                     .where(PlaylistTrack.playlist_id == playlist_id))
         return [r.track_uri for r in rows]
 
+    def drop_playlist(self, playlist_id):
+        """Forget a playlist entirely — its track links and its metadata row.
+        For playlists that disappeared from the account (deleted or unfollowed);
+        leaving them behind would let selection draw from a playlist that is gone."""
+        try:
+            links = PlaylistTrack.delete().where(PlaylistTrack.playlist_id == playlist_id).execute()
+            Playlist.delete().where(Playlist.id == playlist_id).execute()
+            return links
+        except Exception as e:
+            self.log.error(f"drop_playlist {playlist_id}: {e}")
+            return 0
+
     def get_all_cached_playlist_ids(self):
         """Return IDs of all playlists that have at least one cached track."""
         rows = (PlaylistTrack.select(PlaylistTrack.playlist_id)

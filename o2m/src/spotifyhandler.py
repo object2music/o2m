@@ -1272,9 +1272,16 @@ class SpotifyHandler:
             print(f"cache_all_playlists error: {e}")
             return 0
 
+        seen_ids = set()          # every playlist the account still holds
+        listing_complete = True   # False if the listing itself was truncated
+
         while response and response.get('items'):
             for playlist in response['items']:
-                if not playlist or playlist.get('name') == 'Trash':
+                if not playlist:
+                    continue
+                # Recorded before the Trash skip: skipped ≠ gone.
+                seen_ids.add(playlist['id'])
+                if playlist.get('name') == 'Trash':
                     continue
                 if self._is_rate_limited():
                     return cached
@@ -1369,9 +1376,19 @@ class SpotifyHandler:
                 try:
                     response = self.sp.next(response)
                 except Exception:
+                    listing_complete = False
                     break
             else:
                 break
+
+        # Playlists that vanished from the account (deleted or unfollowed) would keep
+        # their cached tracks forever, and selection would still draw from them. Only
+        # after a COMPLETE listing — a truncated one would look like mass deletion.
+        if listing_complete and seen_ids and self._db:
+            for playlist_id in set(self._db.get_all_cached_playlist_ids()) - seen_ids:
+                links = self._db.drop_playlist(playlist_id)
+                print(f"cache_all_playlists: playlist {playlist_id} gone from Spotify "
+                      f"— dropped it and its {links} link(s)")
 
         print(f"cache_all_playlists: {cached} tracks cached")
         if self._db:
