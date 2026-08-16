@@ -1963,8 +1963,9 @@ if __name__ == "__main__":
             sh = o2mHandler.spotifyHandler
             if _edit_current_user() is None:
                 return make_response(
-                    '<h2>Sign in first</h2><p>Open <a href="/api/spotipy_init">/api/spotipy_init</a> '
-                    'with an admin Spotify account, then come back.</p>', 401)
+                    '<h2>Sign in first</h2>'
+                    '<p>Pairing is admin-only. <a href="/api/spotipy_init">Sign in with Spotify</a>, '
+                    'then <a href="/api/spotify_stream_auth">come back here</a>.</p>', 401)
 
             msg, ok = "", None
             if request.method == 'POST':

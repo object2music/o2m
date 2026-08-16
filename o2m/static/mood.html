@@ -6312,7 +6312,8 @@ function initPairingNotice(s) {
       <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
     </svg>
     <span>Spotify playback is not authorised on this instance &mdash;
-      <a href="${API}/spotify_stream_auth" target="_blank" rel="noopener">authorise it</a>.</span>
+      <a href="${API}/spotify_stream_auth" id="pair-notice-link" rel="noopener">${
+        s.spotify_connected ? 'authorise it' : 'sign in and authorise it'}</a>.</span>
     <button type="button" id="pair-notice-close" title="Dismiss">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -6320,10 +6321,55 @@ function initPairingNotice(s) {
       </svg>
     </button>`;
   el.hidden = false;
+  document.getElementById('pair-notice-link').addEventListener('click', (e) => {
+    e.preventDefault();                       // a plain link opens a tab; we want the popup
+    openStreamPairing(() => { el.hidden = true; }, !s.spotify_connected && !editUnlocked);
+  });
   document.getElementById('pair-notice-close').addEventListener('click', () => {
     sessionStorage.setItem('o2m-pair-notice-hidden', '1');
     el.hidden = true;
   });
+}
+
+/* Pairing window, shared by the wizard step and the notice. Three things the caller must
+   not have to reimplement: it opens as a real popup (a link with target=_blank yields a
+   tab the browser keeps), it signs in first when needed — the pairing page is admin-only,
+   so without a session it would just answer "Sign in first" and dead-end — and the flow
+   moves on by itself, closing the window being enough. Gives up quietly if the window is
+   closed without pairing. */
+function openStreamPairing(onPaired, needsSignIn) {
+  const pairUrl = API + '/spotify_stream_auth';
+  const win = window.open(needsSignIn ? API + '/spotipy_init' : pairUrl, 'o2m_spotify_stream',
+                          'height=780,width=580,menubar=no,toolbar=no,location=no');
+  if (!win) { setFeedback('Popup blocked - allow popups'); return null; }
+  if (needsSignIn) setFeedback('Sign in to Spotify, then authorise playback...');
+  let waitingSignIn = !!needsSignIn;
+  const started = Date.now();
+  const poll = setInterval(async () => {
+    if (waitingSignIn) {
+      // Chain in the SAME window: as soon as the session is up, go to the pairing page.
+      let unlocked = false;
+      try { unlocked = !!(await fetch(API + '/edit_status').then(r => r.json())).unlocked; } catch (_) {}
+      if (unlocked) {
+        waitingSignIn = false;
+        try { win.location.href = pairUrl; } catch (_) {}
+        try { checkEditStatus(); } catch (_) {}
+      }
+    }
+    let paired = false;
+    try {
+      paired = !!(await fetch(API + '/onboarding').then(r => r.json())).streaming_paired;
+    } catch (_) {}
+    if (paired) {
+      clearInterval(poll);
+      try { win.close(); } catch (_) {}
+      setFeedback('Spotify playback authorised');
+      if (typeof onPaired === 'function') onPaired();
+    } else if (win.closed || Date.now() - started > 10 * 60 * 1000) {
+      clearInterval(poll);                    // closed without pairing, or gave up
+    }
+  }, 2000);
+  return win;
 }
 async function initOnboarding() {
   let s;
@@ -6388,8 +6434,9 @@ function renderWelcome(s) {
       <button class="wc-btn" id="wc-pair">Authorise playback</button>
       <button class="wc-skip" id="wc-nopair">No Spotify playback here</button>`;
     document.getElementById('wc-pair').addEventListener('click', () => {
-      window.open(API + '/spotify_stream_auth', 'o2m_spotify_stream', 'height=760,width=560');
-      _wcStartPoll();
+      openStreamPairing(async () => {
+        try { renderWelcome(await fetch(API + '/onboarding').then(r => r.json())); } catch (_) {}
+      });
     });
     document.getElementById('wc-nopair').addEventListener('click', async () => {
       sessionStorage.setItem('o2m-wc-skip-pairing', '1');
