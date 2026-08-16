@@ -1959,9 +1959,16 @@ if __name__ == "__main__":
         # copies the failed redirect URL back here.
         @api.route('/api/spotify_stream_auth', methods=['GET', 'POST'])
         def api_spotify_stream_auth():
-            from flask import make_response
+            from flask import make_response, jsonify
             sh = o2mHandler.spotifyHandler
+            # The UI drives this flow in its own modal (mood.html), so the same route
+            # answers JSON on demand; the HTML page stays for headless/admin use.
+            wants_json = (request.args.get('format') == 'json'
+                          or request.is_json
+                          or 'application/json' in (request.headers.get('Accept') or ''))
             if _edit_current_user() is None:
+                if wants_json:
+                    return jsonify({'error': 'edit_auth_required'}), 401
                 return make_response(
                     '<h2>Sign in first</h2>'
                     '<p>Pairing is admin-only. <a href="/api/spotipy_init">Sign in with Spotify</a>, '
@@ -1969,11 +1976,18 @@ if __name__ == "__main__":
 
             msg, ok = "", None
             if request.method == 'POST':
-                if request.form.get('action') == 'unpair':
+                payload = request.get_json(silent=True) or request.form
+                if payload.get('action') == 'unpair':
                     sh.stream_unpair()
                     ok, msg = True, "Streaming identity removed — playback falls back to the legacy token."
                 else:
-                    ok, msg = sh.stream_exchange(request.form.get('redirect_url', ''))
+                    ok, msg = sh.stream_exchange(payload.get('redirect_url', ''))
+
+            if wants_json:
+                return jsonify({'paired': bool(sh.stream_identity()),
+                                'identity': sh.stream_identity(),
+                                'authorize_url': sh.stream_authorize_url(),
+                                'ok': ok, 'message': msg})
 
             ident = sh.stream_identity()
             icon = ('<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" '

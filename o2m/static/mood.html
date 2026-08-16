@@ -268,9 +268,16 @@
   body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
   /* ── First-launch welcome overlay ── */
-  #welcome { position: fixed; inset: 0; z-index: 400; display: none;
+  /* Same modal for the welcome flow and the playback pairing — one look, one behaviour */
+  #welcome, #pairing { position: fixed; inset: 0; z-index: 400; display: none;
     background: var(--bg); color: var(--text); align-items: center; justify-content: center; padding: 24px; }
-  #welcome.show { display: flex; }
+  #welcome.show, #pairing.show { display: flex; }
+  .wc-input { width: 100%; margin: 0 0 14px; padding: 10px 12px; font-family: var(--font-mono);
+    font-size: 11.5px; color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 6px; }
+  .wc-steps { text-align: left; color: var(--muted); font-size: 13px; line-height: 1.6;
+    margin: 0 0 18px; padding-left: 20px; }
+  .wc-steps li { margin: 6px 0; }
   .wc-card { width: 100%; max-width: 460px; text-align: center; }
   .wc-logo { font-family: var(--font-head, var(--font)); font-weight: 900; font-size: 42px;
     color: var(--accent); letter-spacing: -.03em; line-height: 1; }
@@ -2040,6 +2047,9 @@
 <!-- Playback not authorised (filled by initPairingNotice; the wizard never runs on an
      already-populated instance, so this is what tells an existing install to pair) -->
 <div id="pair-notice" hidden></div>
+
+<!-- Playback pairing, same modal as the welcome flow (filled by openPairingModal) -->
+<div id="pairing"><div class="wc-card"><div class="wc-body"></div></div></div>
 
 <div id="matrix-tooltip">
   <div class="tt-name"></div>
@@ -6323,7 +6333,7 @@ function initPairingNotice(s) {
   el.hidden = false;
   document.getElementById('pair-notice-link').addEventListener('click', (e) => {
     e.preventDefault();                       // a plain link opens a tab; we want the popup
-    openStreamPairing(() => { el.hidden = true; }, !s.spotify_connected && !editUnlocked);
+    openPairingModal(() => { el.hidden = true; });
   });
   document.getElementById('pair-notice-close').addEventListener('click', () => {
     sessionStorage.setItem('o2m-pair-notice-hidden', '1');
@@ -6331,45 +6341,79 @@ function initPairingNotice(s) {
   });
 }
 
-/* Pairing window, shared by the wizard step and the notice. Three things the caller must
-   not have to reimplement: it opens as a real popup (a link with target=_blank yields a
-   tab the browser keeps), it signs in first when needed — the pairing page is admin-only,
-   so without a session it would just answer "Sign in first" and dead-end — and the flow
-   moves on by itself, closing the window being enough. Gives up quietly if the window is
-   closed without pairing. */
-function openStreamPairing(onPaired, needsSignIn) {
-  const pairUrl = API + '/spotify_stream_auth';
-  const win = window.open(needsSignIn ? API + '/spotipy_init' : pairUrl, 'o2m_spotify_stream',
-                          'height=780,width=580,menubar=no,toolbar=no,location=no');
-  if (!win) { setFeedback('Popup blocked - allow popups'); return null; }
-  if (needsSignIn) setFeedback('Sign in to Spotify, then authorise playback...');
-  let waitingSignIn = !!needsSignIn;
-  const started = Date.now();
-  const poll = setInterval(async () => {
-    if (waitingSignIn) {
-      // Chain in the SAME window: as soon as the session is up, go to the pairing page.
-      let unlocked = false;
-      try { unlocked = !!(await fetch(API + '/edit_status').then(r => r.json())).unlocked; } catch (_) {}
-      if (unlocked) {
-        waitingSignIn = false;
-        try { win.location.href = pairUrl; } catch (_) {}
-        try { checkEditStatus(); } catch (_) {}
+/* Playback pairing, in the app's own modal — same card as the welcome flow, so the two
+   entry points (wizard step, notice) behave alike and nothing of ours opens a stray
+   window. Only Spotify's own authorisation page is external, and it opens in a TAB, not
+   a popup: the operator has to read and copy the redirect URL from the address bar. */
+async function openPairingModal(onPaired) {
+  const modal = document.getElementById('pairing');
+  const body = modal?.querySelector('.wc-body');
+  if (!body) return;
+  const close = () => modal.classList.remove('show');
+
+  let state = null;
+  try {
+    const r = await fetch(API + '/spotify_stream_auth?format=json');
+    if (r.status === 401) {                   // admin-only: sign in first, then reopen
+      setFeedback('Sign in to Spotify first');
+      startEditAuth();
+      const wait = setInterval(async () => {
+        let unlocked = false;
+        try { unlocked = !!(await fetch(API + '/edit_status').then(x => x.json())).unlocked; } catch (_) {}
+        if (unlocked) { clearInterval(wait); try { checkEditStatus(); } catch (_) {} openPairingModal(onPaired); }
+      }, 2000);
+      setTimeout(() => clearInterval(wait), 5 * 60 * 1000);
+      return;
+    }
+    state = await r.json();
+  } catch (_) { setFeedback('Pairing unavailable'); return; }
+
+  const render = (msg, ok) => {
+    const note = msg ? `<div class="wc-warn"><b>${ok ? 'Done' : 'Not paired yet'}</b>${objEsc(msg)}</div>` : '';
+    body.innerHTML = `<div class="wc-logo">O2M</div>
+      <div class="wc-step">Playback</div>
+      <div class="wc-title">Authorise playback</div>
+      <div class="wc-sub">Spotify requires a separate authorisation to play audio. Once per instance.</div>
+      ${note}
+      <ol class="wc-steps">
+        <li><a href="${state.authorize_url}" id="pair-open" target="_blank" rel="noopener">Open the Spotify authorisation</a> and accept.</li>
+        <li>The page will fail to reach <code>127.0.0.1:8898</code> — that is expected.</li>
+        <li>Copy the full address-bar URL and paste it below.</li>
+      </ol>
+      <input class="wc-input" id="pair-url" placeholder="http://127.0.0.1:8898/login?code=..." autocomplete="off">
+      <button class="wc-btn" id="pair-submit">Authorise</button>
+      <button class="wc-skip" id="pair-cancel">Cancel</button>`;
+    document.getElementById('pair-cancel').addEventListener('click', close);
+    const submit = document.getElementById('pair-submit');
+    submit.addEventListener('click', async () => {
+      const url = document.getElementById('pair-url').value.trim();
+      if (!url) return;
+      submit.disabled = true; submit.textContent = 'Authorising...';
+      let res = {};
+      try {
+        res = await fetch(API + '/spotify_stream_auth', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ redirect_url: url }),
+        }).then(r => r.json());
+      } catch (_) { res = { ok: false, message: 'Request failed' }; }
+      if (res.paired) {
+        close();
+        setFeedback('Spotify playback authorised');
+        if (typeof onPaired === 'function') onPaired();
+      } else {
+        state.authorize_url = res.authorize_url || state.authorize_url;  // fresh link for the retry
+        render(res.message || 'Pairing failed', false);
       }
-    }
-    let paired = false;
-    try {
-      paired = !!(await fetch(API + '/onboarding').then(r => r.json())).streaming_paired;
-    } catch (_) {}
-    if (paired) {
-      clearInterval(poll);
-      try { win.close(); } catch (_) {}
-      setFeedback('Spotify playback authorised');
-      if (typeof onPaired === 'function') onPaired();
-    } else if (win.closed || Date.now() - started > 10 * 60 * 1000) {
-      clearInterval(poll);                    // closed without pairing, or gave up
-    }
-  }, 2000);
-  return win;
+    });
+  };
+
+  if (state.paired) {                         // already done — say so instead of asking again
+    setFeedback('Playback already authorised');
+    if (typeof onPaired === 'function') onPaired();
+    return;
+  }
+  render('', null);
+  modal.classList.add('show');
 }
 async function initOnboarding() {
   let s;
@@ -6434,7 +6478,9 @@ function renderWelcome(s) {
       <button class="wc-btn" id="wc-pair">Authorise playback</button>
       <button class="wc-skip" id="wc-nopair">No Spotify playback here</button>`;
     document.getElementById('wc-pair').addEventListener('click', () => {
-      openStreamPairing(async () => {
+      // The pairing modal sits on top of the wizard (same card); on success the wizard
+      // re-renders underneath and moves straight on to the next step.
+      openPairingModal(async () => {
         try { renderWelcome(await fetch(API + '/onboarding').then(r => r.json())); } catch (_) {}
       });
     });
