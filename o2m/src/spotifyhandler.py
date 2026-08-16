@@ -285,9 +285,10 @@ class SpotifyHandler:
         # Primary: playlist_items (full pagination)
         try:
             response = self.sp.playlist_items(playlist_id, additional_types=('track',))
-            tracks = _save_items(response.get('items') or [])
-            if tracks:
-                return tracks
+            items = response.get('items') or []
+            tracks = _save_items(items)
+            if tracks or not items:
+                return tracks  # resolved, or genuinely empty — no need to look further
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -301,8 +302,8 @@ class SpotifyHandler:
             pl_data = self.sp.playlist(playlist_id)
             page = (pl_data.get('tracks') or pl_data.get('items') or {}) if pl_data else {}
             tracks = _save_items(page.get('items') or [])
-            if tracks:
-                return tracks
+            if tracks or page.get('total') == 0:
+                return tracks  # resolved, or genuinely empty
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -1350,7 +1351,10 @@ class SpotifyHandler:
                 # in the playlist. Only on a COMPLETE fetch (a partial page must not
                 # delete the tracks it simply didn't reach) — and never on an empty
                 # result for a playlist we do hold tracks for: no data ≠ emptied.
-                if pl_complete and self._db:
+                # Mopidy is excluded on purpose: its playlist view refreshes on its own
+                # schedule, so a track we added moments ago may not be in it yet, and
+                # reconciling against it would drop that link.
+                if pl_complete and self._db and source == 'spotipy':
                     known = self._db.get_playlist_track_uris(playlist['id']) if not current_uris else None
                     if known:
                         print(f"cache_all_playlists: '{playlist.get('name')}' → no track readable "
