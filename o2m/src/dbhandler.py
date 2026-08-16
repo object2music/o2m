@@ -1435,11 +1435,34 @@ class DatabaseHandler():
             self.log.error(f"drop_playlist {playlist_id}: {e}")
             return 0
 
-    def get_all_cached_playlist_ids(self):
-        """Return IDs of all playlists that have at least one cached track."""
+    def get_all_cached_playlist_ids(self, in_library_only=False):
+        """Return IDs of all playlists that have at least one cached track.
+        With *in_library_only*, skip the ones that left the account's library —
+        their cache is kept, but nothing should be played from them any more."""
         rows = (PlaylistTrack.select(PlaylistTrack.playlist_id)
                 .group_by(PlaylistTrack.playlist_id))
-        return [r.playlist_id for r in rows]
+        ids = [r.playlist_id for r in rows]
+        if not in_library_only:
+            return ids
+        gone = {p.id for p in Playlist.select(Playlist.id)
+                .where(Playlist.id.in_(ids) & (Playlist.in_library == False))}  # noqa: E712
+        return [i for i in ids if i not in gone]
+
+    def set_playlists_in_library(self, library_ids):
+        """Flag which cached playlists are still in the account's library.
+        *library_ids* must come from a COMPLETE listing — a truncated one would
+        mark half the library as gone."""
+        if not library_ids:
+            return 0
+        try:
+            Playlist.update(in_library=True).where(Playlist.id.in_(list(library_ids))).execute()
+            return (Playlist.update(in_library=False)
+                    .where(Playlist.id.not_in(list(library_ids)))
+                    .where((Playlist.in_library.is_null()) | (Playlist.in_library == True))  # noqa: E712
+                    .execute())
+        except Exception as e:
+            self.log.error(f"set_playlists_in_library: {e}")
+            return 0
 
     def get_playlists_for_select(self, owner_id=None):
         """Cached playlists for the edition picker. owned=True if owner_id matches."""

@@ -285,6 +285,11 @@ class Playlist(BaseModel):
     image_url = TextField(null=True)
     storage = CharField(default='sp')   # 'sp' or 'local'
     cached_at = TimestampField(null=True, utc=True)
+    # False once the playlist has left the account's library. Spotify keeps a removed
+    # playlist alive (and fetchable by id) for ~90 days, so its absence from the listing
+    # is not a deletion: we stop drawing from it instead of erasing what we know of it.
+    # NULL = never assessed, treated as in-library.
+    in_library = BooleanField(null=True, default=True)
 
 
 class PlaylistTrack(BaseModel):
@@ -485,7 +490,11 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
-SCHEMA_VERSION = 13
+def _migration_v14(migrator):
+    _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
+
+
+SCHEMA_VERSION = 14
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -501,6 +510,7 @@ _MIGRATIONS = [
     (11, "track_popularity_column", _migration_v11),
     (12, "track_mood_edited_at_column", _migration_v12),
     (13, "box_image_url_column", _migration_v13),
+    (14, "playlist_in_library_column", _migration_v14),
 ]
 
 

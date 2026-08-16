@@ -1203,7 +1203,7 @@ class SpotifyHandler:
     def get_playlists_tracks(self,limit=1,discover_level=5):
         if self._is_rate_limited():
             if self._db:
-                cached_ids = self._db.get_all_cached_playlist_ids()
+                cached_ids = self._db.get_all_cached_playlist_ids(in_library_only=True)
                 if cached_ids:
                     print(f"get_playlists_tracks: rate-limited, using {len(cached_ids)} cached playlists")
                     t_list, lib_link = [], []
@@ -1406,6 +1406,13 @@ class SpotifyHandler:
         # per-playlist confirmation — being absent from the listing is NOT proof of
         # deletion, an owned playlist removed from the library still exists.
         if listing_complete and seen_ids and self._db:
+            # First, record what left the library. Spotify keeps a removed playlist
+            # alive for ~90 days, so this is the signal that actually matters day to
+            # day: stop drawing from it, without erasing anything.
+            left = self._db.set_playlists_in_library(seen_ids)
+            if left:
+                print(f"cache_all_playlists: {left} playlist(s) left the library "
+                      f"— kept in cache, no longer used for selection")
             for playlist_id in set(self._db.get_all_cached_playlist_ids()) - seen_ids:
                 if not self._playlist_is_gone(playlist_id):
                     print(f"cache_all_playlists: playlist {playlist_id} no longer listed "
