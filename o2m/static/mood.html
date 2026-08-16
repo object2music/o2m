@@ -268,10 +268,24 @@
   body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
   /* ── First-launch welcome overlay ── */
-  /* Same modal for the welcome flow and the playback pairing — one look, one behaviour */
-  #welcome, #pairing { position: fixed; inset: 0; z-index: 400; display: none;
-    background: var(--bg); color: var(--text); align-items: center; justify-content: center; padding: 24px; }
-  #welcome.show, #pairing.show { display: flex; }
+  /* Welcome flow and playback pairing — same bottom-sheet as #track-details / #obj-panel:
+     same top line (--sheet-top), same slide, same backdrop. Visibility (not just the
+     translate) is what hides a closed sheet, as documented on the details sheet. */
+  #welcome, #pairing {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    top: min(var(--sheet-top, 32vh), 45vh);
+    z-index: 400; overflow-y: auto;
+    background: var(--surface); color: var(--text);
+    border-top: 1px solid var(--border-strong);
+    box-shadow: 0 -12px 40px rgba(0,0,0,.45);
+    transform: translateY(101%); visibility: hidden;
+    transition: transform .26s var(--ease, ease), visibility .26s var(--ease, ease);
+    display: flex; align-items: flex-start; justify-content: center; padding: 22px 16px 28px;
+  }
+  #welcome.show, #pairing.show { transform: translateY(0); visibility: visible; }
+  #wc-backdrop { position: fixed; inset: 0; z-index: 395; background: rgba(0,0,0,.5);
+    opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s; }
+  #wc-backdrop.show { opacity: 1; visibility: visible; }
   .wc-input { width: 100%; margin: 0 0 14px; padding: 10px 12px; font-family: var(--font-mono);
     font-size: 11.5px; color: var(--text); background: color-mix(in srgb, var(--text) 6%, transparent);
     border: 1px solid color-mix(in srgb, var(--text) 18%, transparent); border-radius: 6px; }
@@ -2042,6 +2056,7 @@
 <div id="obj-backdrop"></div>
 
 <!-- First-launch welcome flow (filled by renderWelcome; shown only on a fresh instance) -->
+<div id="wc-backdrop"></div>
 <div id="welcome"><div class="wc-card"><div class="wc-body"></div></div></div>
 
 <!-- Playback not authorised (filled by initPairingNotice; the wizard never runs on an
@@ -6305,6 +6320,14 @@ function setupCollapsibles() {
    flow is a stepped welcome overlay; steps ③-⑤ (box wiring / first box / tour) plug
    into renderWelcome later. */
 let _wcPoll = null;
+/* Both sheets share the backdrop, so opening/closing goes through here rather than
+   toggling the class in five places. Same behaviour as the details/object sheets. */
+function setSheet(id, open) {
+  document.getElementById(id)?.classList.toggle('show', open);
+  const anyOpen = ['welcome', 'pairing']
+    .some(x => document.getElementById(x)?.classList.contains('show'));
+  document.getElementById('wc-backdrop')?.classList.toggle('show', anyOpen);
+}
 /* An already-populated instance never sees the wizard, so nothing would tell it that
    playback is unauthorised — every Spotify track would just fail. Show a dismissible
    notice instead, and only where Spotify is actually in use: a radio/podcast/local
@@ -6349,7 +6372,7 @@ async function openPairingModal(onPaired) {
   const modal = document.getElementById('pairing');
   const body = modal?.querySelector('.wc-body');
   if (!body) return;
-  const close = () => modal.classList.remove('show');
+  const close = () => setSheet('pairing', false);
 
   let state = null;
   try {
@@ -6413,7 +6436,7 @@ async function openPairingModal(onPaired) {
     return;
   }
   render('', null);
-  modal.classList.add('show');
+  setSheet('pairing', true);
 }
 async function initOnboarding() {
   let s;
@@ -6421,7 +6444,7 @@ async function initOnboarding() {
   if (!s || !s.first_launch) { initPairingNotice(s); return; }  // populated → notice only
   if (sessionStorage.getItem('o2m-wc-skip')) { initPairingNotice(s); return; }  // explore first
   renderWelcome(s);
-  document.getElementById('welcome')?.classList.add('show');
+  setSheet('welcome', true);
 }
 function _wcStopPoll() { if (_wcPoll) { clearInterval(_wcPoll); _wcPoll = null; } }
 function _wcStartPoll() {
@@ -6430,7 +6453,7 @@ function _wcStartPoll() {
     try { renderWelcome(await fetch(API + '/onboarding').then(r => r.json())); } catch (e) {}
   }, 4000);
 }
-function _wcSkip() { _wcStopPoll(); sessionStorage.setItem('o2m-wc-skip', '1'); document.getElementById('welcome')?.classList.remove('show'); }
+function _wcSkip() { _wcStopPoll(); sessionStorage.setItem('o2m-wc-skip', '1'); setSheet('welcome', false); }
 function renderWelcome(s) {
   const body = document.querySelector('#welcome .wc-body');
   if (!body || !s) return;
@@ -6497,7 +6520,7 @@ function renderWelcome(s) {
       <div class="wc-sub">Your starter boxes are in place. Now create your own box (music, podcast or radio) — or finish and explore the interface.</div>
       <button class="wc-btn" id="wc-firstbox">Create a box</button>
       <button class="wc-skip" id="wc-finish">Finish</button>`;
-    const close = () => { _wcStopPoll(); document.getElementById('welcome')?.classList.remove('show'); };
+    const close = () => { _wcStopPoll(); setSheet('welcome', false); };
     document.getElementById('wc-firstbox').addEventListener('click', () => { close(); if (typeof openBoxWizard === 'function') openBoxWizard(); });
     document.getElementById('wc-finish').addEventListener('click', close);
   } else if (!synced) {
@@ -6643,6 +6666,11 @@ async function init() {
   document.getElementById('obj-next')?.addEventListener('click', objFwdNav);
   document.getElementById('obj-actions')?.addEventListener('click', (e) => { e.stopPropagation(); openObjActions(e.currentTarget); });
   document.getElementById('obj-backdrop')?.addEventListener('click', closeObjPanel);
+  // Same affordance as the other sheets: tapping the backdrop closes the topmost one.
+  document.getElementById('wc-backdrop')?.addEventListener('click', () => {
+    if (document.getElementById('pairing')?.classList.contains('show')) setSheet('pairing', false);
+    else if (document.getElementById('welcome')?.classList.contains('show')) _wcSkip();
+  });
   document.getElementById('artist-name')?.addEventListener('click', () => {
     const a = (currentTrackObj?.artists || [])[0];
     if (a?.uri) openArtist(a.uri, a.name);
