@@ -319,6 +319,25 @@ class SpotifyHandler:
             print(f"playlist '{playlist['name']}' unavailable via Web API — served by mopidy")
         return _save_items(items)
 
+    def _playlist_is_gone(self, playlist_id):
+        """True only when Spotify positively says the playlist no longer exists.
+
+        Absence from `current_user_playlists` proves nothing: a playlist you own but
+        removed from your library keeps existing and simply stops being listed. So we
+        ask for it directly, and treat anything other than a definitive 404/400 —
+        a 403, a rate limit, a network hiccup — as 'unknown', which keeps the cache."""
+        try:
+            self.sp.playlist(playlist_id)
+            return False
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+                return False
+            return e.http_status in (400, 404)
+        except Exception as e:
+            print(f"_playlist_is_gone({playlist_id}) inconclusive: {e}")
+            return False
+
     def _cache_artist(self, artist_data):
         if self._db and artist_data and artist_data.get('id'):
             self._db.save_artist(artist_data)
@@ -1381,11 +1400,17 @@ class SpotifyHandler:
             else:
                 break
 
-        # Playlists that vanished from the account (deleted or unfollowed) would keep
-        # their cached tracks forever, and selection would still draw from them. Only
-        # after a COMPLETE listing — a truncated one would look like mass deletion.
+        # Playlists that really disappeared would keep their cached tracks forever, and
+        # selection would still draw from them. Two conditions before dropping anything:
+        # a COMPLETE listing (a truncated one would look like mass deletion), and a
+        # per-playlist confirmation — being absent from the listing is NOT proof of
+        # deletion, an owned playlist removed from the library still exists.
         if listing_complete and seen_ids and self._db:
             for playlist_id in set(self._db.get_all_cached_playlist_ids()) - seen_ids:
+                if not self._playlist_is_gone(playlist_id):
+                    print(f"cache_all_playlists: playlist {playlist_id} no longer listed "
+                          f"but still exists — keeping its cache")
+                    continue
                 links = self._db.drop_playlist(playlist_id)
                 print(f"cache_all_playlists: playlist {playlist_id} gone from Spotify "
                       f"— dropped it and its {links} link(s)")
