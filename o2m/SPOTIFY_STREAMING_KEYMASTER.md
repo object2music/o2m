@@ -21,6 +21,42 @@ Deux faits mesurés qui expliquent la procédure ci-dessous :
 
 ---
 
+## Nouvelle instance : l'ordre des opérations
+
+Les étapes 1 à 4 relèvent de l'exploitant (hors application), les suivantes sont dans l'UI.
+
+1. **`.env`** depuis `env.example` : ports décalés de 10 par instance, `O2M_PUBLIC_URL=https://o2mN.o2m.site`
+   (qui alimente `SPOTIPY_REDIRECT_URI`), base de données, `SPOTIFY_USERNAME` (allowlist d'édition
+   par défaut), `LASTFM_API_KEY` si l'enrichissement est voulu.
+2. **Redirect URI** de l'instance enregistrée dans le dashboard Spotify de l'app. Sans ça, la
+   connexion tourne en rond — le wizard le détecte et l'affiche, mais ne peut pas le corriger.
+3. **Vhost Caddy** et fichier compose de l'instance.
+4. **Démarrage** : les migrations de schéma s'appliquent seules.
+5. **Connexion Spotify** (wizard étape 1, ou `/api/spotipy_init`) → `.cache_spotipy`, amorçage du
+   baseline `.cache_spotify_instance`, et cookie d'édition si le compte est dans l'allowlist.
+6. **Appairage de la lecture** (wizard étape 2, ou `/api/spotify_stream_auth`) → voir la procédure
+   d'appairage plus bas. **Sans cette étape, aucune piste Spotify ne se lit.**
+7. Sync de la bibliothèque, boxes de démarrage, première box (wizard étapes 3 à 5).
+
+### Quel compte Spotify ?
+
+**Compte standard partagé entre instances.** Chaque instance doit être appairée **séparément** :
+ne jamais copier `.cache_spotify_stream` d'une machine à l'autre, Spotify fait tourner le
+`refresh_token` à chaque rafraîchissement et la copie serait invalidée au premier tour. Limite à
+connaître : un compte Premium n'autorise **qu'un seul flux à la fois** — deux instances qui lisent
+simultanément se disputent la session et se coupent mutuellement.
+
+**Compte Premium dédié à l'instance.** C'est le bon choix dès que deux instances doivent lire en
+même temps. La connexion Web API (étape 5) et l'appairage (étape 6) se font alors avec ce compte,
+qui hébergera aussi les playlists « O2M Incoming / Trash » créées par le wizard. Pense à ajouter
+ton identifiant Spotify personnel à `O2M_EDIT_SPOTIFY_IDS` pour garder la main sur l'édition, sinon
+seul le compte dédié peut administrer l'instance.
+
+Dans les deux cas, l'identité de lecture reste strictement séparée de l'identité Web API : elles
+n'ont ni le même `client_id`, ni le même cycle de vie, et une seule des deux peut lire l'audio.
+
+---
+
 ## Installation sans Docker (Raspberry Pi)
 
 Sous Docker, `mopidy/mopidy_spotify_backend.py` est bind-monté par-dessus le `backend.py` du

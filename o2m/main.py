@@ -331,10 +331,18 @@ if __name__ == "__main__":
         expected_redirect = f'{proto}://{host}/api/spotipy_init'
         # host-only comparison; a local 127.0.0.1 access is treated as unknown (not a mismatch)
         redirect_ok = bool(cfg_host) and (host.lower() in ('127.0.0.1', 'localhost') or cfg_host == host.lower())
+        # Playback needs its OWN Spotify authorisation since 2026-08-10 (login5 refuses
+        # tokens minted by a third-party client_id). Report it: an instance can otherwise
+        # look perfectly connected and still be unable to play a single track.
+        try:
+            streaming_paired = bool(o2mHandler.spotifyHandler.stream_identity())
+        except Exception:
+            streaming_paired = False
         return jsonify({
             'first_launch': (liked == 0 and albums == 0 and playlists == 0),
             'onboarding_done': o2mHandler.dbHandler.box_exists('o2m_onboarding'),
             'spotify_connected': _edit_current_user() is not None,
+            'streaming_paired': streaming_paired,
             'counts': {'liked': liked, 'albums': albums, 'playlists': playlists},
             'redirect_ok': redirect_ok,
             'redirect_configured': cfg_redirect,
@@ -1793,8 +1801,11 @@ if __name__ == "__main__":
         threading.Thread(target=do_restart, daemon=True).start()
         return ("restarting")
 
-    @api.route('/api/clear_today_history')
+    @api.route('/api/clear_today_history', methods=['POST'])
+    @require_edit_auth
     def api_clear_today_history():
+        # POST + edit-auth: this DELETEs today's stats_raw rows. As a GET it could be
+        # fired by a browser prefetcher / link preview / accidental navigation.
         o2mHandler.dbHandler.clear_today_stats_raw()
         return ("cleared")
 
@@ -1812,7 +1823,8 @@ if __name__ == "__main__":
             return jsonify({'playing': True, 'title': np.get('title', ''),
                             'artist': np.get('artist', ''), 'album': np.get('album', ''),
                             'station': np.get('station', ''), 'kind': np.get('kind', ''),
-                            'source': np.get('source', ''), 'visual': np.get('visual', '')})
+                            'source': np.get('source', ''), 'visual': np.get('visual', ''),
+                            'station_logo': np.get('station_logo', '')})
         except Exception as e:
             return jsonify({'playing': False, 'error': str(e)})
 
@@ -2040,7 +2052,15 @@ with the house Premium account.</li>
             # Resolve local file URI back to its Spotify URI for all stat/reco logic
             effective_uri = o2mHandler.get_spotify_uri(track.uri)
             discover_level = o2mHandler.calculate_discover_level(effective_uri)
-            
+            # TEMP TRACE (stats diag) — remove after
+            try:
+                _len = getattr(track, 'length', None); _pos = getattr(event, 'time_position', None)
+                _ratio = (_pos / _len) if (_pos is not None and _len) else 'NA'
+                with open('/tmp/stat_trace.log', 'a') as _f:
+                    _f.write(f"EVT ev={event.event} uri={track.uri} eff={effective_uri} dl={discover_level} pos={_pos} len={_len} ratio={_ratio}\n")
+            except Exception as _e:
+                pass
+
             #No action if discover_level set to 0
             if discover_level > 0:
             
@@ -2092,7 +2112,13 @@ with the house Premium account.</li>
                                 o2mHandler.add_reco_after_track_read(effective_uri,library_link,data)
                         if option_type != 'hidden' and option_type != 'trash' :
                             print ("Adding raw stats")
-                            o2mHandler.update_stat_raw(effective_uri)
+                            try:
+                                o2mHandler.update_stat_raw(effective_uri)
+                                with open('/tmp/stat_trace.log', 'a') as _f:
+                                    _f.write(f"WROTE stats_raw for {effective_uri} (option_type={option_type})\n")
+                            except Exception as _e:
+                                with open('/tmp/stat_trace.log', 'a') as _f:
+                                    _f.write(f"WRITE FAILED {effective_uri}: {_e!r}\n")
 
                 # Podcast
                 '''if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):

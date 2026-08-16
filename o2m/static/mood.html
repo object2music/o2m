@@ -293,6 +293,18 @@
   .wc-warn code { font-family: var(--font-mono); font-size: 11px; word-break: break-all;
     background: color-mix(in srgb, var(--text) 8%, transparent); padding: 1px 4px; border-radius: 3px; }
   .wc-warn-fix { margin-top: 8px; color: var(--muted); }
+  /* Playback-not-authorised notice — sits above everything, dismissible for the session */
+  #pair-notice { position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 60;
+    display: flex; align-items: center; gap: 10px; max-width: min(92vw, 560px);
+    padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px;
+    background: var(--panel, var(--bg)); box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    font-size: 12.5px; line-height: 1.4; color: var(--text); }
+  #pair-notice[hidden] { display: none; }
+  #pair-notice svg { flex: 0 0 auto; width: 18px; height: 18px; color: var(--accent); }
+  #pair-notice a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+  #pair-notice button { flex: 0 0 auto; background: none; border: 0; cursor: pointer;
+    color: var(--muted); padding: 2px; line-height: 0; }
   #track-details .td-head {
     display: flex; align-items: center; justify-content: space-between;
     font-family: var(--font-head); font-weight: 700; font-size: 13px;
@@ -2025,6 +2037,10 @@
 <!-- First-launch welcome flow (filled by renderWelcome; shown only on a fresh instance) -->
 <div id="welcome"><div class="wc-card"><div class="wc-body"></div></div></div>
 
+<!-- Playback not authorised (filled by initPairingNotice; the wizard never runs on an
+     already-populated instance, so this is what tells an existing install to pair) -->
+<div id="pair-notice" hidden></div>
+
 <div id="matrix-tooltip">
   <div class="tt-name"></div>
   <div class="tt-artist"></div>
@@ -3470,11 +3486,13 @@ async function maybeShowRadioTitle(track) {
       _radioLast.title = displayTitle;
       renderRadioDetails(d);   // keep the radio-adapted DETAILS in sync
     }
-    // Logo: the item's artwork when available (songs; some shows), else a clean
-    // placeholder fallback — never a stale cover, never a broken UUID image.
-    if ((d.visual || '') !== _radioLast.visual) {
-      try { setCoverSmooth(d.visual || placeholderForUri(track.uri)); } catch (e) {}
-      _radioLast.visual = d.visual || '';
+    // Cover: the item's own artwork when available (songs; some shows), else the
+    // station brand logo (repli 1), else a clean placeholder — never a stale cover,
+    // never a broken UUID image.
+    const coverUrl = d.visual || d.station_logo || placeholderForUri(track.uri);
+    if (coverUrl !== _radioLast.visual) {
+      try { setCoverSmooth(coverUrl); } catch (e) {}
+      _radioLast.visual = coverUrl;
     }
     if (artistLine !== _radioLast.artist) {
       const artistEl = document.getElementById('artist-name');
@@ -3834,8 +3852,9 @@ function startEditAuth() {
     });
     return;
   }
-  // Unified Spotify OAuth: opens /api/spotipy_init (same login that feeds Spotipy AND mints
-  // the librespot streaming blob). On success the server sets the edit cookie (fan-out),
+  // Spotify OAuth for the Web API side: opens /api/spotipy_init (the login that feeds Spotipy).
+  // Playback has its OWN authorisation since 2026-08-10 — /api/spotify_stream_auth, see
+  // SPOTIFY_STREAMING_KEYMASTER.md. On success the server sets the edit cookie (fan-out),
   // so we just poll /api/edit_status until it flips to unlocked.
   const popup = window.open(API + '/spotipy_init', 'o2m_spotify_auth', 'height=700,width=480');
   if (!popup) { setFeedback('Popup blocked - allow popups'); return; }
@@ -5972,9 +5991,13 @@ async function clearAllBoxes() {
 
 /* Clear today's listening history (stats_raw since 00:00). */
 async function clearTodayHistory() {
+  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
   if (!confirm("Clear today's listening history (stats_raw since 00:00)?")) return;
-  try { await fetch(API + '/clear_today_history'); setFeedback("Today's history cleared"); }
-  catch(e) { setFeedback('Error clearing history'); }
+  try {
+    const r = await fetch(API + '/clear_today_history', { method: 'POST' });
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
+    setFeedback("Today's history cleared");
+  } catch(e) { setFeedback('Error clearing history'); }
 }
 
 /* ── Snapcast — wrapper autour de SnapStream (bundle Iris/snapstream.ts) ── */
@@ -6272,11 +6295,41 @@ function setupCollapsibles() {
    flow is a stepped welcome overlay; steps ③-⑤ (box wiring / first box / tour) plug
    into renderWelcome later. */
 let _wcPoll = null;
+/* An already-populated instance never sees the wizard, so nothing would tell it that
+   playback is unauthorised — every Spotify track would just fail. Show a dismissible
+   notice instead, and only where Spotify is actually in use: a radio/podcast/local
+   install has no reason to be nagged. */
+function initPairingNotice(s) {
+  const el = document.getElementById('pair-notice');
+  if (!el || !s || s.streaming_paired) return;
+  if (sessionStorage.getItem('o2m-pair-notice-hidden')) return;
+  const c = s.counts || {};
+  if ((c.liked || 0) + (c.albums || 0) + (c.playlists || 0) === 0) return;  // no Spotify here
+  el.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 9v4"/><path d="M12 17h.01"/>
+      <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
+    </svg>
+    <span>Spotify playback is not authorised on this instance &mdash;
+      <a href="${API}/spotify_stream_auth" target="_blank" rel="noopener">authorise it</a>.</span>
+    <button type="button" id="pair-notice-close" title="Dismiss">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+      </svg>
+    </button>`;
+  el.hidden = false;
+  document.getElementById('pair-notice-close').addEventListener('click', () => {
+    sessionStorage.setItem('o2m-pair-notice-hidden', '1');
+    el.hidden = true;
+  });
+}
 async function initOnboarding() {
   let s;
   try { s = await fetch(API + '/onboarding').then(r => r.json()); } catch (e) { return; }
-  if (!s || !s.first_launch) return;                  // populated instance → no onboarding
-  if (sessionStorage.getItem('o2m-wc-skip')) return;  // user chose to explore first
+  if (!s || !s.first_launch) { initPairingNotice(s); return; }  // populated → notice only
+  if (sessionStorage.getItem('o2m-wc-skip')) { initPairingNotice(s); return; }  // explore first
   renderWelcome(s);
   document.getElementById('welcome')?.classList.add('show');
 }
@@ -6308,7 +6361,7 @@ function renderWelcome(s) {
         <div class="wc-warn-fix">Fix (host operator): set <code>O2M_PUBLIC_URL=${objEsc(location.origin)}</code> in this instance's <code>.env</code> and recreate the <code>o2m</code> container, then register <code>${objEsc(s.redirect_expected)}</code> in the Spotify app dashboard.</div>
       </div>` : '';
     body.innerHTML = `<div class="wc-logo">O2M</div>
-      <div class="wc-step">Step 1 / 5 · Connect</div>
+      <div class="wc-step">Step 1 / 6 · Connect</div>
       <div class="wc-title">Welcome</div>
       <div class="wc-sub">Connect your Spotify account to play your music and podcasts and sync your library. Everything else builds on this.</div>
       ${mismatch}
@@ -6324,11 +6377,29 @@ function renderWelcome(s) {
       if (!editUnlocked) { e.target.disabled = false; e.target.textContent = "I've connected — continue"; }
     });
     document.getElementById('wc-skip').addEventListener('click', _wcSkip);
+  } else if (!s.streaming_paired && !sessionStorage.getItem('o2m-wc-skip-pairing')) {
+    // ── Step 2 · Playback — Spotify wants a separate authorisation for streaming,
+    // once per instance. Skippable: a radio/podcast/local install never needs it.
+    _wcStartPoll();
+    body.innerHTML = `<div class="wc-logo">O2M</div>
+      <div class="wc-step">Step 2 / 6 · Playback</div>
+      <div class="wc-title">Enable playback</div>
+      <div class="wc-sub">Spotify requires a separate authorisation to play audio — the sign-in you just did only covers your library. This takes one round-trip and is done once per instance.</div>
+      <button class="wc-btn" id="wc-pair">Authorise playback</button>
+      <button class="wc-skip" id="wc-nopair">No Spotify playback here</button>`;
+    document.getElementById('wc-pair').addEventListener('click', () => {
+      window.open(API + '/spotify_stream_auth', 'o2m_spotify_stream', 'height=760,width=560');
+      _wcStartPoll();
+    });
+    document.getElementById('wc-nopair').addEventListener('click', async () => {
+      sessionStorage.setItem('o2m-wc-skip-pairing', '1');
+      try { renderWelcome(await fetch(API + '/onboarding').then(r => r.json())); } catch (_) {}
+    });
   } else if (s.onboarding_done) {
     // ── Step 4 · First box (done wins over sync/setup, whatever the counts read) ──
     _wcStopPoll();
     body.innerHTML = `<div class="wc-logo">O2M</div>
-      <div class="wc-step">Step 4 / 5 · Your first box</div>
+      <div class="wc-step">Step 5 / 6 · Your first box</div>
       <div class="wc-title">All set</div>
       <div class="wc-sub">Your starter boxes are in place. Now create your own box (music, podcast or radio) — or finish and explore the interface.</div>
       <button class="wc-btn" id="wc-firstbox">Create a box</button>
@@ -6339,7 +6410,7 @@ function renderWelcome(s) {
   } else if (!synced) {
     _wcStartPoll();
     body.innerHTML = `<div class="wc-logo">O2M</div>
-      <div class="wc-step">Step 2 / 5 · Sync</div>
+      <div class="wc-step">Step 3 / 6 · Sync</div>
       <div class="wc-title">Syncing your library…</div>
       <div class="wc-sub">Albums, liked tracks and playlists are being cached (in the background). You can continue as soon as content appears.</div>
       <div class="wc-counts">
@@ -6353,7 +6424,7 @@ function renderWelcome(s) {
     // ── Step 3 · Boxes: sanitize + create the O2M playlists + starter boxes ──
     _wcStopPoll();
     body.innerHTML = `<div class="wc-logo">O2M</div>
-      <div class="wc-step">Step 3 / 5 · Boxes</div>
+      <div class="wc-step">Step 4 / 6 · Boxes</div>
       <div class="wc-title">Setting up your boxes</div>
       <div class="wc-sub" id="wc-plan">Analyzing your setup…</div>
       <button class="wc-btn" id="wc-setup">Set up my boxes</button>
