@@ -151,9 +151,14 @@ class Track(BaseModel):
 
 
 class Stats_Raw(BaseModel):
+    # The physical primary key is the auto-increment `Id` column (see SHOW CREATE
+    # TABLE); read_date is a plain indexed timestamp, NOT the PK. Declaring read_date
+    # primary_key=True here misled the ORM (a second-resolution "PK" that isn't unique
+    # in the DB). Map the real PK so .save()/get_by_id behave correctly.
+    id = AutoField()
     read_date = TimestampField(
-        index=True, null=True, utc=True, primary_key=True
-    )  # date # Unique uri
+        index=True, null=True, utc=True
+    )  # date
     uri = CharField(default=0)
     read_hour = IntegerField(default=0)  # int
     username = TextField(null=True)  # user text

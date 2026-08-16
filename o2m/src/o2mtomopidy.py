@@ -2393,10 +2393,11 @@ class O2mToMopidy:
 
     # Update raw stat when finished, skipped or system stopped (if possible)
     def update_stat_raw(self, uri):
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
         self.dbHandler.create_stat_raw(
             uri,
-            datetime.datetime.now(datetime.timezone.utc),
-            datetime.datetime.now().hour,
+            now_utc,
+            now_utc.hour,   # UTC hour, consistent with the UTC read_date (was local .now().hour)
             self.username
         )
 
@@ -3007,6 +3008,14 @@ class O2mToMopidy:
         if not to_playlist:
             print(f"radio save: {query!r} → {uri} recorded in DB (tier 2, no playlist)", flush=True)
             return uri
+        # Upper tier (DL ≥ 2/3, to_playlist=True): also log the listen in stats_raw as a
+        # track play, so radio plays feed the raw stats like a normal completed track
+        # (Radio France HTTP streams never reach the track_playback_ended stats path).
+        # Restricted to this tier per the 3-tier design (lower/middle tiers don't log raw).
+        try:
+            self.update_stat_raw(uri)
+        except Exception as e:
+            print(f"radio save: stats_raw log error: {e!r}", flush=True)
         # Playlist (tier 3): add to the canonical 'new' playlist (ToListen) via the
         # EXACT same path as the manual editor (POST /api/track_playlist) —
         # add_tracks_playlist → sp.playlist_add_items — which is proven to work, plus

@@ -420,7 +420,10 @@ class DatabaseHandler():
 
     def create_stat_raw(self, uri, read_time, read_hour, username):
         uri = self.podcast_uri_remove_max_results(uri)
-        stat_raw = Stats_Raw.create(uri=uri,read_time=read_time,read_hour=read_hour,username=username)
+        # read_time maps to the model's `read_date` TimestampField (there is no
+        # `read_time` field — the old kwarg was silently dropped, so read_date fell
+        # back to the field default). Passing it explicitly records the event time.
+        stat_raw = Stats_Raw.create(uri=uri, read_date=read_time, read_hour=read_hour, username=username)
         return stat_raw
 
     def create_playlist_log(self, track_uri, playlist_uri, action, from_option_type=None, to_option_type=None, username=None, track_name=None, playlist_name=None):

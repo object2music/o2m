@@ -2052,14 +2052,6 @@ with the house Premium account.</li>
             # Resolve local file URI back to its Spotify URI for all stat/reco logic
             effective_uri = o2mHandler.get_spotify_uri(track.uri)
             discover_level = o2mHandler.calculate_discover_level(effective_uri)
-            # TEMP TRACE (stats diag) — remove after
-            try:
-                _len = getattr(track, 'length', None); _pos = getattr(event, 'time_position', None)
-                _ratio = (_pos / _len) if (_pos is not None and _len) else 'NA'
-                with open('/tmp/stat_trace.log', 'a') as _f:
-                    _f.write(f"EVT ev={event.event} uri={track.uri} eff={effective_uri} dl={discover_level} pos={_pos} len={_len} ratio={_ratio}\n")
-            except Exception as _e:
-                pass
 
             #No action if discover_level set to 0
             if discover_level > 0:
@@ -2112,13 +2104,7 @@ with the house Premium account.</li>
                                 o2mHandler.add_reco_after_track_read(effective_uri,library_link,data)
                         if option_type != 'hidden' and option_type != 'trash' :
                             print ("Adding raw stats")
-                            try:
-                                o2mHandler.update_stat_raw(effective_uri)
-                                with open('/tmp/stat_trace.log', 'a') as _f:
-                                    _f.write(f"WROTE stats_raw for {effective_uri} (option_type={option_type})\n")
-                            except Exception as _e:
-                                with open('/tmp/stat_trace.log', 'a') as _f:
-                                    _f.write(f"WRITE FAILED {effective_uri}: {_e!r}\n")
+                            o2mHandler.update_stat_raw(effective_uri)
 
                 # Podcast
                 '''if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
