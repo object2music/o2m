@@ -1,452 +1,543 @@
 /* ============================================================================
-   O2M — DESIGN SYSTEM  ·  Object → Music
-   A mono-accent (orange) brutalist-editorial system for an alternative
-   audio interface. Square geometry, wide grotesque type, warm neutrals,
-   a flat geometric shape language built from the "object crossing the
-   horizon" mark. Dark and light are interchangeable.
+   O2M — DESIGN SYSTEM  ·  Living medias   ·   v1.3
+   Mono-accent (orange) brutalist-editorial system for a tangible audio
+   interface. Square geometry, wide grotesque type, warm neutrals, a flat
+   geometric shape language built from the "disc crossing the horizon" mark.
+
+   v1.1 — harmonised with the shipping app (Claude Code build):
+     · canonical token vocabulary now matches the product
+       (--accent / --border / --on-accent, attribute `data-theme`);
+       the old v1.0 names (--o2m-orange / --line / data-mode) are kept as aliases.
+     · five themes: dark, creme (light), mono, overprint, invert.
+     · new components: Basic-view actuators + ALL meta-button, detent dials
+       (Mood 5-notch, Opening 3-notch), network-quality dot, theme chips,
+       view switch.
+
+     v1.2 — SINGLE SOURCE OF TRUTH.
+     This file is now a strict SUPERSET of the token block that mood.html
+     used to declare inline: every theme carries the full surface the app
+     consumes (--danger, dial-axis --c-*, the --mx-* matrix subsystem, the
+     --mood-* RGB triplets, --hero-accent). A page can therefore delete its
+     inline :root/[data-theme] block and simply link this file.
+     Values below are taken VERBATIM from the shipping app — design and code
+     read the same numbers.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Archivo+Expanded:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 /* ----------------------------------------------------------------------------
    1. MODE-INDEPENDENT TOKENS
    -------------------------------------------------------------------------- */
 :root {
-  /* Brand — a single accent. Orange is the only chromatic colour in O2M. */
-  --o2m-orange:        #FF5A00;
-  --o2m-orange-press:  #E64E00;
-  --o2m-orange-bright: #FF7A2E;
-  --on-orange:         #190E04;   /* ink that sits on orange, both modes   */
+  /* Type families (canonical names match the app) */
+  --font:      'Archivo', system-ui, sans-serif;
+  --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
 
-  /* Type families */
-  --font-display: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-  --font-text:    'Archivo', system-ui, sans-serif;
-  --font-mono:    'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
-
-  /* Type scale (fluid where it matters) */
+  /* Type scale */
   --t-display: clamp(48px, 9vw, 132px);
   --t-h1:      clamp(34px, 5vw, 60px);
-  --t-h2:      30px;
-  --t-h3:      21px;
-  --t-body-l:  17px;
-  --t-body:    15px;
-  --t-body-s:  13px;
-  --t-label:   11px;
+  --t-h2:      30px;  --t-h3: 21px;
+  --t-body-l:  17px;  --t-body: 15px;  --t-body-s: 13px;  --t-label: 11px;
 
-  /* Geometry — O2M is square. Curvature is reserved for true circles. */
-  --r:      0px;
-  --r-pill: 999px;
+  /* Geometry — O2M is square; curvature only for true circles */
+  --radius: 0px;  --r-pill: 999px;
 
   /* Spacing — 4pt grid */
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
   --sp-5: 24px; --sp-6: 32px; --sp-8: 48px; --sp-10: 64px; --sp-12: 96px;
 
-  /* Rules */
+  /* Border widths (distinct from the --border colour token) */
   --line-1: 1px; --line-2: 2px; --line-3: 3px;
 
   /* Motion */
-  --ease:  cubic-bezier(.2, .7, .2, 1);
-  --fast:  .14s var(--ease);
-  --med:   .26s var(--ease);
+  --ease: cubic-bezier(.2,.7,.2,1);
+  --fast: .14s var(--ease);
+  --med:  .26s var(--ease);
+
+  /* Editorial head defaults (themes may override) */
+  --head-transform: uppercase; --head-weight: 800; --head-spacing: -.015em;
+  --eyebrow-mark: "↓ "; --eyebrow-color: var(--accent);
+
+  /* Functional status hues — the ONE sanctioned exception to mono-accent.
+     Used only for genuine system status (network quality), never decoration. */
+  --ok:   #3FBF6F;
+  --warn: #F0A000;
+  --err:  #E0245E;
+
+  /* Destructive actions only (delete). Inherited by every theme. */
+  --danger: #E5484D;
+
+  /* ---- v1.0 → v1.1 ALIASES (keep older markup / the reference page working) ---- */
+  --o2m-orange:        var(--accent);
+  --o2m-orange-press:  var(--accent-press);
+  --o2m-orange-bright: var(--accent);
+  --on-orange:         var(--on-accent);
+  --font-display:      var(--font-head);
+  --font-text:         var(--font);
+  --line:              var(--border);
+  --line-soft:         var(--border-soft);
+  --line-strong:       var(--border-strong);
+  --r:                 var(--radius);
 }
 
 /* ----------------------------------------------------------------------------
-   2. DARK (default)  —  warm near-black
+   2. THEMES  —  attribute `data-theme` (dark default). `data-mode` still works.
+   Dark + creme are the two canonical peers; mono / overprint / invert are
+   expressive alternates shipped in the product.
    -------------------------------------------------------------------------- */
-:root,
-[data-mode="dark"] {
-  --bg:          #15120E;
-  --surface:     #1C1812;
-  --card:        #241F18;
-  --raised:      #2D2719;
-  --text:        #F3EEE3;
-  --muted:       #9C9486;
-  --faint:       #6E665A;
-  --line:        rgba(243,238,227,.13);
-  --line-soft:   rgba(243,238,227,.07);
-  --line-strong: rgba(243,238,227,.30);
-  --fill-1:      rgba(243,238,227,.04);
-  --fill-2:      rgba(243,238,227,.08);
-  --fill-3:      rgba(243,238,227,.15);
-  --shape-ink:   #F3EEE3;   /* neutral shape colour against orange/ground */
-  --shadow:      0 10px 40px rgba(0,0,0,.55);
+
+/* DARK — warm near-black */
+:root, [data-theme="dark"], [data-mode="dark"] {
+  --bg:#15120E; --surface:#1C1812; --card:#241F18; --raised:#2D2719;
+  --accent:#FF5A00; --accent-press:#E64E00; --accent-soft:#FF5A0014; --on-accent:#190E04;
+  --text:#F3EEE3; --muted:#9C9486; --faint:#6E665A;
+  --border:rgba(243,238,227,.13); --border-soft:rgba(243,238,227,.07); --border-strong:rgba(243,238,227,.30);
+  --fill-1:rgba(243,238,227,.04); --fill-2:rgba(243,238,227,.08); --fill-3:rgba(243,238,227,.15);
+  --track-bg:#2D2719; --shape-ink:#F3EEE3; --shadow:0 10px 40px rgba(0,0,0,.55);
+  /* Bullseye ramps. Outer ring first. On DARK grounds the outer ring must stay
+     clearly lighter than the ground, or the silhouette dissolves. */
+  --ring-a-1:#9C9486; --ring-a-2:#ADA598; --ring-a-3:#BEB7AA; --ring-a-4:#D0CABD; --ring-a-5:#F3EEE3;
+  --ring-b-1:#FF5A00; --ring-b-2:#FF7526; --ring-b-3:#FF9152; --ring-b-4:#FFAE81; --ring-b-5:#FFCBAF;
+  --c-energy:var(--text); --c-valence:var(--muted); --c-dl:var(--accent); --dial-txt:var(--text);
+  --eyebrow-color:#FF5A00;
+  --mx-bg:#1C1812;
+  --mx-q-calm:rgba(243,238,227,.03); --mx-q-happy:rgba(243,238,227,.06);
+  --mx-q-dark:rgba(243,238,227,.10); --mx-q-energetic:rgba(243,238,227,.05);
+  --mx-line:rgba(243,238,227,.15); --mx-border:transparent;
+  --mx-label:rgba(243,238,227,.22); --mx-axis:rgba(243,238,227,.40);
+  --mx-dl-fill:rgba(255,90,0,.08); --mx-dl-stroke:rgba(255,90,0,.60);
+  --mx-dot-core:#F3EEE3; --mx-pulse:255,90,0;
+  --mood-happy:243,238,227; --mood-energetic:255,90,0;
+  --mood-calm:156,148,134; --mood-dark:110,102,90;
+  color-scheme: dark;
+}
+
+/* BULLETIN — replaces the old warm-orange "Light". Inspired by the Clemi-family
+   reference set: navy ink, amber secondary, magenta as the live signal, on cream.
+   NOTE: this is the one theme that does NOT run on orange. Its accent is magenta
+   because amber sits too close to the cream ground to carry contrast. The keys
+   `creme` and `light` are kept as aliases so shipped code needs no edit. */
+[data-theme="bulletin"], [data-theme="creme"], [data-mode="light"] {
+  --bg:#FDDFB3; --surface:#F9D3A0; --card:#FEEBCF; --raised:#FFF6E7;
+  --accent:#E4106A; --accent-press:#C60D5C; --accent-soft:#E4106A1a; --on-accent:#FFFFFF;
+  --text:#28285B; --muted:#6E6A8C; --faint:#A9A4BE;
+  --border:rgba(40,40,91,.18); --border-soft:rgba(40,40,91,.09); --border-strong:rgba(40,40,91,.38);
+  --fill-1:rgba(40,40,91,.04); --fill-2:rgba(40,40,91,.08); --fill-3:rgba(40,40,91,.14);
+  --track-bg:#F0CFA0; --shape-ink:#28285B; --shadow:0 10px 40px rgba(40,40,91,.20);
+  --amber:#F8B132; --navy:#28285B; --magenta:#E4106A; --lilac:#A9A4BE;
+  --ring-a-1:#28285B; --ring-a-2:#3E3E6B; --ring-a-3:#53547C; --ring-a-4:#696A8D; --ring-a-5:#8384A3;
+  --ring-b-1:#F8B132; --ring-b-2:#F9BC50; --ring-b-3:#FAC978; --ring-b-4:#FBD08C; --ring-b-5:#FBD79F;
+  --c-energy:var(--text); --c-valence:var(--muted); --c-dl:var(--accent); --dial-txt:var(--text);
+  --head-weight:800; --head-spacing:-.015em; --eyebrow-color:#E4106A;
+  --mx-bg:#F9D3A0;
+  --mx-q-calm:rgba(40,40,91,.04); --mx-q-happy:rgba(248,177,50,.20);
+  --mx-q-dark:rgba(40,40,91,.13); --mx-q-energetic:rgba(228,16,106,.10);
+  --mx-line:rgba(40,40,91,.18); --mx-border:transparent;
+  --mx-label:rgba(40,40,91,.30); --mx-axis:rgba(40,40,91,.45);
+  --mx-dl-fill:rgba(228,16,106,.09); --mx-dl-stroke:rgba(228,16,106,.60);
+  --mx-dot-core:#FFF6E7; --mx-pulse:228,16,106;
+  --mood-happy:248,177,50; --mood-energetic:228,16,106;
+  --mood-calm:110,106,140; --mood-dark:40,40,91;
+  color-scheme: light;
+}
+
+/* MONO — raw black & white */
+[data-theme="mono"] {
+  --bg:#fff; --surface:#fff; --card:#f0f0f0; --raised:#fff;
+  --accent:#111; --accent-press:#000; --accent-soft:#1111111a; --on-accent:#fff;
+  --text:#000; --muted:#9a9a9a; --faint:#c4c4c4;
+  --border:#00000018; --border-soft:#0000000c; --border-strong:#00000033;
+  --fill-1:#00000006; --fill-2:#0000000f; --fill-3:#00000016;
+  --track-bg:#e2e2e2; --shape-ink:#000; --shadow:0 10px 40px rgba(0,0,0,.15);
+  --head-weight:700; --head-spacing:-.01em; --eyebrow-color:#ff3b00;
+  --ring-a-1:#000000; --ring-a-2:#2B2B2B; --ring-a-3:#565656; --ring-a-4:#818181; --ring-a-5:#ACACAC;
+  --ring-b-1:#ff3b00; --ring-b-2:#FF6033; --ring-b-3:#FF8566; --ring-b-4:#FFAA99; --ring-b-5:#FFCFCC;
+  --c-energy:#111111; --c-valence:#888888; --c-dl:#ff3b00; --dial-txt:#000000;
+  --mx-bg:#f4f4f4;
+  --mx-q-calm:#00000005; --mx-q-happy:#0000000b;
+  --mx-q-dark:#00000012; --mx-q-energetic:#00000008;
+  --mx-line:#00000026; --mx-border:transparent;
+  --mx-label:#00000033; --mx-axis:#00000055;
+  --mx-dl-fill:#ff3b0010; --mx-dl-stroke:#ff3b0099;
+  --mx-dot-core:#ffffff; --mx-pulse:0,0,0;
+  --mood-happy:60,60,60; --mood-energetic:255,59,0;
+  --mood-calm:140,140,140; --mood-dark:20,20,20;
+  color-scheme: light;
+}
+
+/* OVERPRINT — editorial poster, orange on white */
+[data-theme="overprint"] {
+  --bg:#fff; --surface:#fff; --card:#f0f0f0; --raised:#fff;
+  --accent:#ff5a00; --accent-press:#e64e00; --accent-soft:#ff5a001a; --on-accent:#190E04;
+  --text:#000; --muted:#9a9a9a; --faint:#c4c4c4;
+  --border:#00000018; --border-soft:#0000000c; --border-strong:#00000033;
+  --fill-1:#00000006; --fill-2:#0000000f; --fill-3:#00000016;
+  --track-bg:#e2e2e2; --shape-ink:#000; --shadow:0 10px 40px rgba(0,0,0,.15);
+  --head-weight:700; --head-spacing:-.01em; --eyebrow-color:#ff5a00;
+  --hero-accent:#ff5a00;
+  --ring-a-1:#000000; --ring-a-2:#2B2B2B; --ring-a-3:#565656; --ring-a-4:#818181; --ring-a-5:#ACACAC;
+  --ring-b-1:#ff5a00; --ring-b-2:#FF7526; --ring-b-3:#FF9152; --ring-b-4:#FFAE81; --ring-b-5:#FFCBAF;
+  --c-energy:#111111; --c-valence:#888888; --c-dl:#ff5a00; --dial-txt:#000000;
+  --mx-bg:#f4f4f4;
+  --mx-q-calm:#00000005; --mx-q-happy:#0000000b;
+  --mx-q-dark:#00000012; --mx-q-energetic:#00000008;
+  --mx-line:#00000026; --mx-border:transparent;
+  --mx-label:#00000033; --mx-axis:#00000055;
+  --mx-dl-fill:#ff5a0010; --mx-dl-stroke:#ff5a0099;
+  --mx-dot-core:#ffffff; --mx-pulse:0,0,0;
+  --mood-happy:60,60,60; --mood-energetic:255,59,0;
+  --mood-calm:140,140,140; --mood-dark:20,20,20;
+  color-scheme: light;
+}
+
+/* INVERT — cinematic, near-black with a dynamic accent (hero-accent) */
+[data-theme="invert"] {
+  --bg:#0c0c0c; --surface:#0c0c0c; --card:#1c1c1c; --raised:#242424;
+  --accent:var(--hero-accent,#ff3b00); --accent-press:var(--hero-accent,#ff3b00); --accent-soft:#ffffff1a; --on-accent:#fff;
+  --text:#fff; --muted:#777; --faint:#4a4a4a;
+  --border:#ffffff18; --border-soft:#ffffff0c; --border-strong:#ffffff33;
+  --fill-1:#ffffff06; --fill-2:#ffffff0f; --fill-3:#ffffff16;
+  --track-bg:#2a2a2a; --shape-ink:#fff; --shadow:0 10px 40px rgba(0,0,0,.6);
+  --head-weight:700; --head-spacing:-.01em;
+  --hero-accent:#ff3b00; --eyebrow-color:var(--hero-accent,#ff3b00);
+  --ring-a-1:#777777; --ring-a-2:#959595; --ring-a-3:#B3B3B3; --ring-a-4:#D1D1D1; --ring-a-5:#FFFFFF;
+  --ring-b-1:#ff3b00; --ring-b-2:#FF6033; --ring-b-3:#FF8566; --ring-b-4:#FFAA99; --ring-b-5:#FFCFCC;
+  --c-energy:#ffffff; --c-valence:#888888; --c-dl:var(--hero-accent,#ff3b00); --dial-txt:#ffffff;
+  --mx-bg:#161616;
+  --mx-q-calm:#ffffff04; --mx-q-happy:#ffffff09;
+  --mx-q-dark:#ffffff0f; --mx-q-energetic:#ffffff07;
+  --mx-line:#ffffff26; --mx-border:transparent;
+  --mx-label:#ffffff33; --mx-axis:#ffffff55;
+  --mx-dl-fill:#ffffff12; --mx-dl-stroke:var(--hero-accent,#ff3b00);
+  --mx-dot-core:#ffffff; --mx-pulse:255,255,255;
+  --mood-happy:210,210,210; --mood-energetic:255,59,0;
+  --mood-calm:150,150,150; --mood-dark:90,90,90;
   color-scheme: dark;
 }
 
 /* ----------------------------------------------------------------------------
-   3. LIGHT  —  warm cream / paper
-   -------------------------------------------------------------------------- */
-[data-mode="light"] {
-  --bg:          #EFEADF;
-  --surface:     #E6E0D2;
-  --card:        #F7F3EA;
-  --raised:      #FCF9F2;
-  --text:        #181410;
-  --muted:       #7A7264;
-  --faint:       #A89F8E;
-  --line:        rgba(24,20,16,.16);
-  --line-soft:   rgba(24,20,16,.08);
-  --line-strong: rgba(24,20,16,.34);
-  --fill-1:      rgba(24,20,16,.04);
-  --fill-2:      rgba(24,20,16,.07);
-  --fill-3:      rgba(24,20,16,.12);
-  --shape-ink:   #181410;
-  --shadow:      0 10px 40px rgba(60,45,25,.18);
-  color-scheme: light;
-}
-
-/* ----------------------------------------------------------------------------
-   4. BASE / RESET
+   3. BASE / RESET
    -------------------------------------------------------------------------- */
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-
 html { -webkit-text-size-adjust: 100%; }
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-text);
-  font-size: var(--t-body);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: var(--t-body); line-height: 1.5;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
   transition: background var(--med), color var(--med);
 }
-::selection { background: var(--o2m-orange); color: var(--on-orange); }
-
+::selection { background: var(--accent); color: var(--on-accent); }
 a { color: inherit; text-decoration: none; }
 img { display: block; max-width: 100%; }
 button { font: inherit; color: inherit; }
 
 /* ----------------------------------------------------------------------------
-   5. TYPE
+   4. TYPE
    -------------------------------------------------------------------------- */
-.o2m-display {
-  font-family: var(--font-display);
-  font-weight: 900;
-  font-size: var(--t-display);
-  line-height: .9;
-  letter-spacing: -.02em;
-  text-transform: uppercase;
-  text-wrap: balance;
-}
-.o2m-h1 {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: var(--t-h1);
-  line-height: .96;
-  letter-spacing: -.015em;
-  text-transform: uppercase;
-}
-.o2m-h2 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--t-h2);
-  line-height: 1.02;
-  letter-spacing: -.01em;
-  text-transform: uppercase;
-}
-.o2m-h3 {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--t-h3);
-  line-height: 1.1;
-  text-transform: uppercase;
-  letter-spacing: 0;
-}
-.o2m-body-l { font-size: var(--t-body-l); line-height: 1.55; }
-.o2m-body   { font-size: var(--t-body);   line-height: 1.55; }
-.o2m-small  { font-size: var(--t-body-s); line-height: 1.5;  color: var(--muted); }
+.o2m-display { font-family: var(--font-head); font-weight: 900; font-size: var(--t-display); line-height: .9;  letter-spacing: -.02em;  text-transform: uppercase; text-wrap: balance; }
+.o2m-h1      { font-family: var(--font-head); font-weight: 800; font-size: var(--t-h1);      line-height: .96; letter-spacing: -.015em; text-transform: uppercase; }
+.o2m-h2      { font-family: var(--font-head); font-weight: 700; font-size: var(--t-h2);      line-height: 1.02;letter-spacing: -.01em;  text-transform: uppercase; }
+.o2m-h3      { font-family: var(--font-head); font-weight: 700; font-size: var(--t-h3);      line-height: 1.1; text-transform: uppercase; }
+.o2m-body-l  { font-size: var(--t-body-l); line-height: 1.55; }
+.o2m-body    { font-size: var(--t-body);   line-height: 1.55; }
+.o2m-small   { font-size: var(--t-body-s); line-height: 1.5; color: var(--muted); }
 
-/* Eyebrow — the recurring section marker. Mono, tracked, with a square tick. */
-.o2m-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  font-family: var(--font-mono);
-  font-size: var(--t-label);
-  font-weight: 500;
-  letter-spacing: .22em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.o2m-eyebrow::before {
-  content: '';
-  width: 8px; height: 8px;
-  background: var(--o2m-orange);
-  flex-shrink: 0;
-}
+/* Eyebrow — section marker (mono, tracked, square tick) */
+.o2m-eyebrow { display: inline-flex; align-items: center; gap: var(--sp-2); font-family: var(--font-mono); font-size: var(--t-label); font-weight: 500; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
+.o2m-eyebrow::before { content:''; width:8px; height:8px; background: var(--accent); flex-shrink:0; }
 
-/* Mono caption — for specs, durations, token names, technical data. */
-.o2m-mono {
-  font-family: var(--font-mono);
-  font-size: var(--t-body-s);
-  letter-spacing: .01em;
-  color: var(--muted);
-}
+.o2m-mono { font-family: var(--font-mono); font-size: var(--t-body-s); letter-spacing: .01em; color: var(--muted); }
 
 /* ----------------------------------------------------------------------------
-   6. RULES & LAYOUT HELPERS
+   5. RULES & LAYOUT HELPERS
    -------------------------------------------------------------------------- */
-.o2m-rule       { border: none; border-top: var(--line-1) solid var(--line); }
-.o2m-rule--bold { border-top: var(--line-3) solid var(--text); }
-.o2m-rule--accent { border-top: var(--line-3) solid var(--o2m-orange); }
-
-.o2m-stack   { display: flex; flex-direction: column; }
-.o2m-row     { display: flex; align-items: center; gap: var(--sp-3); }
-.o2m-wrap    { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.o2m-rule        { border:none; border-top: var(--line-1) solid var(--border); }
+.o2m-rule--bold  { border-top: var(--line-3) solid var(--text); }
+.o2m-rule--accent{ border-top: var(--line-3) solid var(--accent); }
+.o2m-stack { display:flex; flex-direction:column; }
+.o2m-row   { display:flex; align-items:center; gap: var(--sp-3); }
+.o2m-wrap  { display:flex; flex-wrap:wrap; gap: var(--sp-2); }
 
 /* ----------------------------------------------------------------------------
-   7. BUTTONS
+   6. BUTTONS
    -------------------------------------------------------------------------- */
 .o2m-btn {
-  --_bg: transparent;
-  --_fg: var(--text);
-  --_bd: var(--line-strong);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  padding: 11px 20px;
-  border-radius: var(--r);
-  border: var(--line-1) solid var(--_bd);
-  background: var(--_bg);
-  color: var(--_fg);
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: var(--t-body-s);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  cursor: pointer;
+  --_bg: transparent; --_fg: var(--text); --_bd: var(--border-strong);
+  display:inline-flex; align-items:center; justify-content:center; gap: var(--sp-2);
+  padding: 11px 20px; border-radius: var(--radius); border: var(--line-1) solid var(--_bd);
+  background: var(--_bg); color: var(--_fg);
+  font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s);
+  letter-spacing: .04em; text-transform: uppercase; cursor: pointer;
   transition: background var(--fast), color var(--fast), border-color var(--fast), transform var(--fast);
 }
 .o2m-btn:active { transform: translateY(1px); }
-.o2m-btn svg { width: 16px; height: 16px; }
-
-.o2m-btn--primary { --_bg: var(--o2m-orange); --_fg: var(--on-orange); --_bd: var(--o2m-orange); }
-.o2m-btn--primary:hover { --_bg: var(--o2m-orange-press); --_bd: var(--o2m-orange-press); }
-
+.o2m-btn svg { width:16px; height:16px; }
+.o2m-btn--primary { --_bg: var(--accent); --_fg: var(--on-accent); --_bd: var(--accent); }
+.o2m-btn--primary:hover { --_bg: var(--accent-press); --_bd: var(--accent-press); }
 .o2m-btn--outline:hover { --_bg: var(--fill-2); --_bd: var(--text); }
-
 .o2m-btn--ghost { --_bd: transparent; color: var(--muted); }
 .o2m-btn--ghost:hover { --_bg: var(--fill-2); color: var(--text); }
-
 .o2m-btn--block { width: 100%; }
 
-/* Icon-only square button */
 .o2m-iconbtn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px;
-  border: var(--line-1) solid var(--line);
-  background: transparent; color: var(--text);
-  border-radius: var(--r); cursor: pointer;
+  display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px;
+  border: var(--line-1) solid var(--border); background: transparent; color: var(--text);
+  border-radius: var(--radius); cursor: pointer;
   transition: background var(--fast), border-color var(--fast), color var(--fast);
 }
-.o2m-iconbtn svg { width: 18px; height: 18px; }
+.o2m-iconbtn svg { width:18px; height:18px; }
 .o2m-iconbtn:hover { background: var(--fill-2); border-color: var(--text); }
-.o2m-iconbtn.is-active { background: var(--o2m-orange); border-color: var(--o2m-orange); color: var(--on-orange); }
+.o2m-iconbtn.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
 /* ----------------------------------------------------------------------------
-   8. CHIPS / TAGS
+   7. CHIPS / TAGS
    -------------------------------------------------------------------------- */
 .o2m-chip {
-  display: inline-flex; align-items: center; gap: var(--sp-2);
-  padding: 5px 12px;
-  border-radius: var(--r);
-  background: var(--fill-2);
-  color: var(--muted);
-  font-size: var(--t-body-s);
-  font-weight: 500;
-  cursor: pointer;
+  display:inline-flex; align-items:center; gap: var(--sp-2); padding: 5px 12px;
+  border-radius: var(--radius); background: var(--fill-2); color: var(--muted);
+  font-size: var(--t-body-s); font-weight: 500; cursor: pointer;
   border: var(--line-1) solid transparent;
   transition: background var(--fast), color var(--fast), border-color var(--fast);
 }
-.o2m-chip:hover { color: var(--text); border-color: var(--line); }
-.o2m-chip.is-active { background: var(--o2m-orange); color: var(--on-orange); border-color: var(--o2m-orange); }
+.o2m-chip:hover { color: var(--text); border-color: var(--border); }
+.o2m-chip.is-active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
-/* Slash-separated tag run (editorial) */
-.o2m-tagrun { display: flex; flex-wrap: wrap; align-items: baseline; }
-.o2m-tagrun > * {
-  font-family: var(--font-display); font-weight: 700; font-size: var(--t-body-s);
-  text-transform: uppercase; letter-spacing: .01em; color: var(--text);
-}
-.o2m-tagrun > *:not(:first-child)::before {
-  content: '/'; margin: 0 9px; color: var(--o2m-orange); font-weight: 700;
-}
+.o2m-tagrun { display:flex; flex-wrap:wrap; align-items:baseline; }
+.o2m-tagrun > * { font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s); text-transform: uppercase; letter-spacing: .01em; color: var(--text); }
+.o2m-tagrun > *:not(:first-child)::before { content:'/'; margin: 0 9px; color: var(--accent); font-weight: 700; }
 
 /* ----------------------------------------------------------------------------
-   9. STATUS BADGE  —  neutral steps + orange for the live/active state.
-   Differentiation is by label + greyscale weight, never by hue.
+   8. STATUS BADGE  —  greyscale steps + orange for live/active
    -------------------------------------------------------------------------- */
-.o2m-badge {
-  display: inline-flex; align-items: center; gap: var(--sp-2);
-  font-family: var(--font-display); font-weight: 700;
-  font-size: var(--t-label); letter-spacing: .08em; text-transform: uppercase;
-  color: var(--muted);
-}
-.o2m-badge::before { content: ''; width: 9px; height: 9px; background: var(--faint); flex-shrink: 0; }
+.o2m-badge { display:inline-flex; align-items:center; gap: var(--sp-2); font-family: var(--font-head); font-weight: 700; font-size: var(--t-label); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.o2m-badge::before { content:''; width:9px; height:9px; background: var(--faint); flex-shrink:0; }
 .o2m-badge.is-live   { color: var(--text); }
-.o2m-badge.is-live::before   { background: var(--o2m-orange); }
+.o2m-badge.is-live::before   { background: var(--accent); }
 .o2m-badge.is-strong::before { background: var(--text); }
 .o2m-badge.is-mute::before   { background: var(--faint); }
 
+/* Network-quality dot — functional status (the sanctioned non-accent colours) */
+.o2m-netdot { display:inline-block; width:9px; height:9px; border-radius:50%; background: var(--border-strong); vertical-align: middle; transition: background .3s; }
+.o2m-netdot[data-level="green"]  { background: var(--ok); }
+.o2m-netdot[data-level="orange"] { background: var(--warn); }
+.o2m-netdot[data-level="red"]    { background: var(--err); }
+
 /* ----------------------------------------------------------------------------
-   10. CARD
+   9. CARD / FIELDS
    -------------------------------------------------------------------------- */
-.o2m-card {
-  background: var(--card);
-  border: var(--line-1) solid var(--line);
-  border-radius: var(--r);
-  padding: var(--sp-5);
-}
+.o2m-card { background: var(--card); border: var(--line-1) solid var(--border); border-radius: var(--radius); padding: var(--sp-5); }
 .o2m-card--flush { padding: 0; overflow: hidden; }
 
-/* ----------------------------------------------------------------------------
-   11. FIELDS
-   -------------------------------------------------------------------------- */
-.o2m-field {
-  width: 100%;
-  background: var(--surface);
-  border: var(--line-1) solid var(--line);
-  border-radius: var(--r);
-  color: var(--text);
-  padding: 11px 14px;
-  font: inherit;
-  transition: border-color var(--fast);
-}
+.o2m-field { width:100%; background: var(--surface); border: var(--line-1) solid var(--border); border-radius: var(--radius); color: var(--text); padding: 11px 14px; font: inherit; transition: border-color var(--fast); }
 .o2m-field::placeholder { color: var(--faint); }
-.o2m-field:focus { outline: none; border-color: var(--o2m-orange); }
-
-/* Checkbox */
-.o2m-check { accent-color: var(--o2m-orange); width: 16px; height: 16px; }
+.o2m-field:focus { outline:none; border-color: var(--accent); }
+.o2m-check { accent-color: var(--accent); width:16px; height:16px; }
 
 /* ----------------------------------------------------------------------------
-   12. SEGMENTED / TOGGLE
+   10. SEGMENTED / THEME CHIPS
    -------------------------------------------------------------------------- */
-.o2m-seg {
-  display: inline-flex;
-  border: var(--line-1) solid var(--line);
-  border-radius: var(--r);
-  overflow: hidden;
-}
-.o2m-seg button {
-  padding: 7px 16px;
-  background: transparent; border: none; cursor: pointer;
-  font-family: var(--font-display); font-weight: 700;
-  font-size: var(--t-label); letter-spacing: .06em; text-transform: uppercase;
-  color: var(--muted);
-  border-right: var(--line-1) solid var(--line);
-  transition: background var(--fast), color var(--fast);
-}
-.o2m-seg button:last-child { border-right: none; }
+.o2m-seg { display:inline-flex; border: var(--line-1) solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.o2m-seg button { padding: 7px 16px; background: transparent; border:none; cursor:pointer; font-family: var(--font-head); font-weight: 700; font-size: var(--t-label); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-right: var(--line-1) solid var(--border); transition: background var(--fast), color var(--fast); }
+.o2m-seg button:last-child { border-right:none; }
 .o2m-seg button:hover { color: var(--text); background: var(--fill-1); }
-.o2m-seg button.is-active { background: var(--o2m-orange); color: var(--on-orange); }
+.o2m-seg button.is-active { background: var(--accent); color: var(--on-accent); }
+
+/* Theme chip — text switch used in the footer switcher */
+.o2m-theme-chip { padding: 4px 11px; background: transparent; border: var(--line-1) solid var(--border); border-radius: var(--radius); cursor: pointer; font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); transition: color var(--fast), border-color var(--fast), background var(--fast); }
+.o2m-theme-chip:hover { color: var(--text); }
+.o2m-theme-chip.is-active { color: var(--accent); border-color: var(--accent); }
+
+/* View switch (Basic ⇄ Full) — the accent-outlined pill in the footer */
+.o2m-viewswitch { display:inline-flex; align-items:center; gap:6px; padding: 3px 9px; border: var(--line-1) solid var(--border-strong); border-radius: var(--radius); color: var(--accent); font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.o2m-viewswitch svg { width:13px; height:13px; }
 
 /* ----------------------------------------------------------------------------
-   13. SLIDER  —  square thumb, hairline track, orange fill
+   11. SLIDER / PROGRESS
    -------------------------------------------------------------------------- */
-.o2m-slider {
-  -webkit-appearance: none; appearance: none;
-  width: 100%; height: 3px; border-radius: 0; outline: none; cursor: pointer;
-  background: linear-gradient(to right,
-              var(--o2m-orange) 0%, var(--o2m-orange) var(--val,50%),
-              var(--line-strong) var(--val,50%));
-}
-.o2m-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 12px; height: 16px; border-radius: 0;
-  background: var(--o2m-orange); cursor: pointer;
-}
-.o2m-slider::-moz-range-thumb {
-  width: 12px; height: 16px; border: none; border-radius: 0;
-  background: var(--o2m-orange); cursor: pointer;
-}
-
-/* Progress (read-only) */
-.o2m-progress { height: 3px; background: var(--fill-3); position: relative; }
-.o2m-progress > i { position: absolute; inset: 0 auto 0 0; background: var(--o2m-orange); width: var(--val,40%); }
+.o2m-slider { -webkit-appearance:none; appearance:none; width:100%; height:3px; border-radius:0; outline:none; cursor:pointer;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--val,50%), var(--border-strong) var(--val,50%)); }
+.o2m-slider::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:12px; height:16px; border-radius:0; background: var(--accent); cursor:pointer; }
+.o2m-slider::-moz-range-thumb { width:12px; height:16px; border:none; border-radius:0; background: var(--accent); cursor:pointer; }
+.o2m-progress { height:3px; background: var(--fill-3); position:relative; }
+.o2m-progress > i { position:absolute; inset:0 auto 0 0; background: var(--accent); width: var(--val,40%); }
 
 /* ----------------------------------------------------------------------------
-   14. LIST ROW  —  big index numeral, editorial
+   12. LIST ROW  —  big index numeral tracklist
    -------------------------------------------------------------------------- */
-.o2m-row-item {
-  display: flex; align-items: center; gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-2);
-  border-bottom: var(--line-1) solid var(--line-soft);
-  cursor: pointer; transition: background var(--fast);
-}
+.o2m-row-item { display:flex; align-items:center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-2); border-bottom: var(--line-1) solid var(--border-soft); cursor:pointer; transition: background var(--fast); }
 .o2m-row-item:hover { background: var(--fill-1); }
-.o2m-row-item .idx {
-  font-family: var(--font-display); font-weight: 800; font-size: 24px;
-  letter-spacing: -.03em; color: var(--faint); min-width: 44px; line-height: 1;
-}
-.o2m-row-item.is-current .idx,
-.o2m-row-item.is-current .title { color: var(--o2m-orange); }
-.o2m-row-item .meta { flex: 1; min-width: 0; }
-.o2m-row-item .title { font-weight: 600; font-size: var(--t-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.o2m-row-item .sub   { font-size: var(--t-body-s); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.o2m-row-item .dur   { font-family: var(--font-mono); font-size: var(--t-body-s); color: var(--muted); }
+.o2m-row-item .idx { font-family: var(--font-head); font-weight: 800; font-size: 24px; letter-spacing: -.03em; color: var(--faint); min-width: 44px; line-height: 1; }
+.o2m-row-item.is-current .idx, .o2m-row-item.is-current .title { color: var(--accent); }
+.o2m-row-item .meta { flex:1; min-width:0; }
+.o2m-row-item .title { font-weight: 600; font-size: var(--t-body); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.o2m-row-item .sub { font-size: var(--t-body-s); color: var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.o2m-row-item .dur { font-family: var(--font-mono); font-size: var(--t-body-s); color: var(--muted); }
 
 /* ----------------------------------------------------------------------------
-   15. SHAPE LANGUAGE  —  flat geometric primitives, orange + neutral only
+   13. SHAPE LANGUAGE
    -------------------------------------------------------------------------- */
-
-/* The O2M mark: a disc crossing the horizon line.  Use <span class="o2m-mark">. */
-.o2m-mark {
-  position: relative; display: inline-block;
-  width: 1em; height: 1em; vertical-align: -.12em;
-}
-.o2m-mark::before { /* disc */
-  content: ''; position: absolute; inset: 8% 0 0 0; margin: auto;
-  width: 86%; height: 86%; border-radius: 50%;
-  background: var(--o2m-orange);
-}
-.o2m-mark::after { /* horizon */
-  content: ''; position: absolute; left: -10%; right: -10%; top: 62%; height: 9%;
-  background: var(--bg);
-}
-
-/* Halftone dot field — texture / empty states */
-.o2m-dots {
-  --dot: var(--shape-ink); --gap: 22px; --size: 7px;
-  background-image: radial-gradient(var(--dot) calc(var(--size)/2), transparent calc(var(--size)/2 + .5px));
-  background-size: var(--gap) var(--gap);
-  background-position: center;
-}
-.o2m-dots--orange { --dot: var(--o2m-orange); }
-
-/* Concentric arc (rainbow) — drawn with conic/radial; container is 2:1 */
-.o2m-arc { position: relative; overflow: hidden; }
-
-/* Generic square shape tiles for galleries */
-.o2m-tile {
-  aspect-ratio: 1/1; position: relative; overflow: hidden;
-  background: var(--bg); border: var(--line-1) solid var(--line);
-}
+.o2m-mark { position:relative; display:inline-block; width:1em; height:1em; vertical-align:-.12em; }
+.o2m-mark::before { content:''; position:absolute; inset:8% 0 0 0; margin:auto; width:86%; height:86%; border-radius:50%; background: var(--accent); }
+.o2m-mark::after { content:''; position:absolute; left:-10%; right:-10%; top:62%; height:9%; background: var(--bg); }
+.o2m-dots { --dot: var(--shape-ink); --gap:22px; --size:7px; background-image: radial-gradient(var(--dot) calc(var(--size)/2), transparent calc(var(--size)/2 + .5px)); background-size: var(--gap) var(--gap); background-position:center; }
+.o2m-dots--orange { --dot: var(--accent); }
+.o2m-tile { aspect-ratio:1/1; position:relative; overflow:hidden; background: var(--bg); border: var(--line-1) solid var(--border); }
 
 /* ----------------------------------------------------------------------------
-   16. DIAL  —  circular control, orange arc (used in the app)
+   13b. BULLSEYE MARK  —  the disc becomes concentric rings that lighten inward,
+   cut by the horizon. Rings read as sound radiating from the object — living media.
+
+   The whole family is the mark system, not one logo:
+     core      full bullseye, counter-coloured halves        .o2m-bullseye
+     reduced   bottom half + heavy horizon (favicon scale)   — half only
+     sequence  tangent discs, alternating polarity           — repeat the core
+     graph     discs joined by hairline links                 — add connectors
+
+   Two ramps per theme: --ring-a-* is the ink side, --ring-b-* the accent side,
+   index 1 = outer, 5 = inner. RULE: when the ground matches one side, that side
+   swaps to the other ramp — never let a half dissolve into the ground.
    -------------------------------------------------------------------------- */
-.o2m-dial .track { fill: none; stroke: var(--line); stroke-width: 8; stroke-linecap: butt; }
-.o2m-dial .fill  { fill: none; stroke: var(--o2m-orange); stroke-width: 8; stroke-linecap: butt; }
-.o2m-dial .knob  { fill: var(--o2m-orange); }
-.o2m-dial .val   { fill: var(--text); font-family: var(--font-display); font-weight: 800; }
+.o2m-bullseye { display:block; }
+.o2m-bullseye .ring-top-1{fill:var(--ring-a-1)}
+.o2m-bullseye .ring-top-2{fill:var(--ring-a-2)}
+.o2m-bullseye .ring-top-3{fill:var(--ring-a-3)}
+.o2m-bullseye .ring-top-4{fill:var(--ring-a-4)}
+.o2m-bullseye .ring-top-5{fill:var(--ring-a-5)}
+.o2m-bullseye .ring-bot-1{fill:var(--ring-b-1)}
+.o2m-bullseye .ring-bot-2{fill:var(--ring-b-2)}
+.o2m-bullseye .ring-bot-3{fill:var(--ring-b-3)}
+.o2m-bullseye .ring-bot-4{fill:var(--ring-b-4)}
+.o2m-bullseye .ring-bot-5{fill:var(--ring-b-5)}
+.o2m-bullseye .horizon{fill:var(--bg)}
+/* The horizon is a GAP between two halves (bg-coloured). When only one half is
+   drawn — the Reduced mark — it must become a visible ink baseline instead. */
+.o2m-bullseye .horizon--ink{fill:var(--ring-a-1)}
+.o2m-bullseye--on-surface .horizon{fill:var(--surface)}
+/* Ramp classes usable OUTSIDE the half-disc construction (arcs, dot fields,
+   bands, pills) — same five steps, addressable directly. */
+.o2m-bullseye .ring-a-1{fill:var(--ring-a-1)}
+.o2m-bullseye .ring-a-2{fill:var(--ring-a-2)}
+.o2m-bullseye .ring-a-3{fill:var(--ring-a-3)}
+.o2m-bullseye .ring-a-4{fill:var(--ring-a-4)}
+.o2m-bullseye .ring-a-5{fill:var(--ring-a-5)}
+.o2m-bullseye .ring-b-1{fill:var(--ring-b-1)}
+.o2m-bullseye .ring-b-2{fill:var(--ring-b-2)}
+.o2m-bullseye .ring-b-3{fill:var(--ring-b-3)}
+.o2m-bullseye .ring-b-4{fill:var(--ring-b-4)}
+.o2m-bullseye .ring-b-5{fill:var(--ring-b-5)}
+/* Swap the halves (sequence compositions alternate polarity) */
+.o2m-bullseye--alt .ring-top-1{fill:var(--ring-b-1)}
+.o2m-bullseye--alt .ring-top-2{fill:var(--ring-b-2)}
+.o2m-bullseye--alt .ring-top-3{fill:var(--ring-b-3)}
+.o2m-bullseye--alt .ring-top-4{fill:var(--ring-b-4)}
+.o2m-bullseye--alt .ring-top-5{fill:var(--ring-b-5)}
+.o2m-bullseye--alt .ring-bot-1{fill:var(--ring-a-1)}
+.o2m-bullseye--alt .ring-bot-2{fill:var(--ring-a-2)}
+.o2m-bullseye--alt .ring-bot-3{fill:var(--ring-a-3)}
+.o2m-bullseye--alt .ring-bot-4{fill:var(--ring-a-4)}
+.o2m-bullseye--alt .ring-bot-5{fill:var(--ring-a-5)}
+/* Hairline connectors for the graph composition */
+.o2m-bullseye-link { stroke:var(--bg); stroke-width:2.5; fill:none; }
+.o2m-bullseye-node { fill:var(--bg); }
 
 /* ----------------------------------------------------------------------------
-   17. EQ ANIMATION (now-playing indicator)
+   14. DIAL  —  circular control, mono-accent arc
+   The knob/fill use --accent by default. A dial MAY be tinted per-axis with a
+   neutral (--muted / --text); rainbow per-dial hues are out of the system.
    -------------------------------------------------------------------------- */
-.o2m-eq { display: inline-flex; align-items: flex-end; gap: 2px; width: 18px; height: 16px; }
-.o2m-eq i { flex: 1; background: var(--o2m-orange); animation: o2m-eq 0.9s ease-in-out infinite alternate; }
-.o2m-eq i:nth-child(2) { animation-duration: 1.1s; animation-delay: .15s; }
-.o2m-eq i:nth-child(3) { animation-duration: .7s;  animation-delay: .08s; }
-@keyframes o2m-eq { from { height: 3px; opacity: .5; } to { height: 16px; opacity: 1; } }
+.o2m-dial .track { fill:none; stroke: var(--border); stroke-width:8; }
+.o2m-dial .fill  { fill:none; stroke: var(--accent); stroke-width:8; }
+.o2m-dial .knob  { fill: var(--accent); }
+.o2m-dial .val   { fill: var(--text); font-family: var(--font-head); font-weight: 800; }
+/* Neutral variant for secondary axes (keeps orange for the primary control) */
+.o2m-dial--neutral .fill { stroke: var(--text); }
+.o2m-dial--neutral .knob { fill: var(--text); }
+
+/* Per-axis dial tokens as shipped: Energy = ink, Ambiance = muted, Opening =
+   accent. Set the axis on the element and the arc follows the theme. */
+.o2m-dial[data-axis="energy"]  .fill { stroke: var(--c-energy); }
+.o2m-dial[data-axis="energy"]  .knob { fill:   var(--c-energy); }
+.o2m-dial[data-axis="valence"] .fill { stroke: var(--c-valence); }
+.o2m-dial[data-axis="valence"] .knob { fill:   var(--c-valence); }
+.o2m-dial[data-axis="dl"]      .fill { stroke: var(--c-dl); }
+.o2m-dial[data-axis="dl"]      .knob { fill:   var(--c-dl); }
+.o2m-dial .val, .o2m-dial .center-label { fill: var(--dial-txt, var(--text)); }
 
 /* ----------------------------------------------------------------------------
-   18. UTILITIES
+   14b. MOOD MATRIX  —  the 2D energy × ambiance field (Full view)
+   Quadrant washes, axis lines and the discovery-level halo are all neutral
+   derivations of the ground; only the current track pulses in accent.
+   The four moods are RGB triplets so they can be used at any alpha.
    -------------------------------------------------------------------------- */
-.u-orange { color: var(--o2m-orange); }
+.o2m-matrix { background: var(--mx-bg); border: var(--line-1) solid var(--mx-border); position: relative; aspect-ratio: 1/1; }
+.o2m-matrix .q-calm      { fill: var(--mx-q-calm); }
+.o2m-matrix .q-happy     { fill: var(--mx-q-happy); }
+.o2m-matrix .q-dark      { fill: var(--mx-q-dark); }
+.o2m-matrix .q-energetic { fill: var(--mx-q-energetic); }
+.o2m-matrix .grid  { stroke: var(--mx-line); }
+.o2m-matrix .axis  { stroke: var(--mx-axis); }
+.o2m-matrix .label { fill: var(--mx-label); font-family: var(--font-mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.o2m-matrix .dl-zone { fill: var(--mx-dl-fill); stroke: var(--mx-dl-stroke); }
+.o2m-matrix .dot-core { fill: var(--mx-dot-core); }
+.o2m-matrix .dot-mood-happy     { fill: rgb(var(--mood-happy)); }
+.o2m-matrix .dot-mood-energetic { fill: rgb(var(--mood-energetic)); }
+.o2m-matrix .dot-mood-calm      { fill: rgb(var(--mood-calm)); }
+.o2m-matrix .dot-mood-dark      { fill: rgb(var(--mood-dark)); }
+@keyframes o2m-mx-pulse { from { box-shadow: 0 0 0 0 rgba(var(--mx-pulse), .5); } to { box-shadow: 0 0 0 14px rgba(var(--mx-pulse), 0); } }
+.o2m-matrix .is-current { animation: o2m-mx-pulse 1.6s ease-out infinite; }
+
+/* Detent labels around a dial (Basic view: Mood 5-notch, Opening 3-notch).
+   The active detent lights up in accent. */
+.o2m-dial .detent { font-family: var(--font-mono); font-size: 10px; letter-spacing: .05em; fill: var(--muted); cursor: pointer; user-select: none; transition: fill var(--fast); text-transform: uppercase; }
+.o2m-dial .detent.on { fill: var(--accent); font-weight: 700; }
+.o2m-dial .center-label { fill: var(--text); font-family: var(--font-head); font-weight: 700; text-transform: uppercase; }
+
+/* ----------------------------------------------------------------------------
+   15. BASIC-VIEW ACTUATORS  —  four ON/OFF category switches + ALL meta-button
+   -------------------------------------------------------------------------- */
+.o2m-actuators { display:grid; grid-template-columns: repeat(2,1fr); gap: 10px; position: relative; }
+@media (min-width:700px) { .o2m-actuators { grid-template-columns: repeat(4,1fr); } }
+.o2m-actuator {
+  display:flex; flex-direction:column; align-items:center; gap: 9px;
+  padding: 18px 8px 14px; background: none; border: var(--line-1) solid var(--border);
+  border-radius: var(--radius); color: var(--muted); cursor: pointer;
+  font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s);
+  text-transform: uppercase; letter-spacing: .04em;
+  transition: color var(--fast), border-color var(--fast);
+}
+.o2m-actuator svg { width:26px; height:26px; }
+.o2m-actuator:active { opacity:.6; }
+.o2m-actuator.is-on { color: var(--accent); border-color: var(--accent); }
+.o2m-actuator:disabled { cursor: wait; animation: o2m-pulse 1s ease-in-out infinite; }
+
+/* ALL meta-button — round, floats at the centre of the actuator grid */
+.o2m-all {
+  position:absolute; top:50%; left:50%; transform: translate(-50%,-50%);
+  width:62px; height:62px; border-radius:50%; z-index:2;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  background: var(--bg); border: var(--line-1) solid var(--border); color: var(--muted);
+  cursor:pointer; font-family: var(--font-head); font-weight:700; font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+  transition: color var(--fast), border-color var(--fast);
+}
+.o2m-all svg { width:20px; height:20px; }
+.o2m-all.is-on { color: var(--accent); border-color: var(--accent); }
+@keyframes o2m-pulse { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+
+/* ----------------------------------------------------------------------------
+   16. EQ ANIMATION
+   -------------------------------------------------------------------------- */
+.o2m-eq { display:inline-flex; align-items:flex-end; gap:2px; width:18px; height:16px; }
+.o2m-eq i { flex:1; background: var(--accent); animation: o2m-eq .9s ease-in-out infinite alternate; }
+.o2m-eq i:nth-child(2){ animation-duration:1.1s; animation-delay:.15s; }
+.o2m-eq i:nth-child(3){ animation-duration:.7s;  animation-delay:.08s; }
+@keyframes o2m-eq { from{ height:3px; opacity:.5; } to{ height:16px; opacity:1; } }
+
+/* ----------------------------------------------------------------------------
+   17. UTILITIES
+   -------------------------------------------------------------------------- */
+.u-accent { color: var(--accent); }
 .u-muted  { color: var(--muted); }
 .u-mono   { font-family: var(--font-mono); }
 .u-upper  { text-transform: uppercase; }
-@media (prefers-reduced-motion: reduce) {
-  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
-}
+@media (prefers-reduced-motion: reduce) { * { animation-duration:.001ms !important; transition-duration:.001ms !important; } }

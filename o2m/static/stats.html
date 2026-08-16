@@ -3,18 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#1a1a2e">
 <title>O2M Stats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Design system : source unique des tokens (voir DESIGN_SYNC.md). -->
+<link rel="stylesheet" href="/static/ds/o2m.css">
+<script>
+  /* Le thème suit celui choisi dans Mood : même clé, même défaut. Appliqué avant
+     le rendu pour éviter le flash. Pas de sélecteur ici — Mood reste la surface
+     de réglage, donc data-theme est fixe pour la durée de la page (ce qui permet
+     de lire les tokens une seule fois pour Chart.js). */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme')
+          || localStorage.getItem('o2m2-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    // La couleur de chrome PWA suit le fond du thème au lieu d'un navy figé.
+    var m = document.createElement('meta');
+    m.name = 'theme-color';
+    m.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#15120E';
+    document.head.appendChild(m);
+  })();
+  /* Retour arrière depuis Mood après un changement de thème : la page restaurée
+     depuis le bfcache garderait l'ancien data-theme. */
+  addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    var t = localStorage.getItem('o2m2-theme') || 'dark';
+    if (t !== document.documentElement.getAttribute('data-theme')) location.reload();
+  });
+</script>
 <script src="/static/chart.umd.min.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  :root {
-    --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
-    --accent: #e94560; --text: #eaeaea; --muted: #8892a4;
-    --border: #ffffff18;
-  }
-  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
-         min-height: 100vh; padding: 20px 16px 84px; }
+  /* Pas de :root ici : tous les tokens viennent de ds/o2m.css. */
+  body { min-height: 100vh; padding: var(--sp-5) var(--sp-4) 84px; }
 
   /* Unified footer (shared look with the Mood page) */
   #site-footer {
@@ -27,26 +48,27 @@
   .footer-link {
     display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
     color: var(--muted); text-decoration: none; background: transparent;
-    border: 1px solid var(--border); border-radius: 999px; padding: 6px 11px;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 11px;
     cursor: pointer; font-family: inherit; line-height: 1;
   }
   .footer-link:hover { color: var(--text); border-color: var(--text); }
   .footer-link svg { width: 15px; height: 15px; display: block; }
   #btn-snapcast.playing { color: var(--accent); border-color: var(--accent); }
   @media (max-width: 500px) { #site-footer .brand { display: none; } }
-  h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
+  h1 { font-family: var(--font-head); font-size: var(--t-h2); font-weight: 800;
+       text-transform: uppercase; margin-bottom: 4px; color: var(--text); }
   .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 28px; }
   .subtitle a { color: var(--muted); text-decoration: none; }
   .subtitle a:hover { color: var(--text); }
 
   .section { margin-bottom: 32px; }
   .section-title {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
-    color: var(--muted); margin-bottom: 12px;
+    font-family: var(--font-mono); font-size: var(--t-label); text-transform: uppercase;
+    letter-spacing: .12em; color: var(--muted); margin-bottom: 12px;
   }
   .section-note { font-size: 11px; color: var(--muted); margin: -6px 0 12px; }
   .card {
-    background: var(--surface); border-radius: 10px; padding: 16px;
+    background: var(--surface); border-radius: var(--radius); padding: var(--sp-4);
     border: 1px solid var(--border);
   }
   .chart-wrap { position: relative; width: 100%; }
@@ -71,17 +93,21 @@
   table.cmp tbody td { border-bottom: 1px solid var(--border); }
   table.cmp tbody tr:last-child td { border-bottom: none; }
   table.cmp tr.totals td { font-weight: 700; border-top: 2px solid var(--border); color: var(--text); }
-  .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: baseline; }
+  /* Carré comme le marqueur du système (.o2m-badge::before) ; l'identité est portée
+     par le libellé adjacent, la couleur n'est plus qu'un repère discret. */
+  .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: var(--radius);
+             background: var(--faint); margin-right: 7px; vertical-align: baseline; }
   .num-muted { color: var(--muted); }
 
   /* Playlist change log */
   table.cmp.log th, table.cmp.log td { text-align: left; }
   table.cmp.log td.when { color: var(--muted); font-variant-numeric: tabular-nums; }
   table.cmp.log td.track { white-space: normal; max-width: 280px; }
-  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
-           border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
-  .badge.add { background: #4caf5022; color: #66bb6a; }
-  .badge.remove { background: #e9456022; color: #ef5350; }
+  .badge { display: inline-block; font-family: var(--font-mono); font-size: var(--t-label);
+           font-weight: 700; padding: 2px 8px; border-radius: var(--radius);
+           text-transform: uppercase; letter-spacing: .03em; }
+  .badge.add    { background: var(--fill-2); color: var(--ok); }
+  .badge.remove { background: var(--fill-1); color: var(--danger); }
   .arrow { color: var(--muted); margin: 0 5px; }
   .otype { color: var(--text); }
 
@@ -89,7 +115,7 @@
   .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
   .pager button {
     background: var(--surface); color: var(--text); border: 1px solid var(--border);
-    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer;
+    border-radius: var(--radius); padding: 6px 12px; font: inherit; font-size: var(--t-body-s); cursor: pointer;
   }
   .pager button:hover:not(:disabled) { border-color: var(--text); }
   .pager button:disabled { opacity: .4; cursor: default; }
@@ -101,8 +127,8 @@
   .mood-header { display: flex; justify-content: space-between; align-items: baseline; }
   .mood-label { font-size: 13px; font-weight: 600; }
   .mood-count { font-size: 12px; color: var(--muted); }
-  .mood-bar-bg { background: var(--card); border-radius: 4px; height: 8px; overflow: hidden; }
-  .mood-bar-fill { height: 100%; border-radius: 4px; transition: width .5s; }
+  .mood-bar-bg { background: var(--track-bg); border-radius: var(--radius); height: 8px; overflow: hidden; }
+  .mood-bar-fill { height: 100%; border-radius: var(--radius); transition: width .5s; }
 
   #error-msg { color: var(--accent); font-size: 13px; margin-bottom: 16px; display: none; }
 </style>
@@ -316,15 +342,40 @@ async function initSnapcast() {
   autoConnectSnapIfNeeded();
 }
 
-const MOOD_COLORS = {
-  calm:      '#4fc3f7',
-  energetic: '#ef5350',
-  dark:      '#9c27b0',
-  happy:     '#ffee58',
-  unknown:   '#607d8b',
-  '_':       '#607d8b',
-  'null':    '#37474f',
-};
+/* ── Couleurs : plus aucun littéral, tout vient des tokens du design system ──
+   Lecture unique (data-theme est fixe pour la durée de la page, cf. le pré-paint).
+   Le <link> du système précède ce script, donc getComputedStyle voit des valeurs
+   résolues. Chaque lecture a un repli : un nom de token fautif renverrait '' et
+   Chart.js peindrait alors en transparent — panne muette difficile à diagnostiquer. */
+let T = {};
+function readTokens() {
+  const s = getComputedStyle(document.documentElement);
+  const g = (n, fb) => (s.getPropertyValue(n).trim() || fb);
+  T = {
+    text:   g('--text', '#F3EEE3'),
+    muted:  g('--muted', '#9C9486'),
+    faint:  g('--faint', '#6E665A'),
+    accent: g('--accent', '#FF5A00'),
+    border: g('--border', 'rgba(243,238,227,.13)'),
+    fill3:  g('--fill-3', 'rgba(243,238,227,.10)'),
+    // triplets « R,G,B » nus → composables en rgba()
+    mood: {
+      happy:     g('--mood-happy', '243,238,227'),
+      energetic: g('--mood-energetic', '255,90,0'),
+      calm:      g('--mood-calm', '156,148,134'),
+      dark:      g('--mood-dark', '110,102,90'),
+    },
+  };
+}
+/* Alpha-conscient : l'ancien code faisait `couleur + 'cc'`, ce qui ne marche que
+   sur de l'hexadécimal et corromprait silencieusement un rgba() venant d'un token. */
+const moodRGBA = (k, a = 1) => `rgba(${T.mood[k] || '120,120,120'},${a})`;
+const moodSolid = k => moodRGBA(k, 1);
+/* Les moods réels portent la rampe du thème ; tout le reste (unknown/_/null) est
+   fondu en une seule teinte discrète — ce ne sont pas des catégories à distinguer. */
+function moodColor(key, a = 1) {
+  return ['calm', 'energetic', 'dark', 'happy'].includes(key) ? moodRGBA(key, a) : T.faint;
+}
 
 const MOOD_LABELS = {
   calm: 'Calm', energetic: 'Energetic', dark: 'Dark',
@@ -337,13 +388,10 @@ const CAT_LABELS = {
   new: 'New (adjacent)', hidden_trash: 'Hidden / Trash',
   podcast_info: 'Podcast / Info', other: 'Other', all: 'All',
 };
-const CAT_COLORS = {
-  library: '#4caf50', favorites: '#e94560', incoming: '#ff9800',
-  new: '#4fc3f7', hidden_trash: '#607d8b', podcast_info: '#9c27b0',
-  other: '#795548', all: '#eaeaea',
-};
 const PROV_LABELS = { playlist: 'Playlist', album: 'Album', artist: 'Artist', unknown: 'Unknown' };
-const PROV_COLORS = { playlist: '#4fc3f7', album: '#7c4dff', artist: '#ffb300', unknown: '#455a64' };
+/* La provenance est ORDINALE (précédence playlist > album > artist), pas
+   catégorielle : une rampe de valeur décroissante l'exprime mieux que 4 teintes. */
+const provRamp = () => [T.text, T.muted, T.faint, T.fill3];
 
 function showError(msg) {
   const el = document.getElementById('error-msg');
@@ -361,12 +409,11 @@ function renderBreakdownTable(data) {
   tbody.innerHTML = '';
 
   const rowHtml = (r, isTotal) => {
-    const color = CAT_COLORS[r.category] || '#888';
     const label = CAT_LABELS[r.category] || r.category;
     const p = r.provenance || {};
     const provStr = `${fmtInt(p.playlist || 0)} / ${fmtInt(p.album || 0)} / ${fmtInt(p.artist || 0)}`;
     return `<tr class="${isTotal ? 'totals' : ''}">
-      <td><span class="cat-dot" style="background:${color}"></span>${label}</td>
+      <td><span class="cat-dot"></span>${label}</td>
       <td>${fmtInt(r.count)}</td>
       <td>${fmtPct(r.avg_read_end)}</td>
       <td>${r.avg_read_count}</td>
@@ -387,11 +434,12 @@ function renderProvenanceChart(data) {
   const cats = data.categories || [];
   const labels = cats.map(c => CAT_LABELS[c.category] || c.category);
   const provKeys = ['playlist', 'album', 'artist', 'unknown'];
-  const datasets = provKeys.map(k => ({
+  const ramp = provRamp();
+  const datasets = provKeys.map((k, i) => ({
     label: PROV_LABELS[k],
     data: cats.map(c => (c.provenance || {})[k] || 0),
-    backgroundColor: PROV_COLORS[k] + 'cc',
-    borderColor: PROV_COLORS[k],
+    backgroundColor: ramp[i],
+    borderColor: T.border,
     borderWidth: 1,
   }));
   new Chart(document.getElementById('chart-provenance'), {
@@ -399,11 +447,11 @@ function renderProvenanceChart(data) {
     data: { labels, datasets },
     options: {
       responsive: true, animation: false,
-      plugins: { legend: { labels: { color: '#eaeaea', font: { size: 11 }, boxWidth: 10 } } },
+      plugins: { legend: { labels: { color: T.text, font: { size: 11 }, boxWidth: 10 } } },
       scales: {
-        x: { stacked: true, ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' } },
-        y: { stacked: true, ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' },
-             title: { display: true, text: 'tracks', color: '#8892a4' } },
+        x: { stacked: true, ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border } },
+        y: { stacked: true, ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border },
+             title: { display: true, text: 'tracks', color: T.muted } },
       },
     },
   });
@@ -419,8 +467,10 @@ function renderPopularityChart(data) {
       labels,
       datasets: [{
         data: cats.map(c => c.avg_read_end),
-        backgroundColor: cats.map(c => (CAT_COLORS[c.category] || '#888') + 'cc'),
-        borderColor: cats.map(c => CAT_COLORS[c.category] || '#888'),
+        // Série unique : colorer chaque barre par sa propre identité n'encoderait
+        // rien de plus que sa longueur. Une seule teinte.
+        backgroundColor: T.accent,
+        borderColor: T.accent,
         borderWidth: 1,
       }],
     },
@@ -431,9 +481,9 @@ function renderPopularityChart(data) {
         tooltip: { callbacks: { label: ctx => 'read_end ' + (ctx.parsed.y * 100).toFixed(0) + '%' } },
       },
       scales: {
-        x: { ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' } },
-        y: { min: 0, max: 1, ticks: { color: '#8892a4', font: { size: 10 }, callback: v => (v * 100) + '%' },
-             grid: { color: '#ffffff12' } },
+        x: { ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border } },
+        y: { min: 0, max: 1, ticks: { color: T.muted, font: { size: 10 }, callback: v => (v * 100) + '%' },
+             grid: { color: T.border } },
       },
     },
   });
@@ -514,7 +564,7 @@ function renderMoodBars(dist) {
     const count = dist[key] || 0;
     if (count === 0 && !['calm','energetic','dark','happy'].includes(key)) return;
     const pct = ((count / total) * 100).toFixed(1);
-    const color = MOOD_COLORS[key] || MOOD_COLORS.unknown;
+    const color = moodColor(key);
     const label = MOOD_LABELS[key] || key;
     el.innerHTML += `
       <div class="mood-row">
@@ -541,7 +591,7 @@ function renderScatter(scatter) {
   const datasets = Object.entries(groups).map(([mood, pts]) => ({
     label: MOOD_LABELS[mood] || mood,
     data: pts,
-    backgroundColor: (MOOD_COLORS[mood] || MOOD_COLORS.unknown) + 'bb',
+    backgroundColor: moodColor(mood, .7),
     pointRadius: 3,
     pointHoverRadius: 5,
   }));
@@ -556,20 +606,20 @@ function renderScatter(scatter) {
       animation: false,
       scales: {
         x: {
-          title: { display: true, text: 'Energy', color: '#8892a4' },
+          title: { display: true, text: 'Energy', color: T.muted },
           min: 0, max: 1,
-          ticks: { color: '#8892a4' },
-          grid: { color: '#ffffff12' },
+          ticks: { color: T.muted },
+          grid: { color: T.border },
         },
         y: {
-          title: { display: true, text: 'Valence', color: '#8892a4' },
+          title: { display: true, text: 'Valence', color: T.muted },
           min: 0, max: 1,
-          ticks: { color: '#8892a4' },
-          grid: { color: '#ffffff12' },
+          ticks: { color: T.muted },
+          grid: { color: T.border },
         },
       },
       plugins: {
-        legend: { labels: { color: '#eaeaea', font: { size: 11 }, boxWidth: 10 } },
+        legend: { labels: { color: T.text, font: { size: 11 }, boxWidth: 10 } },
         tooltip: {
           callbacks: {
             label: ctx => {
@@ -589,7 +639,7 @@ function barChart(id, labels, data, color, xLabel) {
     type: 'bar',
     data: {
       labels,
-      datasets: [{ data, backgroundColor: color + 'bb', borderColor: color, borderWidth: 1 }],
+      datasets: [{ data, backgroundColor: color, borderColor: color, borderWidth: 1 }],
     },
     options: {
       responsive: true,
@@ -597,14 +647,14 @@ function barChart(id, labels, data, color, xLabel) {
       plugins: { legend: { display: false } },
       scales: {
         x: {
-          ticks: { color: '#8892a4', font: { size: 10 } },
-          grid: { color: '#ffffff12' },
-          title: xLabel ? { display: true, text: xLabel, color: '#8892a4' } : undefined,
+          ticks: { color: T.muted, font: { size: 10 } },
+          grid: { color: T.border },
+          title: xLabel ? { display: true, text: xLabel, color: T.muted } : undefined,
         },
         y: {
-          ticks: { color: '#8892a4', font: { size: 10 } },
-          grid: { color: '#ffffff12' },
-          title: { display: true, text: 'tracks', color: '#8892a4' },
+          ticks: { color: T.muted, font: { size: 10 } },
+          grid: { color: T.border },
+          title: { display: true, text: 'tracks', color: T.muted },
         },
       },
     },
@@ -615,7 +665,7 @@ function barChart(id, labels, data, color, xLabel) {
 function renderReadEnd(hist) {
   const labels = hist.map(b => `${Math.round(b[0] * 100)}%`);
   const data = hist.map(b => b[2]);
-  barChart('chart-read-end', labels, data, '#4fc3f7', 'Listen-completion rate');
+  barChart('chart-read-end', labels, data, T.accent, 'Listen-completion rate');
 }
 
 /* ── Count histograms ── */
@@ -639,8 +689,8 @@ function renderLastRead(hist) {
       labels,
       datasets: [{
         data,
-        backgroundColor: '#7c4dff99',
-        borderColor: '#7c4dff',
+        backgroundColor: T.accent,
+        borderColor: T.accent,
         borderWidth: 1,
       }],
     },
@@ -649,11 +699,11 @@ function renderLastRead(hist) {
       animation: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#8892a4', font: { size: 10 } }, grid: { color: '#ffffff12' } },
+        x: { ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border } },
         y: {
-          ticks: { color: '#8892a4', font: { size: 10 } },
-          grid: { color: '#ffffff12' },
-          title: { display: true, text: 'tracks', color: '#8892a4' },
+          ticks: { color: T.muted, font: { size: 10 } },
+          grid: { color: T.border },
+          title: { display: true, text: 'tracks', color: T.muted },
         },
       },
     },
@@ -662,8 +712,10 @@ function renderLastRead(hist) {
 
 /* ── Init ── */
 async function init() {
-  Chart.defaults.color = '#8892a4';
-  Chart.defaults.borderColor = '#ffffff18';
+  readTokens();
+  Chart.defaults.color = T.muted;
+  Chart.defaults.borderColor = T.border;
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
   try {
     const [breakdown, playlistLog, moodData, trackData] = await Promise.all([
       fetch(API + '/stats/breakdown').then(r => r.json()),
@@ -689,10 +741,10 @@ async function init() {
       renderReadEnd(trackData.read_end_hist);
     }
     if (trackData.read_count_hist && trackData.read_count_hist.length > 0) {
-      renderCountHist('chart-read-count', trackData.read_count_hist, '#4caf50');
+      renderCountHist('chart-read-count', trackData.read_count_hist, T.accent);
     }
     if (trackData.read_count_end_hist && trackData.read_count_end_hist.length > 0) {
-      renderCountHist('chart-read-count-end', trackData.read_count_end_hist, '#ff9800');
+      renderCountHist('chart-read-count-end', trackData.read_count_end_hist, T.accent);
     }
     if (trackData.last_read_hist && trackData.last_read_hist.length > 0) {
       renderLastRead(trackData.last_read_hist);

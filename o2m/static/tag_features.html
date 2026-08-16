@@ -4,76 +4,98 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tag Features — O2M</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Design system : source unique des tokens (voir DESIGN_SYNC.md). -->
+<link rel="stylesheet" href="/static/ds/o2m.css">
+<script>
+  /* Le thème suit celui choisi dans Mood : même clé, même défaut. Appliqué avant
+     le rendu pour éviter le flash. Pas de sélecteur ici — Mood reste la surface
+     de réglage, donc data-theme est fixe pour la durée de la page. */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme')
+          || localStorage.getItem('o2m2-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+  /* Retour arrière depuis Mood après un changement de thème : la page restaurée
+     depuis le bfcache garderait l'ancien data-theme. */
+  addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    var t = localStorage.getItem('o2m2-theme') || 'dark';
+    if (t !== document.documentElement.getAttribute('data-theme')) location.reload();
+  });
+</script>
 <style>
-  :root {
-    --bg: #1a1a2e; --surface: #16213e; --card: #0f3460;
-    --accent: #e94560; --text: #eee; --muted: #888;
-    --calm: #4fc3f7; --energetic: #ff7043; --dark: #9575cd; --happy: #66bb6a;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif;
-         font-size: 13px; min-height: 100vh; }
+  /* Pas de :root ici : tous les tokens viennent de ds/o2m.css. */
+  body { min-height: 100vh; }
   header { background: var(--surface); padding: 12px 20px; display: flex;
-           align-items: center; gap: 16px; border-bottom: 1px solid #333; }
-  header h1 { font-size: 16px; font-weight: 600; }
+           align-items: center; gap: 16px; border-bottom: 1px solid var(--border); }
+  header h1 { font-family: var(--font-head); font-size: var(--t-h3); font-weight: 700; text-transform: uppercase; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; }
-  .filter-btn { padding: 4px 12px; border-radius: 20px; border: 1px solid #555;
+  .filter-btn { padding: 4px 12px; border-radius: var(--radius); border: 1px solid var(--border-strong);
                 background: transparent; color: var(--muted); cursor: pointer;
-                font-size: 12px; transition: all .15s; }
-  .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .stats { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+                font-size: var(--t-body-s); transition: all .15s; }
+  .filter-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .stats { margin-left: auto; font-size: var(--t-body-s); color: var(--muted); white-space: nowrap; }
   main { padding: 16px 20px; }
   .toolbar { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
-  .search { background: var(--surface); border: 1px solid #444; border-radius: 6px;
-            padding: 6px 10px; color: var(--text); width: 220px; font-size: 13px; }
-  .add-btn { padding: 6px 14px; background: var(--accent); color: #fff; border: none;
-             border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .search { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 6px 10px; color: var(--text); width: 220px; font-size: var(--t-body-s); }
+  .add-btn { padding: 6px 14px; background: var(--accent); color: var(--on-accent); border: none;
+             border-radius: var(--radius); cursor: pointer; font-size: var(--t-body-s); }
   table { width: 100%; border-collapse: collapse; }
   th { background: var(--surface); padding: 8px 10px; text-align: left;
-       font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+       font-size: var(--t-label); text-transform: uppercase; letter-spacing: .5px;
        color: var(--muted); position: sticky; top: 0; }
-  td { padding: 6px 10px; border-bottom: 1px solid #222; vertical-align: middle; }
-  tr:hover td { background: rgba(255,255,255,.03); }
-  .tag-name { font-weight: 500; font-family: monospace; font-size: 13px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
-           font-size: 11px; font-weight: 600; }
-  .badge-calm      { background: rgba(79,195,247,.2); color: var(--calm); }
-  .badge-energetic { background: rgba(255,112,67,.2); color: var(--energetic); }
-  .badge-dark      { background: rgba(149,117,205,.2); color: var(--dark); }
-  .badge-happy     { background: rgba(102,187,106,.2); color: var(--happy); }
-  .badge-noise     { background: rgba(136,136,136,.2); color: var(--muted); }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+  tr:hover td { background: var(--fill-1); }
+  .tag-name { font-weight: 500; font-family: var(--font-mono); font-size: var(--t-body-s); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius);
+           font-size: var(--t-label); font-weight: 600; }
+  /* --mood-* sont des triplets « R,G,B » nus : ils s'insèrent tels quels dans
+     rgba()/rgb(), et suivent donc le thème. */
+  .badge-calm      { background: rgba(var(--mood-calm), .2);      color: rgb(var(--mood-calm)); }
+  .badge-energetic { background: rgba(var(--mood-energetic), .2); color: rgb(var(--mood-energetic)); }
+  .badge-dark      { background: rgba(var(--mood-dark), .2);      color: rgb(var(--mood-dark)); }
+  .badge-happy     { background: rgba(var(--mood-happy), .2);     color: rgb(var(--mood-happy)); }
+  .badge-noise     { background: var(--fill-2);                   color: var(--muted); }
   .bar-wrap { display: flex; align-items: center; gap: 6px; min-width: 90px; }
-  .bar { height: 6px; border-radius: 3px; background: var(--accent);
+  /* Paire dédiée du système à cette distinction énergie / valence. */
+  .bar { height: 6px; border-radius: var(--radius); background: var(--c-energy);
          min-width: 2px; transition: width .2s; }
-  .bar-label { font-size: 11px; color: var(--muted); width: 24px; text-align: right; }
+  .bar-valence { background: var(--c-valence); }
+  .bar-label { font-size: var(--t-label); color: var(--muted); width: 24px; text-align: right; }
   .actions { display: flex; gap: 6px; }
-  .btn-edit, .btn-del { padding: 3px 8px; border-radius: 4px; border: none;
-                        cursor: pointer; font-size: 11px; }
-  .btn-edit { background: rgba(255,255,255,.08); color: var(--text); }
-  .btn-del  { background: rgba(233,69,96,.15); color: var(--accent); }
+  .btn-edit, .btn-del { padding: 3px 8px; border-radius: var(--radius); border: none;
+                        cursor: pointer; font-size: var(--t-label); }
+  .btn-edit { background: var(--fill-2); color: var(--text); }
+  .btn-del  { background: var(--fill-1); color: var(--danger); }
   .empty { text-align: center; padding: 40px; color: var(--muted); }
 
   /* Modal */
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
              z-index: 100; align-items: center; justify-content: center; }
   .overlay.open { display: flex; }
-  .modal { background: var(--surface); border: 1px solid #444; border-radius: 10px;
-           padding: 24px; width: 380px; max-width: 95vw; }
-  .modal h2 { font-size: 15px; margin-bottom: 16px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+           padding: var(--sp-5); width: 380px; max-width: 95vw; }
+  .modal h2 { font-family: var(--font-head); font-size: var(--t-h3); text-transform: uppercase; margin-bottom: var(--sp-4); }
   .field { margin-bottom: 14px; }
-  .field label { display: block; font-size: 11px; color: var(--muted);
+  .field label { display: block; font-size: var(--t-label); color: var(--muted);
                  text-transform: uppercase; margin-bottom: 4px; }
   .field input, .field select { width: 100%; background: var(--bg);
-    border: 1px solid #444; border-radius: 6px; padding: 7px 10px;
-    color: var(--text); font-size: 13px; }
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 7px 10px;
+    color: var(--text); font-size: var(--t-body-s); }
   .range-row { display: flex; align-items: center; gap: 8px; }
   .range-row input[type=range] { flex: 1; accent-color: var(--accent); }
-  .range-val { width: 36px; text-align: right; font-size: 12px; color: var(--muted); }
+  .range-val { width: 36px; text-align: right; font-size: var(--t-body-s); color: var(--muted); }
   .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
-  .modal-btns button { padding: 7px 16px; border-radius: 6px; border: none;
-                       cursor: pointer; font-size: 13px; }
-  .btn-cancel { background: rgba(255,255,255,.08); color: var(--text); }
-  .btn-save   { background: var(--accent); color: #fff; }
+  /* Volontairement pas .o2m-btn : la classe force text-transform:uppercase et les
+     libellés sont français (« ENREGISTRER »). On tokenise sans changer la casse. */
+  .modal-btns button { padding: 7px 16px; border-radius: var(--radius); border: none;
+                       cursor: pointer; font-size: var(--t-body-s); }
+  .btn-cancel { background: var(--fill-2); color: var(--text); }
+  .btn-save   { background: var(--accent); color: var(--on-accent); }
   .noise-row  { display: flex; align-items: center; gap: 8px; }
   .noise-row input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
 </style>
@@ -177,18 +199,21 @@ function render() {
   if (!rows.length) { tbody.innerHTML = ''; empty.style.display = ''; return; }
   empty.style.display = 'none';
 
+  const dash = '<span style="color:var(--faint)">—</span>';
   tbody.innerHTML = rows.map(t => {
     const moodBadge = t.is_noise
       ? '<span class="badge badge-noise">noise</span>'
-      : t.mood ? `<span class="badge badge-${t.mood}">${t.mood}</span>` : '<span style="color:#555">—</span>';
+      : t.mood ? `<span class="badge badge-${t.mood}">${t.mood}</span>` : dash;
     const eVal = t.energy != null ? Math.round(t.energy * 100) : null;
     const vVal = t.valence != null ? Math.round(t.valence * 100) : null;
+    // Largeur en % (et non en px comme avant : une valeur de 1.0 donnait 100px,
+    // donc une barre qui ne remplissait jamais sa piste).
     const energyBar = eVal != null
-      ? `<div class="bar-wrap"><div class="bar" style="width:${eVal}px"></div><span class="bar-label">${(t.energy).toFixed(2)}</span></div>`
-      : '<span style="color:#555">—</span>';
+      ? `<div class="bar-wrap"><div class="bar" style="width:${eVal}%"></div><span class="bar-label">${(t.energy).toFixed(2)}</span></div>`
+      : dash;
     const valenceBar = vVal != null
-      ? `<div class="bar-wrap"><div class="bar" style="width:${vVal}px;background:#66bb6a"></div><span class="bar-label">${(t.valence).toFixed(2)}</span></div>`
-      : '<span style="color:#555">—</span>';
+      ? `<div class="bar-wrap"><div class="bar bar-valence" style="width:${vVal}%"></div><span class="bar-label">${(t.valence).toFixed(2)}</span></div>`
+      : dash;
     return `<tr>
       <td class="tag-name">${t.tag}</td>
       <td>${moodBadge}</td>

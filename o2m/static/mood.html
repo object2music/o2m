@@ -15,6 +15,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Design system : source unique des tokens des 5 thèmes + couche composants.
+     Doit précéder le <style> de la page, dont les règles l'emportent ensuite. -->
+<link rel="stylesheet" href="/static/ds/o2m.css">
+<!-- Marques et pochettes générées. Chargé dans le <head> et NON en fin de body :
+     init() s'exécute de façon synchrone à la fin du script inline, donc window.O2M
+     doit déjà exister à ce moment-là. Le script diffère lui-même son mount(). -->
+<script src="/static/ds/o2m-marks.js"></script>
 <script>
   /* Applique le thème avant le rendu pour éviter le flash.
      mood2 utilise une clé de stockage séparée (o2m2-theme) et part en dark
@@ -40,130 +47,17 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-  /* ════════════ THÈME : Dark — Design System (near-black chaud, accent orange) ════════════ */
-  :root, [data-theme="dark"] {
-    --bg: #15120E; --surface: #1C1812; --card: #241F18; --raised: #2D2719;
-    --accent: #FF5A00; --accent-press: #E64E00; --accent-soft: #FF5A0014; --on-accent: #190E04;
-    --danger: #E5484D;   /* destructive actions only (delete) — inherited by every theme */
-    --text: #F3EEE3; --muted: #9C9486; --faint: #6E665A;
-    --border: rgba(243,238,227,.13); --border-soft: rgba(243,238,227,.07); --border-strong: rgba(243,238,227,.30);
-    --fill-1: rgba(243,238,227,.04); --fill-2: rgba(243,238,227,.08); --fill-3: rgba(243,238,227,.15);
-    --track-bg: #2D2719;
-    --c-energy: var(--text); --c-valence: var(--muted); --c-dl: var(--accent); --dial-txt: var(--text);
-    --font: 'Archivo', system-ui, sans-serif;
-    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
-    --head-transform: uppercase; --head-weight: 800; --head-spacing: -.015em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: #FF5A00;
-    --mx-bg: #1C1812;
-    --mx-q-calm: rgba(243,238,227,.03); --mx-q-happy: rgba(243,238,227,.06);
-    --mx-q-dark: rgba(243,238,227,.10); --mx-q-energetic: rgba(243,238,227,.05);
-    --mx-line: rgba(243,238,227,.15); --mx-border: transparent;
-    --mx-label: rgba(243,238,227,.22); --mx-axis: rgba(243,238,227,.40);
-    --mx-dl-fill: rgba(255,90,0,.08); --mx-dl-stroke: rgba(255,90,0,.60);
-    --mx-dot-core: #F3EEE3; --mx-pulse: 255,90,0;
-    --mood-happy: 243,238,227; --mood-energetic: 255,90,0;
-    --mood-calm: 156,148,134; --mood-dark: 110,102,90;
-  }
+  /* Les tokens des cinq thèmes vivent désormais dans /static/ds/o2m.css
+     (chargé dans le <head>) : source unique de vérité, partagée avec les pages
+     stats/tag_features et avec les références de design. Ne pas les redéclarer ici. */
 
-  /* ════════════ THÈME : Light — Design System (crème papier chaude, accent orange) ════════════ */
-  [data-theme="creme"] {
-    --bg: #EFEADF; --surface: #E6E0D2; --card: #F7F3EA; --raised: #FCF9F2;
-    --accent: #FF5A00; --accent-press: #E64E00; --accent-soft: #FF5A0016; --on-accent: #190E04;
-    --text: #181410; --muted: #7A7264; --faint: #A89F8E;
-    --border: rgba(24,20,16,.16); --border-soft: rgba(24,20,16,.08); --border-strong: rgba(24,20,16,.34);
-    --fill-1: rgba(24,20,16,.04); --fill-2: rgba(24,20,16,.07); --fill-3: rgba(24,20,16,.12);
-    --track-bg: #E0D9C9;
-    --c-energy: var(--text); --c-valence: var(--muted); --c-dl: var(--accent); --dial-txt: var(--text);
-    --font: 'Archivo', system-ui, sans-serif;
-    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
-    --head-transform: uppercase; --head-weight: 800; --head-spacing: -.015em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: #FF5A00;
-    --mx-bg: #E6E0D2;
-    --mx-q-calm: rgba(24,20,16,.04); --mx-q-happy: rgba(24,20,16,.08);
-    --mx-q-dark: rgba(24,20,16,.14); --mx-q-energetic: rgba(24,20,16,.06);
-    --mx-line: rgba(24,20,16,.16); --mx-border: transparent;
-    --mx-label: rgba(24,20,16,.26); --mx-axis: rgba(24,20,16,.42);
-    --mx-dl-fill: rgba(255,90,0,.10); --mx-dl-stroke: rgba(255,90,0,.65);
-    --mx-dot-core: #ffffff; --mx-pulse: 255,90,0;
-    --mood-happy: 24,20,16; --mood-energetic: 255,90,0;
-    --mood-calm: 122,114,100; --mood-dark: 60,50,40;
-  }
-
-  /* ════════════ THÈME : Mono (brut N&B) ════════════ */
-  [data-theme="mono"] {
-    --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
-    --accent: #111111; --accent-soft: #1111111a; --on-accent: #ffffff;
-    --text: #000000; --muted: #9a9a9a;
-    --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
-    --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
-    --track-bg: #e2e2e2;
-    --c-energy: #111111; --c-valence: #888888; --c-dl: #ff3b00; --dial-txt: #000000;
-    --font: 'Archivo', system-ui, sans-serif;
-    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: #ff3b00;
-    --mx-bg: #f4f4f4;
-    --mx-q-calm: #00000005; --mx-q-happy: #0000000b;
-    --mx-q-dark: #00000012; --mx-q-energetic: #00000008;
-    --mx-line: #00000026; --mx-border: transparent;
-    --mx-label: #00000033; --mx-axis: #00000055;
-    --mx-dl-fill: #ff3b0010; --mx-dl-stroke: #ff3b0099;
-    --mx-dot-core: #ffffff; --mx-pulse: 0,0,0;
-    --mood-happy: 60,60,60; --mood-energetic: 255,59,0;
-    --mood-calm: 140,140,140; --mood-dark: 20,20,20;
-  }
-
-  /* ════════════ THÈME : Overprint (affiche éditoriale, orange) ════════════ */
-  [data-theme="overprint"] {
-    --bg: #ffffff; --surface: #ffffff; --card: #f0f0f0;
-    --accent: #ff5a00; --accent-soft: #ff5a001a; --on-accent: #190E04;
-    --text: #000000; --muted: #9a9a9a;
-    --border: #00000018; --border-soft: #0000000c; --border-strong: #00000033;
-    --fill-1: #00000006; --fill-2: #0000000f; --fill-3: #00000016;
-    --track-bg: #e2e2e2;
-    --hero-accent: #ff5a00;
-    --c-energy: #111111; --c-valence: #888888; --c-dl: #ff5a00; --dial-txt: #000000;
-    --font: 'Archivo', system-ui, sans-serif;
-    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: #ff5a00;
-    --mx-bg: #f4f4f4;
-    --mx-q-calm: #00000005; --mx-q-happy: #0000000b;
-    --mx-q-dark: #00000012; --mx-q-energetic: #00000008;
-    --mx-line: #00000026; --mx-border: transparent;
-    --mx-label: #00000033; --mx-axis: #00000055;
-    --mx-dl-fill: #ff5a0010; --mx-dl-stroke: #ff5a0099;
-    --mx-dot-core: #ffffff; --mx-pulse: 0,0,0;
-    --mood-happy: 60,60,60; --mood-energetic: 255,59,0;
-    --mood-calm: 140,140,140; --mood-dark: 20,20,20;
-  }
-
-  /* ════════════ THÈME : Invert (cinématique, couleur dynamique) ════════════ */
-  [data-theme="invert"] {
-    --bg: #0c0c0c; --surface: #0c0c0c; --card: #1c1c1c;
-    --accent: var(--hero-accent, #ff3b00); --accent-soft: #ffffff1a; --on-accent: #ffffff;
-    --text: #ffffff; --muted: #777777;
-    --border: #ffffff18; --border-soft: #ffffff0c; --border-strong: #ffffff33;
-    --fill-1: #ffffff06; --fill-2: #ffffff0f; --fill-3: #ffffff16;
-    --track-bg: #2a2a2a;
-    --hero-accent: #ff3b00;
-    --c-energy: #ffffff; --c-valence: #888888; --c-dl: var(--hero-accent, #ff3b00); --dial-txt: #ffffff;
-    --font: 'Archivo', system-ui, sans-serif;
-    --font-head: 'Archivo Expanded', 'Archivo', system-ui, sans-serif;
-    --head-transform: uppercase; --head-weight: 700; --head-spacing: -.01em; --radius: 0px;
-    --eyebrow-mark: "↓ "; --eyebrow-color: var(--hero-accent, #ff3b00);
-    --mx-bg: #161616;
-    --mx-q-calm: #ffffff04; --mx-q-happy: #ffffff09;
-    --mx-q-dark: #ffffff0f; --mx-q-energetic: #ffffff07;
-    --mx-line: #ffffff26; --mx-border: transparent;
-    --mx-label: #ffffff33; --mx-axis: #ffffff55;
-    --mx-dl-fill: #ffffff12; --mx-dl-stroke: var(--hero-accent, #ff3b00);
-    --mx-dot-core: #ffffff; --mx-pulse: 255,255,255;
-    --mood-happy: 210,210,210; --mood-energetic: 255,59,0;
-    --mood-calm: 150,150,150; --mood-dark: 90,90,90;
-  }
+  /* ── RETOUR ARRIÈRE — base/reset du design system ─────────────────────────
+     ds/o2m.css pose body { font-size: 15px; line-height: 1.5 } : c'est
+     l'harmonisation typographique du système. Si elle déséquilibre une vue,
+     DÉCOMMENTER la ligne ci-dessous pour retrouver exactement le rendu d'avant.
+     Un seul geste, sans toucher au design system.
+     body { font-size: 16px; line-height: normal; }
+     ────────────────────────────────────────────────────────────────────── */
 
   /* ════════════ mood2 : couche technique JetBrains Mono (design system) ════════════
      Durées, timecodes, specs, compteurs, liens utilitaires — tout l'affichage
@@ -441,6 +335,16 @@
     transition: filter .4s, opacity .22s ease;
   }
   #cover.cover-fading { opacity: 0; }
+  /* Pochette générée (repli sans visuel) : SVG inline, seul mode de rendu possible —
+     via <img src> (data: compris) le SVG serait un document isolé, sans les var(--…)
+     ni les classes du thème, et sortirait en noir.
+     NB volontaire : on ne lui applique PAS le grayscale d'overprint/invert appliqué à
+     #cover ; ces filtres désaturent la photo, alors que cette pochette est déjà faite
+     des rampes du thème — la griser tuerait sa moitié accent. */
+  #cover-gen { position: absolute; inset: 0; display: none; }
+  #cover-gen svg { width: 100%; height: 100%; display: block; }
+  #cover-wrap.gen #cover { display: none; }
+  #cover-wrap.gen #cover-gen { display: block; }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
   #track-name { font-size: 21px; white-space: nowrap; line-height: 1.1;
                 overflow: hidden; text-overflow: ellipsis; color: var(--eyebrow-color, var(--accent));
@@ -1194,7 +1098,10 @@
   }
 
   /* Brand (O2M + "Mood" eyebrow) merged into the footer bar, on the left. */
-  #footer-links .tb-brand { display: flex; align-items: baseline; gap: 9px; margin-right: var(--sp-3); }
+  /* align-items passe de baseline à center : le disque est peint en ::before et n'a
+     pas de ligne de base, il retomberait trop bas. Le seul enfant texte n'en pâtit pas. */
+  #footer-links .tb-brand { display: flex; align-items: center; gap: 7px; margin-right: var(--sp-3); }
+  #footer-links .tb-brand .o2m-mark { font-size: 15px; flex-shrink: 0; }   /* .o2m-mark = 1em × 1em */
   .tb-mark {
     font-family: var(--font-head); font-weight: 900; font-size: 15px; line-height: 1;
     letter-spacing: -.02em; text-transform: uppercase; color: var(--text);
@@ -1398,6 +1305,9 @@
     width: 84px; height: 84px; flex-shrink: 0; object-fit: cover;
     background: var(--card); border: 1px solid var(--border);
   }
+  /* Variante pochette générée : conteneur SVG, pas une image. */
+  .obj-cover--gen { padding: 0; overflow: hidden; }
+  .obj-cover svg { width: 100%; height: 100%; display: block; }
   .obj-meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px;
     color: var(--muted); min-width: 0; }
   .obj-meta b { color: var(--text); font-weight: 600; }
@@ -1768,7 +1678,7 @@
 <div id="top-zone">
   <div id="hero-title"></div>
   <div id="cover-col">
-    <div id="cover-wrap"><img id="cover" src="" alt=""></div>
+    <div id="cover-wrap"><img id="cover" src="" alt=""><div id="cover-gen" aria-hidden="true"></div></div>
   </div>
   <div id="top-right">
 
@@ -2013,6 +1923,9 @@
   <!-- Footer links -->
   <div id="footer-links">
     <div class="tb-brand">
+      <!-- Disque plat (.o2m-mark) et non le bullseye : à 15px on est sous le seuil
+           des ~32px où les anneaux cessent de se lire. Purement CSS, aucun mount(). -->
+      <span class="o2m-mark" aria-hidden="true"></span>
       <span class="tb-mark">O2M</span>
     </div>
     <!-- Content search: collapsed to an icon; expands to a text field in place. -->
@@ -2022,7 +1935,9 @@
     </div>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
-      <button class="theme-chip" data-theme-set="creme">Light</button>
+      <!-- La clé reste "creme" : c'est elle qui est persistée dans o2m2-theme pour
+           les utilisateurs existants (le design system la garde comme alias). -->
+      <button class="theme-chip" data-theme-set="creme">Bulletin</button>
       <button class="theme-chip" data-theme-set="mono">Mono</button>
       <button class="theme-chip" data-theme-set="overprint">Overprint</button>
       <button class="theme-chip" data-theme-set="invert">Invert</button>
@@ -2864,14 +2779,14 @@ async function refreshNowPlaying() {
         const imgs = imgR?.result?.[track.uri] || [];
         const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
         lastCoverUrl = best ? imageUrl(best.uri || best) : '';
-        setCoverSmooth(lastCoverUrl || placeholderForUri(track.uri));
+        if (lastCoverUrl) setCoverSmooth(lastCoverUrl); else setCoverGenerated(track.uri);
         updateMediaSession(track, playing, lastCoverUrl);
         prefetchNextCover();
       }).catch(() => {});
     }
     updateMediaSession(track, playing, lastCoverUrl);
   } else {
-    document.getElementById('cover').src = placeholderForUri(null);
+    setCoverGenerated(null);
     document.getElementById('hero-title').textContent = '';
     fitHeroTitle();
     updateStatusBadge('');
@@ -3283,7 +3198,7 @@ async function openPodcast(uri, seed) {
     const [browseR, cover] = await Promise.all([ rpc('core.library.browse', { uri }), objCover(uri) ]);
     const eps = (browseR?.result || []).filter(r => r.type === 'track');
     objSetActionUris(eps.map(e => e.uri).filter(Boolean), uri);
-    const coverHtml = cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : '';
+    const coverHtml = objCoverHTML(cover, uri);
     let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Podcast')}</b>`
       + `<span>${eps.length} episode${eps.length === 1 ? '' : 's'}</span></div></div>`;
     html += objRenderTracks(eps.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: [] })), 'track');
@@ -3305,7 +3220,7 @@ async function openPlaylist(uri, seed) {
     let tracks = lookupR?.result?.[uri] || [];
     if (!Array.isArray(tracks)) tracks = [];
     objSetActionUris(tracks.map(t => t.uri).filter(Boolean), uri);
-    const coverHtml = cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : '';
+    const coverHtml = objCoverHTML(cover, uri);
     let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Playlist')}</b>`
       + `<span>${tracks.length} track${tracks.length === 1 ? '' : 's'}</span></div></div>`;
     html += objRenderTracks(tracks.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists })), 'track');
@@ -3514,9 +3429,10 @@ async function maybeShowRadioTitle(track) {
     // Cover: the item's own artwork when available (songs; some shows), else the
     // station brand logo (repli 1), else a clean placeholder — never a stale cover,
     // never a broken UUID image.
-    const coverUrl = d.visual || d.station_logo || placeholderForUri(track.uri);
+    const coverUrl = d.visual || d.station_logo || '';
     if (coverUrl !== _radioLast.visual) {
-      try { setCoverSmooth(coverUrl); } catch (e) {}
+      // '' est un sentinel distinct de _radioLast.visual (null au départ) → 1er tick ok
+      try { if (coverUrl) setCoverSmooth(coverUrl); else setCoverGenerated(track.uri); } catch (e) {}
       _radioLast.visual = coverUrl;
     }
     if (artistLine !== _radioLast.artist) {
@@ -3532,7 +3448,7 @@ async function maybeShowRadioTitle(track) {
   } catch (e) {}
 }
 
-function trackPanelBodyHTML(p, { hero, cover, name, artist, artistUri, album, albumUri } = {}) {
+function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artistUri, album, albumUri } = {}) {
   // Artist and album are clickable when their uri is known (the #obj-body handler
   // opens them via data-artist-uri / data-album-uri). Shown as "artist · album".
   const link = (txt, attr) => `<span class="obj-link" ${attr}>${objEsc(txt)}</span>`;
@@ -3540,7 +3456,7 @@ function trackPanelBodyHTML(p, { hero, cover, name, artist, artistUri, album, al
   const albumHtml  = album  ? (albumUri  ? link(album,  `data-album-uri="${objEsc(albumUri)}" data-name="${objEsc(album)}"`) : objEsc(album)) : '';
   const sub = [artistHtml, albumHtml].filter(Boolean).join(' · ');
   const heroHtml = hero
-    ? `<div class="obj-hero">${cover ? `<img class="obj-cover" src="${objEsc(cover)}" alt="">` : ''}`
+    ? `<div class="obj-hero">${objCoverHTML(cover, uri || albumUri || name)}`
       + `<div class="obj-meta"><b>${objEsc(name || '')}</b><span>${sub}</span></div></div>`
     : '';
   const rows = TRACK_PANEL_ROWS.map(([label, key]) => {
@@ -4246,7 +4162,7 @@ async function renderTrackObj(uri, seed) {
   objSetHead('Track', name, artist);
   objTMatrixUri = uri;
   // Same shared body as the now-playing panel (one render path — see makeTrackPanel).
-  objPanel.render(info, { hero: true, cover, name, artist, artistUri, album, albumUri });
+  objPanel.render(info, { hero: true, cover, uri, name, artist, artistUri, album, albumUri });
 }
 
 async function saveCurrentTrackFeatures() {
@@ -4615,6 +4531,15 @@ function objClearNav() { _objBack.length = 0; _objFwd.length = 0; _objUpdateNav(
 const objEsc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+/* Héros des modales : visuel réel s'il existe, sinon pochette générée (déclaration
+   `function` → hoistée, donc utilisable par les rendus déclarés plus haut).
+   Le SVG est injecté inline, jamais via <img src> : il lit les var(--…) du thème. */
+function objCoverHTML(url, seed) {
+  if (url) return `<img class="obj-cover" src="${objEsc(url)}" alt="">`;
+  if (!window.O2M) return '';
+  return `<div class="obj-cover obj-cover--gen">${O2M.coverFor(seed || '')}</div>`;
+}
+
 async function objCover(uri) {
   try {
     const r = await rpc('core.library.get_images', {uris: [uri]});
@@ -4682,7 +4607,7 @@ function objSourceTag(source) {
 function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = [], albums = [], source = 'db' }) {
   objSetActionUris(tracks.map(t => t.uri).filter(Boolean), uri);
   objSetHead('Artist', name, '');
-  const coverHtml = image ? `<img class="obj-cover" src="${objEsc(image)}" alt="">` : '';
+  const coverHtml = objCoverHTML(image, uri);
   const genreLine = genres.length ? `<span>${genres.slice(0, 6).map(objEsc).join(' · ')}</span>` : '';
   let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b>`
     + `<span>${tracks.length} tracks · ${albums.length} albums</span>${genreLine}${objSourceTag(source)}</div></div>`;
@@ -4734,7 +4659,7 @@ function renderAlbum(uri, { name = 'Album', artist = '', image = '', release = '
   objSetActionUris(tracks.map(t => t.uri).filter(Boolean), uri);
   objSetHead('Album', name, artist);
   const totalMs = tracks.reduce((s, t) => s + (t.length || 0), 0);
-  const coverHtml = image ? `<img class="obj-cover" src="${objEsc(image)}" alt="">` : '';
+  const coverHtml = objCoverHTML(image, uri);
   const yr = release ? (' · ' + objEsc(String(release).slice(0, 4))) : '';
   let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(name)}</b><span>${objEsc(artist)}</span>`
     + `<span>${tracks.length} tracks · ${msToMin(totalMs)}${yr}</span>${objSourceTag(source)}</div></div>`;
@@ -6178,9 +6103,29 @@ const PLACEHOLDER_COVERS = [
 /* Crossfade the cover: preload the new image off-DOM, then swap + fade in.
    Avoids the blank flash of setting src directly and makes track changes feel
    snappier. No-op when the URL is unchanged. */
+/* Repli sans visuel : pochette générée par le design system, dérivée de l'uri (le
+   hachage est le même que placeholderForUri, donc une piste garde « sa » pochette).
+   Retourne false si la librairie n'est pas là, pour permettre un repli PNG. */
+function setCoverGenerated(uri) {
+  const wrap = document.getElementById('cover-wrap');
+  const gen  = document.getElementById('cover-gen');
+  if (!wrap || !gen || !window.O2M) return false;
+  gen.innerHTML = O2M.coverFor(uri || 'o2m');
+  const svg = gen.firstElementChild;
+  // Obligatoire : le viewBox est 1:1 alors que #cover-wrap est 16/9 en invert et
+  // 84×84 en mobile — sans « slice » on obtient des bandes vides.
+  if (svg) svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
+  wrap.classList.add('gen');
+  return true;
+}
+
 function setCoverSmooth(url) {
   const el = document.getElementById('cover');
-  if (!el || !url || el.src === url) return;
+  if (!el || !url) return;
+  // Avant le early-return : sinon un retour à une pochette réelle inchangée
+  // laisserait l'<img> masqué derrière la pochette générée.
+  document.getElementById('cover-wrap')?.classList.remove('gen');
+  if (el.src === url) return;
   const img = new Image();
   img.onload = () => {
     el.classList.add('cover-fading');
@@ -6565,10 +6510,12 @@ function renderWelcome(s) {
 async function init() {
   // Pochette de remplacement dès le chargement (évite l'image vide) + repli si un visuel casse
   const coverEl = document.getElementById('cover');
-  coverEl.src = PLACEHOLDER_COVERS[2];   // o2m-cover3 as startup default
+  // Pochette générée par défaut ; repli PNG seulement si la librairie n'a pas chargé.
+  if (!setCoverGenerated(null)) coverEl.src = PLACEHOLDER_COVERS[2];
+  // Un visuel distant cassé bascule sur la pochette générée : elle ne peut pas 404,
+  // donc plus besoin du garde anti-boucle d'avant.
   coverEl.addEventListener('error', () => {
-    const ph = placeholderForUri(matrixCurUri);
-    if (coverEl.src.indexOf(ph) === -1) coverEl.src = ph;   // évite la boucle si le placeholder lui-même échoue
+    if (!setCoverGenerated(matrixCurUri)) coverEl.src = PLACEHOLDER_COVERS[2];
   });
 
   readThemeColors();
