@@ -1064,7 +1064,10 @@ class DatabaseHandler():
             'storage':      'sp',
             'cached_at':    datetime.datetime.utcnow(),
         }
-        update_fields = {k: v for k, v in row.items() if k != 'id'}
+        # Skip None values on update: a partial source (e.g. a playlist read through
+        # Mopidy, which carries no release date or artwork) must enrich the cached row,
+        # never blank fields a richer fetch already filled.
+        update_fields = {k: v for k, v in row.items() if k != 'id' and v is not None}
         Album.insert(row).on_conflict(action='update', update=update_fields).execute()
         # Link album → artists
         for pos, artist in enumerate(album_data.get('artists') or []):
@@ -1335,10 +1338,11 @@ class DatabaseHandler():
             'storage':      'local' if uri.startswith('local:') else 'sp',
         }
 
-        # Upsert: create stat row if not present, update metadata fields otherwise
+        # Upsert: create stat row if not present, update metadata fields otherwise.
+        # Same rule as save_album — a partial source must not blank fields already filled.
         Track.insert({**updates, 'uri': uri}).on_conflict(
             action='update',
-            update=updates,
+            update={k: v for k, v in updates.items() if v is not None},
         ).execute()
 
         # Cache album when present

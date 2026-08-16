@@ -56,6 +56,7 @@ class O2mToMopidy:
         self.mopidyHandler = mopidyHandler  # Websocket mopidy for reading control
         self.spotifyHandler = SpotifyHandler() # Spotify API
         self.spotifyHandler.set_db_handler(self.dbHandler)  # enable local cache
+        self.spotifyHandler.set_mopidy_handler(mopidyHandler)  # fallback source for playlists
         self.library_name_cache = {}  # Cache to avoid repeated Spotify lookups for names
         self.library_link_from_track_cache = {}  # Cache: (track_uri, hint) -> full library uri
         # Central per-track registry keyed by Mopidy tlid (always unique).
@@ -111,6 +112,26 @@ class O2mToMopidy:
             'franceculture':       (4,    False, 'France Culture'),
             'monpetitfranceinter': (None, False, 'Mon Petit France Inter'),
         }
+        # Station brand logos — the "repli 1" fallback shown as the cover when the
+        # live feed carries no usable artwork (shows, station-only, streams). Keyed by
+        # the same exact slug; FIP webradios share the FIP logo, PFI reuses France
+        # Inter's. Public Wikimedia Commons PNG rasterisations (stable content URLs).
+        # Superseded per-item by the real OpenAPI visual once the key resolves it.
+        _L_FIP = 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/FIP_logo_2021.svg/250px-FIP_logo_2021.svg.png'
+        _L_INTER = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/France_Inter_logo_2021.svg/250px-France_Inter_logo_2021.svg.png'
+        self._RF_LOGOS = {
+            'fip': _L_FIP, 'fiprock': _L_FIP, 'fipjazz': _L_FIP, 'fipgroove': _L_FIP,
+            'fipworld': _L_FIP, 'fipnouveautes': _L_FIP, 'fipreggae': _L_FIP, 'fipelectro': _L_FIP,
+            'francemusique': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/France_Musique_logo_2021.svg/250px-France_Musique_logo_2021.svg.png',
+            'franceinter': _L_INTER,
+            'franceinfo': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/03/Franceinfo.svg/250px-Franceinfo.svg.png',
+            'franceculture': 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/France_Culture_logo_2021.svg/250px-France_Culture_logo_2021.svg.png',
+            'monpetitfranceinter': _L_INTER,
+        }
+        # Radio France OpenAPI key (developers.radiofrance.fr) — optional. When set,
+        # it will be used to resolve real show/station visuals (UUID → image URL);
+        # until then the station logos above are the fallback cover.
+        self._rf_api_key = (self.configO2M.get('radiofrance_api_key', '') or '').strip() or None
 
         if "podcast_newest_first" in self.configO2M:
             self.podcast_newest_first = self.configO2M["podcast_newest_first"] 
@@ -1912,8 +1933,13 @@ class O2mToMopidy:
         #Loop on lines containing the playlist uris
         for content in data:
             #Taking the first one. Pb if manies ?
-            if 'spotify:playlist' in content: 
-                library_link = content
+            if 'spotify:playlist' in content:
+                # strip() is essential: box data uses \r\n line endings and we split on
+                # \n, so each line keeps a trailing \r. An unstripped 'spotify:playlist:ID\r'
+                # is rejected by the Spotify API ("Unsupported URL / URI.", 400) — this
+                # silently broke the radio auto-save add (the manual editor builds the URI
+                # from a clean id, which is why only the auto path failed).
+                library_link = content.strip()
                 break
         return library_link
 
@@ -2814,31 +2840,36 @@ class O2mToMopidy:
                     playing = (self.mopidyHandler.playback.get_state() == 'playing')
                 except Exception:
                     playing = False
-                np = self.radio_now_playing() if playing else None
-                if np and np.get('key'):
-                    self._radio_np = np
-                    if np['key'] != self._radio_last_key:
-                        # Track changed → the previous track played through to its end.
-                        prev = self._radio_last_meta
-                        if prev and prev.get('is_music'):
-                            try:
-                                self._on_radio_track_finished(prev)
-                            except Exception as e:
-                                print(f"radio auto-save error: {e}")
-                        self._radio_last_key = np['key']
-                        self._radio_last_meta = np
-                else:
+                if not playing:
+                    # Genuinely stopped → clear pending state (no finish to save).
                     self._radio_np = None
                     self._radio_last_key = None
                     self._radio_last_meta = None
+                else:
+                    np = self.radio_now_playing()
+                    if np and np.get('key'):
+                        self._radio_np = np
+                        if np['key'] != self._radio_last_key:
+                            # Track changed → the previous track played through to its end.
+                            prev = self._radio_last_meta
+                            if prev and prev.get('is_music'):
+                                try:
+                                    self._on_radio_track_finished(prev)
+                                except Exception as e:
+                                    print(f"radio auto-save error: {e}", flush=True)
+                            self._radio_last_key = np['key']
+                            self._radio_last_meta = np
+                    # else: still playing but a transient metadata fetch failed
+                    # (network blip / rate limit) → KEEP the pending key/meta so the
+                    # in-progress track's finish isn't lost on the next real change.
             except Exception as e:
                 print(f"_radio_watch_loop error: {e}")
             _t.sleep(self.radio_poll_sec)
 
     def _rf_station_for_uri(self, uri):
-        """(station_id|None, is_music, full_name) for a Radio France stream URI, else
-        None. Matches the EXACT stream slug (…/<slug>-hifi.aac) — not a substring —
-        so 'monpetitfranceinter' ≠ 'franceinter'."""
+        """(station_id|None, is_music, full_name, logo_url) for a Radio France stream
+        URI, else None. Matches the EXACT stream slug (…/<slug>-hifi.aac) — not a
+        substring — so 'monpetitfranceinter' ≠ 'franceinter'."""
         if not uri or 'radiofrance' not in uri.lower():
             return None
         tail = uri.lower().split('?')[0].rsplit('/', 1)[-1]
@@ -2849,7 +2880,9 @@ class O2mToMopidy:
             if tail.endswith(suf):
                 tail = tail[:-len(suf)]
         st = self._RF_STATIONS.get(tail)
-        return (st[0], st[1], st[2]) if st else None
+        if not st:
+            return None
+        return (st[0], st[1], st[2], self._RF_LOGOS.get(tail, ''))
 
     def _rf_livemeta(self, sid):
         """Current on-air track for a Radio France station via the livemeta API."""
@@ -2908,7 +2941,7 @@ class O2mToMopidy:
             station = ''
         st = self._rf_station_for_uri(uri)
         if st:
-            sid, is_music, name = st
+            sid, is_music, name, logo = st
             meta = self._rf_livemeta(sid) if sid else None
             if not (meta and meta.get('title')):
                 # Known station but no usable live item → still surface the station name.
@@ -2916,6 +2949,7 @@ class O2mToMopidy:
                         'key': 'station:' + name, 'source': 'radiofrance'}
             meta['is_music'] = is_music
             meta['station'] = name   # full sub-station name (e.g. 'FIP Groove')
+            meta['station_logo'] = logo   # brand-logo fallback cover (repli 1)
             return meta
         # Fallback: ICY stream title (other Icecast/Shoutcast radios).
         try:
@@ -2926,13 +2960,16 @@ class O2mToMopidy:
             artist, sep, track = title.partition(' - ')
             if sep:
                 return {'title': track.strip(), 'artist': artist.strip(), 'album': '', 'kind': 'song',
-                        'key': title, 'is_music': True, 'source': 'icy', 'station': station}
+                        'key': title, 'is_music': True, 'source': 'icy', 'station': station,
+                        'station_logo': ''}
             return {'title': title.strip(), 'artist': '', 'album': '', 'kind': 'song',
-                    'key': title, 'is_music': True, 'source': 'icy', 'station': station}
+                    'key': title, 'is_music': True, 'source': 'icy', 'station': station,
+                    'station_logo': ''}
         # Non-RF stream with no ICY → at least show the stream/station name.
         if station:
             return {'title': '', 'artist': '', 'album': '', 'kind': 'radio', 'visual': '',
-                    'key': 'station:' + station, 'source': 'stream', 'station': station}
+                    'key': 'station:' + station, 'source': 'stream', 'station': station,
+                    'station_logo': ''}
         return None
 
     def _on_radio_track_finished(self, meta):
@@ -2968,25 +3005,47 @@ class O2mToMopidy:
         # DB tracking (tiers 2 & 3): record as a 'new' track completed once.
         self._record_new_once(uri, top)
         if not to_playlist:
-            print(f"radio save: {query!r} → {uri} recorded in DB (tier 2, no playlist)")
+            print(f"radio save: {query!r} → {uri} recorded in DB (tier 2, no playlist)", flush=True)
             return uri
-        # Playlist (tier 3): add to the canonical 'new' playlist (ToListen).
+        # Playlist (tier 3): add to the canonical 'new' playlist (ToListen) via the
+        # EXACT same path as the manual editor (POST /api/track_playlist) —
+        # add_tracks_playlist → sp.playlist_add_items — which is proven to work, plus
+        # the local DB mirror (save_playlist_track) so the track shows as in-playlist
+        # immediately. The old autofill_spotify_playlist used sp.user_playlist_add_tracks
+        # with self.username (the streaming account, not the playlist owner) → 403/refused.
         playlist, added = '', None
         try:
-            playlist = self._new_target_playlist()
+            playlist = (self._new_target_playlist() or '').strip()  # defensive: never a trailing \r
+            print(f"radio save: target 'new' playlist = {playlist!r}", flush=True)
             if playlist:
-                added = self.autofill_spotify_playlist(playlist, [uri])
+                pid = playlist.split(':')[-1]
+                # Dedup against the LOCAL mirror (reliable) rather than a Spotify
+                # is_track_in_playlist READ, which 403s/429s under the shared-token
+                # rate limits and — in the old autofill path — raised and aborted the
+                # whole add. The mirror is populated by save_playlist_track below and
+                # by the manual editor, so it reflects what we've added.
+                already = False
+                try:
+                    already = uri in set(self.dbHandler.get_playlist_track_uris(pid))
+                except Exception:
+                    already = False
+                if already:
+                    added = 'already in (mirror)'
+                else:
+                    added = self.spotifyHandler.add_tracks_playlist(self.username, playlist, [uri])
+                    try:
+                        self.dbHandler.save_playlist_track(pid, uri)
+                    except Exception as e:
+                        print(f"radio save: local playlist mirror error: {e!r}", flush=True)
         except Exception as e:
-            print(f"radio save: playlist add error: {e}")
-        # Honest logging: autofill returns falsy when the write failed/was refused
-        # (e.g. Spotify 403 on playlist-modify) — don't claim success then.
+            print(f"radio save: playlist add error: {e!r}", flush=True)
         if playlist and added:
-            print(f"radio save: {query!r} → {uri} recorded in DB + added to {playlist}")
+            print(f"radio save: {query!r} → {uri} recorded in DB + added to {playlist} ({added})", flush=True)
         elif playlist:
             print(f"radio save: {query!r} → {uri} recorded in DB but NOT added to "
-                  f"{playlist} (Spotify write failed/refused — check playlist-modify scope)")
+                  f"{playlist} (Spotify write failed/refused)", flush=True)
         else:
-            print(f"radio save: {query!r} → {uri} recorded in DB (no 'new' playlist configured)")
+            print(f"radio save: {query!r} → {uri} recorded in DB (no 'new' playlist configured)", flush=True)
         return uri
 
     def _record_new_once(self, uri, tinfo):
