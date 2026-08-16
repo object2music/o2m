@@ -340,8 +340,16 @@ class DatabaseHandler():
         except Exception as e:
             print(f"recompute_popularity first_seen error: {e}")
         try:
-            for r in db.execute_sql("SELECT track_uri, COUNT(DISTINCT playlist_id) "
-                                    "FROM playlisttrack GROUP BY track_uri"):
+            # Only playlists still in the library endorse a track: one that left the
+            # library is no longer drawn from, so it must not keep crediting either.
+            # LEFT JOIN + IS NULL: a link whose playlist row is unknown, or never
+            # assessed, still counts (see Playlist.in_library).
+            for r in db.execute_sql(
+                    "SELECT pt.track_uri, COUNT(DISTINCT pt.playlist_id) "
+                    "FROM playlisttrack pt "
+                    "LEFT JOIN playlist p ON p.id = pt.playlist_id "
+                    "WHERE p.in_library IS NULL OR p.in_library <> 0 "
+                    "GROUP BY pt.track_uri"):
                 pl_count[r[0]] = r[1]
         except Exception as e:
             print(f"recompute_popularity playlist_count error: {e}")
