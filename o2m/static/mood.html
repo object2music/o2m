@@ -338,6 +338,10 @@
     text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Radio DETAILS: stack label over value and let long titles (shows!) WRAP
+     instead of overflowing the panel. */
+  #track-details .td-radio > div { flex-direction: column; align-items: flex-start; gap: 2px; }
+  #track-details .td-radio dd { text-align: left; white-space: normal; overflow-wrap: anywhere; }
   .td-fav { line-height: 1; user-select: none; display: inline-flex; }
   .td-fav svg { width: 16px; height: 16px; display: block; }
   .td-fav.on { color: #e0245e; }
@@ -3448,28 +3452,29 @@ async function maybeShowRadioTitle(track) {
   if (!track || !_isStreamUri(track.uri)) { _radioLast = { title: null, artist: null, album: null, visual: null }; return; }
   try {
     const d = await fetch(API + '/radio_now_playing').then(r => r.json());
-    if (!d || !d.playing || !d.title) return;
+    if (!d || !d.playing) return;
     const station = d.station || (track.name && !_isStreamUri(track.name) ? track.name : '');
-    // Title line = song; next line starts with the STATION then the song artist.
-    const artistLine = [station, d.artist].filter(Boolean).join(' · ');
-    const albumLine  = d.album || '';
-    // Only touch the DOM when a value actually changes → the title stays static
-    // (no flicker) between refreshes and updates cleanly on each new song.
-    if (d.title !== _radioLast.title) {
+    // No current item (station-only, e.g. a station without a live feed) → show the
+    // station name as the title. With an item: title = the item (song OR show),
+    // line 2 = "STATION · artist" (artist only for songs) or just the station.
+    const displayTitle = d.title || station || 'Radio';
+    const artistLine = d.title ? [station, d.artist].filter(Boolean).join(' · ') : '';
+    const albumLine  = (d.title && d.album) ? d.album : '';
+    // Only touch the DOM when a value actually changes → static (no flicker).
+    if (displayTitle !== _radioLast.title) {
       const heroEl = document.getElementById('hero-title');
       const nameEl = document.getElementById('track-name');
-      if (heroEl) heroEl.textContent = d.title;
-      if (nameEl) nameEl.textContent = d.title;
+      if (heroEl) heroEl.textContent = displayTitle;
+      if (nameEl) nameEl.textContent = displayTitle;
       fitHeroTitle();
-      _radioLast.title = d.title;
-      // Keep the radio-adapted DETAILS panel's song in sync with the header.
-      if (_isStreamUri(track.uri)) renderRadioDetails(d);
+      _radioLast.title = displayTitle;
+      renderRadioDetails(d);   // keep the radio-adapted DETAILS in sync
     }
-    // Cover = the current song's artwork (livemeta visual), so the "logo" tracks
-    // the song instead of a blank placeholder. Updated only when it changes.
-    if (d.visual && d.visual !== _radioLast.visual) {
-      try { setCoverSmooth(d.visual); } catch (e) {}
-      _radioLast.visual = d.visual;
+    // Logo: the item's artwork when available (songs; some shows), else a clean
+    // placeholder fallback — never a stale cover, never a broken UUID image.
+    if ((d.visual || '') !== _radioLast.visual) {
+      try { setCoverSmooth(d.visual || placeholderForUri(track.uri)); } catch (e) {}
+      _radioLast.visual = d.visual || '';
     }
     if (artistLine !== _radioLast.artist) {
       const artistEl = document.getElementById('artist-name');
@@ -3701,23 +3706,26 @@ function syncDetailsWidth() {
 function renderRadioDetails(d) {
   const host = tdPanel.body();
   if (!host) return;
+  const isSong = !!(d && d.kind === 'song');
   const rows = [];
-  // Distinct rows (song / artist / album) — clearer than a combined line.
-  if (d && d.title)   rows.push(['Song', d.title]);
-  if (d && d.artist)  rows.push(['Artist', d.artist]);
-  if (d && d.album)   rows.push(['Album', d.album]);
-  if (d && d.station) rows.push(['Station', d.station]);
+  // 'Title' is generic — the current item is a song OR a show/segment. Artist/album
+  // only apply to songs.
+  if (d && d.title)        rows.push(['Title', d.title]);
+  if (isSong && d.artist)  rows.push(['Artist', d.artist]);
+  if (isSong && d.album)   rows.push(['Album', d.album]);
+  if (d && d.station)      rows.push(['Station', d.station]);
   rows.push(['Source', 'Radio']);
-  // + manual Favorite + Playlists on the resolved current song, so the user can
-  // trigger the attach by hand (same controls as a normal track).
-  host.innerHTML = '<dl class="td-list">'
-    + rows.map(([l, v]) => `<div><dt>${objEsc(l)}</dt><dd>${objEsc(v)}</dd></div>`).join('')
-    + `<div><dt>Favorite</dt><dd class="td-fav" id="radio-fav">${ICON.heart(false)}</dd></div>`
-    + `<div><dt>Playlists</dt><dd id="radio-playlists"></dd></div>`
-    + '</dl>';
+  let html = '<dl class="td-list td-radio">'
+    + rows.map(([l, v]) => `<div><dt>${objEsc(l)}</dt><dd>${objEsc(v)}</dd></div>`).join('');
+  // Manual Favorite + Playlists ONLY for a real (resolvable) song — a show/segment
+  // can't be attached to the library.
+  if (isSong) {
+    html += `<div><dt>Favorite</dt><dd class="td-fav" id="radio-fav">${ICON.heart(false)}</dd></div>`
+          + `<div><dt>Playlists</dt><dd id="radio-playlists"></dd></div>`;
+  }
+  host.innerHTML = html + '</dl>';
   tdPanel.ev = null;
-  if (!d || !d.title) return;
-  wireRadioActions();
+  if (isSong) wireRadioActions();
 }
 
 // Resolve the current radio song → Spotify track, then wire the manual Favorite

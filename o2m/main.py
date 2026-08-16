@@ -1811,7 +1811,7 @@ if __name__ == "__main__":
                 return jsonify({'playing': False})
             return jsonify({'playing': True, 'title': np.get('title', ''),
                             'artist': np.get('artist', ''), 'album': np.get('album', ''),
-                            'station': np.get('station', ''),
+                            'station': np.get('station', ''), 'kind': np.get('kind', ''),
                             'source': np.get('source', ''), 'visual': np.get('visual', '')})
         except Exception as e:
             return jsonify({'playing': False, 'error': str(e)})
@@ -1823,7 +1823,8 @@ if __name__ == "__main__":
         from flask import jsonify
         try:
             np = getattr(o2mHandler, '_radio_np', None) or o2mHandler.radio_now_playing()
-            if not np or not np.get('title'):
+            # Only songs are resolvable/attachable — never a show/segment.
+            if not np or not np.get('title') or np.get('kind') != 'song':
                 return jsonify({'uri': None})
             q = ((np.get('artist') or '') + ' ' + (np.get('title') or '')).strip()
             res = o2mHandler.spotifyHandler.search_music(q, limit=1)

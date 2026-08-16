@@ -92,22 +92,24 @@ class O2mToMopidy:
         self._radio_last_meta = None    # meta of the track currently on air
         self.radio_poll_sec = 15        # how often the watcher polls the active radio
         self.radio_save_min_dl = 5      # discover_level threshold to auto-save a finished radio track
-        # Radio France stations: URL substring → (livemeta id, is_music, full name).
-        # FIP webradios MUST come before the generic 'fip' (first match wins), else
-        # 'fip' would swallow 'fipgroove' etc. and always show 'FIP' + wrong metadata.
+        # Radio France stations keyed by EXACT stream slug → (livemeta id | None,
+        # is_music, full name). Exact-slug matching (not substring) so e.g.
+        # 'monpetitfranceinter' is NOT swallowed by 'franceinter'. id=None → known
+        # station with no livemeta feed (show the name only, no live track).
         self._RF_STATIONS = {
-            'fiprock':       (64, True,  'FIP Rock'),
-            'fipjazz':       (65, True,  'FIP Jazz'),
-            'fipgroove':     (66, True,  'FIP Groove'),
-            'fipworld':      (69, True,  'FIP Monde'),
-            'fipnouveautes': (70, True,  'FIP Nouveautés'),
-            'fipreggae':     (71, True,  'FIP Reggae'),
-            'fipelectro':    (74, True,  'FIP Electro'),
-            'fip':           (7,  True,  'FIP'),
-            'francemusique': (5,  True,  'France Musique'),
-            'franceinter':   (1,  False, 'France Inter'),
-            'franceinfo':    (2,  False, 'France Info'),
-            'franceculture': (4,  False, 'France Culture'),
+            'fip':                 (7,    True,  'FIP'),
+            'fiprock':             (64,   True,  'FIP Rock'),
+            'fipjazz':             (65,   True,  'FIP Jazz'),
+            'fipgroove':           (66,   True,  'FIP Groove'),
+            'fipworld':            (69,   True,  'FIP Monde'),
+            'fipnouveautes':       (70,   True,  'FIP Nouveautés'),
+            'fipreggae':           (71,   True,  'FIP Reggae'),
+            'fipelectro':          (74,   True,  'FIP Electro'),
+            'francemusique':       (5,    True,  'France Musique'),
+            'franceinter':         (1,    False, 'France Inter'),
+            'franceinfo':          (2,    False, 'France Info'),
+            'franceculture':       (4,    False, 'France Culture'),
+            'monpetitfranceinter': (None, False, 'Mon Petit France Inter'),
         }
 
         if "podcast_newest_first" in self.configO2M:
@@ -2834,15 +2836,20 @@ class O2mToMopidy:
             _t.sleep(self.radio_poll_sec)
 
     def _rf_station_for_uri(self, uri):
-        """(station_id, is_music, full_name) for a Radio France stream URI, else None.
-        Iterates in dict order so FIP webradios match before the generic 'fip'."""
+        """(station_id|None, is_music, full_name) for a Radio France stream URI, else
+        None. Matches the EXACT stream slug (…/<slug>-hifi.aac) — not a substring —
+        so 'monpetitfranceinter' ≠ 'franceinter'."""
         if not uri or 'radiofrance' not in uri.lower():
             return None
-        low = uri.lower()
-        for key, (sid, is_music, name) in self._RF_STATIONS.items():
-            if key in low:
-                return (sid, is_music, name)
-        return None
+        tail = uri.lower().split('?')[0].rsplit('/', 1)[-1]
+        for suf in ('.aac', '.mp3', '.ogg'):
+            if tail.endswith(suf):
+                tail = tail[:-len(suf)]
+        for suf in ('-hifi', '-midfi', '-lofi', '-hbr', '-lbr'):
+            if tail.endswith(suf):
+                tail = tail[:-len(suf)]
+        st = self._RF_STATIONS.get(tail)
+        return (st[0], st[1], st[2]) if st else None
 
     def _rf_livemeta(self, sid):
         """Current on-air track for a Radio France station via the livemeta API."""
@@ -2866,12 +2873,24 @@ class O2mToMopidy:
             cur = max(titled, key=lambda s: s.get('start', 0)) if titled else None
         if not cur:
             return None
-        artist = (cur.get('authors') or (cur.get('highlightedArtists') or [''])[0]
-                  or cur.get('performers') or '').strip()
-        return {'title': (cur.get('title') or '').strip(), 'artist': artist,
-                'album': (cur.get('titreAlbum') or '').strip(),
+        # embedType 'song' = a real music track; anything else (expression, …) is a
+        # show/segment. Artist/album only make sense for songs.
+        kind = 'song' if (cur.get('embedType') or '').lower() == 'song' else 'show'
+        if kind == 'song':
+            artist = (cur.get('authors') or (cur.get('highlightedArtists') or [''])[0]
+                      or cur.get('performers') or '').strip()
+            album = (cur.get('titreAlbum') or '').strip()
+        else:
+            artist, album = '', ''
+        # Radio France 'visual' is sometimes a full URL (songs) and sometimes a bare
+        # UUID (shows) that we can't turn into an image URL — keep only usable URLs.
+        vis = str(cur.get('visual') or '')
+        if not vis.startswith('http'):
+            vis = ''
+        return {'title': (cur.get('title') or '').strip(), 'artist': artist, 'album': album,
+                'kind': kind,
                 'key': cur.get('stepId') or cur.get('uuid') or f"{artist}-{cur.get('title')}",
-                'visual': cur.get('visual') or '', 'source': 'radiofrance'}
+                'visual': vis, 'source': 'radiofrance'}
 
     def radio_now_playing(self):
         """Current track on the active radio. Radio France stations → livemeta API;
@@ -2890,11 +2909,14 @@ class O2mToMopidy:
         st = self._rf_station_for_uri(uri)
         if st:
             sid, is_music, name = st
-            meta = self._rf_livemeta(sid)
-            if meta and meta.get('title'):
-                meta['is_music'] = is_music
-                meta['station'] = name   # full sub-station name (e.g. 'FIP Groove')
-                return meta
+            meta = self._rf_livemeta(sid) if sid else None
+            if not (meta and meta.get('title')):
+                # Known station but no usable live item → still surface the station name.
+                meta = {'title': '', 'artist': '', 'album': '', 'kind': 'radio', 'visual': '',
+                        'key': 'station:' + name, 'source': 'radiofrance'}
+            meta['is_music'] = is_music
+            meta['station'] = name   # full sub-station name (e.g. 'FIP Groove')
+            return meta
         # Fallback: ICY stream title (other Icecast/Shoutcast radios).
         try:
             title = self.mopidyHandler.playback.get_stream_title()
@@ -2903,10 +2925,14 @@ class O2mToMopidy:
         if title:
             artist, sep, track = title.partition(' - ')
             if sep:
-                return {'title': track.strip(), 'artist': artist.strip(), 'album': '',
+                return {'title': track.strip(), 'artist': artist.strip(), 'album': '', 'kind': 'song',
                         'key': title, 'is_music': True, 'source': 'icy', 'station': station}
-            return {'title': title.strip(), 'artist': '', 'album': '',
+            return {'title': title.strip(), 'artist': '', 'album': '', 'kind': 'song',
                     'key': title, 'is_music': True, 'source': 'icy', 'station': station}
+        # Non-RF stream with no ICY → at least show the stream/station name.
+        if station:
+            return {'title': '', 'artist': '', 'album': '', 'kind': 'radio', 'visual': '',
+                    'key': 'station:' + station, 'source': 'stream', 'station': station}
         return None
 
     def _on_radio_track_finished(self, meta):
