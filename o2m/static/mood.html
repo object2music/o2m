@@ -242,10 +242,15 @@
   #pair-notice a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
   #pair-notice button { flex: 0 0 auto; background: none; border: 0; cursor: pointer;
     color: var(--muted); padding: 2px; line-height: 0; }
+  /* Same line as the now-playing status row: both columns share padding-top, so
+     matching the line-box height is enough for "DETAILS" and the status square to
+     read as one horizontal rule across the header. No bottom margin here — the
+     column already has gap: 10px, which would otherwise double up. */
   #track-details .td-head {
     display: flex; align-items: center; justify-content: space-between;
     font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s);
     text-transform: uppercase; letter-spacing: .02em; color: var(--text);
+    min-height: 18px;
   }
   #btn-edit-lock {
     background: none; border: none; cursor: pointer;
@@ -388,7 +393,7 @@
   /* "Artist · Album" row: layout, sizes and colours come from .o2m-np-meta
      (+ .artist / .album) since v1.5. All that remains here is the gap to the title
      and letting the children shrink within the available width. */
-  #artist-album { margin-top: 3px; }
+  #artist-album { margin-top: 4px; }
   #artist-name, #album-name { flex: 0 1 auto; }
   #album-name:empty { display: none; }
 
@@ -396,12 +401,14 @@
      inline flow, so a long badge (which wraps on mobile) pushed the dot onto a
      line of its own. A flex row keeps them together: the badge takes the space it
      needs, the dot stays pinned beside it and never wraps away. */
+  /* Opens the now-playing block, so no top margin — it carries the gap to the
+     title instead, and sits on the same line as the details panel's head. */
   #status-line {
-    display: flex; align-items: flex-start; gap: 7px;
-    margin-top: 5px; min-width: 0;
+    display: flex; align-items: center; gap: 7px;
+    margin-bottom: 6px; min-width: 0; min-height: 18px;
   }
   #status-line #track-status-badge { margin-top: 0; min-width: 0; }
-  #status-line #net-dot { margin-top: 3px; flex-shrink: 0; }
+  #status-line #net-dot { flex-shrink: 0; }
 
   /* track status badge — texte plat lisible, avec carré de couleur en tête */
   #track-status-badge {
@@ -434,9 +441,15 @@
     height: 4px; border-radius: 0; outline: none; cursor: pointer;
     background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--vol-pct, 50%), var(--border-strong) var(--vol-pct, 50%));
   }
+  /* Square thumb: the system reserves curvature for true circles (the mark, the
+     dials). A slider handle is a control, so it takes --radius like every other. */
   #volume-slider::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 14px; height: 14px;
-    border-radius: 50%; background: var(--accent); cursor: pointer;
+    -webkit-appearance: none; width: 12px; height: 16px;
+    border-radius: var(--radius); background: var(--accent); cursor: pointer;
+  }
+  #volume-slider::-moz-range-thumb {
+    width: 12px; height: 16px; border: none;
+    border-radius: var(--radius); background: var(--accent); cursor: pointer;
   }
   #volume-val { font-size: var(--t-label); color: var(--muted); min-width: 28px; text-align: right; flex-shrink: 0; }
 
@@ -497,8 +510,8 @@
   }
   /* poignée de glisser-déposer : visible au survol / pendant le seek */
   #progress-fill::after {
-    content: ''; position: absolute; right: -6px; top: 50%;
-    width: 12px; height: 12px; border-radius: 50%; background: var(--accent);
+    content: ''; position: absolute; right: -5px; top: 50%;
+    width: 10px; height: 14px; border-radius: var(--radius); background: var(--accent);
     transform: translateY(-50%) scale(0); transition: transform .14s var(--ease, ease);
   }
   #progress-wrap:hover #progress-fill::after,
@@ -570,7 +583,11 @@
        down. A fixed height makes every header block exactly the cover thumbnail's
        size, and the details column scrolls inside it instead of stretching it.
        Invert is excluded: its full-width cover banner sets its own header height. */
-    :root:not([data-theme="invert"]) #top-zone { height: 38vh; }
+    /* 42vh, not 38: the title now uses the full --t-hero scale (the --dense
+       variant was dropped to make it the strongest element of the header, as the
+       design guidance asks). PATCH is explicit — raise the cap rather than shrink
+       the title. Lower this back to 38vh if the header feels heavy. */
+    :root:not([data-theme="invert"]) #top-zone { height: 42vh; }
     :root:not([data-theme="invert"]) #track-details {
       overflow-y: auto; min-height: 0;
     }
@@ -1716,14 +1733,17 @@
     <!-- Now playing -->
     <div id="now-playing">
       <div id="track-info">
-        <div id="track-name" class="o2m-hero-title o2m-hero-title--dense">—</div>
-        <div id="artist-album" class="o2m-np-meta">
-          <span id="artist-name" class="artist">O2M</span>
-          <span id="album-name" class="album"></span>
-        </div>
+        <!-- Status square + playback info first, the way the design system opens a
+             block: eyebrow, then hero title. It also puts this line level with the
+             "DETAILS" head of the panel on the right. -->
         <div id="status-line">
           <div id="track-status-badge"></div>
           <span id="net-dot" class="net-dot" title="Network quality"></span>
+        </div>
+        <div id="track-name" class="o2m-hero-title">—</div>
+        <div id="artist-album" class="o2m-np-meta">
+          <span id="artist-name" class="artist">O2M</span>
+          <span id="album-name" class="album"></span>
         </div>
         <div id="track-tags-row"><span id="track-ev"></span></div>
       </div>
