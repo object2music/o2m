@@ -674,8 +674,8 @@
       grid-template-areas:
         "cover status edit"
         "cover meta   edit"
+        "cover tags   edit"
         "title title  title"
-        "tags  tags   tags"
         "prog  prog   prog"
         "ctrl  ctrl   ctrl";
     }
@@ -684,17 +684,24 @@
     #artist-album   { grid-area: meta; }
     #btn-details    { grid-area: edit; justify-self: end; margin: 10px 12px 0 0; }
     #track-name     { grid-area: title; padding: 0 12px; }
-    #track-tags-row { grid-area: tags; padding: 0 12px 8px; }
+    /* Tags sit in the metadata column now, under artist/album. The row collapses
+       on its own when a track has none. */
+    #track-tags-row { grid-area: tags; padding: 0 0 10px; }
     #progress-wrap  { grid-area: prog; }
     #controls       { grid-area: ctrl; }
     #controls {
       /* Vertical rhythm of the block, in v1.5 order: progress, then transport
-         (play + volume). The transport closes the block, hence slightly more air
-         above it than below. */
-      flex-wrap: wrap; column-gap: 16px; row-gap: 7px;
+         (play + volume).
+         The volume row gets the SAME air as the progress bar: 12px above and 12px
+         below. Above = row-gap (its own padding-top is zeroed just below so the
+         gap is exactly the row-gap); below = this padding-bottom. Progress has
+         12px above (its padding-top) and 2px + this padding-top = 12px below. */
+      flex-wrap: wrap; column-gap: 16px; row-gap: 12px;
       padding: 10px max(12px, env(safe-area-inset-right, 0px)) 12px max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
+    /* Base rule adds 2px on top; zeroed so row-gap alone sets the gap. */
+    #volume-row { padding-top: 0; }
     /* Progress now follows the info line and precedes the transport: a clear gap
        above, tightened below since #controls takes the air back. */
     #progress-wrap { padding-top: 12px; padding-bottom: 2px; }
