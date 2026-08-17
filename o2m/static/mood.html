@@ -656,23 +656,37 @@
        take their own real full-width row. This is how overprint/invert avoid the
        overflow too (full-width parent, no negative margins). */
     /* Scoped to the standard themes — overprint/invert have their own poster
-       layout (display:block #top-zone) and must NOT get display:contents here. */
-    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-right { display: contents; }
-    /* …and #now-playing too, so its two children become flex items of #top-zone.
-       The edit button can then sit beside the cover while the text block drops to
-       a row of its own and takes the FULL width, instead of being squeezed into
-       the strip left over next to an 84px thumbnail. No DOM move: only order.
-       display:contents drops the wrapper's own padding, so it moves to the
-       children below. Poster themes keep their own layout (#top-zone is block). */
-    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #now-playing { display: contents; }
-    /* Explicit order: DOM order is cover, text, button — the button has to come
-       before the text for the text to wrap underneath it. */
-    #cover-col     { order: 1; }
-    #btn-details   { order: 2; margin: 10px 12px 0 auto; }
-    #track-info    { order: 3; flex: 1 1 100%; min-width: 0; padding: 0 12px 10px; }
-    #progress-wrap { order: 4; }
-    #controls      { order: 5; }
-    #controls, #progress-wrap { flex: 0 0 100%; width: 100%; }
+       layout (display:block #top-zone) and must NOT be promoted here. */
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-right,
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #now-playing,
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #track-info { display: contents; }
+
+    /* Header laid out as a GRID, not a wrapping flex row. The goal is: status and
+       artist/album stay UP beside the cover, while the title alone drops to a
+       full-width row. A flex row cannot express that — once a line wraps, nothing
+       can come back up beside the cover. The grid states it directly, and the
+       cover/edit button simply span the two metadata rows.
+       Wrappers above are display:contents so their children become grid items;
+       no DOM node is moved, and their padding moves onto the children. */
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-zone {
+      display: grid; align-items: start;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        "cover status edit"
+        "cover meta   edit"
+        "title title  title"
+        "tags  tags   tags"
+        "prog  prog   prog"
+        "ctrl  ctrl   ctrl";
+    }
+    #cover-col      { grid-area: cover; }
+    #status-line    { grid-area: status; padding-top: 10px; }
+    #artist-album   { grid-area: meta; }
+    #btn-details    { grid-area: edit; justify-self: end; margin: 10px 12px 0 0; }
+    #track-name     { grid-area: title; padding: 0 12px; }
+    #track-tags-row { grid-area: tags; padding: 0 12px 8px; }
+    #progress-wrap  { grid-area: prog; }
+    #controls       { grid-area: ctrl; }
     #controls {
       /* Vertical rhythm of the block, in v1.5 order: progress, then transport
          (play + volume). The transport closes the block, hence slightly more air
