@@ -1,5 +1,9 @@
 /* ============================================================================
-   O2M — DESIGN SYSTEM  ·  Living medias   ·   v1.3
+   O2M — DESIGN SYSTEM  ·  Living medias   ·   v1.5
+   v1.5 — the now-playing header becomes a COMPONENT (.o2m-np, .o2m-np-meta,
+     .o2m-timecode, .o2m-transport / .o2m-tbtn) so the header's type scale and
+     control rhythm ship from here instead of being hand-written per page.
+     Bulletin's accent deepens: azure #1257D6 → ink-blue #1A3EA0.
    Mono-accent (orange) brutalist-editorial system for a tangible audio
    interface. Square geometry, wide grotesque type, warm neutrals, a flat
    geometric shape language built from the "disc crossing the horizon" mark.
@@ -42,6 +46,10 @@
   /* Now-playing headline. Fluid so it holds up from a narrow column to a wide
      header, and large enough that the title is the loudest thing on screen. */
   --t-hero:    clamp(26px, 3.2vw, 44px);
+  /* Dense variant: the production header is capped (38vh) and also carries badge,
+     lifecycle scale, tags, volume and transport. Below ~900px, or in that capped
+     header, the title steps down one notch instead of being written by hand. */
+  --t-hero-dense: clamp(22px, 2.4vw, 32px);
 
   /* Geometry — O2M is square; curvature only for true circles */
   --radius: 0px;  --r-pill: 999px;
@@ -136,7 +144,10 @@
    `--signal`, for the rare true alert. `creme` and `light` remain aliases. */
 [data-theme="bulletin"], [data-theme="creme"], [data-mode="light"] {
   --bg:#FEEBCF; --surface:#FBDFB7; --card:#FFF7EB; --raised:#FFFFFF;
-  --accent:#1257D6; --accent-press:#0E45AC; --accent-soft:#1257D614; --on-accent:#FFFFFF;
+  /* v1.5 — l'azur passe d'un bleu vif à un bleu d'encre profond, pris dans la même
+     famille que les deux anneaux extérieurs du bullseye : l'accent lit comme
+     l'encre montée en intensité, pas comme une couleur invitée. */
+  --accent:#1A3EA0; --accent-press:#132E7A; --accent-soft:#1A3EA014; --on-accent:#FFFFFF;
   --secondary:#F8B132; --signal:#E4106A;
   --text:#28285B; --muted:#6E6A8C; --faint:#A9A4BE;
   --border:rgba(40,40,91,.18); --border-soft:rgba(40,40,91,.09); --border-strong:rgba(40,40,91,.38);
@@ -146,17 +157,17 @@
   --ring-a-1:#28285B; --ring-a-2:#3E3E6B; --ring-a-3:#53547C; --ring-a-4:#696A8D; --ring-a-5:#8384A3;
   --ring-b-1:#F8B132; --ring-b-2:#F9BC50; --ring-b-3:#FAC978; --ring-b-4:#FBD08C; --ring-b-5:#FBD79F;
   --c-energy:var(--text); --c-valence:var(--muted); --c-dl:var(--accent); --dial-txt:var(--text);
-  --c-opening:#1257D6; --c-mood:#C98A12;
+  --c-opening:#1A3EA0; --c-mood:#C98A12;
   --header-bg:#FBDFB7; --header-border:rgba(40,40,91,.20);
-  --head-weight:800; --head-spacing:-.015em; --eyebrow-color:#1257D6;
+  --head-weight:800; --head-spacing:-.015em; --eyebrow-color:#1A3EA0;
   --mx-bg:#FFF7EB;
   --mx-q-calm:rgba(40,40,91,.03); --mx-q-happy:rgba(40,40,91,.055);
-  --mx-q-dark:rgba(40,40,91,.10); --mx-q-energetic:rgba(18,87,214,.06);
+  --mx-q-dark:rgba(40,40,91,.10); --mx-q-energetic:rgba(26,62,160,.06);
   --mx-line:rgba(40,40,91,.16); --mx-border:transparent;
   --mx-label:rgba(40,40,91,.28); --mx-axis:rgba(40,40,91,.42);
-  --mx-dl-fill:rgba(18,87,214,.06); --mx-dl-stroke:rgba(18,87,214,.45);
-  --mx-dot-core:#FFF6E7; --mx-pulse:18,87,214;
-  --mood-happy:248,177,50; --mood-energetic:18,87,214;
+  --mx-dl-fill:rgba(26,62,160,.06); --mx-dl-stroke:rgba(26,62,160,.48);
+  --mx-dot-core:#FFF6E7; --mx-pulse:26,62,160;
+  --mood-happy:248,177,50; --mood-energetic:26,62,160;
   --mood-calm:110,106,140; --mood-dark:40,40,91;
   color-scheme: light;
 }
@@ -374,6 +385,42 @@ button { font: inherit; color: inherit; }
   color: var(--accent);
   text-wrap: balance;
 }
+.o2m-hero-title--dense { font-size: var(--t-hero-dense); }
+@media (max-width: 900px) { .o2m-hero-title { font-size: var(--t-hero-dense); } }
+
+/* Now-playing block — the whole title/meta/progress/transport stack, as one
+   component. Everything the app was writing by hand in page CSS lives here, so a
+   change of scale or rhythm is a design-system change, not a page edit.
+   Order is intentional: title → meta → tags → progress → timecode → transport. */
+.o2m-np { display:flex; flex-direction:column; gap: var(--sp-2); min-width:0; }
+.o2m-np-meta { display:flex; align-items:baseline; gap:6px; min-width:0; font-size: var(--t-body-l); color: var(--muted); }
+.o2m-np-meta > * { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.o2m-np-meta .artist { color: var(--text); font-weight:600; }
+.o2m-np-meta .album { cursor:pointer; }
+.o2m-np-meta .album:hover { color: var(--text); }
+.o2m-np-meta .album:not(:empty)::before { content:"· "; color: var(--muted); }
+
+/* Timecode row — mono, faint, one line under the progress bar. */
+.o2m-timecode { display:flex; justify-content:space-between; font-family: var(--font-mono); font-size: var(--t-label); color: var(--muted); letter-spacing:.04em; }
+
+/* Transport — square ghost buttons, 44px hit target, accent-filled play.
+   Bare icons floating in space read as decoration; a bounded button reads as a
+   control, and it is the same control in all five themes. */
+.o2m-transport { display:flex; align-items:center; gap: var(--sp-3); }
+.o2m-tbtn {
+  width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+  background: transparent; color: var(--text); cursor:pointer;
+  border: var(--line-1) solid var(--border); border-radius: var(--radius);
+  transition: background var(--fast), border-color var(--fast), color var(--fast);
+}
+.o2m-tbtn svg { width:20px; height:20px; display:block; }
+.o2m-tbtn:hover { background: var(--fill-1); border-color: var(--border-strong); }
+.o2m-tbtn:active { background: var(--fill-3); }
+.o2m-tbtn--play { width:52px; height:52px; background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.o2m-tbtn--play svg { width:24px; height:24px; }
+.o2m-tbtn--play:hover { background: var(--accent-press); border-color: var(--accent-press); color: var(--on-accent); }
+.o2m-tbtn--ghost { border-color: transparent; color: var(--muted); }
+.o2m-tbtn--ghost:hover { color: var(--text); }
 
 .o2m-field { width:100%; background: var(--surface); border: var(--line-1) solid var(--border); border-radius: var(--radius); color: var(--text); padding: 11px 14px; font: inherit; transition: border-color var(--fast); }
 .o2m-field::placeholder { color: var(--faint); }

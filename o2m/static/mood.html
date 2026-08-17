@@ -362,23 +362,14 @@
   #cover-wrap.gen #cover { display: none; }
   #cover-wrap.gen #cover-gen { display: block; }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
-  #track-name { font-size: var(--t-h3); white-space: nowrap; line-height: 1.1;
-                overflow: hidden; text-overflow: ellipsis; color: var(--eyebrow-color, var(--accent));
-                font-family: var(--font-head); font-weight: var(--head-weight);
-                text-transform: var(--head-transform); letter-spacing: var(--head-spacing); }
-  /* Artist + album on a single line ("Artist · Album"). Both ellipsize; the album
-     is opened from its label (the cover click is taken by the color toggle).
-     The font size is set ONCE on the row so artist and album always match — the
-     per-theme overrides below therefore also target #artist-album, not the artist
-     alone (which used to leave the album stuck at a smaller size). */
-  #artist-album { display: flex; align-items: baseline; gap: 5px; margin-top: 3px;
-                  min-width: 0; font-size: 14px; }
-  #artist-name { color: var(--muted); flex: 0 1 auto;
-                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #album-name { color: var(--muted); cursor: pointer; flex: 0 1 auto;
-                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #album-name:not(:empty)::before { content: "· "; color: var(--muted); }
-  #album-name:hover { color: var(--text); text-decoration: underline; }
+  /* Typo, casse et couleur viennent de .o2m-hero-title (v1.5). Ne reste ici que
+     la contrainte de mise en page propre à ce header : une seule ligne, ellipsée. */
+  #track-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Ligne « Artiste · Album » : disposition, tailles et couleurs viennent de
+     .o2m-np-meta (+ .artist / .album) depuis la v1.5. Ne restent ici que
+     l'écart au titre et le repli des enfants dans la largeur disponible. */
+  #artist-album { margin-top: 3px; }
+  #artist-name, #album-name { flex: 0 1 auto; }
   #album-name:empty { display: none; }
 
   /* Status badge + network dot share one row. Both used to be siblings in the
@@ -457,15 +448,10 @@
     padding: 10px 16px; background: var(--surface);
     flex-shrink: 0;
   }
-  .ctrl-btn {
-    background: none; border: none; color: var(--text); cursor: pointer;
-    line-height: 1; padding: 8px; border-radius: 0;
-    transition: background .15s, transform .1s; display: flex; align-items: center;
-  }
-  .ctrl-btn svg { width: 24px; height: 24px; display: block; }
-  .ctrl-btn:active { background: var(--fill-3); transform: scale(.92); }
-  #btn-play { color: var(--accent); }
-  #btn-play svg { width: 32px; height: 32px; }
+  /* Bornage, bordure, tailles d'icône et accent du play viennent de .o2m-tbtn /
+     .o2m-tbtn--play (v1.5). Ne reste ici que le retour tactile à l'appui. */
+  .ctrl-btn { line-height: 1; }
+  .ctrl-btn:active { transform: scale(.92); }
 
   /* Snapcast inline dans la volume-row */
   #btn-snapcast {
@@ -498,10 +484,8 @@
   #progress-wrap:hover #progress-fill::after,
   #progress-bar.seeking #progress-fill::after { transform: translateY(-50%) scale(1); }
   #progress-bar.seeking #progress-fill { transition: none; }
-  #progress-time {
-    display: flex; justify-content: space-between;
-    font-size: 10px; color: var(--muted); margin-top: 3px;
-  }
+  /* Disposition, mono et taille viennent de .o2m-timecode (v1.5). */
+  #progress-time { margin-top: 3px; }
 
   /* ── Scrollable content ── */
   #scroll-area {
@@ -600,7 +584,9 @@
     #cover-col { padding: 10px; }
     #cover-wrap { aspect-ratio: auto; width: 84px; height: 84px; }
     #now-playing { padding: 10px 12px; gap: 10px; }
-    #track-name { font-size: var(--t-body-l); }
+    /* Pas de taille de titre ici : le système descend déjà .o2m-hero-title sur
+       --t-hero-dense sous 900px. Une règle par id l'emporterait sur la classe et
+       re-figerait le titre — or c'est l'élément le plus fort de l'écran. */
 
     /* Colonne détails → bloc repliable pleine largeur sous l'en-tête */
     #top-zone { flex-wrap: wrap; }
@@ -630,18 +616,16 @@
     #now-playing { flex: 1 1 0; min-width: 0; }
     #controls, #progress-wrap { flex: 0 0 100%; width: 100%; }
     #controls {
-      /* Vertical rhythm of the 3 control lines (play / volume / progress). The
-         play row is kept tight — 2px above and a small row-gap below — and the
-         space that frees up is handed to the two gaps underneath: volume↔progress
-         and progress↔next row (both set on #progress-wrap's padding). */
+      /* Rythme vertical du bloc, dans l'ordre v1.5 : avancement, puis transport
+         (play + volume). Le transport ferme le bloc, d'où un peu plus d'air
+         au-dessus de lui qu'en dessous. */
       flex-wrap: wrap; column-gap: 16px; row-gap: 7px;
-      padding: 2px max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
+      padding: 10px max(12px, env(safe-area-inset-right, 0px)) 12px max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
-    /* Receives the space reclaimed around the play row: padding-top opens the
-       volume↔progress gap, padding-bottom the progress↔next-row one, so the two
-       lower gaps read as even instead of the play row hogging the air. */
-    #progress-wrap { padding-top: 16px; padding-bottom: 14px; }
+    /* L'avancement suit désormais la ligne d'infos et précède le transport :
+       un écart net au-dessus, resserré en dessous puisque #controls reprend l'air. */
+    #progress-wrap { padding-top: 12px; padding-bottom: 2px; }
 
     /* ── Mobile accordion: Boxes / Mood / Tracklist ──
        The 3 headers are always-visible fixed rows that never move; one section is
@@ -1704,10 +1688,10 @@
     <!-- Now playing -->
     <div id="now-playing">
       <div id="track-info">
-        <div id="track-name">—</div>
-        <div id="artist-album">
-          <span id="artist-name">O2M</span>
-          <span id="album-name"></span>
+        <div id="track-name" class="o2m-hero-title o2m-hero-title--dense">—</div>
+        <div id="artist-album" class="o2m-np-meta">
+          <span id="artist-name" class="artist">O2M</span>
+          <span id="album-name" class="album"></span>
         </div>
         <div id="status-line">
           <div id="track-status-badge"></div>
@@ -1720,25 +1704,26 @@
       </button>
     </div>
 
+    <!-- Progress bar — placée AVANT le transport (v1.5) : l'avancement décrit
+         le morceau, il appartient au titre ; le transport ferme le bloc. -->
+    <div id="progress-wrap">
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+      <div id="progress-time" class="o2m-timecode">
+        <span id="prog-elapsed">0:00</span>
+        <span id="prog-duration"></span>
+      </div>
+    </div>
+
     <!-- Playback controls -->
     <div id="controls">
-      <button class="ctrl-btn" id="btn-prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="4" x2="5" y2="20"/></svg></button>
-      <button class="ctrl-btn" id="btn-play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
-      <button class="ctrl-btn" id="btn-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="4" x2="19" y2="20"/></svg></button>
+      <button class="ctrl-btn o2m-tbtn" id="btn-prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="4" x2="5" y2="20"/></svg></button>
+      <button class="ctrl-btn o2m-tbtn o2m-tbtn--play" id="btn-play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+      <button class="ctrl-btn o2m-tbtn" id="btn-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="4" x2="19" y2="20"/></svg></button>
       <div id="volume-row">
         <span id="volume-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
         <input type="range" id="volume-slider" min="0" max="100" value="50">
         <span id="volume-val">50%</span>
         <button id="btn-snapcast" title="Snapcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></button>
-      </div>
-    </div>
-
-    <!-- Progress bar -->
-    <div id="progress-wrap">
-      <div id="progress-bar"><div id="progress-fill"></div></div>
-      <div id="progress-time">
-        <span id="prog-elapsed">0:00</span>
-        <span id="prog-duration"></span>
       </div>
     </div>
 
