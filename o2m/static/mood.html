@@ -275,6 +275,15 @@
   .track-menu-dropdown button:hover { background: var(--fill-2); color: var(--accent); }
   .track-menu-dropdown button svg { width: 14px; height: 14px; flex-shrink: 0; }
   #track-details .td-list { display: flex; flex-direction: column; gap: 7px; margin: 0; }
+  /* Energy / Valence / Mood are already shown by the matrix right below, which is
+     also where they are edited — the rows only repeated it. Hidden here for now;
+     the cells stay in the DOM so the matrix drag keeps writing into them.
+     Scoped to this panel on purpose: the object modal renders the same body and
+     would hide them too, and that is not what was asked. Delete this rule to
+     bring the rows back. */
+  #track-details .td-list > [data-row="energy"],
+  #track-details .td-list > [data-row="valence"],
+  #track-details .td-list > [data-row="mood"] { display: none; }
   #track-details .td-list > div {
     display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   }
@@ -3488,9 +3497,12 @@ function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artistUri, albu
     ? `<div class="obj-hero">${objCoverHTML(cover, uri || albumUri || name)}`
       + `<div class="obj-meta"><b>${objEsc(name || '')}</b><span>${sub}</span></div></div>`
     : '';
+  // data-row lets a host hide a row by name without touching this markup — the
+  // cell itself stays in the DOM, so the matrix sync and the inline editors that
+  // write into it keep working.
   const rows = TRACK_PANEL_ROWS.map(([label, key]) => {
     const cls = key === 'fav' ? 'td-fav' : (EDITABLE_FIELDS.includes(key) ? 'tp-editable' : '');
-    return `<div><dt>${label}</dt><dd id="${p.cellId(key)}"${cls ? ` class="${cls}"` : ''}>—</dd></div>`;
+    return `<div data-row="${key}"><dt>${label}</dt><dd id="${p.cellId(key)}"${cls ? ` class="${cls}"` : ''}>—</dd></div>`;
   }).join('');
   return heroHtml
     + `<dl class="${p.listClass}">${rows}</dl>`
