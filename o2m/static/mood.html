@@ -334,9 +334,13 @@
   body.edit-mode #mood-matrix { box-shadow: inset 0 0 0 2px var(--accent); }
 
   /* ── Now Playing ── */
+  /* Fond transparent : depuis la v1.4 le plan de l'en-tête est porté une seule
+     fois par #top-zone (--header-bg). Repeindre --surface ici créait une bande
+     d'une autre couleur dans les thèmes où les deux diffèrent (mono, overprint,
+     invert — dark et bulletin les ont égaux, d'où un bug longtemps invisible). */
   #now-playing {
     display: flex; align-items: flex-start; gap: 14px;
-    padding: 12px 16px; background: var(--surface);
+    padding: 12px 16px; background: transparent;
     flex-shrink: 0;
   }
   #cover-wrap {
@@ -445,7 +449,7 @@
   /* ── Controls ── */
   #controls {
     display: flex; justify-content: center; align-items: center; gap: 28px;
-    padding: 10px 16px; background: var(--surface);
+    padding: 10px 16px; background: transparent;   /* plan porté par #top-zone */
     flex-shrink: 0;
   }
   /* Bornage, bordure, tailles d'icône et accent du play viennent de .o2m-tbtn /
@@ -464,7 +468,7 @@
 
   /* ── Progress bar ── */
   #progress-wrap {
-    padding: 6px 16px 10px; background: var(--surface);
+    padding: 6px 16px 10px; background: transparent;   /* plan porté par #top-zone */
     flex-shrink: 0;
   }
   #progress-bar {
@@ -1203,6 +1207,14 @@
     }
     #btn-details svg { width: 18px; height: 18px; }
     #btn-details.has-edits { border-color: var(--accent); color: var(--accent); }
+
+    /* Les thèmes affiche bornent la HAUTEUR de leur colonne détails pour la caler
+       sur le carré de pochette de leur grille (max-height: --ovp-w / 30vh). Ces
+       règles n'ont de sens qu'en desktop, mais elles sont déclarées hors media
+       query : sur mobile elles écrasaient la feuille en une simple bande. On les
+       neutralise ici, où la colonne devient une feuille plein écran. */
+    [data-theme="overprint"] #track-details,
+    [data-theme="invert"]    #track-details { max-height: none; height: auto; }
 
     /* Details column → bottom-sheet modal (works in every theme, incl. posters).
        Anchored to --sheet-top (the header's height, published by watchSheetTop)
