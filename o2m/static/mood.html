@@ -242,15 +242,23 @@
   #pair-notice a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
   #pair-notice button { flex: 0 0 auto; background: none; border: 0; cursor: pointer;
     color: var(--muted); padding: 2px; line-height: 0; }
-  /* Same line as the now-playing status row: both columns share padding-top, so
-     matching the line-box height is enough for "DETAILS" and the status square to
-     read as one horizontal rule across the header. No bottom margin here — the
-     column already has gap: 10px, which would otherwise double up. */
+  /* "DETAILS" is the twin of the now-playing status badge: same square marker, same
+     typography, same line. The square goes on the inner <span>, not on .td-head —
+     the head is a space-between flex row, so a ::before on it would become a third
+     item and land apart from the word. Both columns share padding-top, and the
+     matching line-box height puts the two squares on one rule across the header.
+     No bottom margin: the column already has gap: 10px and it would double up. */
   #track-details .td-head {
     display: flex; align-items: center; justify-content: space-between;
-    font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s);
-    text-transform: uppercase; letter-spacing: .02em; color: var(--text);
     min-height: 18px;
+  }
+  #track-details .td-head > span:first-child {
+    display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+    font-family: var(--font-head); font-weight: 700; font-size: var(--t-label);
+    letter-spacing: .05em; text-transform: uppercase; color: var(--text);
+  }
+  #track-details .td-head > span:first-child::before {
+    content: ''; width: 9px; height: 9px; flex-shrink: 0; background: var(--accent);
   }
   #btn-edit-lock {
     background: none; border: none; cursor: pointer;
