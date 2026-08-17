@@ -628,7 +628,7 @@
     /* En-tête compact et lisible */
     #cover-col { padding: 10px; }
     #cover-wrap { aspect-ratio: auto; width: 84px; height: 84px; }
-    #now-playing { padding: 10px 12px; gap: 10px; }
+    /* #now-playing is display:contents here — padding/gap moved to its children. */
     /* No title size here: the system already drops .o2m-hero-title to
        --t-hero-dense below 900px. An id-based rule would outrank the class and pin
        the title again — and it is the strongest element on the screen. */
@@ -658,7 +658,20 @@
     /* Scoped to the standard themes — overprint/invert have their own poster
        layout (display:block #top-zone) and must NOT get display:contents here. */
     :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-right { display: contents; }
-    #now-playing { flex: 1 1 0; min-width: 0; }
+    /* …and #now-playing too, so its two children become flex items of #top-zone.
+       The edit button can then sit beside the cover while the text block drops to
+       a row of its own and takes the FULL width, instead of being squeezed into
+       the strip left over next to an 84px thumbnail. No DOM move: only order.
+       display:contents drops the wrapper's own padding, so it moves to the
+       children below. Poster themes keep their own layout (#top-zone is block). */
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #now-playing { display: contents; }
+    /* Explicit order: DOM order is cover, text, button — the button has to come
+       before the text for the text to wrap underneath it. */
+    #cover-col     { order: 1; }
+    #btn-details   { order: 2; margin: 10px 12px 0 auto; }
+    #track-info    { order: 3; flex: 1 1 100%; min-width: 0; padding: 0 12px 10px; }
+    #progress-wrap { order: 4; }
+    #controls      { order: 5; }
     #controls, #progress-wrap { flex: 0 0 100%; width: 100%; }
     #controls {
       /* Vertical rhythm of the block, in v1.5 order: progress, then transport
