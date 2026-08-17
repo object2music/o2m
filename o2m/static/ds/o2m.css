@@ -119,23 +119,23 @@
    because amber sits too close to the cream ground to carry contrast. The keys
    `creme` and `light` are kept as aliases so shipped code needs no edit. */
 [data-theme="bulletin"], [data-theme="creme"], [data-mode="light"] {
-  --bg:#FDDFB3; --surface:#F9D3A0; --card:#FEEBCF; --raised:#FFF6E7;
+  --bg:#FEEBCF; --surface:#FBDFB7; --card:#FFF7EB; --raised:#FFFFFF;
   --accent:#E4106A; --accent-press:#C60D5C; --accent-soft:#E4106A1a; --on-accent:#FFFFFF;
   --text:#28285B; --muted:#6E6A8C; --faint:#A9A4BE;
   --border:rgba(40,40,91,.18); --border-soft:rgba(40,40,91,.09); --border-strong:rgba(40,40,91,.38);
   --fill-1:rgba(40,40,91,.04); --fill-2:rgba(40,40,91,.08); --fill-3:rgba(40,40,91,.14);
-  --track-bg:#F0CFA0; --shape-ink:#28285B; --shadow:0 10px 40px rgba(40,40,91,.20);
+  --track-bg:#F2D9AF; --shape-ink:#28285B; --shadow:0 10px 40px rgba(40,40,91,.16);
   --amber:#F8B132; --navy:#28285B; --magenta:#E4106A; --lilac:#A9A4BE;
   --ring-a-1:#28285B; --ring-a-2:#3E3E6B; --ring-a-3:#53547C; --ring-a-4:#696A8D; --ring-a-5:#8384A3;
   --ring-b-1:#F8B132; --ring-b-2:#F9BC50; --ring-b-3:#FAC978; --ring-b-4:#FBD08C; --ring-b-5:#FBD79F;
   --c-energy:var(--text); --c-valence:var(--muted); --c-dl:var(--accent); --dial-txt:var(--text);
   --head-weight:800; --head-spacing:-.015em; --eyebrow-color:#E4106A;
-  --mx-bg:#F9D3A0;
-  --mx-q-calm:rgba(40,40,91,.04); --mx-q-happy:rgba(248,177,50,.20);
-  --mx-q-dark:rgba(40,40,91,.13); --mx-q-energetic:rgba(228,16,106,.10);
-  --mx-line:rgba(40,40,91,.18); --mx-border:transparent;
-  --mx-label:rgba(40,40,91,.30); --mx-axis:rgba(40,40,91,.45);
-  --mx-dl-fill:rgba(228,16,106,.09); --mx-dl-stroke:rgba(228,16,106,.60);
+  --mx-bg:#FFF7EB;
+  --mx-q-calm:rgba(40,40,91,.035); --mx-q-happy:rgba(248,177,50,.14);
+  --mx-q-dark:rgba(40,40,91,.10); --mx-q-energetic:rgba(228,16,106,.07);
+  --mx-line:rgba(40,40,91,.16); --mx-border:transparent;
+  --mx-label:rgba(40,40,91,.28); --mx-axis:rgba(40,40,91,.42);
+  --mx-dl-fill:rgba(228,16,106,.06); --mx-dl-stroke:rgba(228,16,106,.45);
   --mx-dot-core:#FFF6E7; --mx-pulse:228,16,106;
   --mood-happy:248,177,50; --mood-energetic:228,16,106;
   --mood-calm:110,106,140; --mood-dark:40,40,91;
@@ -377,9 +377,21 @@ button { font: inherit; color: inherit; }
 /* ----------------------------------------------------------------------------
    13. SHAPE LANGUAGE
    -------------------------------------------------------------------------- */
-.o2m-mark { position:relative; display:inline-block; width:1em; height:1em; vertical-align:-.12em; }
-.o2m-mark::before { content:''; position:absolute; inset:8% 0 0 0; margin:auto; width:86%; height:86%; border-radius:50%; background: var(--accent); }
-.o2m-mark::after { content:''; position:absolute; left:-10%; right:-10%; top:62%; height:9%; background: var(--bg); }
+/* The small mark — favicon, top bar, footer, anything under ~32px.
+   Same bullseye, reduced to THREE rings so it still reads tiny. Built from
+   gradients so it stays a single <span> and needs no markup change. */
+.o2m-mark {
+  position:relative; display:inline-block; width:1em; height:1em; vertical-align:-.12em;
+  flex:0 0 auto; aspect-ratio:1; border-radius:50%; overflow:hidden;
+  background:radial-gradient(circle at 50% 50%,
+    var(--ring-b-4) 0 34%, var(--ring-b-2) 34% 67%, var(--ring-b-1) 67% 100%);
+}
+.o2m-mark::before { content:''; position:absolute; inset:0 0 50% 0;
+  background:radial-gradient(circle at 50% 100%,
+    var(--ring-a-4) 0 34%, var(--ring-a-2) 34% 67%, var(--ring-a-1) 67% 100%); }
+.o2m-mark::after { content:''; position:absolute; left:0; right:0; top:50%; height:8%;
+  transform:translateY(-50%); background:var(--bg); }
+.o2m-mark--on-surface::after { background:var(--surface); }
 .o2m-dots { --dot: var(--shape-ink); --gap:22px; --size:7px; background-image: radial-gradient(var(--dot) calc(var(--size)/2), transparent calc(var(--size)/2 + .5px)); background-size: var(--gap) var(--gap); background-position:center; }
 .o2m-dots--orange { --dot: var(--accent); }
 .o2m-tile { aspect-ratio:1/1; position:relative; overflow:hidden; background: var(--bg); border: var(--line-1) solid var(--border); }

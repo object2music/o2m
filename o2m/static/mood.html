@@ -9,8 +9,9 @@
 <meta name="apple-mobile-web-app-title" content="O2M">
 <meta name="theme-color" content="#111111">
 <link rel="manifest" href="/static/manifest.json">
-<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
 <title>O2M Mood</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1143,6 +1144,9 @@
   .tl-info svg { width: 15px; height: 15px; display: block; }
   .tl-thumb { width: 30px; height: 30px; object-fit: cover; border-radius: 2px; display: block;
     background: var(--card); }
+  /* Variante pochette générée : conteneur SVG, pas une image. */
+  .tl-thumb--gen { overflow: hidden; flex-shrink: 0; }
+  .tl-thumb--gen svg { width: 100%; height: 100%; display: block; }
   .tl-item:last-child { border-bottom: none; }
 
   @media (max-width: 699px) {
@@ -2500,11 +2504,17 @@ const ICON_REMOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '' }) {
-  // Visual in the leading slot: eq-icon if current, else a thumbnail when the
-  // item has one (album/artist/box cover), else the index number.
+function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '', coverSeed = '' }) {
+  // Visual in the leading slot: eq-icon if current, else the real artwork, else a
+  // generated cover when the caller gave a seed (résultats de recherche), else the
+  // index number. Le SVG généré est injecté inline : via <img src> il perdrait les
+  // var(--…) du thème. Repli PNG si la librairie de marques n'a pas chargé.
   const numHtml = isCurrent ? '<span class="eq-icon"><i></i><i></i><i></i></span>'
-    : (image ? `<img class="tl-thumb" src="${objEsc(image)}" alt="" loading="lazy">` : indexLabel);
+    : image ? `<img class="tl-thumb" src="${objEsc(image)}" alt="" loading="lazy">`
+    : coverSeed ? (window.O2M
+        ? `<div class="tl-thumb tl-thumb--gen">${O2M.coverFor(coverSeed)}</div>`
+        : `<img class="tl-thumb" src="${objEsc(placeholderForUri(coverSeed))}" alt="" loading="lazy">`)
+    : indexLabel;
   const aCls = 'tl-artist' + (artistUri ? ' obj-link' : '');
   const aAttr = artistUri ? ` data-artist-uri="${objEsc(artistUri)}"` : '';
   // data-kind lets the shared ⓘ handler build a kind-aware menu (track vs
@@ -4573,9 +4583,10 @@ function objRenderTracks(tracks, kind = '', placeholder = false) {
       durText: t.length ? msToMin(t.length) : '',
       statusHtml,
       kind,
-      // In search results (placeholder=true) fall back to a reserve cover instead
+      // In search results (placeholder=true) fall back to a generated cover instead
       // of the index; album/artist track lists keep the meaningful track number.
-      image: t.image || (placeholder ? placeholderForUri(t.uri) : ''),
+      image: t.image || '',
+      coverSeed: placeholder ? t.uri : '',
     });
     // obj-openable → clicking the row (not the + / artist link) opens the track detail.
     return `<div class="tl-item obj-openable" data-uri="${objEsc(t.uri)}" data-kind="${objEsc(kind || 'track')}">${inner}</div>`;
@@ -5704,7 +5715,8 @@ function _searchObjRows(items, kind) {
       artist: a.artist || '',
       uri: a.uri,
       kind,
-      image: a.image || placeholderForUri(a.uri),   // default cover from the reserve set
+      image: a.image || '',
+      coverSeed: a.uri,                              // pochette générée, déterministe
     });
     // obj-openable + data-* → a click anywhere on the row (except the +) opens the
     // object's detail view, in addition to the + menu. data-name seeds the header

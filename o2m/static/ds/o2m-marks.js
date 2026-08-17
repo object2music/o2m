@@ -167,8 +167,9 @@
   }
 
   var COVER_KEYS = Object.keys(COVERS);
+  var O2M;
 
-  var O2M = {
+  O2M = {
     RINGS: RINGS,
     markNames: Object.keys(MARKS),
     coverNames: COVER_KEYS,
@@ -185,9 +186,18 @@
       return f();
     },
 
-    /** Deterministic cover for a track — same id always yields the same art. */
+    /** The fallback composition when nothing identifies the item. */
+    defaultCover: 'core',
+
+    /** Deterministic cover for a track — same id always yields the same art.
+        A missing or generic seed returns the full bullseye (`core`): the default
+        artwork should read as the mark, not as one variation among eight. */
     coverFor: function (id) {
-      var s = String(id == null ? '' : id), h = 0, i;
+      var s = String(id == null ? '' : id).trim();
+      if (!s || /^(o2m|default|none|null|undefined|unknown)$/i.test(s)) {
+        return COVERS[O2M.defaultCover]();
+      }
+      var h = 0, i;
       for (i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
       return COVERS[COVER_KEYS[h % COVER_KEYS.length]]();
     },
