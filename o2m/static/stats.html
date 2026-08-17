@@ -37,6 +37,19 @@
 </script>
 <script src="/static/chart.umd.min.js"></script>
 <style>
+  /* ── RETOUR ARRIÈRE — échelle typographique ───────────────────────────────
+     Les tailles 11/13/15/17/21px de cette page sont désormais lues dans les
+     jetons du système (--t-label / --t-body-s / --t-body / --t-body-l / --t-h3).
+     Les valeurs sont aujourd'hui IDENTIQUES : le rendu est inchangé, seule la
+     source change. Si une future version du design system fait bouger l'échelle
+     et que cela déséquilibre l'interface, DÉCOMMENTER ce bloc pour re-figer les
+     tailles d'aujourd'hui — sans toucher au design system.
+  :root {
+    --t-label: 11px; --t-body-s: 13px; --t-body: 15px;
+    --t-body-l: 17px; --t-h3: 21px;
+  }
+     ──────────────────────────────────────────────────────────────────────── */
+
   /* Pas de :root ici : tous les tokens viennent de ds/o2m.css. */
   body { min-height: 100vh; padding: var(--sp-5) var(--sp-4) 84px; }
 
@@ -69,7 +82,7 @@
     font-family: var(--font-mono); font-size: var(--t-label); text-transform: uppercase;
     letter-spacing: .12em; color: var(--muted); margin-bottom: 12px;
   }
-  .section-note { font-size: 11px; color: var(--muted); margin: -6px 0 12px; }
+  .section-note { font-size: var(--t-label); color: var(--muted); margin: -6px 0 12px; }
   .card {
     background: var(--surface); border-radius: var(--radius); padding: var(--sp-4);
     border: 1px solid var(--border);
@@ -86,11 +99,11 @@
 
   /* Comparative table */
   .table-scroll { overflow-x: auto; }
-  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 640px; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: var(--t-body-s); min-width: 640px; }
   table.cmp th, table.cmp td { padding: 8px 10px; text-align: right; white-space: nowrap; }
   table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
   table.cmp thead th {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    font-size: var(--t-label); text-transform: uppercase; letter-spacing: .04em;
     color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600;
   }
   table.cmp tbody td { border-bottom: 1px solid var(--border); }
@@ -128,12 +141,12 @@
   .mood-list { display: flex; flex-direction: column; gap: 10px; }
   .mood-row { display: flex; flex-direction: column; gap: 4px; }
   .mood-header { display: flex; justify-content: space-between; align-items: baseline; }
-  .mood-label { font-size: 13px; font-weight: 600; }
+  .mood-label { font-size: var(--t-body-s); font-weight: 600; }
   .mood-count { font-size: 12px; color: var(--muted); }
   .mood-bar-bg { background: var(--track-bg); border-radius: var(--radius); height: 8px; overflow: hidden; }
   .mood-bar-fill { height: 100%; border-radius: var(--radius); transition: width .5s; }
 
-  #error-msg { color: var(--accent); font-size: 13px; margin-bottom: 16px; display: none; }
+  #error-msg { color: var(--accent); font-size: var(--t-body-s); margin-bottom: 16px; display: none; }
 </style>
 </head>
 <body>
@@ -175,11 +188,11 @@
 <div class="section">
   <div class="two-col">
     <div class="card">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Provenance by category (track count)</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">Provenance by category (track count)</div>
       <div class="chart-wrap"><canvas id="chart-provenance"></canvas></div>
     </div>
     <div class="card">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Popularity by category (avg read_end)</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">Popularity by category (avg read_end)</div>
       <div class="chart-wrap"><canvas id="chart-popularity"></canvas></div>
     </div>
   </div>
@@ -192,7 +205,7 @@
       <div class="section-title">Mood tags</div>
       <div class="card">
         <div class="mood-list" id="mood-list">
-          <div style="color:var(--muted);font-size:13px">Loading…</div>
+          <div style="color:var(--muted);font-size: var(--t-body-s)">Loading…</div>
         </div>
       </div>
     </div>
@@ -222,11 +235,11 @@
   <div class="section-title">Total vs. complete plays distribution</div>
   <div class="two-col">
     <div class="card">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">read_count</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">read_count</div>
       <div class="chart-wrap"><canvas id="chart-read-count"></canvas></div>
     </div>
     <div class="card">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">read_count_end</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">read_count_end</div>
       <div class="chart-wrap"><canvas id="chart-read-count-end"></canvas></div>
     </div>
   </div>
