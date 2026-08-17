@@ -39,6 +39,9 @@
   --t-h1:      clamp(34px, 5vw, 60px);
   --t-h2:      30px;  --t-h3: 21px;
   --t-body-l:  17px;  --t-body: 15px;  --t-body-s: 13px;  --t-label: 11px;
+  /* Now-playing headline. Fluid so it holds up from a narrow column to a wide
+     header, and large enough that the title is the loudest thing on screen. */
+  --t-hero:    clamp(26px, 3.2vw, 44px);
 
   /* Geometry — O2M is square; curvature only for true circles */
   --radius: 0px;  --r-pill: 999px;
@@ -67,6 +70,16 @@
 
   /* Destructive actions only (delete). Inherited by every theme. */
   --danger: #E5484D;
+
+  /* Secondary hue and rare true-alert signal. Themes that have no second hue
+     resolve both to the accent, so a component can reference them safely. */
+  --secondary: var(--accent);
+  --signal:    var(--accent);
+
+  /* Header band. Themes set --header-bg to a real step off --bg so the top zone
+     reads as a distinct plane; --surface is the fallback for older markup. */
+  --header-bg:     var(--surface);
+  --header-border: var(--border);
 
   /* ---- v1.0 → v1.1 ALIASES (keep older markup / the reference page working) ---- */
   --o2m-orange:        var(--accent);
@@ -100,6 +113,8 @@
   --ring-a-1:#9C9486; --ring-a-2:#ADA598; --ring-a-3:#BEB7AA; --ring-a-4:#D0CABD; --ring-a-5:#F3EEE3;
   --ring-b-1:#FF5A00; --ring-b-2:#FF7526; --ring-b-3:#FF9152; --ring-b-4:#FFAE81; --ring-b-5:#FFCBAF;
   --c-energy:var(--text); --c-valence:var(--muted); --c-dl:var(--accent); --dial-txt:var(--text);
+  --c-opening:#D0CABD; --c-mood:#FF5A00;
+  --header-bg:#1C1812; --header-border:rgba(243,238,227,.16);
   --eyebrow-color:#FF5A00;
   --mx-bg:#1C1812;
   --mx-q-calm:rgba(243,238,227,.03); --mx-q-happy:rgba(243,238,227,.06);
@@ -113,14 +128,16 @@
   color-scheme: dark;
 }
 
-/* BULLETIN — replaces the old warm-orange "Light". Inspired by the Clemi-family
-   reference set: navy ink, amber secondary, magenta as the live signal, on cream.
-   NOTE: this is the one theme that does NOT run on orange. Its accent is magenta
-   because amber sits too close to the cream ground to carry contrast. The keys
-   `creme` and `light` are kept as aliases so shipped code needs no edit. */
+/* BULLETIN — replaces the old warm-orange "Light". Navy ink, amber secondary, cream ground.
+   v1.4: the live accent is AZURE, not magenta. Magenta read as a third hue fighting the
+   navy/amber pair once it landed on every control in production. Azure is a near-relative
+   of the navy ink, so the accent now reads as the ink turned up rather than as a fourth
+   colour; amber stays the secondary and keeps the ring ramps. Magenta survives as
+   `--signal`, for the rare true alert. `creme` and `light` remain aliases. */
 [data-theme="bulletin"], [data-theme="creme"], [data-mode="light"] {
   --bg:#FEEBCF; --surface:#FBDFB7; --card:#FFF7EB; --raised:#FFFFFF;
-  --accent:#E4106A; --accent-press:#C60D5C; --accent-soft:#E4106A1a; --on-accent:#FFFFFF;
+  --accent:#1257D6; --accent-press:#0E45AC; --accent-soft:#1257D614; --on-accent:#FFFFFF;
+  --secondary:#F8B132; --signal:#E4106A;
   --text:#28285B; --muted:#6E6A8C; --faint:#A9A4BE;
   --border:rgba(40,40,91,.18); --border-soft:rgba(40,40,91,.09); --border-strong:rgba(40,40,91,.38);
   --fill-1:rgba(40,40,91,.04); --fill-2:rgba(40,40,91,.08); --fill-3:rgba(40,40,91,.14);
@@ -129,15 +146,17 @@
   --ring-a-1:#28285B; --ring-a-2:#3E3E6B; --ring-a-3:#53547C; --ring-a-4:#696A8D; --ring-a-5:#8384A3;
   --ring-b-1:#F8B132; --ring-b-2:#F9BC50; --ring-b-3:#FAC978; --ring-b-4:#FBD08C; --ring-b-5:#FBD79F;
   --c-energy:var(--text); --c-valence:var(--muted); --c-dl:var(--accent); --dial-txt:var(--text);
-  --head-weight:800; --head-spacing:-.015em; --eyebrow-color:#E4106A;
+  --c-opening:#1257D6; --c-mood:#C98A12;
+  --header-bg:#FBDFB7; --header-border:rgba(40,40,91,.20);
+  --head-weight:800; --head-spacing:-.015em; --eyebrow-color:#1257D6;
   --mx-bg:#FFF7EB;
-  --mx-q-calm:rgba(40,40,91,.035); --mx-q-happy:rgba(248,177,50,.14);
-  --mx-q-dark:rgba(40,40,91,.10); --mx-q-energetic:rgba(228,16,106,.07);
+  --mx-q-calm:rgba(40,40,91,.03); --mx-q-happy:rgba(40,40,91,.055);
+  --mx-q-dark:rgba(40,40,91,.10); --mx-q-energetic:rgba(18,87,214,.06);
   --mx-line:rgba(40,40,91,.16); --mx-border:transparent;
   --mx-label:rgba(40,40,91,.28); --mx-axis:rgba(40,40,91,.42);
-  --mx-dl-fill:rgba(228,16,106,.06); --mx-dl-stroke:rgba(228,16,106,.45);
-  --mx-dot-core:#FFF6E7; --mx-pulse:228,16,106;
-  --mood-happy:248,177,50; --mood-energetic:228,16,106;
+  --mx-dl-fill:rgba(18,87,214,.06); --mx-dl-stroke:rgba(18,87,214,.45);
+  --mx-dot-core:#FFF6E7; --mx-pulse:18,87,214;
+  --mood-happy:248,177,50; --mood-energetic:18,87,214;
   --mood-calm:110,106,140; --mood-dark:40,40,91;
   color-scheme: light;
 }
@@ -154,6 +173,8 @@
   --ring-a-1:#000000; --ring-a-2:#2B2B2B; --ring-a-3:#565656; --ring-a-4:#818181; --ring-a-5:#ACACAC;
   --ring-b-1:#ff3b00; --ring-b-2:#FF6033; --ring-b-3:#FF8566; --ring-b-4:#FFAA99; --ring-b-5:#FFCFCC;
   --c-energy:#111111; --c-valence:#888888; --c-dl:#ff3b00; --dial-txt:#000000;
+  --c-opening:#565656; --c-mood:#111111;
+  --header-bg:#F2F2F2; --header-border:#00000022;
   --mx-bg:#f4f4f4;
   --mx-q-calm:#00000005; --mx-q-happy:#0000000b;
   --mx-q-dark:#00000012; --mx-q-energetic:#00000008;
@@ -179,6 +200,8 @@
   --ring-a-1:#000000; --ring-a-2:#2B2B2B; --ring-a-3:#565656; --ring-a-4:#818181; --ring-a-5:#ACACAC;
   --ring-b-1:#ff5a00; --ring-b-2:#FF7526; --ring-b-3:#FF9152; --ring-b-4:#FFAE81; --ring-b-5:#FFCBAF;
   --c-energy:#111111; --c-valence:#888888; --c-dl:#ff5a00; --dial-txt:#000000;
+  --c-opening:#565656; --c-mood:#ff5a00;
+  --header-bg:#F5F1EC; --header-border:#00000022;
   --mx-bg:#f4f4f4;
   --mx-q-calm:#00000005; --mx-q-happy:#0000000b;
   --mx-q-dark:#00000012; --mx-q-energetic:#00000008;
@@ -204,6 +227,8 @@
   --ring-a-1:#777777; --ring-a-2:#959595; --ring-a-3:#B3B3B3; --ring-a-4:#D1D1D1; --ring-a-5:#FFFFFF;
   --ring-b-1:#ff3b00; --ring-b-2:#FF6033; --ring-b-3:#FF8566; --ring-b-4:#FFAA99; --ring-b-5:#FFCFCC;
   --c-energy:#ffffff; --c-valence:#888888; --c-dl:var(--hero-accent,#ff3b00); --dial-txt:#ffffff;
+  --c-opening:#B3B3B3; --c-mood:var(--hero-accent,#ff3b00);
+  --header-bg:#141414; --header-border:#ffffff1f;
   --mx-bg:#161616;
   --mx-q-calm:#ffffff04; --mx-q-happy:#ffffff09;
   --mx-q-dark:#ffffff0f; --mx-q-energetic:#ffffff07;
@@ -328,6 +353,27 @@ button { font: inherit; color: inherit; }
    -------------------------------------------------------------------------- */
 .o2m-card { background: var(--card); border: var(--line-1) solid var(--border); border-radius: var(--radius); padding: var(--sp-5); }
 .o2m-card--flush { padding: 0; overflow: hidden; }
+
+/* Header band — the top zone must read as a plane of its own, not as the page
+   with content on it. One rule, every theme: a real ground step plus a closing
+   rule at the bottom edge. */
+.o2m-header {
+  background: var(--header-bg);
+  border-bottom: var(--line-1) solid var(--header-border);
+}
+
+/* Hero title — the now-playing headline. The app was sizing this by hand; this
+   is the scale the system intends, and it is fluid so it survives narrow columns. */
+.o2m-hero-title {
+  font-family: var(--font-head);
+  font-weight: var(--head-weight);
+  font-size: var(--t-hero);
+  line-height: .98;
+  letter-spacing: var(--head-spacing);
+  text-transform: var(--head-transform);
+  color: var(--accent);
+  text-wrap: balance;
+}
 
 .o2m-field { width:100%; background: var(--surface); border: var(--line-1) solid var(--border); border-radius: var(--radius); color: var(--text); padding: 11px 14px; font: inherit; transition: border-color var(--fast); }
 .o2m-field::placeholder { color: var(--faint); }
@@ -474,6 +520,12 @@ button { font: inherit; color: inherit; }
 .o2m-dial[data-axis="valence"] .knob { fill:   var(--c-valence); }
 .o2m-dial[data-axis="dl"]      .fill { stroke: var(--c-dl); }
 .o2m-dial[data-axis="dl"]      .knob { fill:   var(--c-dl); }
+/* Basic-view dials. These shipped with hard-coded cyan and orange, which belonged
+   to no theme — they now draw from the theme like every other axis. */
+.o2m-dial[data-axis="opening"] .fill { stroke: var(--c-opening, var(--muted)); }
+.o2m-dial[data-axis="opening"] .knob { fill:   var(--c-opening, var(--muted)); }
+.o2m-dial[data-axis="mood"]    .fill { stroke: var(--c-mood, var(--accent)); }
+.o2m-dial[data-axis="mood"]    .knob { fill:   var(--c-mood, var(--accent)); }
 .o2m-dial .val, .o2m-dial .center-label { fill: var(--dial-txt, var(--text)); }
 
 /* ----------------------------------------------------------------------------

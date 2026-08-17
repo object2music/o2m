@@ -116,8 +116,10 @@
 
   /* ── Top zone: cover column + info/controls on the right ── */
   #top-zone {
-    display: flex; align-items: stretch; background: var(--surface);
-    border-bottom: 1px solid var(--border); flex-shrink: 0;
+    /* En-tête détaché du corps : le système fournit une paire dédiée qui retombe
+       sur --surface / --border là où un thème ne la surcharge pas. */
+    display: flex; align-items: stretch; background: var(--header-bg, var(--surface));
+    border-bottom: 1px solid var(--header-border, var(--border)); flex-shrink: 0;
     /* Display cutout (camera hole): with viewport-fit=cover the page extends under
        the status-bar strip in fullscreen/PWA. The inset becomes padding so the
        top-zone background claims that strip while content stays clear of the
@@ -1774,35 +1776,35 @@
              dial's bottom-left/top/bottom-right label positions (indices 0/2/4 of
              its 5-slot layout land exactly there). Appearance only — still the
              same continuous discover_level(0-10) underneath, just snapped. -->
-        <svg class="dial-svg" id="dial-bdl" width="196" height="136" viewBox="-33 -14 176 126">
+        <svg class="dial-svg o2m-dial" data-axis="opening" id="dial-bdl" width="196" height="136" viewBox="-33 -14 176 126">
           <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
-          <circle class="dial-fill" id="fill-bdl" cx="55" cy="55" r="42"
-                  stroke="#00bcd4" transform="rotate(135 55 55)"/>
+          <circle class="dial-fill fill" id="fill-bdl" cx="55" cy="55" r="42"
+                  transform="rotate(135 55 55)"/>
           <text class="bdl-lbl" data-i="0" x="16" y="99"  text-anchor="end">focused</text>
           <text class="bdl-lbl" data-i="2" x="55" y="-4"  text-anchor="middle">regular</text>
           <text class="bdl-lbl" data-i="4" x="94" y="99"  text-anchor="start">crazy</text>
           <!-- 2 extra (unlabelled) detents between the 3 words -->
           <circle class="bdl-tick" cx="16" cy="39" r="2"/>
           <circle class="bdl-tick" cx="94" cy="39" r="2"/>
-          <circle id="knob-bdl" cx="55" cy="13" r="7" fill="#00bcd4"/>
-          <text x="55" y="60" text-anchor="middle" fill="#eaeaea" font-weight="700" id="txt-bdl">regular</text>
+          <circle class="knob" id="knob-bdl" cx="55" cy="13" r="7"/>
+          <text class="center-label" x="55" y="60" text-anchor="middle" font-weight="700" id="txt-bdl">regular</text>
         </svg>
       </div>
       <div class="dial-wrap">
         <div class="dial-label">Mood</div>
         <!-- Wider viewBox: the 5 detent labels sit around the knob, at their angle
              on the arc (135°→405°). Labels are clickable shortcuts. -->
-        <svg class="dial-svg" id="dial-bmood" width="196" height="136" viewBox="-33 -14 176 126">
+        <svg class="dial-svg o2m-dial" data-axis="mood" id="dial-bmood" width="196" height="136" viewBox="-33 -14 176 126">
           <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
-          <circle class="dial-fill" id="fill-bmood" cx="55" cy="55" r="42"
-                  stroke="#ff5a00" transform="rotate(135 55 55)"/>
+          <circle class="dial-fill fill" id="fill-bmood" cx="55" cy="55" r="42"
+                  transform="rotate(135 55 55)"/>
           <text class="bmood-lbl" data-i="0" x="16" y="99"  text-anchor="end">intense</text>
           <text class="bmood-lbl" data-i="1" x="0"  y="35"  text-anchor="end">calm</text>
           <text class="bmood-lbl" data-i="2" x="55" y="-4"  text-anchor="middle">normy</text>
           <text class="bmood-lbl" data-i="3" x="110" y="35" text-anchor="start">happy</text>
           <text class="bmood-lbl" data-i="4" x="94" y="99"  text-anchor="start">energetic</text>
-          <circle id="knob-bmood" cx="55" cy="13" r="7" fill="#ff5a00"/>
-          <text x="55" y="60" text-anchor="middle" fill="#eaeaea" font-weight="700" id="txt-bmood">normy</text>
+          <circle class="knob" id="knob-bmood" cx="55" cy="13" r="7"/>
+          <text class="center-label" x="55" y="60" text-anchor="middle" font-weight="700" id="txt-bmood">normy</text>
         </svg>
       </div>
     </div>
