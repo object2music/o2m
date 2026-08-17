@@ -13,22 +13,22 @@
 <!-- Design system : source unique des tokens (voir DESIGN_SYNC.md). -->
 <link rel="stylesheet" href="/static/ds/o2m.css">
 <script>
-  /* Le thème suit celui choisi dans Mood : même clé, même défaut. Appliqué avant
-     le rendu pour éviter le flash. Pas de sélecteur ici — Mood reste la surface
-     de réglage, donc data-theme est fixe pour la durée de la page (ce qui permet
-     de lire les tokens une seule fois pour Chart.js). */
+  /* The theme follows the one picked in Mood: same key, same default. Applied
+     before paint to avoid a flash. No switcher here — Mood stays the settings
+     surface, so data-theme is fixed for the page's lifetime (which lets us read
+     the tokens once for Chart.js). */
   (function () {
     var t = new URLSearchParams(location.search).get('theme')
           || localStorage.getItem('o2m2-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', t);
-    // La couleur de chrome PWA suit le fond du thème au lieu d'un navy figé.
+    // The PWA chrome colour follows the theme's ground instead of a frozen navy.
     var m = document.createElement('meta');
     m.name = 'theme-color';
     m.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#15120E';
     document.head.appendChild(m);
   })();
-  /* Retour arrière depuis Mood après un changement de thème : la page restaurée
-     depuis le bfcache garderait l'ancien data-theme. */
+  /* Going back from Mood after a theme change: a page restored from the bfcache
+     would keep the stale data-theme. */
   addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
     var t = localStorage.getItem('o2m2-theme') || 'dark';
@@ -37,20 +37,20 @@
 </script>
 <script src="/static/chart.umd.min.js"></script>
 <style>
-  /* ── RETOUR ARRIÈRE — échelle typographique ───────────────────────────────
-     Les tailles 11/13/15/17/21px de cette page sont désormais lues dans les
-     jetons du système (--t-label / --t-body-s / --t-body / --t-body-l / --t-h3).
-     Les valeurs sont aujourd'hui IDENTIQUES : le rendu est inchangé, seule la
-     source change. Si une future version du design system fait bouger l'échelle
-     et que cela déséquilibre l'interface, DÉCOMMENTER ce bloc pour re-figer les
-     tailles d'aujourd'hui — sans toucher au design system.
+  /* ── REVERT SWITCH — type scale ───────────────────────────────────────────
+     This page's 11/13/15/17/21px sizes are now read from the system's tokens
+     (--t-label / --t-body-s / --t-body / --t-body-l / --t-h3). The values are
+     IDENTICAL today: the rendering is unchanged, only the source of the value
+     moves. If a future design-system release shifts the scale and that unbalances
+     the interface, UNCOMMENT this block to pin today's sizes back — with no
+     change to the design system.
   :root {
     --t-label: 11px; --t-body-s: 13px; --t-body: 15px;
     --t-body-l: 17px; --t-h3: 21px;
   }
      ──────────────────────────────────────────────────────────────────────── */
 
-  /* Pas de :root ici : tous les tokens viennent de ds/o2m.css. */
+  /* No :root here: every token comes from ds/o2m.css. */
   body { min-height: 100vh; padding: var(--sp-5) var(--sp-4) 84px; }
 
   /* Unified footer (shared look with the Mood page) */
@@ -109,8 +109,8 @@
   table.cmp tbody td { border-bottom: 1px solid var(--border); }
   table.cmp tbody tr:last-child td { border-bottom: none; }
   table.cmp tr.totals td { font-weight: 700; border-top: 2px solid var(--border); color: var(--text); }
-  /* Carré comme le marqueur du système (.o2m-badge::before) ; l'identité est portée
-     par le libellé adjacent, la couleur n'est plus qu'un repère discret. */
+  /* Square, like the system's own marker (.o2m-badge::before). Identity is carried
+     by the adjacent label, so the colour is only a discreet cue. */
   .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: var(--radius);
              background: var(--faint); margin-right: 7px; vertical-align: baseline; }
   .num-muted { color: var(--muted); }
@@ -358,11 +358,11 @@ async function initSnapcast() {
   autoConnectSnapIfNeeded();
 }
 
-/* ── Couleurs : plus aucun littéral, tout vient des tokens du design system ──
-   Lecture unique (data-theme est fixe pour la durée de la page, cf. le pré-paint).
-   Le <link> du système précède ce script, donc getComputedStyle voit des valeurs
-   résolues. Chaque lecture a un repli : un nom de token fautif renverrait '' et
-   Chart.js peindrait alors en transparent — panne muette difficile à diagnostiquer. */
+/* ── Colours: no literals left, everything comes from the design-system tokens ──
+   Read once (data-theme is fixed for the page's lifetime, see the pre-paint script).
+   The system's <link> precedes this script, so getComputedStyle sees resolved values.
+   Every read has a fallback: a mistyped token name returns '' and Chart.js would then
+   paint transparent — a silent failure that reads as "the chart didn't load". */
 let T = {};
 function readTokens() {
   const s = getComputedStyle(document.documentElement);
@@ -374,7 +374,7 @@ function readTokens() {
     accent: g('--accent', '#FF5A00'),
     border: g('--border', 'rgba(243,238,227,.13)'),
     fill3:  g('--fill-3', 'rgba(243,238,227,.10)'),
-    // triplets « R,G,B » nus → composables en rgba()
+    // bare "R,G,B" triplets → composable inside rgba()
     mood: {
       happy:     g('--mood-happy', '243,238,227'),
       energetic: g('--mood-energetic', '255,90,0'),
@@ -383,12 +383,12 @@ function readTokens() {
     },
   };
 }
-/* Alpha-conscient : l'ancien code faisait `couleur + 'cc'`, ce qui ne marche que
-   sur de l'hexadécimal et corromprait silencieusement un rgba() venant d'un token. */
+/* Alpha-aware: the old code did `colour + 'cc'`, which only works on hex and would
+   silently corrupt an rgba() coming from a token. */
 const moodRGBA = (k, a = 1) => `rgba(${T.mood[k] || '120,120,120'},${a})`;
 const moodSolid = k => moodRGBA(k, 1);
-/* Les moods réels portent la rampe du thème ; tout le reste (unknown/_/null) est
-   fondu en une seule teinte discrète — ce ne sont pas des catégories à distinguer. */
+/* Real moods carry the theme ramp; everything else (unknown/_/null) collapses into
+   a single discreet tone — those are not categories worth telling apart. */
 function moodColor(key, a = 1) {
   return ['calm', 'energetic', 'dark', 'happy'].includes(key) ? moodRGBA(key, a) : T.faint;
 }
@@ -405,8 +405,8 @@ const CAT_LABELS = {
   podcast_info: 'Podcast / Info', other: 'Other', all: 'All',
 };
 const PROV_LABELS = { playlist: 'Playlist', album: 'Album', artist: 'Artist', unknown: 'Unknown' };
-/* La provenance est ORDINALE (précédence playlist > album > artist), pas
-   catégorielle : une rampe de valeur décroissante l'exprime mieux que 4 teintes. */
+/* Provenance is ORDINAL (precedence playlist > album > artist), not categorical:
+   a descending value ramp expresses that better than four hues. */
 const provRamp = () => [T.text, T.muted, T.faint, T.fill3];
 
 function showError(msg) {
@@ -483,8 +483,8 @@ function renderPopularityChart(data) {
       labels,
       datasets: [{
         data: cats.map(c => c.avg_read_end),
-        // Série unique : colorer chaque barre par sa propre identité n'encoderait
-        // rien de plus que sa longueur. Une seule teinte.
+        // Single series: colouring each bar by its own identity would encode
+        // nothing beyond its length. One hue.
         backgroundColor: T.accent,
         borderColor: T.accent,
         borderWidth: 1,

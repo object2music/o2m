@@ -16,12 +16,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<!-- Design system : source unique des tokens des 5 thèmes + couche composants.
-     Doit précéder le <style> de la page, dont les règles l'emportent ensuite. -->
+<!-- Design system: single source of the 5 themes' tokens + component layer.
+     Must precede the page's own <style>, whose rules then win on equal specificity. -->
 <link rel="stylesheet" href="/static/ds/o2m.css">
-<!-- Marques et pochettes générées. Chargé dans le <head> et NON en fin de body :
-     init() s'exécute de façon synchrone à la fin du script inline, donc window.O2M
-     doit déjà exister à ce moment-là. Le script diffère lui-même son mount(). -->
+<!-- Marks and generated cover art. Loaded in <head>, NOT at the end of <body>:
+     init() runs synchronously at the end of the inline script, so window.O2M must
+     already exist by then. The library defers its own mount() to DOMContentLoaded. -->
 <script src="/static/ds/o2m-marks.js"></script>
 <script>
   /* Applique le thème avant le rendu pour éviter le flash.
@@ -48,25 +48,25 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-  /* Les tokens des cinq thèmes vivent désormais dans /static/ds/o2m.css
-     (chargé dans le <head>) : source unique de vérité, partagée avec les pages
-     stats/tag_features et avec les références de design. Ne pas les redéclarer ici. */
+  /* The five themes' tokens now live in /static/ds/o2m.css (loaded in <head>):
+     one source of truth, shared with stats/tag_features and with the design
+     references. Never redeclare a token here. */
 
-  /* ── RETOUR ARRIÈRE — base/reset du design system ─────────────────────────
-     ds/o2m.css pose body { font-size: 15px; line-height: 1.5 } : c'est
-     l'harmonisation typographique du système. Si elle déséquilibre une vue,
-     DÉCOMMENTER la ligne ci-dessous pour retrouver exactement le rendu d'avant.
-     Un seul geste, sans toucher au design system.
+  /* ── REVERT SWITCH — design-system base/reset ─────────────────────────────
+     ds/o2m.css sets body { font-size: 15px; line-height: 1.5 }: that is the
+     system's typographic harmonisation. If it unbalances a view, UNCOMMENT the
+     line below to get exactly the previous rendering back — one gesture, with
+     no change to the design system.
      body { font-size: 16px; line-height: normal; }
      ────────────────────────────────────────────────────────────────────── */
 
-  /* ── RETOUR ARRIÈRE — échelle typographique ───────────────────────────────
-     Les tailles 11/13/15/17/21px de cette page sont désormais lues dans les
-     jetons du système (--t-label / --t-body-s / --t-body / --t-body-l / --t-h3).
-     Les valeurs sont aujourd'hui IDENTIQUES : le rendu est inchangé, seule la
-     source change. Si une future version du design system fait bouger l'échelle
-     et que cela déséquilibre l'interface, DÉCOMMENTER ce bloc pour re-figer les
-     tailles d'aujourd'hui — sans toucher au design system.
+  /* ── REVERT SWITCH — type scale ───────────────────────────────────────────
+     This page's 11/13/15/17/21px sizes are now read from the system's tokens
+     (--t-label / --t-body-s / --t-body / --t-body-l / --t-h3). The values are
+     IDENTICAL today: the rendering is unchanged, only the source of the value
+     moves. If a future design-system release shifts the scale and that unbalances
+     the interface, UNCOMMENT this block to pin today's sizes back — with no
+     change to the design system.
   :root {
     --t-label: 11px; --t-body-s: 13px; --t-body: 15px;
     --t-body-l: 17px; --t-h3: 21px;
@@ -129,8 +129,8 @@
 
   /* ── Top zone: cover column + info/controls on the right ── */
   #top-zone {
-    /* En-tête détaché du corps : le système fournit une paire dédiée qui retombe
-       sur --surface / --border là où un thème ne la surcharge pas. */
+    /* Header as a plane distinct from the body: the system supplies a dedicated
+       pair that falls back to --surface / --border where a theme does not set it. */
     display: flex; align-items: stretch; background: var(--header-bg, var(--surface));
     border-bottom: 1px solid var(--header-border, var(--border)); flex-shrink: 0;
     /* Display cutout (camera hole): with viewport-fit=cover the page extends under
@@ -172,9 +172,15 @@
      3–10% opacity and dark's --mx-border is transparent, so on the panel surface
      the canvas was all but invisible. Giving it the matrix background + a hairline
      makes it read as a control in every theme. */
+  /* Ground is --card, not --mx-bg: --mx-bg is calibrated for a matrix sitting on
+     the page (--bg), but this one sits inside a panel (--surface). In dark the two
+     tokens are IDENTICAL (#1C1812), and near-identical in invert — with quadrant
+     washes at 3-10% and a transparent --mx-border, the radar vanished into the
+     panel. --card differs from --surface in all five themes; the --border-strong
+     hairline supplies the frame --mx-border does not carry. */
   .tp-matrix { width: 100%; max-width: 200px; aspect-ratio: 1 / 1;
     margin: 8px auto 2px; display: block; touch-action: none;
-    background: var(--mx-bg); border: 1px solid var(--border); }
+    background: var(--card); border: 1px solid var(--border-strong); }
   body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
   /* ── First-launch welcome overlay ── */
@@ -334,10 +340,10 @@
   body.edit-mode #mood-matrix { box-shadow: inset 0 0 0 2px var(--accent); }
 
   /* ── Now Playing ── */
-  /* Fond transparent : depuis la v1.4 le plan de l'en-tête est porté une seule
-     fois par #top-zone (--header-bg). Repeindre --surface ici créait une bande
-     d'une autre couleur dans les thèmes où les deux diffèrent (mono, overprint,
-     invert — dark et bulletin les ont égaux, d'où un bug longtemps invisible). */
+  /* Transparent ground: since v1.4 the header plane is painted ONCE by #top-zone
+     (--header-bg). Repainting --surface here produced a band of a different colour
+     in the themes where the two differ (mono, overprint, invert — dark and bulletin
+     have them equal, which is why the bug stayed invisible for so long). */
   #now-playing {
     display: flex; align-items: flex-start; gap: 14px;
     padding: 12px 16px; background: transparent;
@@ -355,23 +361,24 @@
     transition: filter .4s, opacity .22s ease;
   }
   #cover.cover-fading { opacity: 0; }
-  /* Pochette générée (repli sans visuel) : SVG inline, seul mode de rendu possible —
-     via <img src> (data: compris) le SVG serait un document isolé, sans les var(--…)
-     ni les classes du thème, et sortirait en noir.
-     NB volontaire : on ne lui applique PAS le grayscale d'overprint/invert appliqué à
-     #cover ; ces filtres désaturent la photo, alors que cette pochette est déjà faite
-     des rampes du thème — la griser tuerait sa moitié accent. */
+  /* Generated cover (fallback when there is no artwork): inline SVG, the only
+     possible rendering mode — through <img src> (data: URIs included) the SVG is an
+     isolated document with neither the theme's var(--…) nor its classes, and would
+     render black.
+     Deliberate divergence: the overprint/invert grayscale applied to #cover is NOT
+     applied here. Those filters desaturate photography, whereas this cover is already
+     made of the theme's own ramps — greying it would kill its accent half. */
   #cover-gen { position: absolute; inset: 0; display: none; }
   #cover-gen svg { width: 100%; height: 100%; display: block; }
   #cover-wrap.gen #cover { display: none; }
   #cover-wrap.gen #cover-gen { display: block; }
   #track-info { flex: 1; min-width: 0; padding-top: 2px; }
-  /* Typo, casse et couleur viennent de .o2m-hero-title (v1.5). Ne reste ici que
-     la contrainte de mise en page propre à ce header : une seule ligne, ellipsée. */
+  /* Type, case and colour come from .o2m-hero-title (v1.5). All that remains here
+     is this header's own layout constraint: a single line, ellipsised. */
   #track-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* Ligne « Artiste · Album » : disposition, tailles et couleurs viennent de
-     .o2m-np-meta (+ .artist / .album) depuis la v1.5. Ne restent ici que
-     l'écart au titre et le repli des enfants dans la largeur disponible. */
+  /* "Artist · Album" row: layout, sizes and colours come from .o2m-np-meta
+     (+ .artist / .album) since v1.5. All that remains here is the gap to the title
+     and letting the children shrink within the available width. */
   #artist-album { margin-top: 3px; }
   #artist-name, #album-name { flex: 0 1 auto; }
   #album-name:empty { display: none; }
@@ -449,11 +456,11 @@
   /* ── Controls ── */
   #controls {
     display: flex; justify-content: center; align-items: center; gap: 28px;
-    padding: 10px 16px; background: transparent;   /* plan porté par #top-zone */
+    padding: 10px 16px; background: transparent;   /* plane painted by #top-zone */
     flex-shrink: 0;
   }
-  /* Bornage, bordure, tailles d'icône et accent du play viennent de .o2m-tbtn /
-     .o2m-tbtn--play (v1.5). Ne reste ici que le retour tactile à l'appui. */
+  /* Hit area, border, icon sizes and the play accent come from .o2m-tbtn /
+     .o2m-tbtn--play (v1.5). All that remains here is the press feedback. */
   .ctrl-btn { line-height: 1; }
   .ctrl-btn:active { transform: scale(.92); }
 
@@ -468,7 +475,7 @@
 
   /* ── Progress bar ── */
   #progress-wrap {
-    padding: 6px 16px 10px; background: transparent;   /* plan porté par #top-zone */
+    padding: 6px 16px 10px; background: transparent;   /* plane painted by #top-zone */
     flex-shrink: 0;
   }
   #progress-bar {
@@ -488,7 +495,7 @@
   #progress-wrap:hover #progress-fill::after,
   #progress-bar.seeking #progress-fill::after { transform: translateY(-50%) scale(1); }
   #progress-bar.seeking #progress-fill { transition: none; }
-  /* Disposition, mono et taille viennent de .o2m-timecode (v1.5). */
+  /* Layout, mono family and size come from .o2m-timecode (v1.5). */
   #progress-time { margin-top: 3px; }
 
   /* ── Scrollable content ── */
@@ -588,9 +595,9 @@
     #cover-col { padding: 10px; }
     #cover-wrap { aspect-ratio: auto; width: 84px; height: 84px; }
     #now-playing { padding: 10px 12px; gap: 10px; }
-    /* Pas de taille de titre ici : le système descend déjà .o2m-hero-title sur
-       --t-hero-dense sous 900px. Une règle par id l'emporterait sur la classe et
-       re-figerait le titre — or c'est l'élément le plus fort de l'écran. */
+    /* No title size here: the system already drops .o2m-hero-title to
+       --t-hero-dense below 900px. An id-based rule would outrank the class and pin
+       the title again — and it is the strongest element on the screen. */
 
     /* Colonne détails → bloc repliable pleine largeur sous l'en-tête */
     #top-zone { flex-wrap: wrap; }
@@ -620,15 +627,15 @@
     #now-playing { flex: 1 1 0; min-width: 0; }
     #controls, #progress-wrap { flex: 0 0 100%; width: 100%; }
     #controls {
-      /* Rythme vertical du bloc, dans l'ordre v1.5 : avancement, puis transport
-         (play + volume). Le transport ferme le bloc, d'où un peu plus d'air
-         au-dessus de lui qu'en dessous. */
+      /* Vertical rhythm of the block, in v1.5 order: progress, then transport
+         (play + volume). The transport closes the block, hence slightly more air
+         above it than below. */
       flex-wrap: wrap; column-gap: 16px; row-gap: 7px;
       padding: 10px max(12px, env(safe-area-inset-right, 0px)) 12px max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
-    /* L'avancement suit désormais la ligne d'infos et précède le transport :
-       un écart net au-dessus, resserré en dessous puisque #controls reprend l'air. */
+    /* Progress now follows the info line and precedes the transport: a clear gap
+       above, tightened below since #controls takes the air back. */
     #progress-wrap { padding-top: 12px; padding-bottom: 2px; }
 
     /* ── Mobile accordion: Boxes / Mood / Tracklist ──
@@ -1102,8 +1109,8 @@
   }
 
   /* Brand (O2M + "Mood" eyebrow) merged into the footer bar, on the left. */
-  /* align-items passe de baseline à center : le disque est peint en ::before et n'a
-     pas de ligne de base, il retomberait trop bas. Le seul enfant texte n'en pâtit pas. */
+  /* align-items moves from baseline to center: the mark is painted in ::before and
+     has no text baseline, so it would sit too low. The single text child is fine. */
   #footer-links .tb-brand { display: flex; align-items: center; gap: 7px; margin-right: var(--sp-3); }
   #footer-links .tb-brand .o2m-mark { font-size: var(--t-body); flex-shrink: 0; }   /* .o2m-mark = 1em × 1em */
   .tb-mark {
@@ -1147,7 +1154,7 @@
   .tl-info svg { width: 15px; height: 15px; display: block; }
   .tl-thumb { width: 30px; height: 30px; object-fit: cover; border-radius: 2px; display: block;
     background: var(--card); }
-  /* Variante pochette générée : conteneur SVG, pas une image. */
+  /* Generated-cover variant: an SVG container, not an image. */
   .tl-thumb--gen { overflow: hidden; flex-shrink: 0; }
   .tl-thumb--gen svg { width: 100%; height: 100%; display: block; }
   .tl-item:last-child { border-bottom: none; }
@@ -1208,11 +1215,11 @@
     #btn-details svg { width: 18px; height: 18px; }
     #btn-details.has-edits { border-color: var(--accent); color: var(--accent); }
 
-    /* Les thèmes affiche bornent la HAUTEUR de leur colonne détails pour la caler
-       sur le carré de pochette de leur grille (max-height: --ovp-w / 30vh). Ces
-       règles n'ont de sens qu'en desktop, mais elles sont déclarées hors media
-       query : sur mobile elles écrasaient la feuille en une simple bande. On les
-       neutralise ici, où la colonne devient une feuille plein écran. */
+    /* The poster themes cap the HEIGHT of their details column so it matches the
+       cover square of their grid (max-height: --ovp-w / 30vh). Those rules only make
+       sense on desktop, but they are declared outside any media query: on mobile they
+       squeezed the sheet down to a mere band. Neutralised here, where the column
+       becomes a full-height sheet. */
     [data-theme="overprint"] #track-details,
     [data-theme="invert"]    #track-details { max-height: none; height: auto; }
 
@@ -1320,7 +1327,7 @@
     width: 84px; height: 84px; flex-shrink: 0; object-fit: cover;
     background: var(--card); border: 1px solid var(--border);
   }
-  /* Variante pochette générée : conteneur SVG, pas une image. */
+  /* Generated-cover variant: an SVG container, not an image. */
   .obj-cover--gen { padding: 0; overflow: hidden; }
   .obj-cover svg { width: 100%; height: 100%; display: block; }
   .obj-meta { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-body-s);
@@ -1716,8 +1723,8 @@
       </button>
     </div>
 
-    <!-- Progress bar — placée AVANT le transport (v1.5) : l'avancement décrit
-         le morceau, il appartient au titre ; le transport ferme le bloc. -->
+    <!-- Progress bar — placed BEFORE the transport (v1.5): progress describes the
+         track, so it belongs to the title; the transport closes the block. -->
     <div id="progress-wrap">
       <div id="progress-bar"><div id="progress-fill"></div></div>
       <div id="progress-time" class="o2m-timecode">
@@ -1939,8 +1946,8 @@
   <!-- Footer links -->
   <div id="footer-links">
     <div class="tb-brand">
-      <!-- Disque plat (.o2m-mark) et non le bullseye : à 15px on est sous le seuil
-           des ~32px où les anneaux cessent de se lire. Purement CSS, aucun mount(). -->
+      <!-- Small mark (.o2m-mark) rather than the SVG bullseye: at 15px we are below
+           the ~32px threshold where five rings stop reading. Pure CSS, no mount(). -->
       <span class="o2m-mark" aria-hidden="true"></span>
       <span class="tb-mark">O2M</span>
     </div>
@@ -1951,8 +1958,8 @@
     </div>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
-      <!-- La clé reste "creme" : c'est elle qui est persistée dans o2m2-theme pour
-           les utilisateurs existants (le design system la garde comme alias). -->
+      <!-- The key stays "creme": that is what existing users have persisted in
+           o2m2-theme (the design system keeps it as an alias). -->
       <button class="theme-chip" data-theme-set="creme">Bulletin</button>
       <button class="theme-chip" data-theme-set="mono">Mono</button>
       <button class="theme-chip" data-theme-set="overprint">Overprint</button>
@@ -2518,9 +2525,9 @@ const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '', coverSeed = '' }) {
   // Visual in the leading slot: eq-icon if current, else the real artwork, else a
-  // generated cover when the caller gave a seed (résultats de recherche), else the
-  // index number. Le SVG généré est injecté inline : via <img src> il perdrait les
-  // var(--…) du thème. Repli PNG si la librairie de marques n'a pas chargé.
+  // generated cover when the caller passes a seed (search results), else the index
+  // number. The generated SVG is injected inline: through <img src> it would lose the
+  // theme's var(--…). Falls back to a PNG if the marks library did not load.
   const numHtml = isCurrent ? '<span class="eq-icon"><i></i><i></i><i></i></span>'
     : image ? `<img class="tl-thumb" src="${objEsc(image)}" alt="" loading="lazy">`
     : coverSeed ? (window.O2M
@@ -3453,7 +3460,7 @@ async function maybeShowRadioTitle(track) {
     // never a broken UUID image.
     const coverUrl = d.visual || d.station_logo || '';
     if (coverUrl !== _radioLast.visual) {
-      // '' est un sentinel distinct de _radioLast.visual (null au départ) → 1er tick ok
+      // '' is a sentinel distinct from _radioLast.visual (null initially) → first tick ok
       try { if (coverUrl) setCoverSmooth(coverUrl); else setCoverGenerated(track.uri); } catch (e) {}
       _radioLast.visual = coverUrl;
     }
@@ -4553,9 +4560,9 @@ function objClearNav() { _objBack.length = 0; _objFwd.length = 0; _objUpdateNav(
 const objEsc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-/* Héros des modales : visuel réel s'il existe, sinon pochette générée (déclaration
-   `function` → hoistée, donc utilisable par les rendus déclarés plus haut).
-   Le SVG est injecté inline, jamais via <img src> : il lit les var(--…) du thème. */
+/* Modal hero: the real artwork when there is one, else a generated cover (declared
+   with `function` → hoisted, so the renderers defined above can call it).
+   The SVG is injected inline, never through <img src>: it reads the theme's var(--…). */
 function objCoverHTML(url, seed) {
   if (url) return `<img class="obj-cover" src="${objEsc(url)}" alt="">`;
   if (!window.O2M) return '';
@@ -5728,7 +5735,7 @@ function _searchObjRows(items, kind) {
       uri: a.uri,
       kind,
       image: a.image || '',
-      coverSeed: a.uri,                              // pochette générée, déterministe
+      coverSeed: a.uri,                              // generated cover, deterministic
     });
     // obj-openable + data-* → a click anywhere on the row (except the +) opens the
     // object's detail view, in addition to the + menu. data-name seeds the header
@@ -6127,17 +6134,17 @@ const PLACEHOLDER_COVERS = [
 /* Crossfade the cover: preload the new image off-DOM, then swap + fade in.
    Avoids the blank flash of setting src directly and makes track changes feel
    snappier. No-op when the URL is unchanged. */
-/* Repli sans visuel : pochette générée par le design system, dérivée de l'uri (le
-   hachage est le même que placeholderForUri, donc une piste garde « sa » pochette).
-   Retourne false si la librairie n'est pas là, pour permettre un repli PNG. */
+/* No-artwork fallback: a design-system cover derived from the uri (same hash as
+   placeholderForUri, so a track keeps "its" cover).
+   Returns false when the library is absent, to allow a PNG fallback. */
 function setCoverGenerated(uri) {
   const wrap = document.getElementById('cover-wrap');
   const gen  = document.getElementById('cover-gen');
   if (!wrap || !gen || !window.O2M) return false;
   gen.innerHTML = O2M.coverFor(uri || 'o2m');
   const svg = gen.firstElementChild;
-  // Obligatoire : le viewBox est 1:1 alors que #cover-wrap est 16/9 en invert et
-  // 84×84 en mobile — sans « slice » on obtient des bandes vides.
+  // Required: the viewBox is 1:1 while #cover-wrap is 16/9 in invert and
+  // 84x84 on mobile — without "slice" you get empty letterbox bands.
   if (svg) svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
   wrap.classList.add('gen');
   return true;
@@ -6146,8 +6153,8 @@ function setCoverGenerated(uri) {
 function setCoverSmooth(url) {
   const el = document.getElementById('cover');
   if (!el || !url) return;
-  // Avant le early-return : sinon un retour à une pochette réelle inchangée
-  // laisserait l'<img> masqué derrière la pochette générée.
+  // Before the early return: otherwise going back to an unchanged real cover would
+  // leave the <img> hidden behind the generated one.
   document.getElementById('cover-wrap')?.classList.remove('gen');
   if (el.src === url) return;
   const img = new Image();
@@ -6534,10 +6541,10 @@ function renderWelcome(s) {
 async function init() {
   // Pochette de remplacement dès le chargement (évite l'image vide) + repli si un visuel casse
   const coverEl = document.getElementById('cover');
-  // Pochette générée par défaut ; repli PNG seulement si la librairie n'a pas chargé.
+  // Generated cover by default; PNG fallback only if the library did not load.
   if (!setCoverGenerated(null)) coverEl.src = PLACEHOLDER_COVERS[2];
-  // Un visuel distant cassé bascule sur la pochette générée : elle ne peut pas 404,
-  // donc plus besoin du garde anti-boucle d'avant.
+  // A broken remote image falls back to the generated cover: it cannot 404,
+  // so the old anti-loop guard is no longer needed.
   coverEl.addEventListener('error', () => {
     if (!setCoverGenerated(matrixCurUri)) coverEl.src = PLACEHOLDER_COVERS[2];
   });

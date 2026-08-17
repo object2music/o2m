@@ -13,16 +13,16 @@
 <!-- Design system : source unique des tokens (voir DESIGN_SYNC.md). -->
 <link rel="stylesheet" href="/static/ds/o2m.css">
 <script>
-  /* Le thème suit celui choisi dans Mood : même clé, même défaut. Appliqué avant
-     le rendu pour éviter le flash. Pas de sélecteur ici — Mood reste la surface
-     de réglage, donc data-theme est fixe pour la durée de la page. */
+  /* The theme follows the one picked in Mood: same key, same default. Applied
+     before paint to avoid a flash. No switcher here — Mood stays the settings
+     surface, so data-theme is fixed for the page's lifetime. */
   (function () {
     var t = new URLSearchParams(location.search).get('theme')
           || localStorage.getItem('o2m2-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', t);
   })();
-  /* Retour arrière depuis Mood après un changement de thème : la page restaurée
-     depuis le bfcache garderait l'ancien data-theme. */
+  /* Going back from Mood after a theme change: a page restored from the bfcache
+     would keep the stale data-theme. */
   addEventListener('pageshow', function (e) {
     if (!e.persisted) return;
     var t = localStorage.getItem('o2m2-theme') || 'dark';
@@ -30,7 +30,7 @@
   });
 </script>
 <style>
-  /* Pas de :root ici : tous les tokens viennent de ds/o2m.css. */
+  /* No :root here: every token comes from ds/o2m.css. */
   body { min-height: 100vh; }
   header { background: var(--surface); padding: 12px 20px; display: flex;
            align-items: center; gap: 16px; border-bottom: 1px solid var(--border); }
@@ -56,15 +56,15 @@
   .tag-name { font-weight: 500; font-family: var(--font-mono); font-size: var(--t-body-s); }
   .badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius);
            font-size: var(--t-label); font-weight: 600; }
-  /* --mood-* sont des triplets « R,G,B » nus : ils s'insèrent tels quels dans
-     rgba()/rgb(), et suivent donc le thème. */
+  /* --mood-* are bare "R,G,B" triplets: they drop straight into rgba()/rgb(),
+     and therefore follow the theme. */
   .badge-calm      { background: rgba(var(--mood-calm), .2);      color: rgb(var(--mood-calm)); }
   .badge-energetic { background: rgba(var(--mood-energetic), .2); color: rgb(var(--mood-energetic)); }
   .badge-dark      { background: rgba(var(--mood-dark), .2);      color: rgb(var(--mood-dark)); }
   .badge-happy     { background: rgba(var(--mood-happy), .2);     color: rgb(var(--mood-happy)); }
   .badge-noise     { background: var(--fill-2);                   color: var(--muted); }
   .bar-wrap { display: flex; align-items: center; gap: 6px; min-width: 90px; }
-  /* Paire dédiée du système à cette distinction énergie / valence. */
+  /* The system's dedicated pair for this energy / valence distinction. */
   .bar { height: 6px; border-radius: var(--radius); background: var(--c-energy);
          min-width: 2px; transition: width .2s; }
   .bar-valence { background: var(--c-valence); }
@@ -93,8 +93,8 @@
   .range-row input[type=range] { flex: 1; accent-color: var(--accent); }
   .range-val { width: 36px; text-align: right; font-size: var(--t-body-s); color: var(--muted); }
   .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
-  /* Volontairement pas .o2m-btn : la classe force text-transform:uppercase et les
-     libellés sont français (« ENREGISTRER »). On tokenise sans changer la casse. */
+  /* Deliberately not .o2m-btn: that class forces text-transform:uppercase and the
+     labels are French ("ENREGISTRER"). Tokenise without changing the case. */
   .modal-btns button { padding: 7px 16px; border-radius: var(--radius); border: none;
                        cursor: pointer; font-size: var(--t-body-s); }
   .btn-cancel { background: var(--fill-2); color: var(--text); }
@@ -209,8 +209,8 @@ function render() {
       : t.mood ? `<span class="badge badge-${t.mood}">${t.mood}</span>` : dash;
     const eVal = t.energy != null ? Math.round(t.energy * 100) : null;
     const vVal = t.valence != null ? Math.round(t.valence * 100) : null;
-    // Largeur en % (et non en px comme avant : une valeur de 1.0 donnait 100px,
-    // donc une barre qui ne remplissait jamais sa piste).
+    // Width in % (not px as before: a value of 1.0 gave a 100px bar, which never
+    // filled its track).
     const energyBar = eVal != null
       ? `<div class="bar-wrap"><div class="bar" style="width:${eVal}%"></div><span class="bar-label">${(t.energy).toFixed(2)}</span></div>`
       : dash;
