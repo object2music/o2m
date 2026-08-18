@@ -101,13 +101,9 @@
      padding width. Landscape safe-area insets are applied per-row instead. */
 
 
-  /* Couleurs des potentiomètres (override des attributs SVG inline) */
-  #fill-energy  { stroke: var(--c-energy);  }
-  #knob-energy  { fill:   var(--c-energy);  }
-  #fill-valence { stroke: var(--c-valence); }
-  #knob-valence { fill:   var(--c-valence); }
-  #fill-dl      { stroke: var(--c-dl);      }
-  #knob-dl      { fill:   var(--c-dl);      }
+  /* Dial colours come from the system's [data-axis] rules now that the SVGs carry
+     .o2m-dial + data-axis and no inline stroke/fill. These per-id overrides only
+     existed to out-rank those inline attributes, so they are gone. */
   .dial-svg text { fill: var(--dial-txt); }
 
   /* Marqueur éditorial devant les libellés de section */
@@ -1880,11 +1876,11 @@
       <span class="net-dot" title="Network"></span>
     </div>
     <div class="basic-toggles" id="basic-toggles">
-      <button class="basic-toggle" data-cat="music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Music</button>
-      <button class="basic-toggle" data-cat="podcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Podcast</button>
-      <button class="basic-toggle" data-cat="info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Info</button>
-      <button class="basic-toggle" data-cat="radio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 16.24a6 6 0 0 1 0-8.49M19.07 4.93a10 10 0 0 1 0 14.14M4.93 19.07a10 10 0 0 1 0-14.14"/></svg>Radio</button>
-      <button id="basic-all" title="All on / all off" aria-label="All on / all off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>All</button>
+      <button class="basic-toggle" data-cat="music" data-o2m-actuator="music">Music</button>
+      <button class="basic-toggle" data-cat="podcast" data-o2m-actuator="podcast">Podcast</button>
+      <button class="basic-toggle" data-cat="info" data-o2m-actuator="info">Info</button>
+      <button class="basic-toggle" data-cat="radio" data-o2m-actuator="radio">Radio</button>
+      <button id="basic-all" title="All on / all off" aria-label="All on / all off" data-o2m-actuator="all">All</button>
     </div>
     <div id="basic-dials">
       <div class="dial-wrap">
@@ -1894,7 +1890,7 @@
              dial's bottom-left/top/bottom-right label positions (indices 0/2/4 of
              its 5-slot layout land exactly there). Appearance only — still the
              same continuous discover_level(0-10) underneath, just snapped. -->
-        <svg class="dial-svg o2m-dial" data-axis="opening" id="dial-bdl" width="196" height="136" viewBox="-33 -14 176 126">
+        <svg class="dial-svg o2m-dial" data-axis="opening" id="dial-bdl" width="196" height="136" viewBox="-40 -14 190 126">
           <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
           <circle class="dial-fill fill" id="fill-bdl" cx="55" cy="55" r="42"
                   transform="rotate(135 55 55)"/>
@@ -1912,7 +1908,7 @@
         <div class="dial-label">Mood</div>
         <!-- Wider viewBox: the 5 detent labels sit around the knob, at their angle
              on the arc (135°→405°). Labels are clickable shortcuts. -->
-        <svg class="dial-svg o2m-dial" data-axis="mood" id="dial-bmood" width="196" height="136" viewBox="-33 -14 176 126">
+        <svg class="dial-svg o2m-dial" data-axis="mood" id="dial-bmood" width="196" height="136" viewBox="-40 -14 190 126">
           <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
           <circle class="dial-fill fill" id="fill-bmood" cx="55" cy="55" r="42"
                   transform="rotate(135 55 55)"/>
@@ -1964,34 +1960,34 @@
   <div id="dials">
     <div class="dial-wrap">
       <div class="dial-label">Energy</div>
-      <svg class="dial-svg" id="dial-energy" width="120" height="120" viewBox="0 0 110 110">
+      <svg class="dial-svg o2m-dial" data-axis="energy" id="dial-energy" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
-        <circle class="dial-fill" id="fill-energy" cx="55" cy="55" r="42"
-                stroke="#e94560" transform="rotate(135 55 55)"/>
-        <circle id="knob-energy" cx="55" cy="13" r="7" fill="#e94560"/>
-        <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-energy">5</text>
+        <circle class="dial-fill fill" id="fill-energy" cx="55" cy="55" r="42"
+                transform="rotate(135 55 55)"/>
+        <circle class="knob" id="knob-energy" cx="55" cy="13" r="7"/>
+        <text class="val" x="55" y="62" text-anchor="middle" font-size="18" font-weight="700" id="txt-energy">5</text>
       </svg>
       <div class="dial-sub">calm ↔ intense</div>
     </div>
     <div class="dial-wrap">
       <div class="dial-label">Ambiance</div>
-      <svg class="dial-svg" id="dial-valence" width="120" height="120" viewBox="0 0 110 110">
+      <svg class="dial-svg o2m-dial" data-axis="valence" id="dial-valence" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
-        <circle class="dial-fill" id="fill-valence" cx="55" cy="55" r="42"
-                stroke="#7c4dff" transform="rotate(135 55 55)"/>
-        <circle id="knob-valence" cx="55" cy="13" r="7" fill="#7c4dff"/>
-        <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-valence">5</text>
+        <circle class="dial-fill fill" id="fill-valence" cx="55" cy="55" r="42"
+                transform="rotate(135 55 55)"/>
+        <circle class="knob" id="knob-valence" cx="55" cy="13" r="7"/>
+        <text class="val" x="55" y="62" text-anchor="middle" font-size="18" font-weight="700" id="txt-valence">5</text>
       </svg>
       <div class="dial-sub">dark ↔ bright</div>
     </div>
     <div class="dial-wrap">
       <div class="dial-label">Discovery</div>
-      <svg class="dial-svg" id="dial-dl" width="120" height="120" viewBox="0 0 110 110">
+      <svg class="dial-svg o2m-dial" data-axis="dl" id="dial-dl" width="120" height="120" viewBox="0 0 110 110">
         <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
-        <circle class="dial-fill" id="fill-dl" cx="55" cy="55" r="42"
-                stroke="#00bcd4" transform="rotate(135 55 55)"/>
-        <circle id="knob-dl" cx="55" cy="13" r="7" fill="#00bcd4"/>
-        <text x="55" y="62" text-anchor="middle" fill="#eaeaea" font-size="18" font-weight="700" id="txt-dl">5</text>
+        <circle class="dial-fill fill" id="fill-dl" cx="55" cy="55" r="42"
+                transform="rotate(135 55 55)"/>
+        <circle class="knob" id="knob-dl" cx="55" cy="13" r="7"/>
+        <text class="val" x="55" y="62" text-anchor="middle" font-size="18" font-weight="700" id="txt-dl">5</text>
       </svg>
       <div class="dial-sub">focused ↔ adventurous</div>
     </div>

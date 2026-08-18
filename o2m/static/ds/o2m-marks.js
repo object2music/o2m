@@ -1,5 +1,7 @@
 /* ============================================================================
-   O2M — MARKS  ·  v1.3  ·  Living medias
+   O2M — MARKS  ·  v1.7  ·  Living medias
+   v1.7 — O2M.actuator(name) + [data-o2m-actuator] : le jeu de glyphes des quatre
+     catégories (silhouettes pleines) et du méta-bouton All (le bullseye).
    Framework-free renderer for the mark family and the generated cover system.
    Every shape is drawn with ramp CLASSES, never hard-coded colour, so the output
    follows whatever theme is active on <html data-theme="…">.
@@ -99,6 +101,43 @@
     }
   };
 
+  /* ── Actuator glyphs ──────────────────────────────────────────────────────
+     Le jeu retenu : mêmes formes que les silhouettes, mais dessinées au TRAIT FIN
+     (1.4 sur grille 24, contre 2 pour l'iconographie générale) — les actionneurs
+     sont grands et peu nombreux, ils n'ont pas besoin du poids d'une icône de
+     barre ; le trait fin les rend plus calmes et laisse le mot porter.
+     Le méta-bouton All garde le BULLSEYE — le seul bouton dont le sens EST la marque.
+     Construction : stroke="currentColor", aucun fill sauf les noyaux pleins.
+     Ne jamais fermer une contreforme avec var(--bg) : le glyphe doit rester juste
+     quand le bouton passe en accent (.o2m-actuator.is-on / .o2m-all.is-on). */
+  var ACT_W = 1.4;
+  function actSvg(inner) {
+    return '<svg class="o2m-actuator-glyph" viewBox="0 0 24 24" fill="none" ' +
+           'stroke="currentColor" stroke-width="' + ACT_W + '" stroke-linecap="round" ' +
+           'stroke-linejoin="round" aria-hidden="true">' + inner + '</svg>';
+  }
+  function ring(cx, cy, r) {
+    return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '"/>';
+  }
+  function dot(cx, cy, r) {
+    return '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="currentColor" stroke="none"/>';
+  }
+  var ACTUATORS = {
+    /* tête de note pleine (la seule masse du jeu) + hampe */
+    music:   dot(8.4, 17.6, 4.3) + '<path d="M12.7 17.6V2.6"/>',
+    /* capsule + dôme d'écoute */
+    podcast: '<rect x="9.4" y="2.2" width="5.2" height="11.2" rx="2.6"/>' +
+             '<path d="M4.6 11.6a7.4 7.4 0 0 0 14.8 0"/>',
+    /* cercle + « i » */
+    info:    ring(12, 12, 9.4) + dot(12, 7.7, 1.15) + '<path d="M12 11.2v5.6"/>',
+    /* noyau + deux arcs : l'onde qui s'éloigne de l'objet */
+    radio:   dot(12, 12, 1.9) +
+             '<path d="M7.9 7.9a5.8 5.8 0 0 0 0 8.2M16.1 16.1a5.8 5.8 0 0 0 0-8.2"/>' +
+             '<path d="M4.7 4.7a10.3 10.3 0 0 0 0 14.6M19.3 19.3a10.3 10.3 0 0 0 0-14.6"/>',
+    /* la marque : bullseye au trait, coupé par l'horizon */
+    all:     ring(12, 12, 9.6) + ring(12, 12, 5.6) + dot(12, 12, 1.7)
+  };
+
   /* ── Generated cover system ──────────────────────────────────────────────── */
   var COVERS = {
     core: function () {
@@ -180,6 +219,13 @@
       return f(!!alt);
     },
 
+    actuatorNames: Object.keys(ACTUATORS),
+
+    /** Actuator glyph. name: music | podcast | info | radio | all */
+    actuator: function (name) {
+      return actSvg(ACTUATORS[name] || ACTUATORS.all);
+    },
+
     /** Cover markup. name: core|bleed|sequence|arcs|dots|bands|graph|pills */
     cover: function (name) {
       var f = COVERS[name] || COVERS.core;
@@ -208,6 +254,13 @@
       scope.querySelectorAll('[data-o2m-mark]').forEach(function (el) {
         el.innerHTML = O2M.mark(el.getAttribute('data-o2m-mark'),
                                 el.hasAttribute('data-o2m-alt'));
+      });
+      /* Le glyphe se glisse DEVANT le libellé : l'étiquette reste dans le markup,
+         et une deuxième hydratation ne l'écrase pas (garde o2mGlyph). */
+      scope.querySelectorAll('[data-o2m-actuator]').forEach(function (el) {
+        if (el.dataset.o2mGlyph) return;
+        el.insertAdjacentHTML('afterbegin', O2M.actuator(el.getAttribute('data-o2m-actuator')));
+        el.dataset.o2mGlyph = '1';
       });
       scope.querySelectorAll('[data-o2m-cover]').forEach(function (el) {
         var v = el.getAttribute('data-o2m-cover');
