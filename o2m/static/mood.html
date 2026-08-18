@@ -468,6 +468,9 @@
     scrollbar-width: none; flex-wrap: nowrap;
   }
   #track-tags-row::-webkit-scrollbar { display: none; }
+  /* :empty cannot be used — the row always holds the #track-ev span — so the state
+     is set from JS (syncTagsRow). display:none lets the grid row collapse fully. */
+  #track-tags-row.is-empty { display: none; }
   .tag-chip {
     padding: 0; font-size: var(--t-body-s); text-transform: uppercase; letter-spacing: .01em;
     color: var(--text); font-weight: 600; font-family: var(--font-head);
@@ -682,20 +685,21 @@
       grid-template-columns: auto minmax(0, 1fr) auto;
       grid-template-areas:
         "cover status edit"
+        "cover title  edit"
         "cover meta   edit"
-        "cover tags   edit"
-        "title title  title"
+        "tags  tags   tags"
         "prog  prog   prog"
         "ctrl  ctrl   ctrl";
     }
     #cover-col      { grid-area: cover; }
     #status-line    { grid-area: status; padding-top: 10px; }
-    #artist-album   { grid-area: meta; }
+    #artist-album   { grid-area: meta; padding-bottom: 10px; }
     #btn-details    { grid-area: edit; justify-self: end; margin: 10px 12px 0 0; }
-    #track-name     { grid-area: title; padding: 0 12px; }
-    /* Tags sit in the metadata column now, under artist/album. The row collapses
-       on its own when a track has none. */
-    #track-tags-row { grid-area: tags; padding: 0 0 10px; }
+    #track-name     { grid-area: title; }
+    /* Tags run full width UNDER the cover. The row is display:none when there is
+       nothing in it (see syncTagsRow), so the grid row collapses to zero and the
+       space is genuinely reclaimed — padding included. */
+    #track-tags-row { grid-area: tags; padding: 0 12px 10px; }
     #progress-wrap  { grid-area: prog; }
     #controls       { grid-area: ctrl; }
     #controls {
@@ -2552,7 +2556,7 @@ function optimisticSkip(delta) {
   const i = matrixTlItems.findIndex(it => it.tlid === currentTlid);
   const dest = i >= 0 ? matrixTlItems[i + delta] : null;
   if (!dest) return;
-  document.getElementById('track-name').textContent = dest.name || '—';
+  setTrackName(dest.name || '—');
   document.getElementById('hero-title').textContent = dest.name || '';
   const aa = document.getElementById('artist-name');
   if (aa) aa.textContent = dest.artist || '—';
@@ -2861,7 +2865,7 @@ async function refreshNowPlaying() {
     // is driven live by maybeShowRadioTitle. Skip the raw stream-name writes here so
     // the title doesn't flip stream-name↔song on every refresh (that was the flicker).
     if (!_isStreamUri(track.uri)) {
-      document.getElementById('track-name').textContent  = track.name || '—';
+      setTrackName(track.name || '—');
       document.getElementById('hero-title').textContent   = track.name || '';
       fitHeroTitle();
       const artistEl = document.getElementById('artist-name');
@@ -3531,7 +3535,7 @@ async function maybeShowRadioTitle(track) {
       const heroEl = document.getElementById('hero-title');
       const nameEl = document.getElementById('track-name');
       if (heroEl) heroEl.textContent = displayTitle;
-      if (nameEl) nameEl.textContent = displayTitle;
+      if (nameEl) setTrackName(displayTitle);
       fitHeroTitle();
       _radioLast.title = displayTitle;
       renderRadioDetails(d);   // keep the radio-adapted DETAILS in sync
@@ -4643,6 +4647,16 @@ function objFwdNav()  { if (_objFwd.length)  { _objBack.push(_objSnap()); _objAp
 function objClearNav() { _objBack.length = 0; _objFwd.length = 0; _objUpdateNav(); }
 const objEsc = s => String(s ?? '').replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* The header title is clamped to one ellipsised line, so mirror it into the title
+   attribute: hovering (or long-pressing on touch) then shows it in full. Set in one
+   place because three call sites write this line. */
+function setTrackName(text) {
+  const el = document.getElementById('track-name');
+  if (!el) return;
+  el.textContent = text;
+  el.title = (text && text !== '—') ? text : '';
+}
 
 /* Modal hero: the real artwork when there is one, else a generated cover (declared
    with `function` → hoisted, so the renderers defined above can call it).
@@ -5964,6 +5978,16 @@ async function toggleBox(uid, btn) {
 /* ── Track tags bar ── */
 let lastTagsUri = null;
 
+/* Hide the tags row when it carries nothing, so its grid row collapses instead of
+   leaving a gap. :empty is no help: the row always contains the #track-ev span. */
+function syncTagsRow() {
+  const bar = document.getElementById('track-tags-row');
+  if (!bar) return;
+  const ev = document.getElementById('track-ev');
+  const hasContent = !!bar.querySelector('.tag-chip') || !!(ev && ev.textContent.trim());
+  bar.classList.toggle('is-empty', !hasContent);
+}
+
 async function fetchAndRenderTrackTags(uri) {
   if (!uri || uri === lastTagsUri) return; // null URI ne reset pas lastTagsUri
   lastTagsUri = uri;
@@ -5972,6 +5996,7 @@ async function fetchAndRenderTrackTags(uri) {
   const evEl = document.getElementById('track-ev');
   [...bar.querySelectorAll('.tag-chip')].forEach(el => el.remove());
   evEl.textContent = '';
+  syncTagsRow();
 
   if (!uri) return;
 
@@ -5984,12 +6009,14 @@ async function fetchAndRenderTrackTags(uri) {
       bar.insertBefore(chip, evEl);
     });
   } catch(e) {}
+  syncTagsRow();
 
   // Energy/valence from matrixFeatures (may need a short wait for the fetch to complete)
   function updateEV() {
     if (lastTagsUri !== uri) return; // Track changed since we started
     const f = matrixFeatures[uri];
     if (f) evEl.innerHTML = `${ICON.zap} ${f.energy.toFixed(2)} · ${ICON.sun} ${f.valence.toFixed(2)}`;
+    syncTagsRow();
   }
   updateEV();
   setTimeout(updateEV, 1200);
