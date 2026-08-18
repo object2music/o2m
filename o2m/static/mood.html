@@ -678,9 +678,12 @@
        Wrappers above are display:contents so their children become grid items;
        no DOM node is moved, and their padding moves onto the children. */
     :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-zone {
-      /* Single knob for the vertical rhythm of the playback stack (progress,
-         transport, volume). Raise it to give the block more air. */
+      /* Vertical rhythm of the playback stack. --np-gap is the common gap; the
+         transport sits closer to the progress bar it acts on (--np-gap-tight),
+         and the block closes on more air below the volume (--np-gap-end). */
       --np-gap: 18px;
+      --np-gap-tight: 10px;
+      --np-gap-end: 26px;
       display: grid; align-items: start;
       grid-template-columns: auto minmax(0, 1fr) auto;
       grid-template-areas:
@@ -691,17 +694,26 @@
         "prog  prog   prog"
         "ctrl  ctrl   ctrl";
     }
+    /* grid-area is inert where the grid does not exist, but the spacing is NOT:
+       overprint/invert lay the header out as blocks and already indent the whole
+       column via #top-right's padding, so an extra padding here pushed the tags
+       out of alignment with the rest of the text. Every rule that sets spacing is
+       therefore scoped; only the inert grid-area assignments are left global. */
     #cover-col      { grid-area: cover; }
-    #status-line    { grid-area: status; padding-top: 10px; }
-    #artist-album   { grid-area: meta; padding-bottom: 10px; }
-    #btn-details    { grid-area: edit; justify-self: end; margin: 10px 12px 0 0; }
+    #status-line    { grid-area: status; }
+    #artist-album   { grid-area: meta; }
+    #btn-details    { grid-area: edit; }
     #track-name     { grid-area: title; }
     /* Tags run full width UNDER the cover. The row is display:none when there is
        nothing in it (see syncTagsRow), so the grid row collapses to zero and the
        space is genuinely reclaimed — padding included. */
-    #track-tags-row { grid-area: tags; padding: 0 12px 10px; }
+    #track-tags-row { grid-area: tags; }
     #progress-wrap  { grid-area: prog; }
     #controls       { grid-area: ctrl; }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #status-line    { padding-top: 10px; }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #artist-album   { padding-bottom: 10px; }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #btn-details    { justify-self: end; margin: 10px 12px 0 0; }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #track-tags-row { padding: 0 12px 10px; }
     #controls {
       /* ONE gap value for the whole playback stack, so the air around the progress
          bar and around the volume row is identical and genuinely readable:
@@ -713,12 +725,12 @@
          made them uneven before): #controls contributes no padding-top, the gap
          above it comes entirely from #progress-wrap's padding-bottom. */
       flex-wrap: wrap; column-gap: 16px; row-gap: var(--np-gap, 12px);
-      padding: 0 max(12px, env(safe-area-inset-right, 0px)) var(--np-gap, 12px) max(12px, env(safe-area-inset-left, 0px));
+      padding: 0 max(12px, env(safe-area-inset-right, 0px)) var(--np-gap-end, 18px) max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
     /* Base rule adds 2px on top; zeroed so row-gap alone sets the gap. */
     #volume-row { padding-top: 0; }
-    #progress-wrap { padding-top: var(--np-gap, 12px); padding-bottom: var(--np-gap, 12px); }
+    #progress-wrap { padding-top: var(--np-gap, 12px); padding-bottom: var(--np-gap-tight, 10px); }
 
     /* ── Mobile accordion: Boxes / Mood / Tracklist ──
        The 3 headers are always-visible fixed rows that never move; one section is
