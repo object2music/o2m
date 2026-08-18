@@ -493,6 +493,12 @@
      .o2m-tbtn--play (v1.5). All that remains here is the press feedback. */
   .ctrl-btn { line-height: 1; }
   .ctrl-btn:active { transform: scale(.92); }
+  /* Play is the same 44px box as prev/next. The design system sizes it at 52px to
+     single it out, but the accent fill already does that here — three equal boxes
+     read as one transport instead of a big button flanked by two small ones.
+     Needs the id to out-rank the system's .o2m-tbtn--play. */
+  #btn-play.o2m-tbtn--play { width: 44px; height: 44px; }
+  #btn-play.o2m-tbtn--play svg { width: 20px; height: 20px; }
 
   /* Snapcast inline dans la volume-row */
   #btn-snapcast {
@@ -669,6 +675,9 @@
        Wrappers above are display:contents so their children become grid items;
        no DOM node is moved, and their padding moves onto the children. */
     :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-zone {
+      /* Single knob for the vertical rhythm of the playback stack (progress,
+         transport, volume). Raise it to give the block more air. */
+      --np-gap: 18px;
       display: grid; align-items: start;
       grid-template-columns: auto minmax(0, 1fr) auto;
       grid-template-areas:
@@ -690,21 +699,22 @@
     #progress-wrap  { grid-area: prog; }
     #controls       { grid-area: ctrl; }
     #controls {
-      /* Vertical rhythm of the block, in v1.5 order: progress, then transport
-         (play + volume).
-         The volume row gets the SAME air as the progress bar: 12px above and 12px
-         below. Above = row-gap (its own padding-top is zeroed just below so the
-         gap is exactly the row-gap); below = this padding-bottom. Progress has
-         12px above (its padding-top) and 2px + this padding-top = 12px below. */
-      flex-wrap: wrap; column-gap: 16px; row-gap: 12px;
-      padding: 10px max(12px, env(safe-area-inset-right, 0px)) 12px max(12px, env(safe-area-inset-left, 0px));
+      /* ONE gap value for the whole playback stack, so the air around the progress
+         bar and around the volume row is identical and genuinely readable:
+             title  --18px--  progress
+             progress --18px--  transport
+             transport --18px--  volume
+             volume --18px--  end of header
+         Each gap is produced ONCE, never by two paddings adding up (which is what
+         made them uneven before): #controls contributes no padding-top, the gap
+         above it comes entirely from #progress-wrap's padding-bottom. */
+      flex-wrap: wrap; column-gap: 16px; row-gap: var(--np-gap, 12px);
+      padding: 0 max(12px, env(safe-area-inset-right, 0px)) var(--np-gap, 12px) max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
     /* Base rule adds 2px on top; zeroed so row-gap alone sets the gap. */
     #volume-row { padding-top: 0; }
-    /* Progress now follows the info line and precedes the transport: a clear gap
-       above, tightened below since #controls takes the air back. */
-    #progress-wrap { padding-top: 12px; padding-bottom: 2px; }
+    #progress-wrap { padding-top: var(--np-gap, 12px); padding-bottom: var(--np-gap, 12px); }
 
     /* ── Mobile accordion: Boxes / Mood / Tracklist ──
        The 3 headers are always-visible fixed rows that never move; one section is
