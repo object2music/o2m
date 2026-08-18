@@ -678,12 +678,16 @@
        Wrappers above are display:contents so their children become grid items;
        no DOM node is moved, and their padding moves onto the children. */
     :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-zone {
-      /* Vertical rhythm of the playback stack. --np-gap is the common gap; the
-         transport sits closer to the progress bar it acts on (--np-gap-tight),
-         and the block closes on more air below the volume (--np-gap-end). */
-      --np-gap: 18px;
-      --np-gap-tight: 10px;
-      --np-gap-end: 26px;
+      /* Vertical rhythm of the playback stack.
+         --np-gap-vol is its own knob rather than reusing --np-gap: the gap the eye
+         reads under the play button runs to the volume LINE, and the slider sits
+         mid-row, so the row-gap needs a few more pixels than the one above the
+         transport to look equal to it. Changing --np-gap would have moved the
+         progress bar as well. */
+      --np-gap: 18px;         /* title → progress */
+      --np-gap-tight: 10px;   /* progress → transport */
+      --np-gap-vol: 24px;     /* transport → volume */
+      --np-gap-end: 26px;     /* under the volume, closes the header */
       display: grid; align-items: start;
       grid-template-columns: auto minmax(0, 1fr) auto;
       grid-template-areas:
@@ -724,7 +728,7 @@
          Each gap is produced ONCE, never by two paddings adding up (which is what
          made them uneven before): #controls contributes no padding-top, the gap
          above it comes entirely from #progress-wrap's padding-bottom. */
-      flex-wrap: wrap; column-gap: 16px; row-gap: var(--np-gap, 12px);
+      flex-wrap: wrap; column-gap: 16px; row-gap: var(--np-gap-vol, 18px);
       padding: 0 max(12px, env(safe-area-inset-right, 0px)) var(--np-gap-end, 18px) max(12px, env(safe-area-inset-left, 0px));
       justify-content: space-evenly;
     }
