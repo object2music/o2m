@@ -137,6 +137,10 @@ if __name__ == "__main__":
             o2mHandler.spotifyHandler.warmup_cache(discover_level=dl)
         except Exception as e:
             print(f"background warmup error: {e}")
+        try:
+            o2mHandler.warmup_radiofrance()
+        except Exception as e:
+            print(f"background warmup error (radiofrance): {e}")
 
     threading.Thread(target=_background_warmup, daemon=True).start()
 
@@ -494,11 +498,24 @@ if __name__ == "__main__":
         if len(q) < 2:
             return jsonify({'error': 'query too short'}), 400
         try:
-            results = o2mHandler.dbHandler.search_local(q)
+            limit = max(1, min(int(request.args.get('limit') or 15), 50))
+        except Exception:
+            limit = 15
+        try:
+            offset = max(0, int(request.args.get('offset') or 0))
+        except Exception:
+            offset = 0
+        # offset > 0 = "load more": only the DB-backed buckets can be paged, so the
+        # keyless directories / Spotify / live RF halves are skipped instead of being
+        # re-queried for rows the client already has.
+        first_page = offset == 0
+        try:
+            results = o2mHandler.dbHandler.search_local(q, limit=limit, offset=offset)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+        results['limit'], results['offset'] = limit, offset
         try:
-            results['radios'] = o2mHandler.search_radio_stations(q)
+            results['radios'] = o2mHandler.search_radio_stations(q) if first_page else []
         except Exception as e:
             results['radios'] = []
         # Podcast channels: the ones already referenced in boxes first, then the
@@ -506,21 +523,91 @@ if __name__ == "__main__":
         # user doesn't own yet returns nothing — the cache only knows what has
         # already been added, which is empty on a fresh install.
         try:
-            results['podcast_channels'] = o2mHandler.search_podcast_channels(q)
+            results['podcast_channels'] = o2mHandler.search_podcast_channels(q) if first_page else []
         except Exception as e:
             results['podcast_channels'] = []
+        # Radio France show catalogue: the keyless directories barely index Radio
+        # France (fyyd knows a single France Culture podcast), so without this an RF
+        # show could not be found before it had ever been played.
         try:
-            from src import directory
             seen = {c.get('uri') for c in results['podcast_channels']}
-            results['podcast_channels'] += [c for c in directory.search_podcasts(q, timeout=6)
-                                            if c.get('uri') not in seen]
+            results['podcast_channels'] += [c for c in o2mHandler.search_rf_shows(
+                q, limit=limit, offset=offset) if c.get('uri') not in seen]
         except Exception as e:
             pass
         try:
-            results['spotify'] = o2mHandler.spotifyHandler.search_music(q)
+            from src import directory
+            seen = {c.get('uri') for c in results['podcast_channels']}
+            if first_page:
+                results['podcast_channels'] += [c for c in directory.search_podcasts(q, timeout=6)
+                                                if c.get('uri') not in seen]
+        except Exception as e:
+            pass
+        # A pasted radiofrance.fr page (show OR episode) resolves to the show plus
+        # its recent episodes, so it can be played or added to a box directly.
+        try:
+            from src import radiofrance as _rf
+            if first_page and _rf.is_rf_url(q):
+                hit = o2mHandler.rf_resolve_url(q)
+                if hit:
+                    if hit.get('show'):
+                        seen = {c.get('uri') for c in results['podcast_channels']}
+                        if hit['show'].get('uri') not in seen:
+                            results['podcast_channels'].insert(0, hit['show'])
+                    results['podcasts'] = (hit.get('episodes') or []) + (results.get('podcasts') or [])
+        except Exception as e:
+            pass
+        try:
+            results['spotify'] = (o2mHandler.spotifyHandler.search_music(q) if first_page
+                                  else {'tracks': [], 'artists': [], 'albums': []})
         except Exception as e:
             results['spotify'] = {'tracks': [], 'artists': [], 'albums': []}
+        results['has_more'] = any(
+            len(results.get(k) or []) >= limit
+            for k in ('tracks', 'artists', 'albums', 'playlists', 'podcasts', 'info', 'boxes'))
         return jsonify(results)
+
+    @api.route('/api/rf_subjects')
+    def api_rf_subjects():
+        """Radio France themes/tags — the picker behind a 'rf:sujet:' box line."""
+        from flask import jsonify
+        kind = (request.args.get('kind') or '').strip() or None
+        q = (request.args.get('q') or '').strip()
+        try:
+            rows = o2mHandler.dbHandler.list_rf_taxonomies(kind=kind, query=q, limit=300)
+        except Exception as e:
+            return jsonify({'items': [], 'error': str(e)})
+        return jsonify({'items': [{'name': r['title'], 'uri': 'rf:sujet:' + r['title'],
+                                   'sub': (r['kind'] or '').lower(), 'image': '',
+                                   'source': 'radiofrance'} for r in rows]})
+
+    @api.route('/api/rf_show')
+    def api_rf_show():
+        """Episodes of one RF show. Needed because the UI browses channels through
+        mopidy's library, which cannot resolve an 'rf:show:' line."""
+        from flask import jsonify
+        url = (request.args.get('url') or '').strip()
+        if url.startswith('rf:show:'):
+            url = url[len('rf:show:'):]
+        if not url:
+            return jsonify({'name': '', 'episodes': []})
+        try:
+            from src import radiofrance as _rf
+            show = _rf.show_by_url(o2mHandler._rf_api_key, url)
+            eps = _rf.episodes_of_show(o2mHandler._rf_api_key, url, first=30)
+            return jsonify({'name': (show or {}).get('name', ''), 'image': '',
+                            'episodes': [{'uri': e['uri'], 'name': e['name'],
+                                          'length': e.get('length'), 'artist': e.get('sub', '')}
+                                         for e in eps]})
+        except Exception as e:
+            return jsonify({'name': '', 'episodes': [], 'error': str(e)})
+
+    @api.route('/api/warmup_rf')
+    def api_warmup_rf():
+        """Manual trigger for the Radio France catalogue warmup."""
+        threading.Thread(target=lambda: o2mHandler.warmup_radiofrance(force=True),
+                         daemon=True).start()
+        return ("warmup_rf started")
 
     @api.route('/api/podcast_channels')
     def api_podcast_channels():

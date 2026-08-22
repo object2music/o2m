@@ -7,6 +7,7 @@ from urllib import parse, error as url_error
 import src.util as util
 from src.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
 from src.spotifyhandler import SpotifyHandler
+from src import radiofrance as rf
 
 '''
 option_type 
@@ -1275,6 +1276,24 @@ class O2mToMopidy:
                     if uris:
                         tracklist_uris.append(uris)
 
+                # Radio France (OpenAPI). 'rf:show:<page url>' = one show, latest
+                # unheard episodes; 'rf:sujet:<theme|tag>' (alias 'rf:subject:')
+                # = a DYNAMIC box, whatever the stations published on that
+                # subject over the API's 7-day window. RF's RSS is broken
+                # server-side, so both expand through the API into plain https
+                # mp3 URIs, which mopidy plays directly.
+                elif content.strip().startswith('rf:'):
+                    rf_line = content.strip()
+                    if rf_line.startswith('rf:show:'):
+                        tracklist_uris.append(
+                            self.rf_show_episodes(rf_line[len('rf:show:'):], max_results))
+                    elif rf_line.startswith(('rf:sujet:', 'rf:subject:')):
+                        value, _sep, stations = rf_line.split(':', 2)[2].partition('@')
+                        picked = [rf.STATIONS.get(x.strip().lower(), x.strip().upper())
+                                  for x in stations.split(',') if x.strip()]
+                        tracklist_uris.append(
+                            self.rf_subject_episodes(value.strip(), max_results, picked or None))
+
                 # Podcast channel
                 elif "podcast+" in content and "#" not in content:
                     print(f"Podcast channel : {content}")
@@ -1430,6 +1449,166 @@ class O2mToMopidy:
         #print(f"Show {shows}")
         #print(f"Unread Show {unread_shows}")
         return uris
+
+    def _unread_spoken_uris(self, uris):
+        """Keep only episodes not already finished/abandoned, and never promos.
+        Extracted from get_unread_podcasts so RSS podcasts and Radio France
+        OpenAPI episodes (plain https mp3, no 'podcast+' marker) share one rule."""
+        out = []
+        for uri in uris or []:
+            if not uri or "app_rf_promotion" in uri:
+                continue
+            stat = self.dbHandler.get_stat_by_uri(uri)
+            if stat is None:
+                out.append(uri)
+            elif not stat.read_count_end > 0 and (stat.read_end or 0) < 0.9:
+                out.append(uri)
+        return out
+
+    # ── Radio France (OpenAPI) ────────────────────────────────────────────────
+
+    def rf_enabled(self):
+        return bool(self._rf_api_key)
+
+    def rf_stations(self):
+        """Stations scanned by 'rf:sujet:' when the line names none. Spoken
+        content lives on Culture/Inter; overridable in o2m.conf."""
+        raw = (self.configO2M.get('radiofrance_stations', '') or '').strip()
+        if raw:
+            picked = [rf.STATIONS.get(x.strip().lower().replace(' ', ''), x.strip().upper())
+                      for x in raw.split(',') if x.strip()]
+            if picked:
+                return picked
+        return list(rf.DEFAULT_STATIONS)
+
+    def search_rf_shows(self, query, limit=15, offset=0):
+        """RF show catalogue keyword search. DB-only: the OpenAPI has no keyword
+        search over shows, the catalogue is indexed by warmup_rf_shows."""
+        return self.dbHandler.search_rf_shows(query, limit=limit, offset=offset)
+
+    def rf_resolve_url(self, url):
+        """A pasted radiofrance.fr URL -> {'show': <channel row>, 'episodes': [...]}.
+        Show pages resolve directly; an EPISODE page resolves its parent show
+        (showByUrl answers 'Not a show' for one) and pins that episode first."""
+        if not self.rf_enabled():
+            return None
+        info = rf.parse_rf_url(url)
+        if not info:
+            return None
+        show = rf.show_by_url(self._rf_api_key, info['show_url'])
+        episodes = rf.episodes_of_show(self._rf_api_key, info['show_url'], first=20)
+        if info.get('kind') == 'episode' and (info.get('episode_slug') or info.get('episode_id')):
+            slug, eid = info.get('episode_slug') or '', info.get('episode_id') or ''
+            def _is_target(e):
+                page = e.get('page_url') or ''
+                return (slug and slug in page) or (eid and eid in page)
+            episodes.sort(key=lambda e: 0 if _is_target(e) else 1)
+        if not show and not episodes:
+            return None
+        return {'show': show, 'episodes': episodes}
+
+    def rf_show_episodes(self, show_url, max_results=15):
+        """Latest unheard episodes of an RF show — the RSS-less equivalent of
+        add_podcast_from_channel (RF's Show.podcast{rss} faults server-side)."""
+        if not self.rf_enabled() or not show_url:
+            return []
+        eps = rf.episodes_of_show(self._rf_api_key, show_url, first=max(max_results * 2, 20))
+        return self._unread_spoken_uris([e['uri'] for e in eps])[:max_results]
+
+    def rf_taxonomy_ids(self, value):
+        """Keyword or raw taxonomy id -> (theme_ids, tag_ids)."""
+        hits = self.dbHandler.find_rf_taxonomy(value)
+        themes = [h['id'] for h in hits if h.get('kind') != 'TAG']
+        tags = [h['id'] for h in hits if h.get('kind') == 'TAG']
+        return themes, tags
+
+    def rf_subject_episodes(self, keyword, max_results=15, stations=None):
+        """Dynamic subject box: what the stations published on a theme/tag over
+        the API's 7-day window, merged and de-duplicated."""
+        if not self.rf_enabled() or not keyword:
+            return []
+        themes, tags = self.rf_taxonomy_ids(keyword)
+        if not themes and not tags:
+            print(f"rf:sujet: no Radio France subject matches {keyword!r}")
+            return []
+        seen, uris = set(), []
+        for station in (stations or self.rf_stations()):
+            for ep in rf.diffusions(self._rf_api_key, station, themes=themes, tags=tags,
+                                    days=rf.MAX_WINDOW_DAYS, first=50):
+                if ep['uri'] not in seen:
+                    seen.add(ep['uri'])
+                    uris.append(ep['uri'])
+        return self._unread_spoken_uris(uris)[:max_results]
+
+    _RF_WARMUP_TTL = {'rf_shows': 7, 'rf_taxonomies': 30}   # days
+
+    def _rf_should_warmup(self, entity_type):
+        """TTL gate on CacheMeta. Deliberately simpler than
+        SpotifyHandler.should_warmup: there is no reference total to compare a
+        third-party catalogue against."""
+        try:
+            _v, updated_at = self.dbHandler.get_cache_meta(f'warmup_{entity_type}_at')
+            if not updated_at:
+                return True
+            if isinstance(updated_at, (int, float)):
+                updated_at = datetime.datetime.utcfromtimestamp(updated_at)
+            return (datetime.datetime.utcnow() - updated_at).days >= self._RF_WARMUP_TTL.get(entity_type, 7)
+        except Exception:
+            return True
+
+    def warmup_rf_shows(self, stations=None, max_pages=30):
+        """Index the RF show catalogue station by station, 100/page (server cap),
+        following the edge cursor — `shows` exposes no pageInfo, so a short page
+        means the end."""
+        total = 0
+        for station in (stations or self.rf_stations()):
+            after, pages = None, 0
+            while pages < max_pages:
+                rows, cursor = rf.list_shows(self._rf_api_key, station, first=rf.MAX_PAGE, after=after)
+                if not rows:
+                    break
+                total += self.dbHandler.upsert_rf_shows(rows)
+                pages += 1
+                if not cursor:
+                    break
+                after = cursor
+                time.sleep(0.25)
+        print(f"warmup_rf_shows: {total} shows indexed")
+        return total
+
+    def warmup_rf_taxonomies(self, max_pages=12):
+        """Index themes then tags — the vocabulary behind 'rf:sujet:'."""
+        total = 0
+        for kind in ('THEME', 'TAG'):
+            after, pages = None, 0
+            while pages < max_pages:
+                rows, cursor = rf.list_taxonomies(self._rf_api_key, kinds=(kind,),
+                                                  first=rf.MAX_PAGE, after=after)
+                if not rows:
+                    break
+                total += self.dbHandler.upsert_rf_taxonomies(rows)
+                pages += 1
+                if not cursor:
+                    break
+                after = cursor
+                time.sleep(0.25)
+        print(f"warmup_rf_taxonomies: {total} subjects indexed")
+        return total
+
+    def warmup_radiofrance(self, force=False):
+        """Refresh the RF catalogue caches. Never raises: Radio France being
+        down must not take the rest of the warmup with it."""
+        if not self.rf_enabled():
+            print("warmup_radiofrance: no radiofrance_api_key, skipping")
+            return
+        for entity_type, method in (('rf_taxonomies', self.warmup_rf_taxonomies),
+                                    ('rf_shows', self.warmup_rf_shows)):
+            try:
+                if force or self._rf_should_warmup(entity_type):
+                    method()
+                    self.dbHandler.set_cache_meta(f'warmup_{entity_type}_at', 1)
+            except Exception as e:
+                print(f"warmup_radiofrance({entity_type}) error: {e}")
 
     def get_unfinished_podcasts(self, max_results=15):
         uris = []
@@ -2433,7 +2612,7 @@ class O2mToMopidy:
         # force it to a non-music type so it stays resumable and out of the music
         # removal/reco/promotion flow. The sticky rule below keeps an existing 'info'
         # classification (info-box episodes) when we pass the generic 'podcast'.
-        if (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)) \
+        if self._is_spoken_uri(uri) \
                 and option_type in ('new', 'new_mopidy', 'library', 'favorites', 'incoming', 'normal', ''):
             option_type = self._spoken_type_for_uri(uri, getattr(track, 'length', None))
         new_stat = False
@@ -2465,6 +2644,18 @@ class O2mToMopidy:
             try:
                 if not stat.duration_ms:
                     stat.duration_ms = int(track.length)
+            except Exception:
+                pass
+            # Same reason for the title: cache_track_from_mopidy is spotify-only, so
+            # Track.name stayed NULL for every episode and search_local's
+            # 'podcasts'/'info' buckets (which match on name) could never return
+            # anything. Set it once, never overwrite, and only for spoken content so
+            # the richer Spotify path stays the source of truth for music.
+            try:
+                if not stat.name and self._is_spoken_uri(uri):
+                    _nm = (getattr(track, 'name', '') or '').strip()
+                    if _nm and not _nm.startswith(('http://', 'https://')):
+                        stat.name = _nm[:512]
             except Exception:
                 pass
             #Probably an artefact of auto adding track : so no adding stat needed and exit function
@@ -2690,6 +2881,16 @@ class O2mToMopidy:
         print(f"\n\nUpdate and Fix {fix} stat track {stat}\n\n")
         stat.update()
         stat.save()
+
+    # Any non-music spoken item: RSS podcast, YouTube, or a Radio France OpenAPI
+    # episode. RF episodes are plain https mp3 URLs with no 'podcast+' marker to
+    # key on, so every spoken-content test has to know these hosts too.
+    _SPOKEN_URI_RE = re.compile(
+        r'podcast\+|youtube:video|(?:^|:)yt:'
+        r'|proxycast\.radiofrance\.fr|radiofrance-podcast\.net', re.I)
+
+    def _is_spoken_uri(self, uri):
+        return bool(uri and self._SPOKEN_URI_RE.search(str(uri)))
 
     def _spoken_type_for_uri(self, uri, length_ms=None):
         """Classify spoken content (podcast+/youtube URI) as 'info' or 'podcast' when

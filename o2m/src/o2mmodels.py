@@ -329,6 +329,40 @@ class CacheMeta(BaseModel):
     updated_at = TimestampField(null=True, utc=True)
 
 
+class RfShow(BaseModel):
+    """Radio France show catalogue (OpenAPI `shows`) — the keyword index that
+    makes an RF podcast findable BEFORE it has ever been played. The keyless
+    directories o2m searches (fyyd) index almost no Radio France, so without
+    this a show like "L'Invite(e) des Matins" simply never came up.
+
+    RF's `Show.podcast { rss }` is broken server-side, so a show is referenced
+    by its page URL ('rf:show:<url>') and expanded through the API, not as a
+    'podcast+<feed>' line.
+    """
+    id         = CharField(primary_key=True)        # RF show uuid ("<uuid>_<n>")
+    station    = CharField(null=True, index=True)   # StationsEnum value
+    title      = TextField(null=True)
+    # CharField, not TextField: MySQL refuses an index on TEXT without a prefix
+    # length, and this column exists only to be searched.
+    title_norm = CharField(null=True, index=True)   # accent/case folded
+    url        = TextField(null=True)               # page url -> episodes
+    standfirst = TextField(null=True)
+    cached_at  = TimestampField(null=True, utc=True)
+
+
+class RfTaxonomy(BaseModel):
+    """Radio France themes/tags (OpenAPI `taxonomies`) — the vocabulary behind
+    the dynamic 'rf:sujet:<keyword>' box. `diffusions` filters take taxonomy
+    IDs, never paths, so the id is the payload; `path` is deliberately NOT
+    stored (the API raises on it for tags whose path is null).
+    """
+    id         = CharField(primary_key=True)        # "<uuid>_0"
+    kind       = CharField(null=True, index=True)   # THEME | TAG
+    title      = TextField(null=True)
+    title_norm = CharField(null=True, index=True)
+    cached_at  = TimestampField(null=True, utc=True)
+
+
 # ─── Database versioning ───────────────────────────────────────────────────────
 #
 # SCHEMA_VERSION is the target version.  setup_database() applies every
@@ -495,11 +529,15 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v15(migrator):
+    db.create_tables([RfShow, RfTaxonomy], safe=True)
+
+
 def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -516,6 +554,7 @@ _MIGRATIONS = [
     (12, "track_mood_edited_at_column", _migration_v12),
     (13, "box_image_url_column", _migration_v13),
     (14, "playlist_in_library_column", _migration_v14),
+    (15, "radiofrance_show_taxonomy_tables", _migration_v15),
 ]
 
 

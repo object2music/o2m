@@ -12,6 +12,7 @@ from src.o2mmodels import (
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
+    RfShow, RfTaxonomy,
     setup_database,
 )
 
@@ -38,6 +39,13 @@ def _normalize_genre(name):
     n = ''.join(c for c in n if not _unicodedata.combining(c))
     n = n.replace('-', ' ')
     return ' '.join(n.split())
+
+
+_RF_STATION_LABELS = {
+    'FRANCECULTURE': 'France Culture', 'FRANCEINTER': 'France Inter',
+    'FRANCEINFO': 'France Info', 'FRANCEMUSIQUE': 'France Musique',
+    'MOUV': 'Mouv', 'FIP': 'FIP',
+}
 
 
 def _is_noise_genre(name):
@@ -528,7 +536,12 @@ class DatabaseHandler():
         effective_recency = Track.last_read_date - (penalized_skips * skip_penalty)
         pool_size = min(max(limit, 1) * 4, 60)
         query = Track.select().where(
-            ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%') | (Track.uri % '%yt:%'))
+            ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%') | (Track.uri % '%yt:%')
+                # Radio France OpenAPI episodes are plain https mp3 URLs with no
+                # 'podcast+' marker, so they need their hosts listed explicitly or
+                # 'podcasts:unfinished' would silently ignore every one of them.
+                | (Track.uri % '%proxycast.radiofrance.fr%')
+                | (Track.uri % '%radiofrance-podcast.net%'))
             # read_count_end == 0 → finished at least once = DONE, never re-served.
             & (Track.read_count_end == 0)
             & (Track.read_end < 0.9)
@@ -1175,21 +1188,27 @@ class DatabaseHandler():
             print(f"get_artist_track_uris error: {e}")
         return None
 
-    def search_local(self, query, limit=15):
+    def search_local(self, query, limit=15, offset=0):
         """Keyword search across cached content — the DB-first half of the
         content-search feature. Tracks/artists/albums by name; podcast/info
         episodes by name (Track.option_type). Radio isn't Track-backed (a live
         stream is never logged like a played track) — see
-        O2mToMopidy.search_radio_stations for that one."""
+        O2mToMopidy.search_radio_stations for that one.
+
+        Every query is explicitly ordered: `offset` powers the UI's "load more",
+        and OFFSET without ORDER BY is undefined in MySQL, so pages would
+        silently overlap or skip rows."""
         results = {'tracks': [], 'artists': [], 'albums': [], 'playlists': [], 'podcasts': [], 'info': [], 'boxes': []}
-        for b in Box.select().where(Box.description.contains(query)).limit(limit):
+        for b in (Box.select().where(Box.description.contains(query))
+                  .order_by(Box.description, Box.uid).limit(limit).offset(offset)):
             results['boxes'].append({
                 'uid': b.uid, 'description': b.description,
                 'option_type': b.option_type, 'image': b.image_url,
             })
         for t in (Track.select()
                   .where(Track.name.contains(query) & ~(Track.option_type.in_(['podcast', 'info'])))
-                  .limit(limit)):
+                  .order_by(Track.last_read_date.desc(), Track.uri)
+                  .limit(limit).offset(offset)):
             results['tracks'].append({
                 'uri': t.uri, 'name': t.name, 'length': t.duration_ms,
                 'artists': self._track_artist_names(t.uri),
@@ -1197,18 +1216,22 @@ class DatabaseHandler():
         for ot, bucket in (('podcast', 'podcasts'), ('info', 'info')):
             for t in (Track.select()
                       .where((Track.option_type == ot) & Track.name.contains(query))
-                      .limit(limit)):
+                      .order_by(Track.last_read_date.desc(), Track.uri)
+                      .limit(limit).offset(offset)):
                 results[bucket].append({'uri': t.uri, 'name': t.name, 'length': t.duration_ms})
-        for a in Artist.select().where(Artist.name.contains(query)).limit(limit):
+        for a in (Artist.select().where(Artist.name.contains(query))
+                  .order_by(Artist.name, Artist.id).limit(limit).offset(offset)):
             results['artists'].append({
                 'uri': a.uri or f'spotify:artist:{a.id}', 'name': a.name, 'image': a.image_url,
             })
-        for al in Album.select().where(Album.name.contains(query)).limit(limit):
+        for al in (Album.select().where(Album.name.contains(query))
+                   .order_by(Album.name, Album.id).limit(limit).offset(offset)):
             results['albums'].append({
                 'uri': al.uri or f'spotify:album:{al.id}', 'name': al.name,
                 'artist': al.artist_name, 'image': al.image_url,
             })
-        for pl in Playlist.select().where(Playlist.name.contains(query)).order_by(Playlist.name).limit(limit):
+        for pl in (Playlist.select().where(Playlist.name.contains(query))
+                   .order_by(Playlist.name, Playlist.id).limit(limit).offset(offset)):
             results['playlists'].append({
                 'uri': pl.uri or f'spotify:playlist:{pl.id}', 'name': pl.name or pl.id,
                 'image': pl.image_url,
@@ -1615,6 +1638,134 @@ class DatabaseHandler():
             'value_int':  value_int,
             'updated_at': datetime.datetime.utcnow(),
         }).on_conflict_replace().execute()
+
+    # ── Radio France cache (shows + taxonomies) ────────────────────────────
+
+    def upsert_rf_shows(self, rows):
+        """Index RF shows for keyword search. Chunked upsert so a re-warmup
+        refreshes titles instead of duplicating rows."""
+        rows = [r for r in (rows or []) if r.get('rf_id') and r.get('name')]
+        if not rows:
+            return 0
+        now = datetime.datetime.utcnow()
+        payload = [{
+            'id': r['rf_id'], 'station': r.get('station'), 'title': r['name'],
+            'title_norm': _normalize_genre(r['name'])[:255],
+            'url': r.get('url') or '', 'standfirst': r.get('standfirst') or '',
+            'cached_at': now,
+        } for r in rows]
+        saved = 0
+        for i in range(0, len(payload), 200):
+            chunk = payload[i:i + 200]
+            try:
+                RfShow.insert_many(chunk).on_conflict(
+                    action='update',
+                    update={RfShow.title: RfShow.title, RfShow.station: RfShow.station},
+                    preserve=[RfShow.title, RfShow.title_norm, RfShow.url,
+                              RfShow.standfirst, RfShow.station, RfShow.cached_at],
+                ).execute()
+                saved += len(chunk)
+            except Exception as e:
+                print(f"upsert_rf_shows error: {e}")
+        return saved
+
+    def upsert_rf_taxonomies(self, rows):
+        """Index RF themes/tags — the vocabulary behind 'rf:sujet:'."""
+        rows = [r for r in (rows or []) if r.get('id') and r.get('title')]
+        if not rows:
+            return 0
+        now = datetime.datetime.utcnow()
+        payload = [{
+            'id': r['id'], 'kind': (r.get('kind') or '').upper(), 'title': r['title'],
+            'title_norm': _normalize_genre(r['title'])[:255], 'cached_at': now,
+        } for r in rows]
+        saved = 0
+        for i in range(0, len(payload), 200):
+            chunk = payload[i:i + 200]
+            try:
+                RfTaxonomy.insert_many(chunk).on_conflict(
+                    action='update',
+                    update={RfTaxonomy.title: RfTaxonomy.title},
+                    preserve=[RfTaxonomy.title, RfTaxonomy.title_norm,
+                              RfTaxonomy.kind, RfTaxonomy.cached_at],
+                ).execute()
+                saved += len(chunk)
+            except Exception as e:
+                print(f"upsert_rf_taxonomies error: {e}")
+        return saved
+
+    def count_rf_shows(self):
+        try:
+            return RfShow.select(RfShow.id).count()
+        except Exception:
+            return 0
+
+    def count_rf_taxonomies(self):
+        try:
+            return RfTaxonomy.select(RfTaxonomy.id).count()
+        except Exception:
+            return 0
+
+    def search_rf_shows(self, query, limit=15, offset=0):
+        """Keyword search over the RF show catalogue, in directory row shape.
+        Ordered so OFFSET paging is stable (MySQL OFFSET without ORDER BY is
+        undefined and would overlap/skip rows between pages)."""
+        q = _normalize_genre(query or '')
+        if not q:
+            return []
+        try:
+            rows = (RfShow.select()
+                    .where(RfShow.title_norm.contains(q))
+                    .order_by(RfShow.title_norm, RfShow.id)
+                    .limit(limit).offset(offset))
+            out = []
+            for s in rows:
+                if not s.url:
+                    continue
+                out.append({'name': s.title, 'uri': 'rf:show:' + s.url,
+                            'image': '', 'sub': _RF_STATION_LABELS.get(s.station or '', 'Radio France'),
+                            'source': 'radiofrance'})
+            return out
+        except Exception as e:
+            print(f"search_rf_shows error: {e}")
+            return []
+
+    def find_rf_taxonomy(self, keyword):
+        """Resolve a user keyword to RF taxonomy ids. Accepts a raw id. Exact
+        title match first, then 'contains'; THEME wins over TAG (broader)."""
+        kw = (keyword or '').strip()
+        if not kw:
+            return []
+        if _re.match(r'^[0-9a-f-]{30,}_\d+$', kw, _re.I):
+            return [{'id': kw, 'kind': 'THEME', 'title': kw}]
+        n = _normalize_genre(kw)
+        try:
+            hits = list(RfTaxonomy.select().where(RfTaxonomy.title_norm == n))
+            if not hits:
+                hits = list(RfTaxonomy.select()
+                            .where(RfTaxonomy.title_norm.contains(n))
+                            .order_by(fn.CHAR_LENGTH(RfTaxonomy.title_norm))
+                            .limit(5))
+            hits.sort(key=lambda t: 0 if (t.kind or '').upper() == 'THEME' else 1)
+            return [{'id': t.id, 'kind': (t.kind or '').upper(), 'title': t.title} for t in hits]
+        except Exception as e:
+            print(f"find_rf_taxonomy error: {e}")
+            return []
+
+    def list_rf_taxonomies(self, kind=None, query='', limit=200):
+        """Subjects for the box-editor selector."""
+        try:
+            sel = RfTaxonomy.select()
+            if kind:
+                sel = sel.where(RfTaxonomy.kind == kind.upper())
+            q = _normalize_genre(query or '')
+            if q:
+                sel = sel.where(RfTaxonomy.title_norm.contains(q))
+            return [{'id': t.id, 'title': t.title, 'kind': (t.kind or '').upper()}
+                    for t in sel.order_by(RfTaxonomy.title_norm).limit(limit)]
+        except Exception as e:
+            print(f"list_rf_taxonomies error: {e}")
+            return []
 
     def count_cached(self, entity_type):
         """Count locally cached entries for *entity_type*."""

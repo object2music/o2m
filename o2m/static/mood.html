@@ -1783,6 +1783,8 @@
   /* Search results inside the object modal. */
   .search-section-label { font-family: var(--font-mono); text-transform: uppercase;
     letter-spacing: .12em; font-size: 10px; color: var(--muted); margin: 14px 0 4px; }
+  .search-more { display: flex; justify-content: center; padding: 14px 0 4px; }
+  .search-more button { cursor: pointer; }
   .search-section-label:first-child { margin-top: 0; }
 </style>
 </head>
@@ -5045,7 +5047,7 @@ const BOX_KEYWORDS = {
 };
 const _bxIsKeyword = line => Object.prototype.hasOwnProperty.call(BOX_KEYWORDS, line);
 function _bxIsDirective(line) {
-  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:)/.test(line)
+  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:)/.test(line)
       || _bxIsKeyword(line);
 }
 function _bxNewItem(line, label, disabled) {
@@ -5109,6 +5111,8 @@ function _bxItemMeta(it) {
   else if (u.startsWith('spotify:playlist:')) { icon = ICON.list;  tag = 'playlist'; }
   else if (u.startsWith('box:'))              { icon = ICON.box;   tag = 'box'; }
   else if (u.startsWith('podcast+'))          { icon = ICON.rss;   tag = 'podcast'; }
+  else if (u.startsWith('rf:show:'))          { icon = ICON.rss;   tag = 'rf show'; }
+  else if (/^rf:(subject|sujet):/.test(u))    { icon = ICON.zap;   tag = 'rf subject'; }
   else if (/^(https?:|tunein:)/.test(u))      { icon = ICON.radio; tag = 'stream'; }
   else if (/^(local:|m3u:|file:)/.test(u))    { icon = ICON.music; tag = 'local'; }
   return { icon, tag, name: it.label || resolved || u, sub: (it.label || resolved) ? u : '' };
@@ -5137,14 +5141,15 @@ const WC_BROWSE_NODES = {
   podnews:     { label: 'Top news podcasts',      icon: ICON.rss },
   podgenres:   { label: 'Podcast genres',         icon: ICON.list },
   podchannels: { label: 'Channels in your boxes', icon: ICON.hash },
+  rfsubjects:  { label: 'Radio France subjects',   icon: ICON.zap },
   radiotop:    { label: 'Top stations near you',  icon: ICON.radio },
 };
 const WC_BROWSE_BY_KIND = {
   music:   ['playlists', 'artists', 'albums', 'radiotop'],
-  podcast: ['podtop', 'podgenres', 'podchannels', 'radiotop'],
-  info:    ['podnews', 'podgenres', 'podchannels', 'radiotop'],
+  podcast: ['rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop'],
+  info:    ['rfsubjects', 'podnews', 'podgenres', 'podchannels', 'radiotop'],
   radio:   ['radiotop'],
-  hybrid:  ['playlists', 'artists', 'albums', 'podtop', 'podgenres', 'podchannels', 'radiotop'],
+  hybrid:  ['playlists', 'artists', 'albums', 'rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop'],
 };
 /* Which result sections a search shows, in order. Radios are offered for every
    kind (a stream is welcome in any box). Podcast channels are deliberately NOT:
@@ -5544,6 +5549,14 @@ async function _wcLoadBrowse(node) {
     done(rowsOr(rows, tag, 'Nothing cached yet — use Search instead.'));
     return;
   }
+  if (node === 'rfsubjects') {
+    // Radio France themes/tags: picking one writes 'rf:sujet:<title>', a DYNAMIC
+    // line that refills with whatever was published on that subject.
+    const d = await _wcJson('/rf_subjects');
+    done(rowsOr(_wcDirRows((d && d.items) || []), 'podcast',
+                'No Radio France subjects indexed yet (no API key, or warmup pending).'));
+    return;
+  }
   if (node === 'podchannels') {
     const d = await _wcJson('/podcast_channels');
     done(rowsOr(_wcDirRows(Array.isArray(d) ? d : []), 'podcast', 'No channels referenced in your boxes yet.'));
@@ -5853,6 +5866,37 @@ function _searchObjRows(items, kind) {
     return `<div class="tl-item obj-openable" data-uri="${objEsc(a.uri)}" data-kind="${objEsc(kind)}" data-name="${objEsc(a.name || '')}">${inner}</div>`;
   }).join('') + '</div>';
 }
+/* Search paging state. Only the DB-backed buckets can be paged, so "load more"
+   asks for the next offset and MERGES into what is already displayed rather
+   than replacing it (the directory/Spotify halves are page-0 only). */
+let _searchState = null;   // { q, limit, offset, data }
+const _SEARCH_BUCKETS = ['tracks', 'artists', 'albums', 'playlists', 'podcasts',
+                         'info', 'boxes', 'podcast_channels', 'radios'];
+
+function _searchMerge(into, more) {
+  _SEARCH_BUCKETS.forEach(k => {
+    const a = into[k] || [], b = more[k] || [];
+    const seen = new Set(a.map(x => x && (x.uri || x.uid)));
+    into[k] = a.concat(b.filter(x => x && !seen.has(x.uri || x.uid)));
+  });
+  into.has_more = !!more.has_more;
+  return into;
+}
+
+async function searchLoadMore() {
+  if (!_searchState) return;
+  const st = _searchState;
+  const btn = document.querySelector('[data-search-more]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  try {
+    const next = st.offset + st.limit;
+    const d = await fetch(API + '/search?q=' + encodeURIComponent(st.q)
+                          + '&limit=' + st.limit + '&offset=' + next).then(r => r.json());
+    if (d && !d.error) { st.offset = next; _searchMerge(st.data, d); _searchRender(); }
+    else if (btn) { btn.disabled = false; btn.textContent = 'Load more'; }
+  } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Load more'; } }
+}
+
 async function openSearch(q, opts) {
   const inPlace = !!(opts && opts.inPlace);   // live-edit from the header field: no nav push, no spinner
   if (!inPlace) objNavTo();
@@ -5860,9 +5904,16 @@ async function openSearch(q, opts) {
   objSetActionUris([]);          // a search view has no single object to act on
   if (!inPlace) { openObjPanel(); objLoading('Searching…'); }
   let d;
-  try { d = await fetch(API + '/search?q=' + encodeURIComponent(q)).then(r => r.json()); }
+  const _limit = 15;
+  try { d = await fetch(API + '/search?q=' + encodeURIComponent(q) + '&limit=' + _limit).then(r => r.json()); }
   catch(e) { objBody().innerHTML = '<div class="obj-empty">Search failed.</div>'; return; }
   if (!d || d.error) { objBody().innerHTML = `<div class="obj-empty">${objEsc((d && d.error) || 'Search failed')}</div>`; return; }
+  _searchState = { q, limit: _limit, offset: 0, data: d };
+  _searchRender();
+}
+
+function _searchRender() {
+  const d = (_searchState && _searchState.data) || {};
 
   // Merge DB-cache + live Spotify per music type, dedup by uri (cache wins).
   const merge = (a, b) => { const seen = new Set((a || []).map(x => x.uri)); return (a || []).concat((b || []).filter(x => !seen.has(x.uri))); };
@@ -5891,6 +5942,8 @@ async function openSearch(q, opts) {
   if ((d.info||[]).length)    html += sec(`Info (${d.info.length})`,     objRenderTracks(_searchTracksNorm(d.info), 'track', true));
   if ((d.radios||[]).length)  html += sec(`Radios (${d.radios.length})`, objRenderTracks(_searchTracksNorm(d.radios), 'radio', true));
   if ((d.boxes||[]).length)   html += sec(`Boxes (${d.boxes.length})`,   _searchObjRows(d.boxes.map(boxToRow), 'box'));
+  if (d.has_more)
+    html += '<div class="search-more"><button type="button" class="wc-seg" data-search-more>Load more</button></div>';
   objBody().innerHTML = html || '<div class="obj-empty">No results.</div>';
 }
 
@@ -6785,6 +6838,8 @@ async function init() {
     // The box-content editor (list rows + inline Add-content panels) handles
     // its own clicks — a result row there adds content instead of navigating.
     if (e.target.closest('#bx-editor-host')) return;
+    // "Load more" at the bottom of a search: append the next page in place.
+    if (e.target.closest('[data-search-more]')) { e.preventDefault(); return searchLoadMore(); }
     const ib = e.target.closest('.tl-info');
     if (ib) {
       // data-kind (search results) → kind-aware menu (artist/album get Play +
