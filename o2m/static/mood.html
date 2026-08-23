@@ -105,6 +105,16 @@
      .o2m-dial + data-axis and no inline stroke/fill. These per-id overrides only
      existed to out-rank those inline attributes, so they are gone. */
   .dial-svg text { fill: var(--dial-txt); }
+  /* Selection knob as an open ring rather than a filled disc: the arc it sits on
+     shows through, so the knob reads as a position marker instead of a blob that
+     merges with the arc. Written axis by axis because the system sets the fill at
+     that specificity ([data-axis] .knob) — a plain .o2m-dial .knob would lose. */
+  .o2m-dial .knob { stroke-width: 2.5; }
+  .o2m-dial[data-axis="energy"]  .knob { fill: none; stroke: var(--c-energy); }
+  .o2m-dial[data-axis="valence"] .knob { fill: none; stroke: var(--c-valence); }
+  .o2m-dial[data-axis="dl"]      .knob { fill: none; stroke: var(--c-dl); }
+  .o2m-dial[data-axis="opening"] .knob { fill: none; stroke: var(--c-opening, var(--muted)); }
+  .o2m-dial[data-axis="mood"]    .knob { fill: none; stroke: var(--c-mood, var(--accent)); }
 
   /* Marqueur éditorial devant les libellés de section */
   .panel-head::before,
