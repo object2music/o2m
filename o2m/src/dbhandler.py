@@ -1230,7 +1230,9 @@ class DatabaseHandler():
                 'uri': al.uri or f'spotify:album:{al.id}', 'name': al.name,
                 'artist': al.artist_name, 'image': al.image_url,
             })
-        for pl in (Playlist.select().where(Playlist.name.contains(query))
+        for pl in (Playlist.select()
+                   .where(Playlist.name.contains(query)
+                          & ((Playlist.in_library.is_null()) | (Playlist.in_library == True)))  # noqa: E712
                    .order_by(Playlist.name, Playlist.id).limit(limit).offset(offset)):
             results['playlists'].append({
                 'uri': pl.uri or f'spotify:playlist:{pl.id}', 'name': pl.name or pl.id,
@@ -1499,8 +1501,14 @@ class DatabaseHandler():
             return 0
 
     def get_playlists_for_select(self, owner_id=None):
-        """Cached playlists for the edition picker. owned=True if owner_id matches."""
+        """Cached playlists for the edition picker. owned=True if owner_id matches.
+
+        Playlists explicitly known to have left the account (in_library False) are
+        hidden: the cache keeps their rows so their tracks stay attributable, but
+        offering a deleted playlist as an edition target is a dead end. NULL means
+        'not assessed yet' and is kept."""
         rows = list(Playlist.select(Playlist.id, Playlist.name, Playlist.uri, Playlist.owner_id)
+                    .where((Playlist.in_library.is_null()) | (Playlist.in_library == True))  # noqa: E712
                     .order_by(Playlist.name))
         out = []
         for p in rows:
@@ -1520,8 +1528,12 @@ class DatabaseHandler():
         if not ids:
             return []
         names = {p.id: (p.name or p.id)
-                 for p in Playlist.select(Playlist.id, Playlist.name).where(Playlist.id.in_(ids))}
-        return [{'id': i, 'name': names.get(i, i)} for i in ids]
+                 for p in Playlist.select(Playlist.id, Playlist.name)
+                 .where(Playlist.id.in_(ids)
+                        & ((Playlist.in_library.is_null()) | (Playlist.in_library == True)))}  # noqa: E712
+        # Only playlists still in the account: a deleted one must not show as a
+        # current membership (its link rows are kept for history).
+        return [{'id': i, 'name': names[i]} for i in ids if i in names]
 
     def remove_playlist_track(self, playlist_id, track_uri):
         PlaylistTrack.delete().where(
