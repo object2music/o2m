@@ -174,8 +174,12 @@
      washes at 3-10% and a transparent --mx-border, the radar vanished into the
      panel. --card differs from --surface in all five themes; the --border-strong
      hairline supplies the frame --mx-border does not carry. */
-  .tp-matrix { width: 100%; max-width: 200px; aspect-ratio: 1 / 1;
-    margin: 8px auto 2px; display: block; touch-action: none;
+  /* The 200px cap dated from a 230px-wide panel; now that the panel is a square
+     sized on the cover, it left the matrix visibly boxed in. Raised so it uses the
+     room it has — it stays centred and never wider than its container. The top
+     margin sets it apart from the lifecycle scale above, in every view. */
+  .tp-matrix { width: 100%; max-width: 300px; aspect-ratio: 1 / 1;
+    margin: 14px auto 4px; display: block; touch-action: none;
     background: var(--card); border: 1px solid var(--border-strong); }
   body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
