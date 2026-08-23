@@ -1689,7 +1689,8 @@ class DatabaseHandler():
         now = datetime.datetime.utcnow()
         payload = [{
             'id': r['id'], 'kind': (r.get('kind') or '').upper(), 'title': r['title'],
-            'title_norm': _normalize_genre(r['title'])[:255], 'cached_at': now,
+            'title_norm': _normalize_genre(r['title'])[:255],
+            'path': r.get('path') or '', 'cached_at': now,
         } for r in rows]
         saved = 0
         for i in range(0, len(payload), 200):
@@ -1699,7 +1700,7 @@ class DatabaseHandler():
                     action='update',
                     update={RfTaxonomy.title: RfTaxonomy.title},
                     preserve=[RfTaxonomy.title, RfTaxonomy.title_norm,
-                              RfTaxonomy.kind, RfTaxonomy.cached_at],
+                              RfTaxonomy.kind, RfTaxonomy.path, RfTaxonomy.cached_at],
                 ).execute()
                 saved += len(chunk)
             except Exception as e:
@@ -1749,7 +1750,7 @@ class DatabaseHandler():
         if not kw:
             return []
         if _re.match(r'^[0-9a-f-]{30,}_\d+$', kw, _re.I):
-            return [{'id': kw, 'kind': 'THEME', 'title': kw}]
+            return [{'id': kw, 'kind': 'THEME', 'title': kw, 'path': ''}]
         n = _normalize_genre(kw)
         try:
             hits = list(RfTaxonomy.select().where(RfTaxonomy.title_norm == n))
@@ -1759,7 +1760,8 @@ class DatabaseHandler():
                             .order_by(fn.CHAR_LENGTH(RfTaxonomy.title_norm))
                             .limit(5))
             hits.sort(key=lambda t: 0 if (t.kind or '').upper() == 'THEME' else 1)
-            return [{'id': t.id, 'kind': (t.kind or '').upper(), 'title': t.title} for t in hits]
+            return [{'id': t.id, 'kind': (t.kind or '').upper(), 'title': t.title,
+                     'path': getattr(t, 'path', '') or ''} for t in hits]
         except Exception as e:
             print(f"find_rf_taxonomy error: {e}")
             return []

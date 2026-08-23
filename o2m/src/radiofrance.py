@@ -209,9 +209,20 @@ _Q_TAXONOMIES = '''query Taxonomies($types: [TaxonomyTypeEnum!], $first: Int!, $
   }
 }'''
 
+# Themes carry a hierarchy path whose depth selects the diffusions() argument.
+# Only asked for THEME: for some tags `path` is null and the API then raises
+# "Cannot return null for non-nullable field Taxonomy.path".
+_Q_TAXONOMIES_PATH = '''query Taxonomies($types: [TaxonomyTypeEnum!], $first: Int!, $after: String) {
+  taxonomies(types: $types, first: $first, after: $after) {
+    edges { cursor node { id type title path } }
+  }
+}'''
+
 _Q_DIFFUSIONS = '''query Diffusions($station: StationsEnum!, $themes: [String!], $tags: [String!],
+                  $subthemes: [String!], $subsubthemes: [String!],
                   $start: Int!, $end: Int!, $first: Int!) {
   diffusions(station: $station, themes: $themes, tags: $tags,
+             subthemes: $subthemes, subsubthemes: $subsubthemes,
              start: $start, end: $end, first: $first) {
     edges { node { id title published_date show { title url }
                    podcastEpisode { url duration } } }
@@ -281,7 +292,8 @@ def episodes_of_show(api_key, show_url, first=20):
 def list_taxonomies(api_key, kinds=('THEME',), first=MAX_PAGE, after=None):
     """One page of themes/tags → (rows, last_cursor)."""
     first = max(1, min(int(first or MAX_PAGE), MAX_PAGE))
-    data = _gql(api_key, _Q_TAXONOMIES,
+    want_path = all(str(k).upper() == 'THEME' for k in kinds)
+    data = _gql(api_key, _Q_TAXONOMIES_PATH if want_path else _Q_TAXONOMIES,
                 {'types': list(kinds), 'first': first, 'after': after})
     edges = _edges(data, 'taxonomies')
     rows = []
@@ -289,12 +301,14 @@ def list_taxonomies(api_key, kinds=('THEME',), first=MAX_PAGE, after=None):
         n = (e or {}).get('node') or {}
         if n.get('id') and n.get('title'):
             rows.append({'id': n['id'], 'title': (n.get('title') or '').strip(),
-                         'kind': (n.get('type') or '').strip()})
+                         'kind': (n.get('type') or '').strip(),
+                         'path': (n.get('path') or '').strip()})
     cursor = edges[-1].get('cursor') if len(edges) >= first else None
     return rows, cursor
 
 
-def diffusions(api_key, station, themes=None, tags=None, days=MAX_WINDOW_DAYS, first=50):
+def diffusions(api_key, station, themes=None, tags=None, subthemes=None,
+               subsubthemes=None, days=MAX_WINDOW_DAYS, first=50):
     """Episodes published on a station over the last `days` (≤7, server cap),
     optionally filtered by taxonomy IDs. Filters take IDs, never paths."""
     days = max(1, min(int(days or MAX_WINDOW_DAYS), MAX_WINDOW_DAYS))
@@ -303,10 +317,13 @@ def diffusions(api_key, station, themes=None, tags=None, days=MAX_WINDOW_DAYS, f
     start = end - days * 86400
     themes = [t for t in (themes or []) if t]
     tags = [t for t in (tags or []) if t]
+    subthemes = [t for t in (subthemes or []) if t]
+    subsubthemes = [t for t in (subsubthemes or []) if t]
 
     def fetch():
         data = _gql(api_key, _Q_DIFFUSIONS, {
             'station': station, 'themes': themes or None, 'tags': tags or None,
+            'subthemes': subthemes or None, 'subsubthemes': subsubthemes or None,
             'start': start, 'end': end, 'first': first})
         rows = []
         for e in _edges(data, 'diffusions'):
@@ -315,5 +332,6 @@ def diffusions(api_key, station, themes=None, tags=None, days=MAX_WINDOW_DAYS, f
                 rows.append(row)
         return rows
 
-    key = f"rfdiff:{station}:{','.join(themes)}:{','.join(tags)}:{days}:{first}"
+    key = (f"rfdiff:{station}:{','.join(themes)}:{','.join(subthemes)}:"
+           f"{','.join(subsubthemes)}:{','.join(tags)}:{days}:{first}")
     return _cached(key, fetch, _TTL_EPISODES) or []

@@ -480,6 +480,17 @@ class O2mToMopidy:
                     print("Warning: No valid URIs to add (after filtering); skipping add_tracks")
                     return 0
 
+                # Enforce the budget. max_results was only ever used as a `> 0` guard
+                # here, so the whole list was added whatever the caller asked for:
+                # every caller passes a computed budget (meta_fill's per-box share,
+                # `remaining` in one_box_changed, the auto mix's base_counts) and a
+                # source that returns more than its share — a long YouTube playlist,
+                # a full podcast feed — silently blew past it. That is how a 30-track
+                # podcast actuator ended up queueing 142.
+                if len(uris) > max_results:
+                    print(f"add_tracks: capping {len(uris)} uris to max_results={max_results}")
+                    uris = uris[:max_results]
+
                 prev_length = self.mopidyHandler.tracklist.get_length()
                 if self.mopidyHandler.tracklist.index():
                     current_index = self.mopidyHandler.tracklist.index()
@@ -1538,24 +1549,36 @@ class O2mToMopidy:
         return self._unread_spoken_uris([e['uri'] for e in eps])[:max_results]
 
     def rf_taxonomy_ids(self, value):
-        """Keyword or raw taxonomy id -> (theme_ids, tag_ids)."""
+        """Keyword or raw taxonomy id -> filters for diffusions(), bucketed by the
+        theme's DEPTH in its path: diffusions takes themes / subthemes /
+        subsubthemes as separate arguments, and a depth-2 theme such as
+        'arts-divertissements/cinema' matches nothing when passed as `themes`.
+        Tags have no hierarchy and always go to `tags`."""
         hits = self.dbHandler.find_rf_taxonomy(value)
-        themes = [h['id'] for h in hits if h.get('kind') != 'TAG']
-        tags = [h['id'] for h in hits if h.get('kind') == 'TAG']
-        return themes, tags
+        buckets = {'themes': [], 'subthemes': [], 'subsubthemes': [], 'tags': []}
+        for h in hits:
+            if (h.get('kind') or '') == 'TAG':
+                buckets['tags'].append(h['id'])
+                continue
+            depth = (h.get('path') or '').count('/') + 1 if h.get('path') else 1
+            key = 'themes' if depth <= 1 else ('subthemes' if depth == 2 else 'subsubthemes')
+            buckets[key].append(h['id'])
+        return buckets
 
     def rf_subject_episodes(self, keyword, max_results=15, stations=None):
         """Dynamic subject box: what the stations published on a theme/tag over
         the API's 7-day window, merged and de-duplicated."""
         if not self.rf_enabled() or not keyword:
             return []
-        themes, tags = self.rf_taxonomy_ids(keyword)
-        if not themes and not tags:
+        f = self.rf_taxonomy_ids(keyword)
+        if not any(f.values()):
             print(f"rf:sujet: no Radio France subject matches {keyword!r}")
             return []
         seen, uris = set(), []
         for station in (stations or self.rf_stations()):
-            for ep in rf.diffusions(self._rf_api_key, station, themes=themes, tags=tags,
+            for ep in rf.diffusions(self._rf_api_key, station,
+                                    themes=f['themes'], tags=f['tags'],
+                                    subthemes=f['subthemes'], subsubthemes=f['subsubthemes'],
                                     days=rf.MAX_WINDOW_DAYS, first=50):
                 if ep['uri'] not in seen:
                     seen.add(ep['uri'])

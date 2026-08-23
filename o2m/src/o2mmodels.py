@@ -353,13 +353,16 @@ class RfShow(BaseModel):
 class RfTaxonomy(BaseModel):
     """Radio France themes/tags (OpenAPI `taxonomies`) — the vocabulary behind
     the dynamic 'rf:sujet:<keyword>' box. `diffusions` filters take taxonomy
-    IDs, never paths, so the id is the payload; `path` is deliberately NOT
-    stored (the API raises on it for tags whose path is null).
+    IDs, never paths, so the id is the payload — but the path's DEPTH decides
+    WHICH argument the id belongs to (themes / subthemes / subsubthemes), so it
+    is stored too. Only themes carry one: for some tags it is null and the API
+    raises on the field, so it is requested for THEME queries only.
     """
     id         = CharField(primary_key=True)        # "<uuid>_0"
     kind       = CharField(null=True, index=True)   # THEME | TAG
     title      = TextField(null=True)
     title_norm = CharField(null=True, index=True)
+    path       = TextField(null=True)               # 'arts-divertissements/cinema'
     cached_at  = TimestampField(null=True, utc=True)
 
 
@@ -529,6 +532,10 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v16(migrator):
+    _add_column_safe(migrator, 'rftaxonomy', 'path', TextField(null=True))
+
+
 def _migration_v15(migrator):
     db.create_tables([RfShow, RfTaxonomy], safe=True)
 
@@ -537,7 +544,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -555,6 +562,7 @@ _MIGRATIONS = [
     (13, "box_image_url_column", _migration_v13),
     (14, "playlist_in_library_column", _migration_v14),
     (15, "radiofrance_show_taxonomy_tables", _migration_v15),
+    (16, "rftaxonomy_path_column", _migration_v16),
 ]
 
 
