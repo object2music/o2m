@@ -3593,12 +3593,15 @@ const TRACK_FIELDS = [
   ['Mood',       'mood',       i => i.mood || '—'],
   ['Popularity', 'popularity', i => fmtEV(i.popularity)],
   ['Plays',      'plays',      i => (i.read_count_end ?? 0) + ''],
+  // Spoken content only: when an episode was published is the one genuinely
+  // useful fact beyond its title. Hidden for music by _tpSyncSpokenRows.
+  ['Date',       'published',  i => i.published || '—'],
 ];
 const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 // Row order for the shared panel body (Favorite added to TRACK_FIELDS' text rows).
 const TRACK_PANEL_ROWS = [
   ['Status', 'type'], ['Source', 'source'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
-  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'],
+  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Date', 'published'],
 ];
 
 /* THE single source of the track-detail body markup, shared by both panels. The
@@ -3681,6 +3684,24 @@ function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artistUri, albu
     + `<div id="${p.playlistsId}" class="td-playlists"></div>`;
 }
 
+/* The Date row is meaningful for spoken content only — a publication date says
+   something about an episode, nothing about a song. Toggled per track rather
+   than dropped from the markup, so the cell stays addressable like every other. */
+function _tpSyncSpokenRows(p, info) {
+  try {
+    const host = p.body && p.body();
+    const cell = document.getElementById(p.cellId('published'));
+    const row = cell && cell.closest('[data-row="published"]');
+    if (!row) return;
+    // Show it whenever a date is known, not only when the type says podcast/info:
+    // a freshly queued episode still carries the fill-time default 'new' until its
+    // first play, and its date is exactly what makes it worth choosing.
+    const spoken = !!(info && info.published)
+                || ['podcast', 'info'].includes((info && info.option_type) || '');
+    row.style.display = spoken ? '' : 'none';
+  } catch (e) {}
+}
+
 /* One panel instance. `cellId(kind)` maps 'energy' → the dd element id used by
    that panel; `body()` is the container it fills; `getUri()` is the shown track. */
 function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass, body, getUri }) {
@@ -3704,6 +3725,7 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       if (!host) return;
       host.innerHTML = trackPanelBodyHTML(p, opts);
       TRACK_FIELDS.forEach(([, key, val]) => p.set(key, val(info)));
+      _tpSyncSpokenRows(p, info);
       const lc = document.getElementById(lifecycleId);
       if (lc) lc.innerHTML = lifecycleScaleHTML(info);
       p.seed(getUri(), info);

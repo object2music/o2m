@@ -128,6 +128,7 @@ class Track(BaseModel):
     valence = FloatField(null=True)      # 0.0 (dark/sad) → 1.0 (joyful/euphoric)
     popularity = FloatField(null=True)   # composite popularity score [0,1], recomputed in batch (stats_v2)
     mood_edited_at = TimestampField(null=True, utc=True)  # set on MANUAL mood/energy/valence edit → locks the track against warmup overwrite
+    published_at = CharField(null=True)  # episode publication date 'YYYY-MM-DD' (spoken content; feed/API formats vary)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -532,6 +533,10 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v17(migrator):
+    _add_column_safe(migrator, 'track', 'published_at', CharField(null=True))
+
+
 def _migration_v16(migrator):
     _add_column_safe(migrator, 'rftaxonomy', 'path', TextField(null=True))
 
@@ -544,7 +549,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -563,6 +568,7 @@ _MIGRATIONS = [
     (14, "playlist_in_library_column", _migration_v14),
     (15, "radiofrance_show_taxonomy_tables", _migration_v15),
     (16, "rftaxonomy_path_column", _migration_v16),
+    (17, "track_published_at_column", _migration_v17),
 ]
 
 

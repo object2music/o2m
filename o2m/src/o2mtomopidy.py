@@ -70,6 +70,7 @@ class O2mToMopidy:
         self._box_lock = threading.RLock()
         self._box_lock_timeout = 30  # seconds; on timeout we proceed rather than hang forever
         self._local_to_spotify = {}  # file:// URI → spotify:track: URI for stat routing
+        self._rf_published = {}      # RF episode uri → 'YYYY-MM-DD' (rows may not exist yet at fetch time)
 
         if "api_result_limit" in self.configO2M:
             self.max_results = int(self.configO2M["api_result_limit"])
@@ -501,6 +502,23 @@ class O2mToMopidy:
                 tltracks_added = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris))
                 length = len(tltracks_added)
                 print (f"Lenght added {len(tltracks_added)}")
+
+                # Episode publication date: mopidy resolves it from the feed here
+                # (the browse Refs used to build the list carry no date), and it is
+                # the one genuinely useful field a spoken item has beyond its title.
+                for _t in tltracks_added:
+                    try:
+                        _u = getattr(_t.track, 'uri', '')
+                        if not self._is_spoken_uri(_u):
+                            continue
+                        # mopidy's date for feed episodes; for Radio France mp3 links it
+                        # resolves nothing, so fall back to what the API told us (stashed
+                        # when the episode list was built, before this row existed).
+                        _d = getattr(_t.track, 'date', None) or self._rf_published.get(_u)
+                        if _d:
+                            self.dbHandler.set_track_published(_u, _d)
+                    except Exception:
+                        pass
 
                 if len(tltracks_added)>0:
                     uris_rem = []
@@ -1577,7 +1595,24 @@ class O2mToMopidy:
         if not self.rf_enabled() or not show_url:
             return []
         eps = rf.episodes_of_show(self._rf_api_key, show_url, first=max(max_results * 2, 20))
+        for e in eps:
+            self._remember_rf_published(e)
         return self._unread_spoken_uris([e['uri'] for e in eps])[:max_results]
+
+    def _remember_rf_published(self, episode):
+        """Stash an RF episode's publication date. Their URIs are plain mp3 links,
+        so mopidy resolves no metadata for them — the API is the only source.
+        published_date is a unix timestamp; normalise it to the 'YYYY-MM-DD' the
+        feed-based path already stores."""
+        try:
+            raw = episode.get('published')
+            if not raw:
+                return
+            day = datetime.datetime.utcfromtimestamp(int(raw)).strftime('%Y-%m-%d')
+            self._rf_published[episode['uri']] = day
+            self.dbHandler.set_track_published(episode['uri'], day)
+        except Exception:
+            pass
 
     def rf_taxonomy_ids(self, value):
         """Keyword or raw taxonomy id -> filters for diffusions(), bucketed by the
@@ -1633,6 +1668,7 @@ class O2mToMopidy:
                 if ep['uri'] not in seen:
                     seen.add(ep['uri'])
                     uris.append(ep['uri'])
+                    self._remember_rf_published(ep)
         return self._unread_spoken_uris(uris)[:max_results]
 
     _RF_WARMUP_TTL = {'rf_shows': 7, 'rf_taxonomies': 30}   # days

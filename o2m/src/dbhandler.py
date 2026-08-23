@@ -426,6 +426,20 @@ class DatabaseHandler():
         print(f"clear_today_stats_raw: {deleted} rows deleted (since {start_of_day.isoformat()})")
         return deleted
 
+    def set_track_published(self, uri, published):
+        """Record an episode's publication date (spoken content). Written once —
+        the feed is the authority and the value never changes."""
+        if not uri or not published:
+            return
+        try:
+            uri = self.podcast_uri_remove_max_results(uri)
+            (Track.update(published_at=str(published)[:32])
+                  .where((Track.uri == uri)
+                         & ((Track.published_at.is_null()) | (Track.published_at == '')))
+                  .execute())
+        except Exception as e:
+            print(f"set_track_published error: {e}")
+
     def create_stat_raw(self, uri, read_time, read_hour, username):
         uri = self.podcast_uri_remove_max_results(uri)
         # read_time maps to the model's `read_date` TimestampField (there is no

@@ -1488,8 +1488,7 @@ if __name__ == "__main__":
             # Spoken content never shows a music tag: a podcast/video URI carrying a
             # music type (new/library/favorites/incoming/…) is displayed as 'podcast'
             # ('info' is kept — it's a legitimate spoken classification).
-            if (('podcast+' in uri) or ('youtube:video' in uri) or ('yt:' in uri)) and \
-               opt not in ('info', 'podcast'):
+            if o2mHandler._is_spoken_uri(uri) and opt not in ('info', 'podcast'):
                 opt = 'podcast'
             if not opt:
                 opt = 'new'
@@ -1531,6 +1530,7 @@ if __name__ == "__main__":
                 'liked':          bool(stat.liked) if stat else False,
                 'library':        library,
                 'source':         source,
+                'published':      (getattr(stat, 'published_at', None) or '') if stat else '',
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
