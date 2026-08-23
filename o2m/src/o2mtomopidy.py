@@ -1147,6 +1147,34 @@ class O2mToMopidy:
             _pod_left = len(_pod_feeds)
             _pod_budget = max_results
 
+            # Warm the Radio France episode cache for every 'rf:sujet:' line at once.
+            # Each line costs one API call per station, and the loop below is
+            # sequential, so a box holding a dozen subjects took ~55s to activate —
+            # long enough that the UI looks like it did nothing. The lookups are
+            # independent and IO-bound, so run them concurrently here; the loop then
+            # hits radiofrance's short-lived cache and returns immediately.
+            _rf_lines = [x.strip() for x in data
+                         if x.strip().startswith(('rf:sujet:', 'rf:subject:'))]
+            _rf_done = {}
+            if len(_rf_lines) > 1 and self.rf_enabled():
+                import concurrent.futures as _cf
+                def _warm(line):
+                    try:
+                        value, _sep, st = line.split(':', 2)[2].partition('@')
+                        picked = [rf.STATIONS.get(x.strip().lower(), x.strip().upper())
+                                  for x in st.split(',') if x.strip()]
+                        return line, self.rf_subject_episodes(value.strip(), max_results,
+                                                              picked or None)
+                    except Exception as e:
+                        print(f"rf:sujet prefetch ({line}): {e}")
+                        return line, []
+                try:
+                    with _cf.ThreadPoolExecutor(max_workers=min(8, len(_rf_lines))) as _ex:
+                        for _line, _uris in _ex.map(_warm, _rf_lines):
+                            _rf_done[_line] = _uris
+                except Exception as e:
+                    print(f"rf:sujet prefetch pool: {e}")
+
             for content in data:
                 #Other box called (cascade include)
                 if "box:" in content :
@@ -1315,11 +1343,14 @@ class O2mToMopidy:
                         tracklist_uris.append(
                             self.rf_show_episodes(rf_line[len('rf:show:'):], max_results))
                     elif rf_line.startswith(('rf:sujet:', 'rf:subject:')):
-                        value, _sep, stations = rf_line.split(':', 2)[2].partition('@')
-                        picked = [rf.STATIONS.get(x.strip().lower(), x.strip().upper())
-                                  for x in stations.split(',') if x.strip()]
-                        tracklist_uris.append(
-                            self.rf_subject_episodes(value.strip(), max_results, picked or None))
+                        if rf_line in _rf_done:
+                            tracklist_uris.append(_rf_done[rf_line])
+                        else:
+                            value, _sep, stations = rf_line.split(':', 2)[2].partition('@')
+                            picked = [rf.STATIONS.get(x.strip().lower(), x.strip().upper())
+                                      for x in stations.split(',') if x.strip()]
+                            tracklist_uris.append(
+                                self.rf_subject_episodes(value.strip(), max_results, picked or None))
 
                 # Podcast channel
                 elif "podcast+" in content and "#" not in content:
@@ -1556,7 +1587,12 @@ class O2mToMopidy:
         Tags have no hierarchy and always go to `tags`."""
         hits = self.dbHandler.find_rf_taxonomy(value)
         buckets = {'themes': [], 'subthemes': [], 'subsubthemes': [], 'tags': []}
-        for h in hits:
+        # ONE id only. diffusions() INTERSECTS the ids it is given (verified:
+        # Climat alone 7 episodes, Géopolitique alone 4, both together 0), so
+        # passing every fuzzy match for a keyword would reliably return nothing.
+        # find_rf_taxonomy already ranks exact before partial and THEME before TAG,
+        # so the first hit is the best match.
+        for h in hits[:1]:
             if (h.get('kind') or '') == 'TAG':
                 buckets['tags'].append(h['id'])
                 continue
@@ -1574,12 +1610,26 @@ class O2mToMopidy:
         if not any(f.values()):
             print(f"rf:sujet: no Radio France subject matches {keyword!r}")
             return []
+        import concurrent.futures as _cf
+        targets = list(stations or self.rf_stations())
+        def _one(station):
+            try:
+                return rf.diffusions(self._rf_api_key, station,
+                                     themes=f['themes'], tags=f['tags'],
+                                     subthemes=f['subthemes'], subsubthemes=f['subsubthemes'],
+                                     days=rf.MAX_WINDOW_DAYS, first=50)
+            except Exception as e:
+                print(f"rf:sujet {keyword!r} on {station}: {e}")
+                return []
+        # One request per station, run together: they are independent and IO-bound.
+        if len(targets) > 1:
+            with _cf.ThreadPoolExecutor(max_workers=len(targets)) as ex:
+                results = list(ex.map(_one, targets))
+        else:
+            results = [_one(t) for t in targets]
         seen, uris = set(), []
-        for station in (stations or self.rf_stations()):
-            for ep in rf.diffusions(self._rf_api_key, station,
-                                    themes=f['themes'], tags=f['tags'],
-                                    subthemes=f['subthemes'], subsubthemes=f['subsubthemes'],
-                                    days=rf.MAX_WINDOW_DAYS, first=50):
+        for batch in results:
+            for ep in batch:
                 if ep['uri'] not in seen:
                     seen.add(ep['uri'])
                     uris.append(ep['uri'])

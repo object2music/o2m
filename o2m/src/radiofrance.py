@@ -66,12 +66,17 @@ _TTL_EPISODES = 15 * 60    # a rolling window; 15 min is plenty
 _cache = {}
 
 
-def _cached(key, fn, ttl):
+def _cached(key, fn, ttl, cache_empty=False):
+    """Memoise fn() for ttl seconds. A falsy value is not cached by default so a
+    failure is retried — but with cache_empty the caller signals it can tell a
+    real failure (None) from a legitimate empty answer ([]), and an empty answer
+    IS worth caching: a subject with no recent episode would otherwise be
+    re-queried on every single box activation."""
     hit = _cache.get(key)
     if hit and (time.time() - hit[0]) < ttl:
         return hit[1]
     value = fn()
-    if value:                  # never cache a failure — retry on the next call
+    if (value is not None) if cache_empty else bool(value):
         _cache[key] = (time.time(), value)
     return value
 
@@ -325,13 +330,15 @@ def diffusions(api_key, station, themes=None, tags=None, subthemes=None,
             'station': station, 'themes': themes or None, 'tags': tags or None,
             'subthemes': subthemes or None, 'subsubthemes': subsubthemes or None,
             'start': start, 'end': end, 'first': first})
+        if data is None:
+            return None            # transport/auth failure — retry next time
         rows = []
         for e in _edges(data, 'diffusions'):
             row = episode_row((e or {}).get('node') or {})
             if row:
                 rows.append(row)
-        return rows
+        return rows                # may legitimately be empty
 
     key = (f"rfdiff:{station}:{','.join(themes)}:{','.join(subthemes)}:"
            f"{','.join(subsubthemes)}:{','.join(tags)}:{days}:{first}")
-    return _cached(key, fetch, _TTL_EPISODES) or []
+    return _cached(key, fetch, _TTL_EPISODES, cache_empty=True) or []
