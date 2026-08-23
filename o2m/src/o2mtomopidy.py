@@ -2679,7 +2679,24 @@ class O2mToMopidy:
             if not(option_type == 'new' and (stat.option_type == 'library' or stat.option_type == 'favorites' or stat.option_type == 'incoming' or stat.option_type == 'hidden' or stat.option_type == 'trash')):
                 #if not(option_type == 'library' and (stat.option_type == 'favorites' or stat.option_type == 'incoming')):
                 if not(option_type == 'incoming' and (stat.option_type == 'library' or stat.option_type == 'favorites')):
+                    _was_option_type = stat.option_type
                     stat.option_type = option_type
+                    # A track can also reach 'favorites' through the BOX context (a box
+                    # tagged favorites stamps its type on what it serves), not only
+                    # through threshold_adding_favorites — and that path never touched
+                    # Spotify, which is why statuses and the ♥ could disagree. Mirror
+                    # the like so the two stay in sync, exactly like the threshold path.
+                    if (option_type == 'favorites' and _was_option_type != 'favorites'
+                            and str(uri).startswith('spotify:track:') and not stat.liked):
+                        try:
+                            self.spotifyHandler.set_track_saved(uri, True)
+                            stat.liked = 1
+                            stat.liked_at = datetime.datetime.now(datetime.timezone.utc)
+                            print(f"favorites sync: liked {uri} on Spotify")
+                        except Exception as e:
+                            # Never let a refused Spotify write break stat recording;
+                            # the status still stands, the ♥ simply stays off.
+                            print(f"favorites sync: Spotify like failed for {uri}: {e}")
         #stat.option_type = option_type
         
         # Store library_link in the in_library field (repurposed from obsolete boolean)
