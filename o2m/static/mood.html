@@ -604,6 +604,18 @@
     :root:not([data-theme="invert"]) #track-details {
       overflow-y: auto; min-height: 0;
     }
+    /* Square, and the same size as the cover: the panel is stretched to the row
+       height anyway, so aspect-ratio derives its width from that — which is exactly
+       what #cover-col measures (cover height + its padding). It was pinned to
+       flex: 0 0 230px, i.e. a tall narrow column, while the row had width to spare.
+       flex: 0 1 auto (not 0 0) keeps it safe on a narrow tablet in portrait, where
+       cover + details could otherwise exceed the row: there it gives width back and
+       stops being square rather than overflowing, never below the old 230px.
+       Overprint is excluded as well as invert: its header is a grid whose details
+       track is already the cover square (--ovp-w), and a min-width would fight it. */
+    :root:not([data-theme="invert"]):not([data-theme="overprint"]) #track-details {
+      flex: 0 1 auto; aspect-ratio: 1 / 1; min-width: 230px;
+    }
     /* Overprint keeps its poster grid: there the details column matches the cover
        square (--ovp-w) rather than the whole header. `:root[...]` is needed to
        out-rank both the `:not()` rule above and the generic overprint
