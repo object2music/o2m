@@ -1766,6 +1766,37 @@ class DatabaseHandler():
             print(f"find_rf_taxonomy error: {e}")
             return []
 
+    def list_rf_theme_children(self, parent_path=None):
+        """Direct children of a theme path — the browsable half of the subject
+        vocabulary. Only THEMES form a hierarchy (12 roots / 89 / 242); the 1146
+        tags carry no path at all, so they are flat and stay searchable only."""
+        parent = (parent_path or '').strip('/')
+        depth = parent.count('/') + 1 if parent else 0
+        out = []
+        try:
+            sel = RfTaxonomy.select().where((RfTaxonomy.kind == 'THEME')
+                                            & (RfTaxonomy.path.is_null(False))
+                                            & (RfTaxonomy.path != ''))
+            if parent:
+                sel = sel.where(RfTaxonomy.path.startswith(parent + '/'))
+            rows = [t for t in sel if (t.path or '').count('/') == depth]
+            paths = {(t.path or '') for t in
+                     RfTaxonomy.select(RfTaxonomy.path).where(RfTaxonomy.kind == 'THEME')}
+            for t in sorted(rows, key=lambda x: (x.title or '').lower()):
+                pfx = (t.path or '') + '/'
+                out.append({'id': t.id, 'title': t.title, 'path': t.path,
+                            'has_children': any(p.startswith(pfx) for p in paths)})
+        except Exception as e:
+            print(f"list_rf_theme_children error: {e}")
+        return out
+
+    def get_rf_taxonomy_by_path(self, path):
+        try:
+            t = RfTaxonomy.get_or_none((RfTaxonomy.kind == 'THEME') & (RfTaxonomy.path == (path or '').strip('/')))
+            return {'id': t.id, 'title': t.title, 'path': t.path} if t else None
+        except Exception:
+            return None
+
     def list_rf_taxonomies(self, kind=None, query='', limit=200):
         """Subjects for the box-editor selector."""
         try:

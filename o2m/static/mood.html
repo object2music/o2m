@@ -5379,7 +5379,7 @@ function _bxRenderDetail() {
 }
 
 // Debounced inline search (the panel keeps its own field — no modal nav).
-let _bxSubjectQ = '', _wcSubjectTimer = null;
+let _bxSubjectQ = '', _bxSubjectPath = '', _wcSubjectTimer = null;
 function _wcWireSubjectInput() {
   const inp = document.getElementById('wc-subject-input');
   if (!inp || inp.dataset.wired) return;
@@ -5459,7 +5459,11 @@ function wireDataEditor() {
     const gn = e.target.closest('[data-wc-genre]');
     if (gn) { _bxBrowseNode = 'podgenre:' + gn.dataset.wcGenre; _bxGenreName = gn.dataset.genreName; _bxRenderDetail(); return; }
     const pk = e.target.closest('[data-wc-picker]');
-    if (pk) { _bxTab = 'browse'; _bxBrowseNode = pk.dataset.wcPicker; _bxRenderDetail(); return; }
+    if (pk) { _bxTab = 'browse'; _bxBrowseNode = pk.dataset.wcPicker; _bxSubjectPath = ''; _bxSubjectQ = ''; _bxRenderDetail(); return; }
+    const sj = e.target.closest('[data-wc-subject]');
+    if (sj) { _bxSubjectPath = sj.dataset.wcSubject; _wcLoadBrowse('rfsubjects'); return; }
+    const su = e.target.closest('[data-wc-subject-up]');
+    if (su) { _bxSubjectPath = su.dataset.wcSubjectUp || ''; _wcLoadBrowse('rfsubjects'); return; }
     const pt = e.target.closest('[data-wc-pattern]');
     if (pt) {
       const k = pt.dataset.wcPattern;
@@ -5662,19 +5666,39 @@ async function _wcLoadBrowse(node) {
     return;
   }
   if (node === 'rfsubjects') {
-    // Radio France themes/tags: picking one writes 'rf:sujet:<title>', a DYNAMIC
-    // line that refills with whatever was published on that subject. There are
-    // ~1500 of them, so the list is filtered server-side rather than dumped.
-    const d = await _wcJson('/rf_subjects' + (_bxSubjectQ ? '?q=' + encodeURIComponent(_bxSubjectQ) : ''));
+    // Picking a subject writes 'rf:sujet:<title>', a DYNAMIC line that refills
+    // with whatever was published on it. Browsing walks the THEME tree (12 roots
+    // / 89 / 242) — the 1146 tags carry no path so they cannot sit in it, and a
+    // flat dump of ~1500 entries was unusable (it stopped mid-alphabet). Tags
+    // stay reachable through the filter, which searches both kinds.
+    const qs = _bxSubjectQ ? '?q=' + encodeURIComponent(_bxSubjectQ)
+                           : (_bxSubjectPath ? '?parent=' + encodeURIComponent(_bxSubjectPath) : '');
+    const d = await _wcJson('/rf_subjects' + qs);
     const items = (d && d.items) || [];
-    done(`<input class="bx-input bx-wide" type="search" id="wc-subject-input"`
-         + ` placeholder="Filter subjects (politique, cinéma…)" autocomplete="off"`
-         + ` value="${objEsc(_bxSubjectQ)}">`
-         + (items.length
-            ? _searchObjRows(_wcDirRows(items), 'podcast')
-            : `<div class="obj-empty">${_bxSubjectQ
-                 ? 'No subject matches.'
-                 : 'No Radio France subjects indexed yet (no API key, or warmup pending).'}</div>`));
+    let html = `<input class="bx-input bx-wide" type="search" id="wc-subject-input"`
+             + ` placeholder="Filter every subject (politique, cinéma…)" autocomplete="off"`
+             + ` value="${objEsc(_bxSubjectQ)}">`;
+    if (!_bxSubjectQ) {
+      if (_bxSubjectPath)
+        html += `<div class="obj-row obj-clickable" data-wc-subject-up="${objEsc(d.parent_of_current || '')}">`
+              + `<span class="bx-kind">${ICON.chevronLeft || ICON.hash}</span>`
+              + `<span class="ot-name">Back</span></div>`;
+      if (d.current)   // the branch itself is a usable subject, broader than its children
+        html += _searchObjRows(_wcDirRows([{ uri: d.current.uri, name: 'Use “' + d.current.name + '”', sub: 'theme' }]), 'podcast');
+      const leaves = items.filter(i => !i.has_children);
+      const nodes  = items.filter(i => i.has_children);
+      html += nodes.map(i =>
+          `<div class="obj-row obj-clickable" data-wc-subject="${objEsc(i.path)}">`
+        + `<span class="bx-kind">${ICON.zap}</span><span class="ot-name">${objEsc(i.name)}</span>${CHEVRON_SVG}</div>`
+      ).join('');
+      if (leaves.length) html += _searchObjRows(_wcDirRows(leaves), 'podcast');
+    } else {
+      html += items.length ? _searchObjRows(_wcDirRows(items), 'podcast')
+                           : `<div class="obj-empty">No subject matches.</div>`;
+    }
+    if (!items.length && !_bxSubjectQ)
+      html += `<div class="obj-empty">No Radio France subjects indexed yet (no API key, or warmup pending).</div>`;
+    done(html);
     _wcWireSubjectInput();
     return;
   }

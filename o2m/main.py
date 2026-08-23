@@ -573,6 +573,25 @@ if __name__ == "__main__":
         from flask import jsonify
         kind = (request.args.get('kind') or '').strip() or None
         q = (request.args.get('q') or '').strip()
+        # Browsing walks the THEME tree (12 roots / 89 / 242). Tags have no path,
+        # so they cannot be placed in it — they stay reachable through the filter,
+        # which searches both kinds.
+        if not q:
+            parent = (request.args.get('parent') or '').strip()
+            try:
+                kids = o2mHandler.dbHandler.list_rf_theme_children(parent)
+                cur = o2mHandler.dbHandler.get_rf_taxonomy_by_path(parent) if parent else None
+            except Exception as e:
+                return jsonify({'items': [], 'error': str(e)})
+            return jsonify({
+                'tree': True,
+                'current': ({'name': cur['title'], 'uri': 'rf:sujet:' + cur['title'],
+                             'path': cur['path']} if cur else None),
+                'parent_of_current': ('/'.join(parent.split('/')[:-1]) if parent else None),
+                'items': [{'name': k['title'], 'uri': 'rf:sujet:' + k['title'],
+                           'path': k['path'], 'has_children': k['has_children'],
+                           'sub': 'theme', 'image': '', 'source': 'radiofrance'}
+                          for k in kids]})
         try:
             rows = o2mHandler.dbHandler.list_rf_taxonomies(kind=kind, query=q, limit=300)
         except Exception as e:
