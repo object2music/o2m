@@ -621,14 +621,19 @@
       flex: 0 1 auto; aspect-ratio: 1 / 1; min-width: 230px;
     }
     /* In this panel the matrix is bounded by HEIGHT, not width: the square panel is
-       wide but its height is shared with the field list, the lifecycle scale and the
-       playlist picker. A pixel cap could only ever be wrong — too small on a tall
-       screen, cut off on a short one, which is why it kept showing half a matrix.
-       flex: 1 1 auto + min-height: 0 lets it take exactly the height left over, and
-       aspect-ratio derives the width from that, so it stays square and whole. */
+       wide, but its height is shared with the field list, the lifecycle scale and
+       the playlist picker.
+       It must NOT be a growing flex item: in a column, flex-grow makes the flex
+       algorithm set the height, which overrides aspect-ratio — the canvas then fell
+       back on its intrinsic attribute width and came out stretched, showing only its
+       top half. So no growth; the square is driven by WIDTH alone, with a vh term in
+       the min() so its height (= its width) can never exceed the room the panel has
+       left. Everything else follows from aspect-ratio. */
     #track-details .tp-matrix {
-      flex: 1 1 auto; min-height: 0; height: auto; width: auto;
-      max-width: 300px; align-self: center;
+      flex: 0 0 auto;
+      width: min(100%, 300px, 26vh);
+      height: auto; max-width: none;
+      margin-inline: auto;
     }
     /* Overprint keeps its poster grid: there the details column matches the cover
        square (--ovp-w) rather than the whole header. `:root[...]` is needed to
@@ -1778,8 +1783,12 @@
     html.basic .basic-toggles { grid-area: acts; height: 100%; grid-auto-rows: 1fr; }
     /* Dials stacked vertically down the left edge instead of side by side. */
     html.basic #basic-dials   { grid-area: dials; flex-direction: column; gap: 22px; }
-    .basic-toggle { padding: 22px 10px 17px; font-size: var(--t-body); gap: 11px; }
-    .basic-toggle svg { width: 36px; height: 36px; }
+    /* The actuators are tall now (grid-auto-rows: 1fr), so their content has to be
+       centred on the main axis — align-items only handles the cross one — and the
+       glyph can carry the extra room. */
+    .basic-toggle { padding: 22px 10px 17px; font-size: var(--t-body); gap: 14px;
+                    justify-content: center; }
+    .basic-toggle svg { width: 56px; height: 56px; }
     .basic-toggles { gap: 14px; }
     #basic-all { width: 86px; height: 86px; font-size: var(--t-label); }
     #basic-all svg { width: 27px; height: 27px; }
