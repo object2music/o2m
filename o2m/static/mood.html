@@ -5252,12 +5252,23 @@ function _bxDetailHtml() {
   }
   if (_bxTab === 'patterns') {
     const keys = WC_PATTERNS_BY_KIND[kind] || WC_PATTERNS_BY_KIND.hybrid;
+    // Parametric patterns can't be plain toggles (they carry a value), so they get
+    // a chip that opens their picker instead. 'rf:sujet:' is the Radio France
+    // subject box — as dynamic as the keyword patterns, hence its place here and
+    // not only under Browse, which is where it was findable before.
+    const pickers = (kind === 'podcast' || kind === 'info' || kind === 'hybrid')
+      ? [{ node: 'rfsubjects', label: 'Radio France subject…', prefix: 'rf:sujet:' }] : [];
     return `<div class="wc-panel"><div class="wc-panel-head">Smart patterns</div>`
       + `<div class="wc-hint">Dynamic sources — the box refills itself from your library instead of a fixed list.</div>`
       + `<div class="wiz-chips">` + keys.map(k => {
           const on = (_bxItems || []).some(it => it.kind === 'keyword' && it.value === k);
           return `<button type="button" class="bx-chip${on ? ' on' : ''}" data-wc-pattern="${objEsc(k)}">`
             + `${on ? ICON.check : ICON.plus}<span>${objEsc(BOX_KEYWORDS[k] || k)}</span></button>`;
+        }).join('')
+      + pickers.map(p => {
+          const n = (_bxItems || []).filter(it => it.uri && String(it.uri).startsWith(p.prefix)).length;
+          return `<button type="button" class="bx-chip${n ? ' on' : ''}" data-wc-picker="${objEsc(p.node)}">`
+            + `${ICON.zap}<span>${objEsc(p.label)}${n ? ' (' + n + ')' : ''}</span></button>`;
         }).join('') + `</div></div>`;
   }
   // browse
@@ -5304,6 +5315,25 @@ function _bxRenderDetail() {
 }
 
 // Debounced inline search (the panel keeps its own field — no modal nav).
+let _bxSubjectQ = '', _wcSubjectTimer = null;
+function _wcWireSubjectInput() {
+  const inp = document.getElementById('wc-subject-input');
+  if (!inp || inp.dataset.wired) return;
+  inp.dataset.wired = '1';
+  const run = () => { clearTimeout(_wcSubjectTimer); _wcLoadBrowse('rfsubjects'); };
+  inp.addEventListener('input', () => {
+    _bxSubjectQ = inp.value.trim();
+    clearTimeout(_wcSubjectTimer);
+    _wcSubjectTimer = setTimeout(run, 400);
+  });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); run(); }
+    else if (e.key === 'Escape') e.stopPropagation();   // don't close the modal
+  });
+  // keep the caret where the user left it across the re-render
+  try { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {}
+}
+
 function _wcWireSearchInput() {
   const inp = document.getElementById('wc-search-input');
   if (!inp || inp.dataset.wired) return;
@@ -5364,6 +5394,8 @@ function wireDataEditor() {
     }
     const gn = e.target.closest('[data-wc-genre]');
     if (gn) { _bxBrowseNode = 'podgenre:' + gn.dataset.wcGenre; _bxGenreName = gn.dataset.genreName; _bxRenderDetail(); return; }
+    const pk = e.target.closest('[data-wc-picker]');
+    if (pk) { _bxTab = 'browse'; _bxBrowseNode = pk.dataset.wcPicker; _bxRenderDetail(); return; }
     const pt = e.target.closest('[data-wc-pattern]');
     if (pt) {
       const k = pt.dataset.wcPattern;
@@ -5567,10 +5599,19 @@ async function _wcLoadBrowse(node) {
   }
   if (node === 'rfsubjects') {
     // Radio France themes/tags: picking one writes 'rf:sujet:<title>', a DYNAMIC
-    // line that refills with whatever was published on that subject.
-    const d = await _wcJson('/rf_subjects');
-    done(rowsOr(_wcDirRows((d && d.items) || []), 'podcast',
-                'No Radio France subjects indexed yet (no API key, or warmup pending).'));
+    // line that refills with whatever was published on that subject. There are
+    // ~1500 of them, so the list is filtered server-side rather than dumped.
+    const d = await _wcJson('/rf_subjects' + (_bxSubjectQ ? '?q=' + encodeURIComponent(_bxSubjectQ) : ''));
+    const items = (d && d.items) || [];
+    done(`<input class="bx-input bx-wide" type="search" id="wc-subject-input"`
+         + ` placeholder="Filter subjects (politique, cinéma…)" autocomplete="off"`
+         + ` value="${objEsc(_bxSubjectQ)}">`
+         + (items.length
+            ? _searchObjRows(_wcDirRows(items), 'podcast')
+            : `<div class="obj-empty">${_bxSubjectQ
+                 ? 'No subject matches.'
+                 : 'No Radio France subjects indexed yet (no API key, or warmup pending).'}</div>`));
+    _wcWireSubjectInput();
     return;
   }
   if (node === 'podchannels') {
