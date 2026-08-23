@@ -124,7 +124,11 @@
   }
   var ACTUATORS = {
     /* tête de note pleine (la seule masse du jeu) + hampe */
-    music:   dot(8.4, 17.6, 4.3) + '<path d="M12.7 17.6V2.6"/>',
+    /* La hampe part de x=11.9 (et non 12.7, le bord exact du cercle) et s'arrête à
+       y=17 : son bout arrondi de 1,4 d'épaisseur reste ainsi DANS la tête de note.
+       À 12.7/17.6 il dépassait en bas à droite — tout point à x=12.7 hors du centre
+       est déjà hors du cercle. À remonter dans le design system. */
+    music:   dot(8.4, 17.6, 4.3) + '<path d="M11.9 17V2.6"/>',
     /* capsule + dôme d'écoute */
     podcast: '<rect x="9.4" y="2.2" width="5.2" height="11.2" rx="2.6"/>' +
              '<path d="M4.6 11.6a7.4 7.4 0 0 0 14.8 0"/>',

@@ -1784,11 +1784,17 @@
 
     html.basic #basic-section {
       flex: 1 1 auto; max-width: none; margin: 0; padding: 20px 28px 24px;
-      display: grid; gap: 18px 34px;
+      display: grid; gap: 14px 34px;
       grid-template-columns: auto minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr);
-      grid-template-areas: "dials status" "dials acts";
-      align-items: center;
+      grid-template-rows: auto auto;
+      /* Dials and actuators share row 2, so their tops and bottoms line up: the
+         dashboard now starts at OPENING LEVEL and ends with the MOOD block instead
+         of running past it. The status line keeps its own row above the actuators.
+         align-items: stretch makes both fill that row; align-content centres the
+         whole grid in the section, which is taller than it. */
+      grid-template-areas: ".     status"
+                           "dials acts";
+      align-items: stretch; align-content: center;
     }
     html.basic #basic-status  { grid-area: status; }
     /* The dashboard takes the height the dials no longer eat: its row is the 1fr
@@ -1799,9 +1805,9 @@
     /* The actuators are tall now (grid-auto-rows: 1fr), so their content has to be
        centred on the main axis — align-items only handles the cross one — and the
        glyph can carry the extra room. */
-    .basic-toggle { padding: 22px 10px 17px; font-size: var(--t-body); gap: 14px;
+    .basic-toggle { padding: 14px 10px 12px; font-size: var(--t-body); gap: 12px;
                     justify-content: center; }
-    .basic-toggle svg { width: 56px; height: 56px; }
+    .basic-toggle svg { width: 44px; height: 44px; }
     .basic-toggles { gap: 14px; }
     #basic-all { width: 86px; height: 86px; font-size: var(--t-label); }
     #basic-all svg { width: 27px; height: 27px; }
