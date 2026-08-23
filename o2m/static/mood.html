@@ -1529,6 +1529,12 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .obj-row .ot-dur { font-family: var(--font-mono); font-size: var(--t-label); color: var(--muted);
     flex-shrink: 0; }
+  .obj-row .ot-name.rf-pick { cursor: copy; }
+  .obj-row .ot-name.rf-pick:hover { color: var(--accent); }
+  .obj-row .ot-name.rf-pick.picked { color: var(--accent); }
+  .obj-row .rf-into { background: none; border: 0; padding: 2px 4px; cursor: pointer;
+    color: var(--muted); display: inline-flex; align-items: center; }
+  .obj-row .rf-into:hover { color: var(--accent); }
   .obj-row.obj-clickable { cursor: pointer; }
   .obj-row.obj-clickable:hover { background: var(--card); }
   .obj-row.obj-clickable:hover .ot-name { color: var(--accent); }
@@ -5482,6 +5488,11 @@ function wireDataEditor() {
     if (gn) { _bxBrowseNode = 'podgenre:' + gn.dataset.wcGenre; _bxGenreName = gn.dataset.genreName; _bxRenderDetail(); return; }
     const pk = e.target.closest('[data-wc-picker]');
     if (pk) { _bxTab = 'browse'; _bxBrowseNode = pk.dataset.wcPicker; _bxSubjectPath = ''; _bxSubjectQ = ''; _bxRenderDetail(); return; }
+    const pikc = e.target.closest('[data-wc-pick]');
+    if (pikc) {
+      if (_wcAdd(pikc.dataset.wcPick, (pikc.dataset.name || '').trim())) pikc.classList.add('picked');
+      return;
+    }
     const sj = e.target.closest('[data-wc-subject]');
     if (sj) { _bxSubjectPath = sj.dataset.wcSubject; _wcLoadBrowse('rfsubjects'); return; }
     const su = e.target.closest('[data-wc-subject-up]');
@@ -5701,19 +5712,30 @@ async function _wcLoadBrowse(node) {
              + ` placeholder="Filter every subject (politique, cinéma…)" autocomplete="off"`
              + ` value="${objEsc(_bxSubjectQ)}">`;
     if (!_bxSubjectQ) {
+      // Two distinct actions per theme, both explicit: the NAME adds the theme to
+      // the box, the CHEVRON opens its sub-themes. Making the whole row navigate
+      // (the first cut) meant a broad theme like "Politique" could not be picked
+      // at all without drilling in, and nothing said the row was a door.
+      const crumb = (d.current ? d.current.name : 'All themes');
+      html += `<div class="wc-hint">${objEsc(crumb)} — tap a name to add it, ${'\u203A'} to open its sub-themes.</div>`;
       if (_bxSubjectPath)
         html += `<div class="obj-row obj-clickable" data-wc-subject-up="${objEsc(d.parent_of_current || '')}">`
-              + `<span class="bx-kind">${ICON.chevronLeft || ICON.hash}</span>`
-              + `<span class="ot-name">Back</span></div>`;
+              + `<span class="bx-kind">${ICON.hash}</span>`
+              + `<span class="ot-name">← Back</span></div>`;
       if (d.current)   // the branch itself is a usable subject, broader than its children
-        html += _searchObjRows(_wcDirRows([{ uri: d.current.uri, name: 'Use “' + d.current.name + '”', sub: 'theme' }]), 'podcast');
-      const leaves = items.filter(i => !i.has_children);
-      const nodes  = items.filter(i => i.has_children);
-      html += nodes.map(i =>
-          `<div class="obj-row obj-clickable" data-wc-subject="${objEsc(i.path)}">`
-        + `<span class="bx-kind">${ICON.zap}</span><span class="ot-name">${objEsc(i.name)}</span>${CHEVRON_SVG}</div>`
+        html += `<div class="obj-row"><span class="bx-kind">${ICON.zap}</span>`
+              + `<span class="ot-name rf-pick" data-wc-pick="${objEsc(d.current.uri)}"`
+              + ` data-name="${objEsc(d.current.name)}">Add “${objEsc(d.current.name)}” itself</span></div>`;
+      html += items.map(i =>
+          `<div class="obj-row"><span class="bx-kind">${ICON.zap}</span>`
+        + `<span class="ot-name rf-pick" data-wc-pick="${objEsc(i.uri)}" data-name="${objEsc(i.name)}">`
+        + `${objEsc(i.name)}</span>`
+        + (i.has_children
+            ? `<button type="button" class="rf-into" data-wc-subject="${objEsc(i.path)}"`
+              + ` title="Open sub-themes">${CHEVRON_SVG}</button>`
+            : '')
+        + `</div>`
       ).join('');
-      if (leaves.length) html += _searchObjRows(_wcDirRows(leaves), 'podcast');
     } else {
       html += items.length ? _searchObjRows(_wcDirRows(items), 'podcast')
                            : `<div class="obj-empty">No subject matches.</div>`;
