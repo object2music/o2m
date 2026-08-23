@@ -366,6 +366,11 @@ class O2mToMopidy:
                 if max_results is None:
                     max_results = self.max_results
                     if box.option_max_results: max_results = box.option_max_results
+                elif box.option_max_results:
+                    # A caller-supplied budget (meta_fill's per-box share) used to bypass
+                    # the box's own Max results entirely, so the editor field had no
+                    # effect in auto mode. Honour it as a ceiling on the share.
+                    max_results = min(max_results, box.option_max_results)
                     #print (f"Max results : {max_results}")
                 
                 prev_tl_length = self.mopidyHandler.tracklist.get_length()
@@ -1120,6 +1125,17 @@ class O2mToMopidy:
             data = [x for x in data if not x.startswith('\r')]
             data = [x.replace('\r', '') for x in data]
 
+            # Podcast feeds share the box's budget instead of each taking all of it.
+            # Without this, every 'podcast+' line was handed the SAME max_results, so
+            # a long feed (Banzaii, 24 episodes) flooded the tracklist while a short
+            # one (Very good trip, 6 published) contributed a fraction — the mix was
+            # driven by feed length, not by any intent. Same rolling-budget rule as
+            # meta_fill uses across boxes: an equal share each, and the shortfall of a
+            # thin feed rolls forward to the ones processed after it.
+            _pod_feeds = [x for x in data if 'podcast+' in x and '#' not in x]
+            _pod_left = len(_pod_feeds)
+            _pod_budget = max_results
+
             for content in data:
                 #Other box called (cascade include)
                 if "box:" in content :
@@ -1298,8 +1314,11 @@ class O2mToMopidy:
                 elif "podcast+" in content and "#" not in content:
                     print(f"Podcast channel : {content}")
                     self.update_stat_raw(content)
-                    #self.add_podcast_from_channel(box,content,max_results)
-                    tracklist_uris.append(self.add_podcast_from_channel(box,content,max_results))
+                    _share = max(1, round(_pod_budget / _pod_left)) if _pod_left > 0 else max_results
+                    _got = self.add_podcast_from_channel(box, content, _share)
+                    _pod_left = max(0, _pod_left - 1)
+                    _pod_budget = max(0, _pod_budget - len(_got or []))
+                    tracklist_uris.append(_got)
                     # On doit rechercher un index de dernier épisode lu dans une bdd de statistiques puis lancer les épisodes non lus
                     # tracklist_uris += self.get_unread_podcasts(shows)
 
@@ -1400,7 +1419,10 @@ class O2mToMopidy:
         #parsing url ?
         par = parse.parse_qs(parse.urlparse(feedurl).query)
         print(f"par : {par} and uri : {uri}")
-        if 'max_results' in par : max_results_pod = int(par['max_results'][0])
+        # '?max_results=N' on the feed is a CEILING combined with the share the box
+        # allocated — it used to REPLACE it, which let one feed ignore the budget
+        # entirely (and silently defeated meta_fill's equal split in auto mode).
+        if 'max_results' in par : max_results_pod = min(int(par['max_results'][0]), max_results)
         else : max_results_pod = max_results
         #volume=parse.parse_qs(parse.urlparse(feedurl).query)['volume'][0]
 
