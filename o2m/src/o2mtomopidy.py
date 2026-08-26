@@ -1600,7 +1600,8 @@ class O2mToMopidy:
             return ready
         if not self.rf_enabled():
             return []
-        eps = rf.episodes_of_show(self._rf_api_key, show_url, first=max(max_results * 2, 20))
+        eps = self._rf_convert(
+            rf.episodes_of_show(self._rf_api_key, show_url, first=max(max_results * 2, 20)))
         for e in eps:
             self._remember_rf_published(e)
         return self._unread_spoken_uris([e['uri'] for e in eps])[:max_results]
@@ -1678,7 +1679,7 @@ class O2mToMopidy:
             results = [_one(t) for t in targets]
         seen, uris = set(), []
         for batch in results:
-            for ep in batch:
+            for ep in self._rf_convert(batch):
                 if ep['uri'] not in seen:
                     seen.add(ep['uri'])
                     uris.append(ep['uri'])
@@ -1712,6 +1713,7 @@ class O2mToMopidy:
 
     def warmup_podcast_catalogue(self, purge_days=365):
         """Refresh the episodes of every referenced source. Never raises."""
+        self._rf_feed_keys = {}   # re-read each feed once per run, not stale ones
         feeds, shows, subjects = self._boxes_podcast_sources()
         total = 0
         for feed in feeds:
@@ -1736,10 +1738,11 @@ class O2mToMopidy:
         if self.rf_enabled():
             for url in shows:
                 try:
-                    eps = rf.episodes_of_show(self._rf_api_key, url, first=40)
+                    eps = self._rf_convert(rf.episodes_of_show(self._rf_api_key, url, first=40))
                     if eps:
                         self.dbHandler.upsert_podcast_channel(
-                            url, 'rf', title=eps[0].get('show_title', ''), url=url)
+                            url, 'rf', title=eps[0].get('show_title', ''), url=url,
+                            feed_url=self._rf_feed_for_show(url))
                         self.dbHandler.upsert_episodes(eps, channel_id=url, dedup=True)
                         total += len(eps)
                 except Exception as e:
@@ -1788,13 +1791,13 @@ class O2mToMopidy:
         except Exception:
             return ''
 
-    def _feed_pubdates(self, feed_url):
-        """guid -> (day, episode_key) from a feed's own XML. mopidy exposes the
-        date only once a track is added to the tracklist, far too late for the
-        catalogue — and it never exposes the <link>, which carries Radio France's
-        episode id and is what pairs a feed item with the same episode served by
-        the API."""
-        out = {}
+    def _feed_index(self, feed_url):
+        """Parse a feed once into what the catalogue needs:
+          guid -> (day, page_key)   and   page_key -> guid
+        mopidy exposes neither the date nor the <link> from a browse Ref, and the
+        <link> carries Radio France's episode id — the only exact join between a
+        feed item and the same episode served by the API."""
+        by_guid, by_key = {}, {}
         try:
             import email.utils, urllib.request as _u
             raw = _u.urlopen(_u.Request(feed_url, headers={'User-Agent': 'o2m/1.0'}),
@@ -1805,6 +1808,7 @@ class O2mToMopidy:
                 lk = re.search(r'<link>([^<]+)</link>', item)
                 if not g:
                     continue
+                guid = g.group(1).strip()
                 day = ''
                 if d:
                     try:
@@ -1812,10 +1816,68 @@ class O2mToMopidy:
                             d.group(1).strip()).strftime('%Y-%m-%d')
                     except Exception:
                         day = ''
-                out[g.group(1).strip()] = (day, rf.episode_key(lk.group(1) if lk else ''))
+                pkey = rf.episode_key(lk.group(1) if lk else '')
+                by_guid[guid] = (day, pkey)
+                if pkey:
+                    by_key[pkey] = guid
         except Exception as e:
-            print(f"_feed_pubdates({feed_url}): {e}")
-        return out
+            print(f"_feed_index({feed_url}): {e}")
+        return by_guid, by_key
+
+    def _feed_pubdates(self, feed_url):
+        return self._feed_index(feed_url)[0]
+
+    def _rf_feed_for_show(self, show_url):
+        """Cached feed of a show; discovered from its page the first time."""
+        if not show_url:
+            return ''
+        feed = self.dbHandler.get_channel_feed(show_url)
+        if feed:
+            return feed
+        feed = rf.discover_feed(show_url)
+        if feed:
+            self.dbHandler.upsert_podcast_channel(show_url, 'rf', url=show_url, feed_url=feed)
+        return feed
+
+    def _rf_as_podcast_uri(self, ep):
+        """A Radio France episode expressed the way every other podcast is:
+        'podcast+<feed>#<guid>'.
+
+        Both sources describe the same broadcast but ship different audio files
+        (their ITEMA ids differ), so they used to produce two unrelated Track
+        rows for one episode — split history, and a pile of special cases for the
+        bare mp3 form. They do agree on the episode PAGE, whose id joins them
+        exactly. Returns '' when the show has no discoverable feed or the episode
+        is not in it yet (just published): the mp3 url is then kept as a fallback.
+        """
+        try:
+            key = ep.get('key')
+            show = ep.get('show_url')
+            if not key or not show:
+                return ''
+            feed = self._rf_feed_for_show(show)
+            if not feed:
+                return ''
+            cache = getattr(self, '_rf_feed_keys', None)
+            if cache is None:
+                cache = self._rf_feed_keys = {}
+            if feed not in cache:
+                cache[feed] = self._feed_index(feed)[1]
+            guid = cache[feed].get(str(key))
+            return f"podcast+{feed}#{guid}" if guid else ''
+        except Exception as e:
+            print(f"_rf_as_podcast_uri: {e}")
+            return ''
+
+    def _rf_convert(self, episodes):
+        """Swap in the podcast+ form wherever it exists. Idempotent."""
+        for ep in episodes or []:
+            if not ep or not (ep.get('uri') or '').startswith('http'):
+                continue
+            alt = self._rf_as_podcast_uri(ep)
+            if alt:
+                ep['uri'] = alt
+        return episodes
 
     def _warm_subject(self, subject):
         """Cache one subject's recent episodes, with their show and their subjects
@@ -1825,10 +1887,11 @@ class O2mToMopidy:
             return 0
         n = 0
         for station in self.rf_stations():
-            for ep in rf.diffusions(self._rf_api_key, station,
-                                    themes=f['themes'], tags=f['tags'],
-                                    subthemes=f['subthemes'], subsubthemes=f['subsubthemes'],
-                                    days=rf.MAX_WINDOW_DAYS, first=50):
+            for ep in self._rf_convert(rf.diffusions(
+                    self._rf_api_key, station,
+                    themes=f['themes'], tags=f['tags'],
+                    subthemes=f['subthemes'], subsubthemes=f['subsubthemes'],
+                    days=rf.MAX_WINDOW_DAYS, first=50)):
                 cid = ep.get('show_url') or ''
                 if cid:
                     self.dbHandler.upsert_podcast_channel(

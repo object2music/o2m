@@ -384,6 +384,10 @@ class PodcastChannel(BaseModel):
     title      = TextField(null=True)
     title_norm = CharField(null=True, index=True)
     url        = TextField(null=True)               # feed url, or the RF show page
+    # The RSS feed backing this channel. For 'rss' it is the id itself; for 'rf'
+    # it is discovered from the show page, and is what lets an API episode be
+    # served as a normal 'podcast+<feed>#<guid>' uri.
+    feed_url   = TextField(null=True)
     station    = CharField(null=True)
     image_url  = TextField(null=True)
     cached_at  = TimestampField(null=True, utc=True)
@@ -568,6 +572,10 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v20(migrator):
+    _add_column_safe(migrator, 'podcastchannel', 'feed_url', TextField(null=True))
+
+
 def _migration_v19(migrator):
     _add_column_safe(migrator, 'track', 'episode_key', CharField(null=True))
 
@@ -593,7 +601,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -615,6 +623,7 @@ _MIGRATIONS = [
     (17, "track_published_at_column", _migration_v17),
     (18, "podcast_channel_episode_taxonomy", _migration_v18),
     (19, "track_episode_key_column", _migration_v19),
+    (20, "podcastchannel_feed_url_column", _migration_v20),
 ]
 
 

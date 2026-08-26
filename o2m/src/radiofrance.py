@@ -169,6 +169,35 @@ def show_row(node, station=None):
     }
 
 
+_FEED_RE = re.compile(r'https?://[^"\']*radiofrance-podcast\.net/[^"\']*\.xml')
+
+
+def discover_feed(show_url, timeout=None):
+    """The RSS feed of a Radio France show, read from its own page.
+
+    The OpenAPI exposes a `podcast { rss }` field but it faults server-side for
+    essentially every show, so the page is the only source. No API key needed.
+    This is what lets an API episode be expressed as 'podcast+<feed>#<guid>' —
+    the same shape as every other podcast in the app — instead of a bare mp3
+    link needing its own special cases everywhere.
+    """
+    if not show_url:
+        return ''
+
+    def fetch():
+        try:
+            r = requests.get(show_url, timeout=timeout or TIMEOUT,
+                             headers={'User-Agent': USER_AGENT})
+            r.raise_for_status()
+            m = _FEED_RE.search(r.text)
+            return m.group(0) if m else ''
+        except Exception as e:
+            log.error(f'discover_feed({show_url}): {e}')
+            return ''
+
+    return _cached('rffeed:' + show_url, fetch, _TTL_SHOWS) or ''
+
+
 def episode_key(page_url):
     """Radio France's own id for an episode, taken from its page URL.
 

@@ -436,22 +436,30 @@ class DatabaseHandler():
 
     # ── Podcast catalogue (channels + episodes-as-tracks + subject pivot) ──
 
-    def upsert_podcast_channel(self, cid, kind, title='', url='', station='', image_url=''):
+    def upsert_podcast_channel(self, cid, kind, title='', url='', station='', image_url='', feed_url=''):
         """Register a podcast source (RSS feed or Radio France show)."""
         if not cid:
             return
+        feed_url = feed_url or (cid if kind == 'rss' else '')
+        # Only overwrite feed_url when we actually have one: a show's feed is
+        # discovered once, and the plain per-episode upserts that follow must not
+        # wipe it back to empty.
+        preserve = [PodcastChannel.title, PodcastChannel.title_norm,
+                    PodcastChannel.url, PodcastChannel.station,
+                    PodcastChannel.image_url, PodcastChannel.kind,
+                    PodcastChannel.cached_at]
+        if feed_url:
+            preserve.append(PodcastChannel.feed_url)
         try:
             PodcastChannel.insert({
                 'id': cid, 'kind': kind, 'title': title or '',
                 'title_norm': _normalize_genre(title or '')[:255],
                 'url': url or '', 'station': station or '', 'image_url': image_url or '',
+                'feed_url': feed_url,
                 'cached_at': datetime.datetime.utcnow(),
             }).on_conflict(action='update',
                            update={PodcastChannel.title: title or ''},
-                           preserve=[PodcastChannel.title, PodcastChannel.title_norm,
-                                     PodcastChannel.url, PodcastChannel.station,
-                                     PodcastChannel.image_url, PodcastChannel.kind,
-                                     PodcastChannel.cached_at]).execute()
+                           preserve=preserve).execute()
         except Exception as e:
             print(f"upsert_podcast_channel error: {e}")
 
@@ -1885,6 +1893,14 @@ class DatabaseHandler():
             except Exception as e:
                 print(f"upsert_rf_taxonomies error: {e}")
         return saved
+
+    def get_channel_feed(self, cid):
+        """The feed backing a channel, if known."""
+        try:
+            ch = PodcastChannel.get_or_none(PodcastChannel.id == cid)
+            return (ch.feed_url or '') if ch else ''
+        except Exception:
+            return ''
 
     def count_rf_shows(self):
         try:
