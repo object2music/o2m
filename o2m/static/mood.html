@@ -3614,8 +3614,21 @@ const TRACK_PANEL_ROWS = [
    ids come from the panel (cellId/canvasId/…) so the now-playing column and the
    modal render byte-for-byte the same content; only the container skin (listClass)
    and the optional hero differ per context. */
+// Spoken content — an RSS podcast, a YouTube item, or a Radio France episode.
+// Mirrors O2mToMopidy._is_spoken_uri: Radio France episodes are plain https mp3
+// links with no 'podcast+' marker, so their hosts have to be named.
+const _SPOKEN_URI_RE = /podcast\+|youtube:video|(?:^|:)yt:|proxycast\.radiofrance\.fr|radiofrance-podcast\.net/i;
+function _isSpokenUri(u) {
+  return typeof u === 'string' && _SPOKEN_URI_RE.test(u);
+}
 function _isStreamUri(u) {
-  return typeof u === 'string' && (/^https?:/.test(u) || u.startsWith('tunein:'));
+  // A downloadable episode is NOT a live stream: it has a real title, a real
+  // status and real stats. Testing http(s) alone made every Radio France episode
+  // render as a radio — station name in the header, "Source: Radio" in the
+  // details, artist/album inert — instead of the podcast it is.
+  return typeof u === 'string'
+      && (/^https?:/.test(u) || u.startsWith('tunein:'))
+      && !_isSpokenUri(u);
 }
 // Radios: overlay the LIVE now-playing title/artist (from /api/radio_now_playing —
 // FIP livemeta or ICY stream title) into the header, in place of the stream's own
