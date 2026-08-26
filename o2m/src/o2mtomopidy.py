@@ -1718,7 +1718,15 @@ class O2mToMopidy:
             try:
                 items = self.get_podcast_from_url(feed)
                 self.dbHandler.upsert_podcast_channel(feed, 'rss', url=feed)
-                eps = [{'uri': it.uri, 'name': getattr(it, 'name', '')} for it in items]
+                # mopidy's Refs give a uri and a title but no date, and the date is
+                # both what the Details panel shows and what makes an episode
+                # identifiable across sources — so read it from the feed itself.
+                dates = self._feed_pubdates(feed)
+                eps = []
+                for it in items:
+                    guid = (it.uri or '').split('#', 1)[-1]
+                    eps.append({'uri': it.uri, 'name': getattr(it, 'name', ''),
+                                'day': dates.get(guid, '')})
                 total += self.dbHandler.upsert_episodes(eps, channel_id=feed,
                                                         option_type=self._spoken_type_for_uri(feed))
             except Exception as e:
@@ -1730,7 +1738,7 @@ class O2mToMopidy:
                     if eps:
                         self.dbHandler.upsert_podcast_channel(
                             url, 'rf', title=eps[0].get('show_title', ''), url=url)
-                        self.dbHandler.upsert_episodes(eps, channel_id=url)
+                        self.dbHandler.upsert_episodes(eps, channel_id=url, dedup=True)
                         total += len(eps)
                 except Exception as e:
                     print(f"warmup_podcast_catalogue(show {url}): {e}")
@@ -1767,6 +1775,29 @@ class O2mToMopidy:
         except Exception:
             return False
 
+    def _feed_pubdates(self, feed_url):
+        """guid -> 'YYYY-MM-DD' from a feed's own XML. mopidy exposes the date only
+        once a track is added to the tracklist, which is far too late for the
+        catalogue."""
+        out = {}
+        try:
+            import email.utils, urllib.request as _u
+            raw = _u.urlopen(_u.Request(feed_url, headers={'User-Agent': 'o2m/1.0'}),
+                             timeout=15).read().decode('utf-8', 'ignore')
+            for item in re.findall(r'<item>(.*?)</item>', raw, re.S):
+                g = re.search(r'<guid[^>]*>([^<]+)</guid>', item)
+                d = re.search(r'<pubDate>([^<]+)</pubDate>', item)
+                if not g or not d:
+                    continue
+                try:
+                    out[g.group(1).strip()] = email.utils.parsedate_to_datetime(
+                        d.group(1).strip()).strftime('%Y-%m-%d')
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"_feed_pubdates({feed_url}): {e}")
+        return out
+
     def _warm_subject(self, subject):
         """Cache one subject's recent episodes, with their show and their subjects
         — the pivot is what lets the fill answer 'rf:sujet:' from the DB."""
@@ -1783,7 +1814,7 @@ class O2mToMopidy:
                 if cid:
                     self.dbHandler.upsert_podcast_channel(
                         cid, 'rf', title=ep.get('show_title', ''), url=cid, station=station)
-                self.dbHandler.upsert_episodes([ep], channel_id=cid or None)
+                self.dbHandler.upsert_episodes([ep], channel_id=cid or None, dedup=True)
                 n += 1
         return n
 

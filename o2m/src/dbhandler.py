@@ -455,7 +455,26 @@ class DatabaseHandler():
         except Exception as e:
             print(f"upsert_podcast_channel error: {e}")
 
-    def upsert_episodes(self, episodes, channel_id=None, option_type='podcast'):
+    def find_episode_twin(self, name, day):
+        """An episode already stored under ANOTHER uri.
+
+        The same broadcast reaches us twice — once as an RSS item, once as a
+        Radio France API episode — under two unrelated uris and two different
+        audio files (their internal ITEMA ids differ, so there is no shared key
+        to join on). Title + publication date is the only reliable pairing, and
+        it is required to be exact and unambiguous: a wrong merge would fuse two
+        distinct episodes and lose one's history."""
+        n = _re.sub(r'\s+', ' ', (name or '').strip()).lower()
+        if not n or not day:
+            return None
+        try:
+            rows = [t for t in Track.select().where(Track.published_at == day)
+                    if _re.sub(r'\s+', ' ', (t.name or '').strip()).lower() == n]
+            return rows[0].uri if len(rows) == 1 else None
+        except Exception:
+            return None
+
+    def upsert_episodes(self, episodes, channel_id=None, option_type='podcast', dedup=False):
         """Store episodes as Track rows — the catalogue and the stats share that
         table by design. Existing rows keep their listening history: only the
         descriptive columns are filled, and never overwritten once set."""
@@ -466,6 +485,14 @@ class DatabaseHandler():
                 continue
             try:
                 uri = self.podcast_uri_remove_max_results(uri)
+                if dedup and not self.stat_exists(uri):
+                    twin = self.find_episode_twin(ep.get('name'), ep.get('day'))
+                    if twin:
+                        # Already known through the other source: keep that row and its
+                        # history rather than opening a second one for the same episode.
+                        if ep.get('taxonomies'):
+                            self.link_episode_taxonomies(twin, ep['taxonomies'])
+                        continue
                 if not self.stat_exists(uri):
                     self.create_stat(uri)
                 upd = {}
