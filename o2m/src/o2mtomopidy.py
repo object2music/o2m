@@ -1592,7 +1592,13 @@ class O2mToMopidy:
     def rf_show_episodes(self, show_url, max_results=15):
         """Latest unheard episodes of an RF show — the RSS-less equivalent of
         add_podcast_from_channel (RF's Show.podcast{rss} faults server-side)."""
-        if not self.rf_enabled() or not show_url:
+        if not show_url:
+            return []
+        cached = self.dbHandler.get_episodes_by_channel(show_url, limit=max(max_results * 3, 30))
+        ready = self._unread_spoken_uris(cached)[:max_results]
+        if ready or self._podcast_cache_fresh():
+            return ready
+        if not self.rf_enabled():
             return []
         eps = rf.episodes_of_show(self._rf_api_key, show_url, first=max(max_results * 2, 20))
         for e in eps:
@@ -1645,6 +1651,14 @@ class O2mToMopidy:
         if not any(f.values()):
             print(f"rf:sujet: no Radio France subject matches {keyword!r}")
             return []
+        # Cache first: the warmup keeps these episodes fresh, and reading them
+        # locally is what makes activation instant AND repeatable — querying live
+        # meant losing a few subjects to timeouts on every cold fill.
+        cached = self.dbHandler.get_episodes_by_taxonomy(
+            [i for v in f.values() for i in v], limit=max(max_results * 3, 30))
+        ready = self._unread_spoken_uris(cached)[:max_results]
+        if ready or self._podcast_cache_fresh():
+            return ready
         import concurrent.futures as _cf
         targets = list(stations or self.rf_stations())
         def _one(station):
@@ -1670,6 +1684,108 @@ class O2mToMopidy:
                     uris.append(ep['uri'])
                     self._remember_rf_published(ep)
         return self._unread_spoken_uris(uris)[:max_results]
+
+    # ── Podcast catalogue warmup ──────────────────────────────────────────
+    # Box activation used to query Radio France live, once per subject per
+    # station. That made it slow AND unstable: on a cold cache a burst of ~28
+    # requests routinely lost several to timeouts, so the same box yielded
+    # anywhere from 7 to 30 episodes. The catalogue is refreshed in the
+    # background instead, and filling reads the DB.
+
+    def _boxes_podcast_sources(self):
+        """What the boxes actually reference: RSS feeds, RF shows, RF subjects.
+        Scoped to referenced sources on purpose — the point is to preload what
+        this install listens to, not to mirror Radio France."""
+        feeds, shows, subjects = set(), set(), set()
+        for b in Box.select():
+            for raw in (b.data or '').splitlines():
+                line = raw.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if line.startswith('podcast+'):
+                    feeds.add(re.sub(r'[?&]max_results=\d+', '', line.split('+', 1)[1]).strip())
+                elif line.startswith('rf:show:'):
+                    shows.add(line[len('rf:show:'):].strip())
+                elif line.startswith(('rf:sujet:', 'rf:subject:')):
+                    subjects.add(line.split(':', 2)[2].partition('@')[0].strip())
+        return feeds, shows, subjects
+
+    def warmup_podcast_catalogue(self, purge_days=365):
+        """Refresh the episodes of every referenced source. Never raises."""
+        feeds, shows, subjects = self._boxes_podcast_sources()
+        total = 0
+        for feed in feeds:
+            try:
+                items = self.get_podcast_from_url(feed)
+                self.dbHandler.upsert_podcast_channel(feed, 'rss', url=feed)
+                eps = [{'uri': it.uri, 'name': getattr(it, 'name', '')} for it in items]
+                total += self.dbHandler.upsert_episodes(eps, channel_id=feed,
+                                                        option_type=self._spoken_type_for_uri(feed))
+            except Exception as e:
+                print(f"warmup_podcast_catalogue(feed {feed}): {e}")
+        if self.rf_enabled():
+            for url in shows:
+                try:
+                    eps = rf.episodes_of_show(self._rf_api_key, url, first=40)
+                    if eps:
+                        self.dbHandler.upsert_podcast_channel(
+                            url, 'rf', title=eps[0].get('show_title', ''), url=url)
+                        self.dbHandler.upsert_episodes(eps, channel_id=url)
+                        total += len(eps)
+                except Exception as e:
+                    print(f"warmup_podcast_catalogue(show {url}): {e}")
+            for subject in subjects:
+                try:
+                    total += self._warm_subject(subject)
+                except Exception as e:
+                    print(f"warmup_podcast_catalogue(subject {subject}): {e}")
+        try:
+            self.dbHandler.set_cache_meta('warmup_podcasts_at', 1)
+        except Exception:
+            pass
+        try:
+            self.dbHandler.purge_old_episodes(purge_days)
+        except Exception as e:
+            print(f"warmup_podcast_catalogue(purge): {e}")
+        print(f"warmup_podcast_catalogue: {total} episodes refreshed "
+              f"({len(feeds)} feeds, {len(shows)} shows, {len(subjects)} subjects)")
+        return total
+
+    def _podcast_cache_fresh(self, hours=6):
+        """True while the catalogue warmup is recent enough to be believed —
+        INCLUDING when it holds nothing for a subject. Without this the fill
+        cannot tell 'not cached yet' from 'cached, and there is genuinely
+        nothing this week', and re-queries the API for every empty subject —
+        which is most of them, and exactly what made activation slow."""
+        try:
+            _v, at = self.dbHandler.get_cache_meta('warmup_podcasts_at')
+            if not at:
+                return False
+            if isinstance(at, (int, float)):
+                at = datetime.datetime.utcfromtimestamp(at)
+            return (datetime.datetime.utcnow() - at).total_seconds() < hours * 3600
+        except Exception:
+            return False
+
+    def _warm_subject(self, subject):
+        """Cache one subject's recent episodes, with their show and their subjects
+        — the pivot is what lets the fill answer 'rf:sujet:' from the DB."""
+        f = self.rf_taxonomy_ids(subject)
+        if not any(f.values()):
+            return 0
+        n = 0
+        for station in self.rf_stations():
+            for ep in rf.diffusions(self._rf_api_key, station,
+                                    themes=f['themes'], tags=f['tags'],
+                                    subthemes=f['subthemes'], subsubthemes=f['subsubthemes'],
+                                    days=rf.MAX_WINDOW_DAYS, first=50):
+                cid = ep.get('show_url') or ''
+                if cid:
+                    self.dbHandler.upsert_podcast_channel(
+                        cid, 'rf', title=ep.get('show_title', ''), url=cid, station=station)
+                self.dbHandler.upsert_episodes([ep], channel_id=cid or None)
+                n += 1
+        return n
 
     _RF_WARMUP_TTL = {'rf_shows': 7, 'rf_taxonomies': 30}   # days
 

@@ -12,7 +12,7 @@ from src.o2mmodels import (
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
-    RfShow, RfTaxonomy,
+    RfShow, RfTaxonomy, PodcastChannel, EpisodeTaxonomy,
     setup_database,
 )
 
@@ -425,6 +425,126 @@ class DatabaseHandler():
         deleted = Stats_Raw.delete().where(Stats_Raw.read_date >= start_of_day).execute()
         print(f"clear_today_stats_raw: {deleted} rows deleted (since {start_of_day.isoformat()})")
         return deleted
+
+    # ── Podcast catalogue (channels + episodes-as-tracks + subject pivot) ──
+
+    def upsert_podcast_channel(self, cid, kind, title='', url='', station='', image_url=''):
+        """Register a podcast source (RSS feed or Radio France show)."""
+        if not cid:
+            return
+        try:
+            PodcastChannel.insert({
+                'id': cid, 'kind': kind, 'title': title or '',
+                'title_norm': _normalize_genre(title or '')[:255],
+                'url': url or '', 'station': station or '', 'image_url': image_url or '',
+                'cached_at': datetime.datetime.utcnow(),
+            }).on_conflict(action='update',
+                           update={PodcastChannel.title: title or ''},
+                           preserve=[PodcastChannel.title, PodcastChannel.title_norm,
+                                     PodcastChannel.url, PodcastChannel.station,
+                                     PodcastChannel.image_url, PodcastChannel.kind,
+                                     PodcastChannel.cached_at]).execute()
+        except Exception as e:
+            print(f"upsert_podcast_channel error: {e}")
+
+    def upsert_episodes(self, episodes, channel_id=None, option_type='podcast'):
+        """Store episodes as Track rows — the catalogue and the stats share that
+        table by design. Existing rows keep their listening history: only the
+        descriptive columns are filled, and never overwritten once set."""
+        saved = 0
+        for ep in episodes or []:
+            uri = ep.get('uri')
+            if not uri:
+                continue
+            try:
+                uri = self.podcast_uri_remove_max_results(uri)
+                if not self.stat_exists(uri):
+                    self.create_stat(uri)
+                upd = {}
+                row = self.get_stat_by_uri(uri)
+                if row is None:
+                    continue
+                if not row.name and ep.get('name'):
+                    upd[Track.name] = ep['name'][:512]
+                if not row.duration_ms and ep.get('length'):
+                    upd[Track.duration_ms] = int(ep['length'])
+                if not row.published_at and ep.get('day'):
+                    upd[Track.published_at] = ep['day']
+                if not row.channel_id and channel_id:
+                    upd[Track.channel_id] = channel_id
+                # Only claim an unset/neutral type: never downgrade a promoted episode.
+                if option_type and (not row.option_type or row.option_type in ('', 'new', 'normal')):
+                    upd[Track.option_type] = option_type
+                if upd:
+                    Track.update(upd).where(Track.uri == uri).execute()
+                saved += 1
+                if ep.get('taxonomies'):
+                    self.link_episode_taxonomies(uri, ep['taxonomies'])
+            except Exception as e:
+                print(f"upsert_episodes({uri}): {e}")
+        return saved
+
+    def link_episode_taxonomies(self, uri, taxonomy_ids):
+        """An episode carries SEVERAL themes/tags, so the link is a pivot table —
+        this is what answers 'rf:sujet:<subject>' from the DB."""
+        rows = [{'track_uri': uri, 'taxonomy_id': t} for t in (taxonomy_ids or []) if t]
+        if not rows:
+            return
+        try:
+            EpisodeTaxonomy.insert_many(rows).on_conflict_ignore().execute()
+        except Exception as e:
+            print(f"link_episode_taxonomies error: {e}")
+
+    def get_episodes_by_channel(self, channel_id, limit=50):
+        """Cached episodes of one channel, newest first."""
+        try:
+            q = (Track.select(Track.uri)
+                 .where((Track.channel_id == channel_id))
+                 .order_by(Track.published_at.desc(), Track.uri)
+                 .limit(limit))
+            return [t.uri for t in q]
+        except Exception as e:
+            print(f"get_episodes_by_channel error: {e}")
+            return []
+
+    def get_episodes_by_taxonomy(self, taxonomy_ids, limit=50):
+        """Cached episodes carrying ANY of these subjects, newest first. A union,
+        deliberately: the API intersects its filters, the local cache must not."""
+        ids = [t for t in (taxonomy_ids or []) if t]
+        if not ids:
+            return []
+        try:
+            uris = [r.track_uri for r in
+                    EpisodeTaxonomy.select(EpisodeTaxonomy.track_uri)
+                    .where(EpisodeTaxonomy.taxonomy_id.in_(ids))]
+            if not uris:
+                return []
+            q = (Track.select(Track.uri).where(Track.uri.in_(list(set(uris))))
+                 .order_by(Track.published_at.desc(), Track.uri).limit(limit))
+            return [t.uri for t in q]
+        except Exception as e:
+            print(f"get_episodes_by_taxonomy error: {e}")
+            return []
+
+    def purge_old_episodes(self, days=365):
+        """Drop never-started episodes published longer than `days` ago. Anything
+        ever listened to is kept: its row carries history and stats."""
+        cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+        try:
+            gone = [t.uri for t in Track.select(Track.uri).where(
+                (Track.channel_id.is_null(False)) & (Track.published_at < cutoff)
+                & (Track.read_count == 0) & (Track.read_position == 0))]
+            if not gone:
+                return 0
+            for i in range(0, len(gone), 500):
+                chunk = gone[i:i + 500]
+                EpisodeTaxonomy.delete().where(EpisodeTaxonomy.track_uri.in_(chunk)).execute()
+                Track.delete().where(Track.uri.in_(chunk)).execute()
+            print(f"purge_old_episodes: {len(gone)} episodes dropped (older than {days}d, never played)")
+            return len(gone)
+        except Exception as e:
+            print(f"purge_old_episodes error: {e}")
+            return 0
 
     def set_track_published(self, uri, published):
         """Record an episode's publication date (spoken content). Written once —

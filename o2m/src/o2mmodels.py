@@ -129,6 +129,7 @@ class Track(BaseModel):
     popularity = FloatField(null=True)   # composite popularity score [0,1], recomputed in batch (stats_v2)
     mood_edited_at = TimestampField(null=True, utc=True)  # set on MANUAL mood/energy/valence edit → locks the track against warmup overwrite
     published_at = CharField(null=True)  # episode publication date 'YYYY-MM-DD' (spoken content; feed/API formats vary)
+    channel_id = CharField(null=True, index=True)  # → PodcastChannel.id (spoken content; one episode has exactly one channel)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -367,6 +368,39 @@ class RfTaxonomy(BaseModel):
     cached_at  = TimestampField(null=True, utc=True)
 
 
+class PodcastChannel(BaseModel):
+    """A podcast source: an RSS feed or a Radio France show.
+
+    Episodes themselves stay in `Track` — that table is already a catalogue +
+    stats hybrid (most of its rows have never been played) and it is what the
+    lifecycle, the resume pool and the search buckets already read. What was
+    missing is the SOURCE they belong to: an RSS episode carries its feed in its
+    own uri, but a Radio France episode is a bare mp3 link that says nothing
+    about its show — hence Track.channel_id.
+    """
+    id         = CharField(primary_key=True)        # feed url (rss) or RF show id
+    kind       = CharField(null=True, index=True)   # 'rss' | 'rf'
+    title      = TextField(null=True)
+    title_norm = CharField(null=True, index=True)
+    url        = TextField(null=True)               # feed url, or the RF show page
+    station    = CharField(null=True)
+    image_url  = TextField(null=True)
+    cached_at  = TimestampField(null=True, utc=True)
+
+
+class EpisodeTaxonomy(BaseModel):
+    """Episode ↔ Radio France subject. Many-to-many on purpose: one episode
+    routinely carries several themes AND tags, so a column on Track could not
+    express it — this is what lets 'rf:sujet:<subject>' be answered from the DB
+    instead of re-querying the API on every box activation."""
+    track_uri   = CharField(index=True)
+    taxonomy_id = CharField(index=True)
+
+    class Meta:
+        primary_key = False
+        indexes = ((('track_uri', 'taxonomy_id'), True),)
+
+
 # ─── Database versioning ───────────────────────────────────────────────────────
 #
 # SCHEMA_VERSION is the target version.  setup_database() applies every
@@ -533,6 +567,11 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v18(migrator):
+    db.create_tables([PodcastChannel, EpisodeTaxonomy], safe=True)
+    _add_column_safe(migrator, 'track', 'channel_id', CharField(null=True))
+
+
 def _migration_v17(migrator):
     _add_column_safe(migrator, 'track', 'published_at', CharField(null=True))
 
@@ -549,7 +588,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -569,6 +608,7 @@ _MIGRATIONS = [
     (15, "radiofrance_show_taxonomy_tables", _migration_v15),
     (16, "rftaxonomy_path_column", _migration_v16),
     (17, "track_published_at_column", _migration_v17),
+    (18, "podcast_channel_episode_taxonomy", _migration_v18),
 ]
 
 

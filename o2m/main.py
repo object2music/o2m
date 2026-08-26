@@ -141,6 +141,10 @@ if __name__ == "__main__":
             o2mHandler.warmup_radiofrance()
         except Exception as e:
             print(f"background warmup error (radiofrance): {e}")
+        try:
+            o2mHandler.warmup_podcast_catalogue()
+        except Exception as e:
+            print(f"background warmup error (podcast catalogue): {e}")
 
     threading.Thread(target=_background_warmup, daemon=True).start()
 
@@ -620,6 +624,12 @@ if __name__ == "__main__":
                                          for e in eps]})
         except Exception as e:
             return jsonify({'name': '', 'episodes': [], 'error': str(e)})
+
+    @api.route('/api/warmup_podcasts')
+    def api_warmup_podcasts():
+        """Manual trigger for the podcast catalogue refresh."""
+        threading.Thread(target=o2mHandler.warmup_podcast_catalogue, daemon=True).start()
+        return ("warmup_podcasts started")
 
     @api.route('/api/warmup_rf')
     def api_warmup_rf():

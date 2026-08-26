@@ -30,6 +30,7 @@ being down must never break search or a box fill.
 """
 
 import logging
+import datetime
 import re
 import time
 import unicodedata
@@ -168,6 +169,14 @@ def show_row(node, station=None):
     }
 
 
+def _day(ts):
+    """RF publishes a unix timestamp; the feed path stores 'YYYY-MM-DD'."""
+    try:
+        return datetime.datetime.utcfromtimestamp(int(ts)).strftime('%Y-%m-%d')
+    except Exception:
+        return ''
+
+
 def episode_row(node, show_title=''):
     """A diffusion as a playable episode row, or None when it carries no audio
     (news bulletins and some segments have no podcastEpisode)."""
@@ -177,6 +186,8 @@ def episode_row(node, show_title=''):
         return None
     show = node.get('show') or {}
     duration = ep.get('duration')
+    tx = [((e or {}).get('node') or {}).get('id')
+          for e in ((node.get('taxonomiesConnection') or {}).get('edges') or [])]
     return {
         'name': (node.get('title') or '').strip(),
         'uri': url,
@@ -185,6 +196,10 @@ def episode_row(node, show_title=''):
         'source': 'radiofrance',
         'length': int(duration) * 1000 if duration else None,
         'published': node.get('published_date'),
+        'day': _day(node.get('published_date')),
+        'show_title': (show.get('title') or '').strip(),
+        'show_url': (show.get('url') or '').strip(),
+        'taxonomies': [t for t in tx if t],
     }
 
 
@@ -202,7 +217,8 @@ _Q_SHOW_BY_URL = '''query ShowByUrl($url: String!) {
 
 _Q_EPISODES = '''query EpisodesOfShow($url: String!, $first: Int!) {
   diffusionsOfShowByUrl(url: $url, first: $first) {
-    edges { node { id title url published_date podcastEpisode { url duration } } }
+    edges { node { id title url published_date podcastEpisode { url duration }
+                   taxonomiesConnection { edges { node { id } } } } }
   }
 }'''
 
@@ -230,7 +246,8 @@ _Q_DIFFUSIONS = '''query Diffusions($station: StationsEnum!, $themes: [String!],
              subthemes: $subthemes, subsubthemes: $subsubthemes,
              start: $start, end: $end, first: $first) {
     edges { node { id title published_date show { title url }
-                   podcastEpisode { url duration } } }
+                   podcastEpisode { url duration }
+                   taxonomiesConnection { edges { node { id } } } } }
   }
 }'''
 
