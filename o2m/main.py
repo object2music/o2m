@@ -1471,6 +1471,21 @@ if __name__ == "__main__":
         from flask import jsonify
         return jsonify(o2mHandler.dbHandler.get_genres_with_counts())
 
+    def _channel_name(stat):
+        """The show/feed an episode belongs to. Persisted (unlike Source, which is
+        strict live provenance), so it stays meaningful outside the running mix."""
+        cid = getattr(stat, 'channel_id', None) if stat else None
+        if not cid:
+            return ''
+        try:
+            from src.o2mmodels import PodcastChannel
+            ch = PodcastChannel.get_or_none(PodcastChannel.id == cid)
+            if ch and (ch.title or '').strip():
+                return ch.title.strip()
+        except Exception:
+            pass
+        return ''
+
     @api.route('/api/track_info')
     def api_track_info():
         from flask import jsonify
@@ -1541,6 +1556,7 @@ if __name__ == "__main__":
                 'library':        library,
                 'source':         source,
                 'published':      (getattr(stat, 'published_at', None) or '') if stat else '',
+                'channel':        _channel_name(stat),
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -2158,7 +2174,10 @@ with the house Premium account.</li>
 
             #Quick and dirty volume Management
             # Podcast : seek previous position
-            if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+            # Any spoken item resumes where it was left. Testing 'podcast+'/youtube
+            # left Radio France episodes out — they are plain mp3 links — so their
+            # position was recorded on every pause and then never restored.
+            if o2mHandler._is_spoken_uri(track.uri):
                 stat_uri = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
                 if (stat_uri):
                     #if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
@@ -2169,7 +2188,7 @@ with the house Premium account.</li>
                     #skip advertising 
                     #elif "radiofrance-podcast.net" in track.uri: o2mHandler.mopidyHandler.playback.seek(15000)
                 #elif "radiofrance-podcast.net" in track.uri:  o2mHandler.mopidyHandler.playback.seek(15000)
-            if "radiofrance-podcast.net" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
+            if "radiofrance-podcast.net" in track.uri or "proxycast.radiofrance.fr" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
                 volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
                 if volume > 100: volume = 100
                 o2mHandler.mopidyHandler.mixer.set_volume(int(volume))

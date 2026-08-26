@@ -1717,7 +1717,8 @@ class O2mToMopidy:
         for feed in feeds:
             try:
                 items = self.get_podcast_from_url(feed)
-                self.dbHandler.upsert_podcast_channel(feed, 'rss', url=feed)
+                self.dbHandler.upsert_podcast_channel(
+                    feed, 'rss', title=self._feed_title(feed), url=feed)
                 # mopidy's Refs give a uri and a title but no date, and the date is
                 # both what the Details panel shows and what makes an episode
                 # identifiable across sources — so read it from the feed itself.
@@ -1775,6 +1776,17 @@ class O2mToMopidy:
             return (datetime.datetime.utcnow() - at).total_seconds() < hours * 3600
         except Exception:
             return False
+
+    def _feed_title(self, feed_url):
+        """The feed's own <title> — what the Details panel shows as the channel."""
+        try:
+            import urllib.request as _u
+            raw = _u.urlopen(_u.Request(feed_url, headers={'User-Agent': 'o2m/1.0'}),
+                             timeout=15).read(200000).decode('utf-8', 'ignore')
+            m = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', raw, re.S)
+            return (m.group(1).strip() if m else '')[:255]
+        except Exception:
+            return ''
 
     def _feed_pubdates(self, feed_url):
         """guid -> (day, episode_key) from a feed's own XML. mopidy exposes the

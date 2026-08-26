@@ -3602,12 +3602,17 @@ const TRACK_FIELDS = [
   // Spoken content only: when an episode was published is the one genuinely
   // useful fact beyond its title. Hidden for music by _tpSyncSpokenRows.
   ['Date',       'published',  i => i.published || '—'],
+  // The show a spoken item comes from. Persisted, unlike Source — which is
+  // strict live provenance and is empty whenever the track isn't in the mix
+  // currently playing.
+  ['Channel',    'channel',    i => i.channel || '—'],
 ];
 const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 // Row order for the shared panel body (Favorite added to TRACK_FIELDS' text rows).
 const TRACK_PANEL_ROWS = [
   ['Status', 'type'], ['Source', 'source'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
   ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Date', 'published'],
+  ['Channel', 'channel'],
 ];
 
 /* THE single source of the track-detail body markup, shared by both panels. The
@@ -3711,6 +3716,9 @@ function _tpSyncSpokenRows(p, info) {
     const host = p.body && p.body();
     const cell = document.getElementById(p.cellId('published'));
     const row = cell && cell.closest('[data-row="published"]');
+    const chCell = document.getElementById(p.cellId('channel'));
+    const chRow = chCell && chCell.closest('[data-row="channel"]');
+    if (chRow) chRow.style.display = (info && info.channel) ? '' : 'none';
     if (!row) return;
     // Show it whenever a date is known, not only when the type says podcast/info:
     // a freshly queued episode still carries the fill-time default 'new' until its
