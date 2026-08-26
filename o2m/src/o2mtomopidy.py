@@ -1725,8 +1725,9 @@ class O2mToMopidy:
                 eps = []
                 for it in items:
                     guid = (it.uri or '').split('#', 1)[-1]
+                    day, ekey = dates.get(guid, ('', ''))
                     eps.append({'uri': it.uri, 'name': getattr(it, 'name', ''),
-                                'day': dates.get(guid, '')})
+                                'day': day, 'key': ekey})
                 total += self.dbHandler.upsert_episodes(eps, channel_id=feed,
                                                         option_type=self._spoken_type_for_uri(feed))
             except Exception as e:
@@ -1776,9 +1777,11 @@ class O2mToMopidy:
             return False
 
     def _feed_pubdates(self, feed_url):
-        """guid -> 'YYYY-MM-DD' from a feed's own XML. mopidy exposes the date only
-        once a track is added to the tracklist, which is far too late for the
-        catalogue."""
+        """guid -> (day, episode_key) from a feed's own XML. mopidy exposes the
+        date only once a track is added to the tracklist, far too late for the
+        catalogue — and it never exposes the <link>, which carries Radio France's
+        episode id and is what pairs a feed item with the same episode served by
+        the API."""
         out = {}
         try:
             import email.utils, urllib.request as _u
@@ -1787,13 +1790,17 @@ class O2mToMopidy:
             for item in re.findall(r'<item>(.*?)</item>', raw, re.S):
                 g = re.search(r'<guid[^>]*>([^<]+)</guid>', item)
                 d = re.search(r'<pubDate>([^<]+)</pubDate>', item)
-                if not g or not d:
+                lk = re.search(r'<link>([^<]+)</link>', item)
+                if not g:
                     continue
-                try:
-                    out[g.group(1).strip()] = email.utils.parsedate_to_datetime(
-                        d.group(1).strip()).strftime('%Y-%m-%d')
-                except Exception:
-                    pass
+                day = ''
+                if d:
+                    try:
+                        day = email.utils.parsedate_to_datetime(
+                            d.group(1).strip()).strftime('%Y-%m-%d')
+                    except Exception:
+                        day = ''
+                out[g.group(1).strip()] = (day, rf.episode_key(lk.group(1) if lk else ''))
         except Exception as e:
             print(f"_feed_pubdates({feed_url}): {e}")
         return out

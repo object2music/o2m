@@ -169,6 +169,18 @@ def show_row(node, station=None):
     }
 
 
+def episode_key(page_url):
+    """Radio France's own id for an episode, taken from its page URL.
+
+    The SAME broadcast reaches us twice — as an RSS item and as an API episode —
+    under different audio files with different ITEMA ids, so there is no shared
+    key in the media. But both point at the same episode PAGE: the feed's
+    <link> and the API's url end with the same numeric id. That id is the join.
+    """
+    m = re.search(r'-(\d{5,})/?$', (page_url or '').strip().rstrip('/'))
+    return m.group(1) if m else ''
+
+
 def canonical_episode_url(url):
     """One URL per episode, always the same one.
 
@@ -217,6 +229,8 @@ def episode_row(node, show_title=''):
         'day': _day(node.get('published_date')),
         'show_title': (show.get('title') or '').strip(),
         'show_url': (show.get('url') or '').strip(),
+        'page_url': (node.get('url') or '').strip(),
+        'key': episode_key(node.get('url')),
         'taxonomies': [t for t in tx if t],
     }
 
@@ -263,7 +277,7 @@ _Q_DIFFUSIONS = '''query Diffusions($station: StationsEnum!, $themes: [String!],
   diffusions(station: $station, themes: $themes, tags: $tags,
              subthemes: $subthemes, subsubthemes: $subsubthemes,
              start: $start, end: $end, first: $first) {
-    edges { node { id title published_date show { title url }
+    edges { node { id title url published_date show { title url }
                    podcastEpisode { url duration }
                    taxonomiesConnection { edges { node { id } } } } }
   }

@@ -130,6 +130,7 @@ class Track(BaseModel):
     mood_edited_at = TimestampField(null=True, utc=True)  # set on MANUAL mood/energy/valence edit → locks the track against warmup overwrite
     published_at = CharField(null=True)  # episode publication date 'YYYY-MM-DD' (spoken content; feed/API formats vary)
     channel_id = CharField(null=True, index=True)  # → PodcastChannel.id (spoken content; one episode has exactly one channel)
+    episode_key = CharField(null=True, index=True)  # Radio France episode-page id: the SAME episode reaches us as an RSS item and as an API episode, under different audio files
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -567,6 +568,10 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v19(migrator):
+    _add_column_safe(migrator, 'track', 'episode_key', CharField(null=True))
+
+
 def _migration_v18(migrator):
     db.create_tables([PodcastChannel, EpisodeTaxonomy], safe=True)
     _add_column_safe(migrator, 'track', 'channel_id', CharField(null=True))
@@ -588,7 +593,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -609,6 +614,7 @@ _MIGRATIONS = [
     (16, "rftaxonomy_path_column", _migration_v16),
     (17, "track_published_at_column", _migration_v17),
     (18, "podcast_channel_episode_taxonomy", _migration_v18),
+    (19, "track_episode_key_column", _migration_v19),
 ]
 
 

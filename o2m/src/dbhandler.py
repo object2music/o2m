@@ -455,15 +455,23 @@ class DatabaseHandler():
         except Exception as e:
             print(f"upsert_podcast_channel error: {e}")
 
-    def find_episode_twin(self, name, day):
+    def find_episode_twin(self, key, name=None, day=None):
         """An episode already stored under ANOTHER uri.
 
         The same broadcast reaches us twice — once as an RSS item, once as a
         Radio France API episode — under two unrelated uris and two different
-        audio files (their internal ITEMA ids differ, so there is no shared key
-        to join on). Title + publication date is the only reliable pairing, and
-        it is required to be exact and unambiguous: a wrong merge would fuse two
-        distinct episodes and lose one's history."""
+        audio files (their ITEMA ids differ). But both reference the same
+        episode PAGE, and its numeric id is an exact join: the feed's <link> and
+        the API's url end with it. Falls back to title + date, which is only
+        trusted when unambiguous — a wrong pairing would fuse two distinct
+        episodes and lose one's history."""
+        if key:
+            try:
+                row = Track.select().where(Track.episode_key == str(key)).first()
+                if row:
+                    return row.uri
+            except Exception:
+                pass
         n = _re.sub(r'\s+', ' ', (name or '').strip()).lower()
         if not n or not day:
             return None
@@ -486,7 +494,7 @@ class DatabaseHandler():
             try:
                 uri = self.podcast_uri_remove_max_results(uri)
                 if dedup and not self.stat_exists(uri):
-                    twin = self.find_episode_twin(ep.get('name'), ep.get('day'))
+                    twin = self.find_episode_twin(ep.get('key'), ep.get('name'), ep.get('day'))
                     if twin:
                         # Already known through the other source: keep that row and its
                         # history rather than opening a second one for the same episode.
@@ -507,6 +515,8 @@ class DatabaseHandler():
                     upd[Track.published_at] = ep['day']
                 if not row.channel_id and channel_id:
                     upd[Track.channel_id] = channel_id
+                if not row.episode_key and ep.get('key'):
+                    upd[Track.episode_key] = str(ep['key'])
                 # Only claim an unset/neutral type: never downgrade a promoted episode.
                 if option_type and (not row.option_type or row.option_type in ('', 'new', 'normal')):
                     upd[Track.option_type] = option_type
