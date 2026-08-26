@@ -86,7 +86,15 @@ class DatabaseHandler():
         # same episode (identified by its #guid) maps to ONE stat row, however it was played.
         # No-op for any URI without ?max_results= (radio/tunein http://, spotify, local…),
         # so non-podcast lookups are never altered.
-        if not uri or "?max_results=" not in uri:
+        if not uri:
+            return uri
+        # Episode media files are keyed on the file itself: the '?project=' Radio
+        # France appends identifies the calling app, not the episode, so keeping it
+        # would split one episode's history the day it changes. Live streams keep
+        # their query — it can carry a real parameter.
+        if '?' in uri and uri.split('?', 1)[0].lower().endswith(('.mp3', '.m4a')):
+            return uri.split('?', 1)[0]
+        if "?max_results=" not in uri:
             return uri
         if "http://" in uri:
             uri = uri.replace("http://", "https://")

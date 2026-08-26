@@ -169,6 +169,24 @@ def show_row(node, station=None):
     }
 
 
+def canonical_episode_url(url):
+    """One URL per episode, always the same one.
+
+    The API appends a '?project=<app id>' to every episode link. It is stable
+    today, but it identifies the CALLER, not the episode — so the day it changes
+    (new app, migration) the same episodes would come back under new URLs and be
+    stored a second time, splitting their listening history in two. The bare
+    file plays identically (verified: 206 audio/mpeg), so drop the query and key
+    everything on the file itself. Scoped to media files: a live radio stream's
+    query can be meaningful.
+    """
+    u = (url or '').strip()
+    if '?' not in u:
+        return u
+    head = u.split('?', 1)[0]
+    return head if head.lower().endswith(('.mp3', '.m4a', '.aac', '.ogg')) else u
+
+
 def _day(ts):
     """RF publishes a unix timestamp; the feed path stores 'YYYY-MM-DD'."""
     try:
@@ -181,7 +199,7 @@ def episode_row(node, show_title=''):
     """A diffusion as a playable episode row, or None when it carries no audio
     (news bulletins and some segments have no podcastEpisode)."""
     ep = node.get('podcastEpisode') or {}
-    url = (ep.get('url') or '').strip()
+    url = canonical_episode_url((ep.get('url') or '').strip())
     if not url:
         return None
     show = node.get('show') or {}
