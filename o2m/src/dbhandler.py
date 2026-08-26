@@ -12,7 +12,7 @@ from src.o2mmodels import (
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
-    RfShow, RfTaxonomy, PodcastChannel, EpisodeTaxonomy,
+    RfTaxonomy, PodcastChannel, EpisodeTaxonomy,
     setup_database,
 )
 
@@ -1841,32 +1841,56 @@ class DatabaseHandler():
     # ── Radio France cache (shows + taxonomies) ────────────────────────────
 
     def upsert_rf_shows(self, rows):
-        """Index RF shows for keyword search. Chunked upsert so a re-warmup
-        refreshes titles instead of duplicating rows."""
-        rows = [r for r in (rows or []) if r.get('rf_id') and r.get('name')]
+        """Index Radio France shows for keyword search — into PodcastChannel, the
+        single channel table. Keyed by the show page url, which is also what
+        Track.channel_id points at, so a show is described in exactly one place."""
+        rows = [r for r in (rows or []) if (r.get('url') or '').strip() and r.get('name')]
         if not rows:
             return 0
         now = datetime.datetime.utcnow()
         payload = [{
-            'id': r['rf_id'], 'station': r.get('station'), 'title': r['name'],
-            'title_norm': _normalize_genre(r['name'])[:255],
-            'url': r.get('url') or '', 'standfirst': r.get('standfirst') or '',
-            'cached_at': now,
+            'id': r['url'].strip(), 'kind': 'rf', 'rf_id': r.get('rf_id'),
+            'title': r['name'], 'title_norm': _normalize_genre(r['name'])[:255],
+            'url': r['url'].strip(), 'station': r.get('station') or '',
+            'image_url': '', 'cached_at': now,
         } for r in rows]
         saved = 0
         for i in range(0, len(payload), 200):
             chunk = payload[i:i + 200]
             try:
-                RfShow.insert_many(chunk).on_conflict(
+                # feed_url is deliberately NOT preserved: it is discovered separately
+                # and a catalogue refresh must never wipe it.
+                PodcastChannel.insert_many(chunk).on_conflict(
                     action='update',
-                    update={RfShow.title: RfShow.title, RfShow.station: RfShow.station},
-                    preserve=[RfShow.title, RfShow.title_norm, RfShow.url,
-                              RfShow.standfirst, RfShow.station, RfShow.cached_at],
+                    update={PodcastChannel.title: PodcastChannel.title},
+                    preserve=[PodcastChannel.title, PodcastChannel.title_norm,
+                              PodcastChannel.url, PodcastChannel.station,
+                              PodcastChannel.rf_id, PodcastChannel.kind,
+                              PodcastChannel.cached_at],
                 ).execute()
                 saved += len(chunk)
             except Exception as e:
                 print(f"upsert_rf_shows error: {e}")
         return saved
+
+    def merge_rfshow_into_channels(self):
+        """Fold the retired rfshow table into podcastchannel, once.
+
+        Kept as raw SQL and tolerant of the table being gone: this instance has
+        already migrated and dropped it, but another one on the same schema may
+        still carry it."""
+        try:
+            rows = list(db.execute_sql(
+                "SELECT id, title, url, station FROM rfshow WHERE url IS NOT NULL AND url != ''"
+            ).fetchall())
+        except Exception:
+            return 0          # table already dropped — nothing to do
+        if not rows:
+            return 0
+        n = self.upsert_rf_shows([{'rf_id': r[0], 'name': r[1], 'url': r[2], 'station': r[3]}
+                                  for r in rows])
+        print(f"merge_rfshow_into_channels: {n} shows folded into podcastchannel")
+        return n
 
     def upsert_rf_taxonomies(self, rows):
         """Index RF themes/tags — the vocabulary behind 'rf:sujet:'."""
@@ -1904,7 +1928,7 @@ class DatabaseHandler():
 
     def count_rf_shows(self):
         try:
-            return RfShow.select(RfShow.id).count()
+            return PodcastChannel.select(PodcastChannel.id).where(PodcastChannel.kind == 'rf').count()
         except Exception:
             return 0
 
@@ -1922,9 +1946,10 @@ class DatabaseHandler():
         if not q:
             return []
         try:
-            rows = (RfShow.select()
-                    .where(RfShow.title_norm.contains(q))
-                    .order_by(RfShow.title_norm, RfShow.id)
+            rows = (PodcastChannel.select()
+                    .where((PodcastChannel.kind == 'rf')
+                           & PodcastChannel.title_norm.contains(q))
+                    .order_by(PodcastChannel.title_norm, PodcastChannel.id)
                     .limit(limit).offset(offset))
             out = []
             for s in rows:

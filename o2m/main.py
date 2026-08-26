@@ -138,6 +138,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"background warmup error: {e}")
         try:
+            o2mHandler.dbHandler.merge_rfshow_into_channels()
+        except Exception as e:
+            print(f"merge_rfshow_into_channels error: {e}")
+        try:
             o2mHandler.warmup_radiofrance()
         except Exception as e:
             print(f"background warmup error (radiofrance): {e}")

@@ -332,27 +332,6 @@ class CacheMeta(BaseModel):
     updated_at = TimestampField(null=True, utc=True)
 
 
-class RfShow(BaseModel):
-    """Radio France show catalogue (OpenAPI `shows`) — the keyword index that
-    makes an RF podcast findable BEFORE it has ever been played. The keyless
-    directories o2m searches (fyyd) index almost no Radio France, so without
-    this a show like "L'Invite(e) des Matins" simply never came up.
-
-    RF's `Show.podcast { rss }` is broken server-side, so a show is referenced
-    by its page URL ('rf:show:<url>') and expanded through the API, not as a
-    'podcast+<feed>' line.
-    """
-    id         = CharField(primary_key=True)        # RF show uuid ("<uuid>_<n>")
-    station    = CharField(null=True, index=True)   # StationsEnum value
-    title      = TextField(null=True)
-    # CharField, not TextField: MySQL refuses an index on TEXT without a prefix
-    # length, and this column exists only to be searched.
-    title_norm = CharField(null=True, index=True)   # accent/case folded
-    url        = TextField(null=True)               # page url -> episodes
-    standfirst = TextField(null=True)
-    cached_at  = TimestampField(null=True, utc=True)
-
-
 class RfTaxonomy(BaseModel):
     """Radio France themes/tags (OpenAPI `taxonomies`) — the vocabulary behind
     the dynamic 'rf:sujet:<keyword>' box. `diffusions` filters take taxonomy
@@ -388,6 +367,7 @@ class PodcastChannel(BaseModel):
     # it is discovered from the show page, and is what lets an API episode be
     # served as a normal 'podcast+<feed>#<guid>' uri.
     feed_url   = TextField(null=True)
+    rf_id      = CharField(null=True, index=True)   # Radio France show uuid, when the channel is one
     station    = CharField(null=True)
     image_url  = TextField(null=True)
     cached_at  = TimestampField(null=True, utc=True)
@@ -572,6 +552,15 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v21(migrator):
+    # One channel table. PodcastChannel already held the sources in use (RSS and
+    # RF); it now also carries the searchable RF catalogue that RfShow held, so
+    # a show is described in exactly one place. Copy is done by the app on
+    # startup (see DatabaseHandler.merge_rfshow_into_channels): a migration
+    # cannot be re-run, and the copy has to be idempotent.
+    _add_column_safe(migrator, 'podcastchannel', 'rf_id', CharField(null=True))
+
+
 def _migration_v20(migrator):
     _add_column_safe(migrator, 'podcastchannel', 'feed_url', TextField(null=True))
 
@@ -594,14 +583,14 @@ def _migration_v16(migrator):
 
 
 def _migration_v15(migrator):
-    db.create_tables([RfShow, RfTaxonomy], safe=True)
+    db.create_tables([RfTaxonomy], safe=True)
 
 
 def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -624,6 +613,7 @@ _MIGRATIONS = [
     (18, "podcast_channel_episode_taxonomy", _migration_v18),
     (19, "track_episode_key_column", _migration_v19),
     (20, "podcastchannel_feed_url_column", _migration_v20),
+    (21, "podcastchannel_rf_id_column", _migration_v21),
 ]
 
 
