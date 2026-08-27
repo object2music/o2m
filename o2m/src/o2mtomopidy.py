@@ -503,23 +503,6 @@ class O2mToMopidy:
                 length = len(tltracks_added)
                 print (f"Lenght added {len(tltracks_added)}")
 
-                # Episode publication date: mopidy resolves it from the feed here
-                # (the browse Refs used to build the list carry no date), and it is
-                # the one genuinely useful field a spoken item has beyond its title.
-                for _t in tltracks_added:
-                    try:
-                        _u = getattr(_t.track, 'uri', '')
-                        if not self._is_spoken_uri(_u):
-                            continue
-                        # mopidy's date for feed episodes; for Radio France mp3 links it
-                        # resolves nothing, so fall back to what the API told us (stashed
-                        # when the episode list was built, before this row existed).
-                        _d = getattr(_t.track, 'date', None) or self._rf_published.get(_u)
-                        if _d:
-                            self.dbHandler.set_track_published(_u, _d)
-                    except Exception:
-                        pass
-
                 if len(tltracks_added)>0:
                     uris_rem = []
                     
@@ -653,6 +636,19 @@ class O2mToMopidy:
                             if (stat is not None and getattr(stat, 'mood_edited_at', None) is None
                                     and (stat.mood is None or stat.mood == '_' or stat.energy is None)):
                                 _enrich_items.append((tl_track.track, track_uri))
+
+                            # Spoken content: fill what makes an episode readable in the
+                            # panel — title, publication date and the channel it belongs
+                            # to. Done HERE because this is where the row is created; the
+                            # earlier attempt ran before that and updated nothing. Episodes
+                            # reaching the tracklist outside the catalogue warmup (a news
+                            # flash from 'infos:library', a resumed item) had no metadata
+                            # at all as a result.
+                            if self._is_spoken_uri(track_uri):
+                                try:
+                                    self._fill_spoken_meta(stat, tl_track.track, track_uri)
+                                except Exception as e:
+                                    print(f"spoken meta ({track_uri}): {e}")
 
                             if (not getattr(stat, 'option_type', None)) and track_option_type:
                                 stat.option_type = track_option_type
@@ -3265,6 +3261,35 @@ class O2mToMopidy:
     _SPOKEN_URI_RE = re.compile(
         r'podcast\+|youtube:video|(?:^|:)yt:'
         r'|proxycast\.radiofrance\.fr|radiofrance-podcast\.net', re.I)
+
+    def _fill_spoken_meta(self, stat, mopidy_track, uri):
+        """Title, date and channel for a spoken item, written once.
+
+        The channel needs no lookup: a podcast uri already carries its feed
+        ('podcast+<feed>#<guid>'). Registering it here means every episode gets a
+        Channel row in the panel, not only those the catalogue warmup happened to
+        index."""
+        if not stat:
+            return
+        if not getattr(stat, 'name', None):
+            nm = (getattr(mopidy_track, 'name', '') or '').strip()
+            if nm and not nm.startswith(('http://', 'https://')):
+                stat.name = nm[:512]
+        if not getattr(stat, 'published_at', None):
+            day = getattr(mopidy_track, 'date', None) or self._rf_published.get(uri)
+            if day:
+                stat.published_at = str(day)[:32]
+        if not getattr(stat, 'channel_id', None) and uri.startswith('podcast+'):
+            feed = re.sub(r'[?&]max_results=\d+', '', uri.split('+', 1)[1].split('#')[0]).strip()
+            if feed:
+                stat.channel_id = feed
+                # Register the channel so the panel can name it rather than show a url.
+                try:
+                    if not self.dbHandler.get_channel_feed(feed):
+                        self.dbHandler.upsert_podcast_channel(
+                            feed, 'rss', title=self._feed_title(feed), url=feed, feed_url=feed)
+                except Exception:
+                    pass
 
     def _is_spoken_uri(self, uri):
         return bool(uri and self._SPOKEN_URI_RE.search(str(uri)))
