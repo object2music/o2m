@@ -2200,6 +2200,16 @@ with the house Premium account.</li>
                         o2mHandler.mopidyHandler.playback.seek(max(stat_uri.read_position - 10, 0))
                     if stat_uri.read_position > track.length :
                         o2mHandler.mopidyHandler.playback.seek(track.length - 10)
+                    elif stat_uri.read_position <= 10:
+                        # Fresh start: skip the pre-roll ad. Never when resuming —
+                        # the saved position already sits past it.
+                        _ad = o2mHandler.ad_skip_ms(track.uri)
+                        if _ad and track.length and _ad < track.length:
+                            o2mHandler.mopidyHandler.playback.seek(_ad)
+                else:
+                    _ad = o2mHandler.ad_skip_ms(track.uri)
+                    if _ad and track.length and _ad < track.length:
+                        o2mHandler.mopidyHandler.playback.seek(_ad)
                     #skip advertising 
                     #elif "radiofrance-podcast.net" in track.uri: o2mHandler.mopidyHandler.playback.seek(15000)
                 #elif "radiofrance-podcast.net" in track.uri:  o2mHandler.mopidyHandler.playback.seek(15000)

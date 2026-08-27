@@ -3291,6 +3291,32 @@ class O2mToMopidy:
                 except Exception:
                     pass
 
+    # Pre-roll ads. Neither Radio France nor the BBC marks them: no chapters
+    # (psc:/podcast:), no wording in the description, and itunes:duration already
+    # includes the ad (measured: announced == actual, to the second). So this can
+    # only be a fixed skip per host — the value is a setting, not a detection.
+    _AD_SKIP_MS = {'radiofrance-podcast.net': 30000, 'proxycast.radiofrance.fr': 30000,
+                   'podcasts.files.bbci.co.uk': 30000}
+
+    def ad_skip_ms(self, uri):
+        """Milliseconds of pre-roll to skip for this host, 0 if unknown.
+        Overridable in o2m.conf: podcast_ad_skip = host:ms, host:ms"""
+        if not uri:
+            return 0
+        table = dict(self._AD_SKIP_MS)
+        raw = (self.configO2M.get('podcast_ad_skip', '') or '').strip()
+        for part in raw.split(','):
+            if ':' in part:
+                host, _s, ms = part.rpartition(':')
+                try:
+                    table[host.strip()] = int(ms)
+                except Exception:
+                    pass
+        for host, ms in table.items():
+            if host and host in uri:
+                return max(0, ms)
+        return 0
+
     def _is_spoken_uri(self, uri):
         return bool(uri and self._SPOKEN_URI_RE.search(str(uri)))
 
@@ -3303,8 +3329,13 @@ class O2mToMopidy:
              stats have no duration).
           3. Fallback → 'podcast' (generic spoken; at least out of the music flow)."""
         try:
-            if 'podcast+' in uri:
-                feed = re.sub(r'[?&]max_results=\d+', '', uri.split('podcast+', 1)[1].split('#')[0]).strip().rstrip('/')
+            # Accepts a 'podcast+<feed>#<guid>' uri OR a bare feed url: the catalogue
+            # warmup classifies a whole feed at once and passed the bare url, which
+            # silently skipped the box heritage below and tagged every info episode
+            # as a generic podcast.
+            if 'podcast+' in uri or (uri or '').startswith('http'):
+                raw = uri.split('podcast+', 1)[1] if 'podcast+' in uri else uri
+                feed = re.sub(r'[?&]max_results=\d+', '', raw.split('#')[0]).strip().rstrip('/')
                 if feed:
                     found = None
                     for b in Box.select().where(Box.data.contains(feed)):
