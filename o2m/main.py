@@ -1547,6 +1547,17 @@ if __name__ == "__main__":
                         return f'{lbl} · ' + s.split(':', 1)[1]
                 return s
             source = _clean_source(info.get('library_display') if info else None)
+            # Spoken content carries no library link to derive a name from (a podcast
+            # box holds feeds, not a Spotify playlist), so library_display stayed
+            # empty and Source always read '—'. The box currently serving the track
+            # IS its live provenance, and _track_info already knows which one — so
+            # fall back to its name. Still strictly live: nothing persisted.
+            if not source and info and info.get('box_id'):
+                try:
+                    _b = o2mHandler.dbHandler.get_box_by_uid(info['box_id'])
+                    source = (getattr(_b, 'description', '') or info['box_id']).strip()
+                except Exception:
+                    pass
 
             return jsonify({
                 'option_type':    opt,

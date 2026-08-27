@@ -2988,6 +2988,7 @@ async function refreshNowPlaying() {
       fetch(API + '/track_status?uri=' + encodeURIComponent(track.uri))
         .then(r => r.ok ? r.text() : '').then(updateStatusBadge)
         .catch(() => updateStatusBadge(''));
+      updateSpokenHeader(track);
       renderTrackDetails(track.uri);
       rpc('core.library.get_images', {uris: [track.uri]}).then(imgR => {
         const imgs = imgR?.result?.[track.uri] || [];
@@ -4794,6 +4795,27 @@ const objEsc = s => String(s ?? '').replace(/[&<>"]/g,
 /* The header title is clamped to one ellipsised line, so mirror it into the title
    attribute: hovering (or long-pressing on touch) then shows it in full. Set in one
    place because three call sites write this line. */
+/* For a podcast or an info item the header's artist/album lines carry the feed's
+   author and its own name — the same thing twice, and neither says where the
+   episode came from. Replace them with what actually helps while listening: the
+   show it belongs to, the box currently serving it, and its publication date.
+   Music and radios are untouched. */
+async function updateSpokenHeader(track) {
+  if (!track || !track.uri || !_isSpokenUri(track.uri)) return;
+  try {
+    const d = await fetch(API + '/track_info?uri=' + encodeURIComponent(track.uri))
+                      .then(r => r.json());
+    if (!d || !['podcast', 'info'].includes(d.option_type || '')) return;
+    const cur = (currentTrackObj && currentTrackObj.uri) || '';
+    if (cur && cur !== track.uri) return;          // track changed meanwhile
+    const line = [d.channel, d.source].filter(Boolean).join(' · ');
+    const artistEl = document.getElementById('artist-name');
+    if (artistEl && line) { artistEl.textContent = line; artistEl.classList.remove('obj-link'); }
+    const albumEl = document.getElementById('album-name');
+    if (albumEl) albumEl.textContent = d.published || '';
+  } catch (e) {}
+}
+
 function setTrackName(text) {
   const el = document.getElementById('track-name');
   if (!el) return;
