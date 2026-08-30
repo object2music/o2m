@@ -52,6 +52,47 @@
      one source of truth, shared with stats/tag_features and with the design
      references. Never redeclare a token here. */
 
+  /* ══ TEMPORARY — Bulletin palette trial ═══════════════════════════════════
+     Provisional, pending the real pass in Claude Design. It knowingly breaks the
+     rule just above (no token in a page) — deliberately: put in ds/o2m.css it
+     would be wiped by the next design sync, whereas here it is visible, greppable
+     and removed by deleting this one block.
+
+     What it changes: the grounds go from saturated cream to near-white, so the ink
+     navy and the amber of the logo have something to carry against. The logo's
+     three colours are kept — navy ink, amber, cream — but the cream steps back to
+     being a ground instead of competing with them.
+     DELETE THIS BLOCK when the design pass lands. */
+  [data-theme="creme"], [data-theme="bulletin"] {
+    --bg: #FDFCF9;          /* near-white, still warm */
+    --surface: #F4EFE4;     /* the cream, demoted to panels and the header */
+    --card: #FFFFFF;
+    --raised: #FFFFFF;
+    --header-bg: #F4EFE4;
+    --header-border: rgba(31,32,80,.18);
+    --track-bg: #E8E1D2;
+
+    --text: #1F2050;        /* deeper navy: more room on a whiter ground */
+    --muted: #5C5A7A;
+    --faint: #9A96B0;
+    --secondary: #E9A21B;   /* amber, a notch deeper to hold on near-white */
+
+    --border: rgba(31,32,80,.16);
+    --border-soft: rgba(31,32,80,.08);
+    --border-strong: rgba(31,32,80,.34);
+    --fill-1: rgba(31,32,80,.04);
+    --fill-2: rgba(31,32,80,.07);
+    --fill-3: rgba(31,32,80,.12);
+
+    /* The MOOD dial's amber fell to 2.87:1 once the ground went near-white; deepened
+       to clear the 3:1 asked of a meaningful graphic. --secondary / --faint /
+       --signal are left alone: no page consumes them yet. */
+    --c-mood: #B87D0E;
+
+    --mx-bg: #FFFFFF;
+  }
+  /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
+
   /* ── REVERT SWITCH — design-system base/reset ─────────────────────────────
      ds/o2m.css sets body { font-size: 15px; line-height: 1.5 }: that is the
      system's typographic harmonisation. If it unbalances a view, UNCOMMENT the
@@ -1742,7 +1783,11 @@
     transition: color .15s, border-color .15s;
   }
   #basic-all svg { width: 20px; height: 20px; }
-  #basic-all.on { color: var(--accent); border-color: var(--accent); }
+  /* Active state is a FILL, not just a colour swap. Recolouring the label and the
+     hairline is nearly invisible on a light ground — which is what made the four
+     categories and ALL read the same on and off. Accent fill + --on-accent ink is
+     the idiom the system already uses for the play button. */
+  #basic-all.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   #basic-all:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
   .basic-toggle {
     display: flex; flex-direction: column; align-items: center; gap: 9px;
@@ -1751,7 +1796,7 @@
     transition: color .15s, border-color .15s;
   }
   .basic-toggle svg { width: 26px; height: 26px; }
-  .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
+  .basic-toggle.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
   @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
   /* Filling the queue takes seconds. Moving a dial meanwhile fires a second,
