@@ -1885,20 +1885,24 @@
     html.basic #tracklist-col { flex: 1 1 auto; }
 
     html.basic #basic-section {
-      flex: 1 1 auto; max-width: none; margin: 0; padding: 20px 28px 24px;
-      display: grid; gap: 14px 34px;
+      flex: 1 1 auto; max-width: none; margin: 0; padding: 16px 28px 24px;
+      display: grid; gap: 16px 34px;
       grid-template-columns: auto minmax(0, 1fr);
-      grid-template-rows: auto auto;
       /* Dials and actuators share row 2, so their tops and bottoms line up: the
-         dashboard now starts at OPENING LEVEL and ends with the MOOD block instead
-         of running past it. The status line keeps its own row above the actuators.
-         align-items: stretch makes both fill that row; align-content centres the
-         whole grid in the section, which is taller than it. */
+         dashboard starts at OPENING LEVEL and ends with the MOOD block instead of
+         running past it. align-items: stretch makes both fill that row.
+         Row 1 is 1fr and the status line is centred inside it, rather than the whole
+         grid being centred with align-content: that put the section's spare height
+         ABOVE the status line only, so the gap over it was padding + half the slack
+         while the gap under it was just the row-gap — unequal by construction.
+         With the slack inside row 1 and padding-top equal to the row-gap, the two
+         gaps are equal whatever the window height. */
+      grid-template-rows: 1fr auto;
       grid-template-areas: ".     status"
                            "dials acts";
-      align-items: stretch; align-content: center;
+      align-items: stretch;
     }
-    html.basic #basic-status  { grid-area: status; }
+    html.basic #basic-status  { grid-area: status; align-self: center; }
     /* The dashboard takes the height the dials no longer eat: its row is the 1fr
        one, and grid-auto-rows: 1fr makes the four actuators share it evenly. */
     html.basic .basic-toggles { grid-area: acts; height: 100%; grid-auto-rows: 1fr; }
