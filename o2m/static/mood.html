@@ -91,11 +91,15 @@
        that ramp lands between 1.5:1 and 1.8:1 on this near-white ground, well under
        the 3:1 a meaningful graphic needs. #B87D0E is that ramp carried down to ink
        strength — 3.42:1 — so it still reads as the logo's amber. */
-    --c-energy:  #28285B;   /* ring-a-1 */
-    --c-valence: #53547C;   /* ring-a-3 */
+    --c-energy:  #3E3E6B;   /* ring-a-2 */
+    --c-valence: #696A8D;   /* ring-a-4 */
     --c-dl:      #8384A3;   /* ring-a-5 */
-    --c-opening: #3E3E6B;   /* ring-a-2 */
-    --c-mood:    #B87D0E;   /* ring-b, deepened for contrast */
+    /* The two Basic dials take the logo's two halves outright — deepest ink and the
+       amber — so the pair reads as the mark. The previous picks were too close to
+       what was already there to notice: mood moved by 22/441 in RGB, which is
+       nothing. These are 68 and 61 away. */
+    --c-opening: #28285B;   /* ring-a-1, the ink half */
+    --c-mood:    #A96F0A;   /* the amber half, carried down to ink strength */
 
     --mx-bg: #FFFFFF;
   }
@@ -433,10 +437,19 @@
     padding: 12px 16px; background: transparent;
     flex-shrink: 0;
   }
+  /* The tile follows the HEADER plane, not --surface: the two differ in mono,
+     overprint and invert, so the cover showed up as a box of another colour pasted
+     on the header — most visible with a generated cover, where there is no artwork
+     to hide it. */
   #cover-wrap {
     position: relative; aspect-ratio: 1 / 1; height: 100%;
-    background: var(--surface); overflow: hidden;
+    background: var(--header-bg, var(--surface)); overflow: hidden;
   }
+  /* The generated cover paints its own --surface ground (cov() in o2m-marks.js).
+     Made transparent so the tile above shows through and the mark sits directly on
+     the header plane. Overriding the inline fill attribute is exactly what CSS on
+     the rect does. */
+  #cover-gen svg > rect:first-of-type { fill: transparent; }
   #cover {
     position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; display: block;
