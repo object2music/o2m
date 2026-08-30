@@ -1783,11 +1783,7 @@
     transition: color .15s, border-color .15s;
   }
   #basic-all svg { width: 20px; height: 20px; }
-  /* Active state is a FILL, not just a colour swap. Recolouring the label and the
-     hairline is nearly invisible on a light ground — which is what made the four
-     categories and ALL read the same on and off. Accent fill + --on-accent ink is
-     the idiom the system already uses for the play button. */
-  #basic-all.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #basic-all.on { color: var(--accent); border-color: var(--accent); }
   #basic-all:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
   .basic-toggle {
     display: flex; flex-direction: column; align-items: center; gap: 9px;
@@ -1796,7 +1792,20 @@
     transition: color .15s, border-color .15s;
   }
   .basic-toggle svg { width: 26px; height: 26px; }
-  .basic-toggle.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
+
+  /* ══ TEMPORARY — Bulletin only: filled active state ═══════════════════════
+     Recolouring the label and hairline alone is nearly invisible on this light
+     ground, so the active tile inverts here. The fill is the palette's amber, not
+     the accent: navy filled the tile at 9.14:1 against the page, which read as a
+     slab. Amber sits at 2.12:1 — clearly a filled block, far calmer — and carries
+     the navy ink at 6.99:1. It is also the logo's second colour, so the inversion
+     stays on-brand. Remove with the palette block above. */
+  [data-theme="creme"] .basic-toggle.on,   [data-theme="bulletin"] .basic-toggle.on,
+  [data-theme="creme"] #basic-all.on,      [data-theme="bulletin"] #basic-all.on {
+    background: var(--secondary); border-color: var(--secondary); color: var(--text);
+  }
+  /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
   @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
   /* Filling the queue takes seconds. Moving a dial meanwhile fires a second,
