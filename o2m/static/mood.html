@@ -1754,6 +1754,12 @@
   .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
   @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+  /* Filling the queue takes seconds. Moving a dial meanwhile fires a second,
+     concurrent rebuild: part of the queue is dropped and part is not, and the
+     result is longer than either would have been. The dials say so and stop
+     accepting input for the duration — same pulse as the actuators. */
+  body.mix-busy .dial-wrap { pointer-events: none; animation: basic-pulse 1s ease-in-out infinite; }
+  body.mix-busy #basic-toggles { pointer-events: none; }
   /* Playback status line above the actuators: animated eq (freezes when paused
      via body.is-paused) + track/box counts + network dot. */
   #basic-status {
@@ -2278,6 +2284,7 @@ function makeDraggable(id, onChange) {
     return Math.min(Math.max(deg, 0), 270) / 270;
   }
   svg.addEventListener('pointerdown', e => {
+    if (mixBusy) return;
     active = true; svg.setPointerCapture(e.pointerId);
     const v = v01fromEvent(e); setDial(id, v); onChange(v);
   });
@@ -2308,13 +2315,25 @@ function shouldApplyMood() {
   return isBasic() || currentTracklistLength === 0 || isAutoMode();
 }
 
+/* True while the queue is being (re)built server-side. Guards the dials: a mood
+   or discovery change during a fill races the fill itself. */
+let mixBusy = false;
+function setMixBusy(on) {
+  mixBusy = !!on;
+  document.body.classList.toggle('mix-busy', mixBusy);
+  if (mixBusy) clearTimeout(applyTimer);   // drop a change debounced just before
+  document.querySelectorAll('#basic-toggles button, #btn-auto').forEach(b => { b.disabled = mixBusy; });
+}
+
 function scheduleApply() {
+  if (mixBusy) return;
   if (!shouldApplyMood()) return;
   clearTimeout(applyTimer);
   applyTimer = setTimeout(applyMood, 4500);   // débounce : laisse régler plusieurs potards avant d'appliquer
 }
 
 async function applyMood() {
+  if (mixBusy) return;            // a fill is in flight — its result would be half-replaced
   if (!shouldApplyMood()) return;
   // Basic view: the dials are settings, the actuators are the switches. With no
   // actuator on, just save the values server-side — don't launch anything.
@@ -2481,10 +2500,11 @@ function shuffledCats() {
 }
 
 async function toggleBasicAll(btn) {
-  if (!basicCats) return;
+  if (!basicCats || mixBusy) return;
   const cats = shuffledCats();
   const anyActive = cats.some(c => (basicCats[c] || []).some(b => b.active));
   btn.disabled = true;
+  setMixBusy(true);
   try {
     for (const c of cats) {
       const cbtn = document.querySelector(`.basic-toggle[data-cat="${c}"]`);
@@ -2492,7 +2512,7 @@ async function toggleBasicAll(btn) {
       // OFF pass: only categories currently on; ON pass: only those off.
       if (anyActive === isOn && cbtn) await toggleBasicCat(cbtn);
     }
-  } finally { btn.disabled = false; }
+  } finally { setMixBusy(false); btn.disabled = false; }
   await refreshBasicToggles();
 }
 
@@ -2501,6 +2521,11 @@ async function toggleBasicCat(btn) {
   if (!boxes.length) { setFeedback('No ' + btn.dataset.cat + ' box'); return; }
   const turnOn = !boxes.some(b => b.active);
   btn.disabled = true;
+  // ALL calls this in a loop and already holds the lock: only take it when free,
+  // and only release what we took — otherwise the first category would free the
+  // dials while the next three are still filling.
+  const ownsLock = !mixBusy;
+  if (ownsLock) setMixBusy(true);
   try {
     // One atomic server-side call: meta_fill (sources drawn recency × chance up
     // to the limit) or meta_remove. A reload / phone lock can't leave a partial
@@ -2528,6 +2553,7 @@ async function toggleBasicCat(btn) {
       } catch(e) {}
     }
   } catch(e) { setFeedback('Box error'); }
+  if (ownsLock) setMixBusy(false);
   btn.disabled = false;
   await refreshBasicToggles();
   refreshBoxStates();   // sync the hidden full-view buttons too (keeps autoBoxActive right)
@@ -6550,6 +6576,7 @@ function showAudioTapOverlay() {
       const len = (await rpc('core.tracklist.get_length'))?.result ?? 0;
       if (!len) {
         setFeedback('Starting the auto mix…');
+        setMixBusy(true);
         for (const c of shuffledCats()) {
           try { await fetch(API + '/basic_toggle?cat=' + c + '&mode=add'); } catch (e) {}
         }
@@ -6564,9 +6591,10 @@ function showAudioTapOverlay() {
             if (first) await rpc('core.playback.play', { tlid: first.tlid });
           }
         }
+        setMixBusy(false);
         if (typeof refreshBasicToggles === 'function') refreshBasicToggles();
       }
-    } catch (e) {}
+    } catch (e) { setMixBusy(false); }
     setTimeout(refreshNowPlaying, 800);
   };
   ov.addEventListener('click', go);
