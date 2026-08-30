@@ -680,6 +680,17 @@
        design guidance asks). PATCH is explicit — raise the cap rather than shrink
        the title. Lower this back to 38vh if the header feels heavy. */
     :root:not([data-theme="invert"]) #top-zone { height: 42vh; }
+    /* Invert is out of that cap because its full-width banner sets its own header
+       height — but at 54vh, plus the meta row under it, the header ran well past the
+       42vh the other themes settle on and squeezed the body: in the Basic view the
+       bottom two category tiles fell below the fold. The banner is the lever (the
+       cap cannot shrink it: aspect-ratio + height:auto size it from its own
+       max-height), so it drops to 32vh here, which lands invert's whole header at
+       roughly the same 42vh as everywhere else. Mobile keeps the poster banner.
+       `:root[...]` is required: the 54vh rule is declared further down the sheet at
+       the same specificity, and a media query adds none — without it this would be
+       a silent no-op. */
+    :root[data-theme="invert"] #cover-wrap { max-height: 32vh; }
     :root:not([data-theme="invert"]) #track-details {
       overflow-y: auto; min-height: 0;
     }
