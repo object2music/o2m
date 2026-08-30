@@ -94,12 +94,17 @@
     --c-energy:  #3E3E6B;   /* ring-a-2 */
     --c-valence: #696A8D;   /* ring-a-4 */
     --c-dl:      #8384A3;   /* ring-a-5 */
-    /* The two Basic dials take the logo's two halves outright — deepest ink and the
-       amber — so the pair reads as the mark. The previous picks were too close to
-       what was already there to notice: mood moved by 22/441 in RGB, which is
-       nothing. These are 68 and 61 away. */
-    --c-opening: #28285B;   /* ring-a-1, the ink half */
-    --c-mood:    #A96F0A;   /* the amber half, carried down to ink strength */
+    /* The two Basic dials take the LAST concentric ring of each ramp — the innermost
+       one — rather than a deepened mix: the amber half of the logo is a yellow, not
+       the orange #A96F0A was drifting towards.
+       Referenced by token, not by value, so they keep following the theme.
+       Contrast, measured on this near-white ground: --ring-a-5 is 3.53:1, fine for a
+       stroke; --ring-b-5 is 1.34:1, which is very faint — every step of that amber
+       ramp sits between 1.3 and 1.8:1, so the yellow simply cannot carry on
+       near-white. Kept as asked; --ring-b-1 (#F8B132, 1.81:1) is the darkest the
+       ramp offers if the MOOD arc turns out too pale to read. */
+    --c-opening: var(--ring-a-5);
+    --c-mood:    var(--ring-b-5);
 
     --mx-bg: #FFFFFF;
   }
@@ -1889,7 +1894,7 @@
       display: grid; gap: 16px 34px;
       grid-template-columns: auto minmax(0, 1fr);
       /* Dials and actuators share row 2, so their tops and bottoms line up: the
-         dashboard starts at OPENING LEVEL and ends with the MOOD block instead of
+         dashboard starts at DISCOVERY and ends with the MOOD block instead of
          running past it. align-items: stretch makes both fill that row.
          Row 1 is 1fr and the status line is centred inside it, rather than the whole
          grid being centred with align-content: that put the section's spare height
@@ -1935,7 +1940,7 @@
   html[data-net="red"]    .net-dot { background: #e0245e; }
   html.basic #net-dot { display: none; }   /* basic shows it in the status line instead */
 
-  /* Detent labels around a basic-view dial (Mood, Opening level) — the active
+  /* Detent labels around a basic-view dial (Mood, Discovery) — the active
      one lights up. Shared by both dials for a consistent appearance. */
   .bmood-lbl, .bdl-lbl {
     font-size: 10px; letter-spacing: .05em; fill: var(--muted);
@@ -2072,7 +2077,7 @@
     </div>
     <div id="basic-dials">
       <div class="dial-wrap">
-        <div class="dial-label">Opening level</div>
+        <div class="dial-label">Discovery</div>
         <!-- Same presentation as the Mood dial: wider viewBox, detent labels around
              the arc (135°→405°), clickable shortcuts. 3 detents reuse the Mood
              dial's bottom-left/top/bottom-right label positions (indices 0/2/4 of
@@ -2516,7 +2521,7 @@ function setBasicMoodDial(i) {
     l.classList.toggle('on', Number(l.dataset.i) === i));
 }
 
-// Opening level, presented the same way as Mood (detent labels around the dial)
+// Discovery, presented the same way as Mood (detent labels around the dial)
 // — appearance only, still the same continuous discover_level(0-10) underneath.
 // 5 detents but only 3 are labelled (focused/regular/crazy at indices 0/2/4);
 // the 2 in-between (indices 1/3) are extra stops shown as ticks, their centre
@@ -2659,7 +2664,7 @@ function initBasicView() {
   document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn =>
     btn.addEventListener('click', () => toggleBasicCat(btn)));
   document.getElementById('basic-all')?.addEventListener('click', (e) => toggleBasicAll(e.currentTarget));
-  // Opening level — snaps to the 3 detents (focused/regular/crazy), same
+  // Discovery — snaps to the 3 detents (focused/regular/crazy), same
   // interaction pattern as Mood; same underlying discover_level(0-10) value.
   makeDraggable('bdl', v => {
     const i = Math.round(v * (BASIC_DL_LEVELS.length - 1));
