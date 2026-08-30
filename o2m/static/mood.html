@@ -84,10 +84,18 @@
     --fill-2: rgba(31,32,80,.07);
     --fill-3: rgba(31,32,80,.12);
 
-    /* The MOOD dial's amber fell to 2.87:1 once the ground went near-white; deepened
-       to clear the 3:1 asked of a meaningful graphic. --secondary / --faint /
-       --signal are left alone: no page consumes them yet. */
-    --c-mood: #B87D0E;
+    /* Dial axes taken from the logo's own ramps: successive steps of the ink ramp
+       (--ring-a-1/3/5, deep → light) for the three Full dials, so they read as the
+       concentric rings, and the amber half for MOOD.
+       The amber is deepened rather than lifted straight from --ring-b: every step of
+       that ramp lands between 1.5:1 and 1.8:1 on this near-white ground, well under
+       the 3:1 a meaningful graphic needs. #B87D0E is that ramp carried down to ink
+       strength — 3.42:1 — so it still reads as the logo's amber. */
+    --c-energy:  #28285B;   /* ring-a-1 */
+    --c-valence: #53547C;   /* ring-a-3 */
+    --c-dl:      #8384A3;   /* ring-a-5 */
+    --c-opening: #3E3E6B;   /* ring-a-2 */
+    --c-mood:    #B87D0E;   /* ring-b, deepened for contrast */
 
     --mx-bg: #FFFFFF;
   }
@@ -1777,7 +1785,11 @@
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
     width: 62px; height: 62px; border-radius: 50%; z-index: 2;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-    background: var(--surface); border: 1px solid var(--border-strong);
+    /* Ground, not --surface: nothing behind the Basic view paints a background, so
+       the button sits on --bg. Filling it with --surface drew a visible disc in
+       every theme where the two differ (dark, bulletin, invert) — the mark looked
+       pasted on a patch instead of punched out of the grid. */
+    background: var(--bg); border: 1px solid var(--border-strong);
     color: var(--muted); cursor: pointer; font: inherit; font-size: 10px; font-weight: 700;
     box-shadow: 0 2px 10px rgba(0,0,0,.25);
     transition: color .15s, border-color .15s;
