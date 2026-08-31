@@ -1837,14 +1837,17 @@
 
   /* ══ TEMPORARY — Bulletin only: filled active state ═══════════════════════
      Recolouring the label and hairline alone is nearly invisible on this light
-     ground, so the active tile inverts here. The fill is the palette's amber, not
-     the accent: navy filled the tile at 9.14:1 against the page, which read as a
-     slab. Amber sits at 2.12:1 — clearly a filled block, far calmer — and carries
-     the navy ink at 6.99:1. It is also the logo's second colour, so the inversion
-     stays on-brand. Remove with the palette block above. */
+     ground, so the active tile inverts here. It is filled with the MOOD dial's own
+     colour, so the two controls of the Basic view speak with one voice.
+     Measured: the navy label sits at 11.10:1 on it, so the tile is very readable;
+     the tile itself is only 1.34:1 against the page, so the ON state reads as a
+     soft tint rather than a block — quieter than the amber it replaces (2.12:1).
+     A large filled area carries a low ratio far better than a line does, but if the
+     state turns out too discreet, --ring-b-1 is the darkest step of that ramp.
+     Remove with the palette block above. */
   [data-theme="creme"] .basic-toggle.on,   [data-theme="bulletin"] .basic-toggle.on,
   [data-theme="creme"] #basic-all.on,      [data-theme="bulletin"] #basic-all.on {
-    background: var(--secondary); border-color: var(--secondary); color: var(--text);
+    background: var(--c-mood); border-color: var(--c-mood); color: var(--text);
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
