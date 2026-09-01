@@ -250,7 +250,7 @@
      room it has — it stays centred and never wider than its container. The top
      margin sets it apart from the lifecycle scale above, in every view. */
   .tp-matrix { width: 100%; max-width: 300px; aspect-ratio: 1 / 1;
-    margin: 14px auto 4px; display: block; touch-action: none;
+    margin: 7px auto 0; display: block; touch-action: none;
     background: var(--card); border: 1px solid var(--border-strong); }
   body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
@@ -394,7 +394,6 @@
      left edge instead of the panel's right rail. */
   body.edit-mode .td-playlists {
     display: flex; justify-content: flex-end;
-    border-top: 1px solid var(--border); margin-top: 4px; padding-top: 8px;
   }
   /* Trigger button — same look as footer-link / footer-more-toggle */
   .pl-trigger {
@@ -725,6 +724,9 @@
       width: min(100%, 300px, 26vh);
       height: auto; max-width: none;
       margin-inline: auto;
+    }
+    #td-lifecycle, #obj-lifecycle {
+      margin: 7px 0;
     }
     /* Overprint keeps its poster grid: there the details column matches the cover
        square (--ovp-w) rather than the whole header. `:root[...]` is needed to
@@ -3753,7 +3755,7 @@ const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 const TRACK_PANEL_ROWS = [
   ['Status', 'type'], ['Source', 'source'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
   ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Date', 'published'],
-  ['Channel', 'channel'],
+  ['Channel', 'channel'], ['Playlists', 'playlists'],
 ];
 
 /* THE single source of the track-detail body markup, shared by both panels. The
@@ -3840,13 +3842,15 @@ function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artistUri, albu
   // write into it keep working.
   const rows = TRACK_PANEL_ROWS.map(([label, key]) => {
     const cls = key === 'fav' ? 'td-fav' : (EDITABLE_FIELDS.includes(key) ? 'tp-editable' : '');
+    if (key === 'playlists') {
+      return `<div data-row="${key}"><dt>${label}</dt><dd><div id="${p.playlistsId}" class="td-playlists"></div></dd></div>`;
+    }
     return `<div data-row="${key}"><dt>${label}</dt><dd id="${p.cellId(key)}"${cls ? ` class="${cls}"` : ''}>—</dd></div>`;
   }).join('');
   return heroHtml
     + `<dl class="${p.listClass}">${rows}</dl>`
     + `<div id="${p.lifecycleId}"></div>`
-    + `<canvas id="${p.canvasId}" class="tp-matrix" title="Drag to set the track's mood (edit mode)"></canvas>`
-    + `<div id="${p.playlistsId}" class="td-playlists"></div>`;
+    + `<canvas id="${p.canvasId}" class="tp-matrix" title="Drag to set the track's mood (edit mode)"></canvas>`;
 }
 
 /* The Date row is meaningful for spoken content only — a publication date says
