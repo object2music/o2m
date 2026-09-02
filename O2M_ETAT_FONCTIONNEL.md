@@ -198,13 +198,70 @@ repackaging. Ce qui intéresserait cette communauté (petite mais qualifiée) : 
 mix auto ambiance/découverte et la gestion podcast (reprise, catalogue, sujets).
 Bon vecteur de **notoriété technique**, marché quasi nul.
 
-### D. « Plugin Spotify » — vecteur le plus faible, à dire clairement
-Spotify **n'expose aucune surface de plugin** tierce. Le seul objet possible est une
-application compagnon via la Web API — or c'est précisément là que l'étau se
-resserre : recommandations dépréciées, lectures de playlists dégradées en 2026,
-restrictions par application. Construire une offre sur cette dépendance ajoute le
-risque plateforme au risque produit. À écarter, ou à traiter comme un connecteur
-parmi d'autres.
+### D. Application mobile / plugin Spotify — **structurellement fermé**, pas seulement faible
+
+Vérifié sur la politique développeur et la documentation officielles (septembre 2026),
+plus une contrainte mesurée sur ce projet. Quatre verrous, chacun suffisant à lui seul.
+
+**1. Le plafond de distribution est un cercle vicieux.** Une application reste en
+*development mode* — **5 utilisateurs authentifiés maximum**, sur liste blanche. Pour
+passer en *extended quota mode* (utilisateurs illimités), Spotify exige depuis mai 2025
+une **entité juridique** (les particuliers sont explicitement exclus) et
+**au moins 250 000 utilisateurs actifs mensuels**. Il faut donc déjà avoir 250 000
+utilisateurs pour être autorisé à en avoir plus de 5. Aucune trajectoire indépendante ne
+franchit cette porte.
+
+**2. Le mécanisme central d'O2M est explicitement interdit.** La politique interdit de
+« segue, mix, re-mix, or overlap any Spotify Content with any other audio content
+(**including other Spotify Content**) ». Or O2M *est* une machine à composer une file
+unique mêlant musique, podcast, info et radio. La formulation vise le mixage DJ
+(fondus enchaînés) et l'on peut plaider qu'une lecture séquentielle n'est pas un
+« segue » — mais c'est une plaidoirie, pas une autorisation.
+
+**3. Le scénario emblématique est interdit sans accord écrit.** « Do not create ringtone
+or alert tone functionality or **alarm functionality** […] unless you receive Spotify's
+written approval. » L'objet du matin — le rituel le plus mis en avant dans ce document —
+tombe dedans.
+
+**4. Toute monétisation est fermée.** « Commercial uses are not permitted for SDAs » :
+une application qui diffuse ne peut pas générer de revenu, ni par vente, ni par achat
+intégré, ni par publicité. Le modèle payant est donc exclu **par construction**, pas par
+prudence.
+
+**Contrainte technique mesurée en plus du cadre légal** : depuis le 10 août 2026,
+`login5` refuse les jetons émis par tout `client_id` tiers — un jeton de notre propre
+application ne peut plus rien lire (mopidy-spotify#437). La lecture n'a été rétablie ici
+qu'en passant par une identité *keymaster* (celle du client de bureau). Ça marche, mais
+**c'est un contournement d'identité** : acceptable comme risque personnel sur un outil
+privé, **disqualifiant** dans un produit distribué. À énoncer clairement dans toute
+discussion d'offre.
+
+**Ce qui reste néanmoins possible, et suffit à l'usage réel**
+Le *development mode* autorise 5 utilisateurs : c'est précisément la taille d'un foyer.
+O2M peut donc rester légitimement ce qu'il est — un outil privé, familial. Le mur
+n'apparaît qu'au moment de la distribution.
+
+**La bifurcation « interne / externe » et ce qu'elle apprend**
+- **Interne** (l'app lit elle-même) : bloqué côté natif par le point technique ci-dessus.
+  Le *Web Playback SDK* reste une voie officielle mais impose Premium, les DRM du
+  navigateur (support WebView iOS médiocre) — et bute de toute façon sur les 5 utilisateurs.
+- **Externe** (*App Remote*, on télécommande l'app Spotify officielle) : techniquement
+  propre, et **cela réglerait le point dur de la mobilité** listé au §6 (plus de flux
+  Snapcast en 5G, donc plus de coupures en voiture). Mais le téléphone devient un
+  *lecteur séparé* — fin du mix unique du foyer — et **seul le contenu Spotify** peut
+  passer par ce canal : ni podcast, ni radio, ni fichier local.
+
+Contrainte technique et contrainte juridique pointent donc dans la **même** direction :
+le contenu Spotify ne peut pas être mêlé au reste, et la voie *App Remote* ne saurait de
+toute façon transporter que lui.
+
+**Le design hybride qui en découle** (au sens « deux voies », pas « deux sources mêlées »)
+Une application mobile qui lirait **nativement tout le non-Spotify** — podcasts, radio,
+cache local : aucune licence à négocier, et surtout des **fichiers HTTP téléchargeables
+donc écoutables hors ligne** — et **déléguerait la musique à l'app Spotify officielle**
+via App Remote. Deux voies jamais mélangées : exactement ce que la politique impose, et
+exactement ce qui résout la mobilité. Les épisodes sont déjà stockés sous une forme
+directement compatible (`podcast+<flux>#<guid>` → fichier HTTP).
 
 ### E. Le sous-système contenu parlé — l'actif sous-estimé
 La partie podcasts est plus différenciante que la partie musicale, et beaucoup moins
@@ -232,7 +289,7 @@ en SaaS). À cadrer comme un produit distinct, pas comme une évolution.
 | A. Librairie popularité | très faible | visibilité | nul |
 | B. Moteur de sélection | moyen | forte (cœur) | interne |
 | C. Extension Mopidy | moyen | notoriété | marché nul |
-| D. Compagnon Spotify | moyen | faible | **plateforme** |
+| D. App mobile Spotify | — | **nulle : fermé** | plafond 5 users, mix et monétisation interdits |
 | E. Brique contenu parlé | moyen | **forte, différenciante** | dépendance éditeurs |
 | F. SaaS | élevé | forte | plateforme + produit |
 
@@ -262,15 +319,23 @@ Révisées au 2 septembre 2026. Deux points ont bougé depuis la version précé
    Toniebox) ? hôtellerie/lieux (ambiance data-driven) ? mix ?
 2. **Modèle** : pur open source communautaire ; kit matériel (lecteur NFC +
    image serveur prête) ; service installé ; SaaS ?
-3. **Rapport à Spotify** : c'est la question la plus structurante et elle s'est
-   **durcie** — les restrictions d'API 2026 ont déjà coûté des fonctions
-   (recommandations, lecture de playlists). Rester dépendant, pivoter vers la
-   bibliothèque locale et les alternatives via Mopidy, ou hybrider ?
+3. **Rapport à Spotify** : la question la plus structurante, et **elle est
+   partiellement tranchée depuis septembre 2026** (voir §8-D). Toute *diffusion* d'un
+   produit intégrant la lecture Spotify est fermée : plafond de 5 utilisateurs sans
+   250 000 MAU préalables, mixage de sources et monétisation explicitement interdits.
+   La question n'est donc plus « rester dépendant ou non » pour un produit — c'est
+   « **quelle offre construire sans lecture Spotify** », Spotify restant l'usage
+   privé du foyer. Reste ouvert : bibliothèque locale, autres backends Mopidy
+   (Tidal, Deezer, Jellyfin, Bandcamp…), ou centrage sur le contenu parlé.
 4. **Positionnement dé-écranisation** : opportunité forte (parentalité, santé
    numérique) — quel angle sans être moralisateur ?
 5. **Effort produit avant diffusion** : onboarding, sécurité, packaging hardware,
    documentation — quel minimum viable selon la cible retenue ?
-6. **Nouvelle question — le contenu parlé mérite-t-il d'être le fer de lance ?**
-   C'est la partie la plus différenciante, la moins concurrencée et celle qui porte
-   le savoir le plus difficile à répliquer (§8-E), alors que le discours actuel est
-   centré musique. Faut-il rééquilibrer le positionnement ?
+6. **Le contenu parlé doit-il devenir le fer de lance ?** La question gagne en force
+   depuis l'analyse §8-D : c'est la partie la plus différenciante, la moins
+   concurrencée, celle qui porte le savoir le plus difficile à répliquer (§8-E) —
+   et **la seule sans dépendance de plateforme** (RSS ouvert, API Radio France
+   publique, fichiers téléchargeables donc utilisables hors ligne). Les trois
+   contraintes majeures du dossier — licence, distribution, mobilité — s'évanouissent
+   toutes sur ce périmètre. C'est probablement la conclusion la plus actionnable de
+   ce document.
