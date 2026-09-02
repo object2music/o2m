@@ -51,7 +51,12 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
 
 ### Key source files in `o2m/src/`:
 - **`o2mtomopidy.py`** — Central logic class `O2mToMopidy`. Manages active NFC boxes, tracklist filling, Spotify recommendations, and stats tracking. This is where most business logic lives.
-- **`o2mmodels.py`** — Peewee ORM models (`Box`, `Stats`, `Stats_Raw`). Connects to MySQL or SQLite based on `o2m.conf`. Database connection is initialized at module import time.
+- **`o2mmodels.py`** — Peewee ORM models. Connects to MySQL or SQLite based on `o2m.conf`; the connection is initialized at module import time. Current models:
+  - **Core**: `Box` (an NFC object: content + settings), `Track` (one row per uri — stats AND cached metadata, the central table), `Stats_Raw` (one row per play: the raw log behind hourly habits), `PlaylistLog`.
+  - **Catalogue**: `Album`, `Artist`, `Genre`, `Playlist`, `TagFeature`, `CacheMeta`, and the N:N links `TrackArtist`, `AlbumArtist`, `ArtistGenre`, `TrackGenre`, `AlbumGenre`, `PlaylistTrack`, `AlbumTrack`.
+  - **Spoken content**: `PodcastChannel` (one row per show or feed — see the spoken-content section), `RfTaxonomy` (Radio France subject vocabulary), `EpisodeTaxonomy` (episode ↔ subject pivot).
+
+  **Schema migrations**: `SCHEMA_VERSION` (currently **21**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
 - **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, and auth.
 - **`nfcreader.py`** — NFC/smartcard reader integration via `pyscard`. Fires events on card insert/remove.
@@ -67,7 +72,12 @@ Config is read from `/etc/mopidy/o2m.conf` (Linux) or `~/.config/mopidy/o2m.conf
 5. Mopidy events (`track_playback_ended`, `track_playback_paused`) trigger stat updates and dynamic tracklist refilling
 
 ### Box `option_type` values
-`library`, `favorites`, `new`, `incoming`, `hidden`, `trash`, `podcast`, `info`
+`library`, `favorites`, `new`, `incoming`, `hidden`, `trash`, `podcast`, `info`.
+
+The same field on `Track` means something different — it is the track's **lifecycle**
+state, not a box type, and is what the UI shows as STATUS. Observed in prod: `new` 54,100 ·
+`library` 8,841 · `info` 7,110 · `podcast` 2,199 · `favorites` 765 · `hidden` 753 ·
+`incoming` 405 · `trash` 177 (plus 2,456 empty, i.e. never classified).
 
 ## Popularity Algorithm (`o2m/src/popularity.py`)
 
@@ -97,8 +107,21 @@ top of the module):
 ## Auto-Selection Algorithm (`o2m/src/o2mtomopidy.py`)
 
 `tracklistfill_auto` composes the AUTO mix from sources whose **proportions vary with
-`discover_level` (DL)** — favorites/common ↓, news/incoming/albums_artists ↑ as DL rises
-(linear formulas, always summing to a fixed total). Within each source, tracks are drawn
+`discover_level` (DL)**. Each source gets a linear weight in DL; the weights are then
+normalised, so they always sum to the requested track count:
+
+| Source | Weight | DL0 → DL10 |
+|---|---|---|
+| `favorites` | `−0.8·DL + 10` | 10 → 2 |
+| `common` | `−0.3·DL + 8` | 8 → 5 |
+| `playlists` | `−0.3·DL + 8` | 8 → 5 |
+| `albums_artists` | `0.1·DL + 4` | 4 → 5 |
+| `incoming` | `0.3·DL` | 0 → 3 |
+| `news` | `1.0·DL` | 0 → 10 |
+| `podcasts` (when the box mixes them in) | `0.9·DL` | 0 → 9 |
+
+So DL0 is almost entirely favourites/common (the known), DL10 is dominated by news and
+incoming (the unknown). Within each source, tracks are drawn
 by one of two weighted samplers (Efraimidis-Spirakis, `_sample_by_weight`). Both realise
 the same principle: **DL0 → popularity-dominant, DL10 → pure random.**
 
@@ -139,6 +162,82 @@ Down-weight in (0,1], multiplicative:
   `newrecent` is scoped to the library (`liked=1 OR album saved=1`) — browsed/lazy-filled
   albums are excluded.
 
+## Spoken Content: Podcasts, News, Radio France
+
+Spoken items (podcast episodes, news flashes) are `Track` rows like any other, but they
+carry their own metadata, their own selection rules and their own caching. `option_type`
+is `podcast` or `info`; music scoring does not apply (`popularity` stays NULL).
+
+### URI convention — one shape for everything
+Every episode is a **mopidy-podcast uri**: `podcast+<feed_url>#<guid>`. This is the single
+most important invariant of the subsystem: resume, publication date, duration and channel
+all come from that shape. Radio France episodes used to be bare mp3 links
+(`proxycast.radiofrance.fr/…mp3`), which forced RF hosts into `_is_spoken_uri`, the
+unfinished pool, the volume ducking and the client's stream test. They are now converted
+to the `podcast+` shape (see below); the mp3 form survives only as a fallback.
+
+### Radio France (`o2m/src/radiofrance.py`)
+Two unrelated APIs, both used:
+- **livemeta** (`api.radiofrance.fr/livemeta/pull/<id>`) — what is playing *right now* on a
+  live stream. No key.
+- **OpenAPI GraphQL** (`openapi.radiofrance.fr/v1/graphql`, header `X-Token`, key in
+  `radiofrance_api_key` / `RADIOFRANCE_API_KEY`) — show catalogue, episodes, taxonomies.
+
+Hard-won constraints of the OpenAPI, all verified against the live API — do not
+re-derive them:
+- `first <= 100`; `Shows` exposes only `edges` (cursor paging, **no** `pageInfo`).
+- `showByUrl` rejects episode urls ("Not a show").
+- `diffusions` accepts a window of **7 days maximum**.
+- Taxonomy filters take **ids**, not names, and are **INTERSECTED** (AND, never OR).
+- `taxonomies` needs a non-null inner type: `[TaxonomyTypeEnum!]`, `[String!]`.
+- `path` is null for tags and raises if selected on them — themes only.
+- `Show.podcast { rss }` is broken server-side. The feed is discovered from the **show
+  page** instead (`discover_feed`, no key needed).
+- A diffusion may have a page url but **no** `podcastEpisode` — those episodes are not
+  playable from the API, yet are usually present in the RSS feed.
+
+### Joining the two sources — `Track.episode_key`
+The same broadcast reaches us twice: as an RSS item and as an API episode. The audio files
+differ (different `ITEMA` ids), so **there is no key in the media**. Both, however, point
+at the same **episode page**, whose trailing numeric id is an exact join — the feed's
+`<link>` and the API's `url` end with it. That id is `Track.episode_key`, and it is what:
+1. converts an API episode into `podcast+<feed>#<guid>` (`_rf_as_podcast_uri`), and
+2. makes cross-source duplicates impossible rather than merged after the fact.
+
+### Catalogue and warmup
+- `PodcastChannel` is the **single channel table** (a previous `RfShow` table described RF
+  shows a second time and was merged into it, migration v21). `kind` is `rf` or `rss`;
+  `feed_url` is the feed backing the channel — discovered once per RF show and cached;
+  `rf_id` keeps the API uuid.
+- `warmup_podcast_catalogue` refreshes the episodes of every **box-referenced** source
+  (feeds, shows, subjects) into `Track`, so a box fills from the DB instead of hitting the
+  network on the critical path. `warmup_radiofrance` refreshes the RF show catalogue
+  (TTL 7 days) and the taxonomies (TTL 30 days).
+- Episodes are purged beyond ~1 year (`purge_old_episodes`).
+- Non-RF RSS boxes still query their feed live at fill time — that is intended.
+
+### Box patterns for spoken content
+`podcasts:unfinished` (resume what was started) · `podcasts:channel` (the box's own feeds) ·
+`infos:library` (scheduled news flash) · `meta_podcasts` / `meta_infos` / `meta_radios`
+(all sources of a category) · `rf:show:<url>` (one Radio France show) · `rf:sujet:<keyword>`
+(episodes matching a Radio France theme or tag, refilled dynamically).
+
+Note there is **no `meta_music`**: `meta_fill` handles the `music` category, but
+`_META_PATTERNS` has no entry for it, so it cannot be written in a box. The BASIC view's
+ALL button is a UI action over the four categories, not a pattern.
+
+### Behaviours to know
+- **Classification** (`_spoken_type_for_uri`): box heritage first (`info` beats `podcast`),
+  then duration (< 20 min → `info`), then `podcast`. It accepts a `podcast+…` uri **or** a
+  bare feed url — the catalogue warmup classifies a whole feed at once and passes the
+  latter.
+- **Budget sharing**: a box mixing several feeds shares its `max_results` between them in a
+  rolling fashion, so one prolific feed cannot crowd out the others.
+- **Resume**: any spoken item resumes at its saved position (minus 10s).
+- **Pre-roll ads**: a fixed skip per host (30s for Radio France and BBC hosts, overridable
+  with `podcast_ad_skip = host:ms`), applied only on a fresh start. It cannot be detected:
+  no feed exposes chapters or ad markers, and `itunes:duration` already includes the ad.
+
 ## Frontend (`frontend/`)
 
 SvelteKit + TypeScript + Tailwind CSS app. Source in `frontend/src/`:
@@ -157,7 +256,7 @@ Tracks carry three enrichment fields (added via DB migrations v5/v6):
 - `energy` FLOAT — 0.0 (sleep/ambient) → 1.0 (metal/hardcore)
 - `valence` FLOAT — 0.0 (dark/grief) → 1.0 (joyful/euphoric)
 
-### Three filling paths
+### Four filling paths
 
 **1. Warmup at startup** (`warmup_cache` → `warmup_track_moods`, `spotifyhandler.py`)
 - Up to 250 tracks/startup (5 batches × 50), ordered by `read_count_end` DESC
@@ -170,6 +269,13 @@ Tracks carry three enrichment fields (added via DB migrations v5/v6):
 **3. Deferred enrichment on playback end** (`o2mtomopidy.py`, `track_playback_ended`)
 - Triggers when `stat.energy is None AND stat.mood is None` after a track ends
 - Fires a background thread calling `_lastfm_get_track_mood`
+
+**4. Preemptive enrichment at fill time** (`o2mtomopidy.py`, `add_tracks`)
+- Every track added to the tracklist that is feature-less (`mood` NULL or `_`, or
+  `energy` NULL) **and unlocked** (`mood_edited_at IS NULL`) is queued in `_enrich_items`
+  and enriched in the background, before it plays.
+- This is what turned the mood coverage around: enrichment follows actual listening
+  instead of waiting for a warmup to reach a track by `read_count_end` rank.
 
 ### Scoring logic (`spotifyhandler.py`)
 
@@ -194,21 +300,30 @@ sets energy/valence but leaves mood=NULL — **these tracks are picked up again 
 - TTL = 14 days, **only set when all artists are covered**
 - Note: the function's docstring incorrectly says "not run automatically" — it IS in `warmup_cache`
 
-### Prod DB fill rates (o2m_0, measured 2026-05-30)
+### Prod DB fill rates (shared o2m_0/o2m_1 database, measured 2026-09-02)
 
-| Entity | Total | With name | With name+artist | Mood filled | Mood '\_' | Pending |
-|--------|-------|-----------|-----------------|-------------|-----------|---------|
-| Tracks | 45,744 | 20,864 | 9,797 | 108 (1.1%) | 481 | 9,208 |
-| Energy/valence | — | — | 9,797 | 158 (1.6%) | — | — |
+| Entity | Total | With name | Mood filled | Mood sentinel `_` | Energy/valence |
+|--------|-------|-----------|-------------|-------------------|----------------|
+| Tracks | 76,815 | 52,187 | **40,941** | 7,709 | **40,229** |
 
-**50 tracks have energy set but mood=NULL** — these are stuck in an infinite warmup loop (see bug above).
+Artists: 1,285, of which **1,247 carry genres (97%)**. Albums 7,880 · Genres 694 ·
+Playlists 53 (10,406 memberships) · Boxes 150 · Stats_Raw 102,542 plays.
+Mood distribution: happy 21,123 · calm 13,153 · energetic 5,482 · dark 1,183.
 
-Artists: 234 with names, 57 with genres (24%). Top genres: jazz (26), rock (13), alternative (10), piano (7), folk (5), chanson française (5).
+**This replaces the May 2026 figures, which described a pipeline that barely worked**
+(108 tracks with mood, 1.1%; 57 artists with genres, 24%). Two things fixed it, and both
+matter when reasoning about the engine:
+- the **genre pipeline reaching near-full coverage** (24% → 97% of artists), which makes
+  the artist-genre fallback in `_lastfm_get_track_mood` productive instead of anecdotal;
+- **preemptive enrichment at fill time** (path 4 above), which follows real listening.
 
-**Root cause of low fill rate**: many niche/French tracks (Alain Bashung, Têtes Raides…) have no
-`track.getTopTags` data on Last.fm (→ 81% of attempted tracks get sentinel `_`). The artist-genre
-fallback partially helps for energy/valence but `_GENRE_MOOD` doesn't cover tags like
-`chanson francaise`, `jazz fusion`, `african`, so mood stays NULL.
+The old "50 tracks stuck in an infinite warmup loop" bug (energy set, mood NULL) is
+**effectively closed**: 3 rows remain. 4,479 named tracks still have no mood and no
+sentinel — these are simply not yet reached, not stuck.
+
+`mood_edited_at` is set on 23,768 rows. It is a **lock**, not a claim of hand-editing:
+any write through `update_track_features_manual` stamps it so a later warmup cannot
+overwrite the value. Treat it as "authoritative", not "curated by a human".
 
 ### API endpoints
 
@@ -254,3 +369,9 @@ All service configuration is via `.env` file (not committed). Key variables:
 - `SPOTIFY_USERNAME`, `SPOTIFY_PASSWORD`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
 - `HOST_MOPIDY`, `O2M_DISCOVER_LEVEL`, `O2M_DEFAULT_VOLUME`, etc.
 - `LASTFM_API_KEY` — required for mood/genre enrichment via Last.fm
+- `RADIOFRANCE_API_KEY` — Radio France OpenAPI token (show catalogue, episodes, subjects).
+  Without it the RF features degrade silently: livemeta (now-playing on live streams) and
+  plain RSS feeds keep working, `rf:show:` / `rf:sujet:` do not.
+
+Note: `.env` changes need `docker compose up -d` to be injected — a `restart` reuses the
+old environment.
