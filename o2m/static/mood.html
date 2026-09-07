@@ -1907,10 +1907,10 @@
      Its OFF state used to be --bg, which is all but white on this theme: with only
      Music active the disc still read as switched on. */
   [data-theme="creme"] #basic-all, [data-theme="bulletin"] #basic-all {
-    background: var(--tile-all-off); border-color: var(--border-strong); color: var(--text);
+    background: var(--tile-all-off); border: none; color: var(--text);
   }
   [data-theme="creme"] #basic-all.on, [data-theme="bulletin"] #basic-all.on {
-    background: var(--card); border-color: var(--accent); color: var(--accent);
+    background: var(--card); color: var(--accent);
     box-shadow: 0 3px 16px rgba(44,40,92,.22);
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
@@ -2044,6 +2044,12 @@
     border: 1px solid var(--border-soft);
     transition: background .25s, color .2s, border-color .2s;
   }
+  /* No hairline on the actuators. Their shape comes from the pane itself — a filled
+     rectangle over a picture — and an outline on top of that reads as fussy. Only
+     here: in dark and mono the tiles have no fill at all, so there the border IS the
+     tile and removing it would leave a glyph floating in the void. */
+  html.basic[data-theme="creme"] .basic-toggle,
+  html.basic[data-theme="bulletin"] .basic-toggle { border: none; }
   html.basic[data-theme="creme"] #basic-dials,
   html.basic[data-theme="bulletin"] #basic-dials { padding: 18px 20px; }
   /* Status line: its own shrink-wrapped pane, a size up — over a picture the label
@@ -2061,11 +2067,13 @@
      picture rather than in it. */
   html.basic[data-theme="creme"] .basic-toggle.on,
   html.basic[data-theme="bulletin"] .basic-toggle.on {
-    background: var(--tile-on); border-color: transparent; color: var(--tile-on-ink);
+    background: var(--tile-on); color: var(--tile-on-ink);
     box-shadow: 0 3px 16px rgba(44,40,92,.22);
   }
+  /* Queued: the dashed accent hairline went with the border, so the accent moves to
+     the ink. With its slow pulse that is still two signals. */
   html.basic[data-theme="creme"] .basic-toggle.pending,
-  html.basic[data-theme="bulletin"] .basic-toggle.pending { border-color: var(--accent); }
+  html.basic[data-theme="bulletin"] .basic-toggle.pending { color: var(--accent); }
 
   @media (min-width: 700px) {
     html.basic[data-theme="creme"] #basic-dials,
