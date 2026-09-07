@@ -462,6 +462,18 @@
     transition: filter .4s, opacity .22s ease;
   }
   #cover.cover-fading { opacity: 0; }
+  /* Entrance of freshly replaced header text / badge (npAnimateIn): the new content
+     is painted at once and fades in from nothing — no fade-out to wait for, and no
+     beat during which the previous track's text still shows. */
+  @keyframes np-in { from { opacity: 0; } to { opacity: 1; } }
+  .np-in { animation: np-in .3s ease; }
+  /* Details column: out while the next track's details load, in when painted. */
+  #track-details .td-body { transition: opacity .18s ease; }
+  #track-details.switching .td-body { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    .np-in { animation: none; }
+    #cover, #cover-gen, #track-details .td-body { transition: none; }
+  }
   /* Generated cover (fallback when there is no artwork): inline SVG, the only
      possible rendering mode — through <img src> (data: URIs included) the SVG is an
      isolated document with neither the theme's var(--…) nor its classes, and would
@@ -469,7 +481,10 @@
      Deliberate divergence: the overprint/invert grayscale applied to #cover is NOT
      applied here. Those filters desaturate photography, whereas this cover is already
      made of the theme's own ramps — greying it would kill its accent half. */
-  #cover-gen { position: absolute; inset: 0; display: none; }
+  #cover-gen { position: absolute; inset: 0; display: none; transition: opacity .22s ease; }
+  /* Track switch: the previous artwork fades out while the next one is looked up,
+     and the next one fades in (setCoverSmooth / setCoverGenerated lift the class). */
+  #cover-wrap.switching #cover, #cover-wrap.switching #cover-gen { opacity: 0; }
   #cover-gen svg { width: 100%; height: 100%; display: block; }
   #cover-wrap.gen #cover { display: none; }
   #cover-wrap.gen #cover-gen { display: block; }
@@ -1827,7 +1842,9 @@
   }
   #basic-all svg { width: 20px; height: 20px; }
   #basic-all.on { color: var(--accent); border-color: var(--accent); }
-  #basic-all:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
+  /* Parked (a tile is filling): dimmed, not pulsing — the pulse is the actor's. */
+  #basic-all:disabled { cursor: wait; opacity: .5; }
+  #basic-all.running  { opacity: 1; animation: basic-pulse 1s ease-in-out infinite; }
   .basic-toggle {
     display: flex; flex-direction: column; align-items: center; gap: 9px;
     padding: 18px 8px 14px; background: none; border: 1px solid var(--border);
@@ -1853,13 +1870,16 @@
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
+  /* Waiting its turn behind the tile currently filling: drawn in the state that
+     was asked for, with a dashed hairline so it reads as planned rather than
+     done, and a slow pulse. A second tap cancels it. */
+  .basic-toggle.pending { border-style: dashed; animation: basic-pulse 2.2s ease-in-out infinite; }
   @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
   /* Filling the queue takes seconds. Moving a dial meanwhile fires a second,
      concurrent rebuild: part of the queue is dropped and part is not, and the
      result is longer than either would have been. The dials say so and stop
      accepting input for the duration — same pulse as the actuators. */
   body.mix-busy .dial-wrap { pointer-events: none; animation: basic-pulse 1s ease-in-out infinite; }
-  body.mix-busy #basic-toggles { pointer-events: none; }
   /* Playback status line above the actuators: animated eq (freezes when paused
      via body.is-paused) + track/box counts + network dot. */
   #basic-status {
@@ -2420,13 +2440,15 @@ function shouldApplyMood() {
 }
 
 /* True while the queue is being (re)built server-side. Guards the dials: a mood
-   or discovery change during a fill races the fill itself. */
+   or discovery change during a fill races the fill itself. It also parks ALL and
+   the AUTO button — but NOT the four category tiles: those are independent
+   switches and queue up behind the running one (see requestBasicCat). */
 let mixBusy = false;
 function setMixBusy(on) {
   mixBusy = !!on;
   document.body.classList.toggle('mix-busy', mixBusy);
   if (mixBusy) clearTimeout(applyTimer);   // drop a change debounced just before
-  document.querySelectorAll('#basic-toggles button, #btn-auto').forEach(b => { b.disabled = mixBusy; });
+  document.querySelectorAll('#basic-all, #btn-auto').forEach(b => { b.disabled = mixBusy; });
 }
 
 function scheduleApply() {
@@ -2582,6 +2604,9 @@ async function refreshBasicToggles() {
     if (basicCats.limit) basicLimit = basicCats.limit;
     updateBasicStatus();
     document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn => {
+      // A tile waiting in the queue, or the one currently filling, shows the state
+      // the user asked for — the server's mid-flight truth would flip it back.
+      if (btn.classList.contains('pending') || btn.disabled) return;
       const boxes = basicCats[btn.dataset.cat] || [];
       btn.classList.toggle('on', boxes.some(b => b.active));
     });
@@ -2603,11 +2628,17 @@ function shuffledCats() {
   return c;
 }
 
+let _allRunning = false;
 async function toggleBasicAll(btn) {
-  if (!basicCats || mixBusy) return;
+  if (!basicCats || mixBusy || _catDraining) return;
   const cats = shuffledCats();
   const anyActive = cats.some(c => (basicCats[c] || []).some(b => b.active));
-  btn.disabled = true;
+  // ALL is a sequence over the four tiles, so it and the tiles are mutually
+  // exclusive: the tiles are parked for the run (a tap meanwhile would race it).
+  const tiles = [...document.querySelectorAll('#basic-toggles .basic-toggle')];
+  _allRunning = true;
+  btn.disabled = true; btn.classList.add('running');
+  tiles.forEach(t => { t.disabled = true; });
   setMixBusy(true);
   try {
     for (const c of cats) {
@@ -2616,14 +2647,76 @@ async function toggleBasicAll(btn) {
       // OFF pass: only categories currently on; ON pass: only those off.
       if (anyActive === isOn && cbtn) await toggleBasicCat(cbtn);
     }
-  } finally { setMixBusy(false); btn.disabled = false; }
+  } finally {
+    _allRunning = false;
+    setMixBusy(false); btn.disabled = false; btn.classList.remove('running');
+    tiles.forEach(t => { t.disabled = false; });
+  }
   await refreshBasicToggles();
 }
 
-async function toggleBasicCat(btn) {
+/* ── Actuator queue ──────────────────────────────────────────────────────────
+   The four categories are independent switches, so they must not lock each
+   other: while podcast is filling, a tap on music is QUEUED and runs right after.
+   The tile shows the requested state at once — dashed while it waits, pulsing
+   while it runs — and the server confirms it when its turn is done. Only ALL and
+   the single tiles are mutually exclusive (toggleBasicAll); the dials stay locked
+   for the whole run as before, since a mood change during a fill races the fill.
+   Robust by construction: each request carries the state the user asked for
+   rather than "toggle", so an item already satisfied when its turn comes is a
+   no-op; a failure drops only its own item; a second tap on a waiting tile
+   cancels it. */
+const _catQueue = [];          // [{cat, wantOn}] in tap order
+let _catDraining = false;
+const _capCat = c => c.charAt(0).toUpperCase() + c.slice(1);
+
+function requestBasicCat(btn) {
+  if (_allRunning || !basicCats) return;
+  const cat = btn.dataset.cat;
+  const boxes = basicCats[cat] || [];
+  if (!boxes.length) { setFeedback('No ' + cat + ' box'); return; }
+  const qi = _catQueue.findIndex(q => q.cat === cat);
+  if (qi >= 0) {                                    // second tap while waiting: cancel
+    _catQueue.splice(qi, 1);
+    btn.classList.remove('pending');
+    btn.classList.toggle('on', boxes.some(b => b.active));   // back to the server's truth
+    setFeedback(_capCat(cat) + ' cancelled');
+    return;
+  }
+  const wantOn = !btn.classList.contains('on');    // relative to what the user sees
+  btn.classList.toggle('on', wantOn);              // instant feedback; confirmed later
+  _catQueue.push({ cat, wantOn });
+  if (_catDraining || mixBusy) {                   // something is filling: this one waits its turn
+    btn.classList.add('pending');
+    setFeedback(_capCat(cat) + ' queued');
+  }
+  drainCatQueue();
+}
+
+async function drainCatQueue() {
+  if (_catDraining) return;
+  _catDraining = true;
+  try {
+    while (_catQueue.length) {
+      // ALL or a dial-triggered fill holds the lock: wait for it rather than race it.
+      while (mixBusy) await new Promise(r => setTimeout(r, 250));
+      const { cat, wantOn } = _catQueue.shift();
+      const btn = document.querySelector(`.basic-toggle[data-cat="${cat}"]`);
+      if (!btn) continue;
+      btn.classList.remove('pending');
+      try { await toggleBasicCat(btn, wantOn); } catch (e) {}
+    }
+  } finally { _catDraining = false; }
+}
+
+/* wantOn: the state requested when the tile was tapped (queue). Omitted → plain
+   toggle of the current server state (ALL). */
+async function toggleBasicCat(btn, wantOn) {
   const boxes = (basicCats && basicCats[btn.dataset.cat]) || [];
   if (!boxes.length) { setFeedback('No ' + btn.dataset.cat + ' box'); return; }
-  const turnOn = !boxes.some(b => b.active);
+  const isOn = boxes.some(b => b.active);
+  const turnOn = (wantOn == null) ? !isOn : wantOn;
+  if (turnOn === isOn) { btn.classList.toggle('on', isOn); return; }   // already there — nothing to do
   btn.disabled = true;
   // ALL calls this in a loop and already holds the lock: only take it when free,
   // and only release what we took — otherwise the first category would free the
@@ -2658,7 +2751,7 @@ async function toggleBasicCat(btn) {
     }
   } catch(e) { setFeedback('Box error'); }
   if (ownsLock) setMixBusy(false);
-  btn.disabled = false;
+  if (!_allRunning) btn.disabled = false;   // ALL re-enables the four together at the end
   await refreshBasicToggles();
   refreshBoxStates();   // sync the hidden full-view buttons too (keeps autoBoxActive right)
   setTimeout(refreshNowPlaying, 800);
@@ -2667,7 +2760,7 @@ async function toggleBasicCat(btn) {
 
 function initBasicView() {
   document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn =>
-    btn.addEventListener('click', () => toggleBasicCat(btn)));
+    btn.addEventListener('click', () => requestBasicCat(btn)));
   document.getElementById('basic-all')?.addEventListener('click', (e) => toggleBasicAll(e.currentTarget));
   // Discovery — snaps to the 3 detents (focused/regular/crazy), same
   // interaction pattern as Mood; same underlying discover_level(0-10) value.
@@ -2781,27 +2874,42 @@ async function rpc(method, params = {}) {
 /* ── Controls ── */
 let currentDurationMs = 0;
 
+/* Optimistic feedback. Every transport action paints its expected outcome NOW and
+   lets the server confirm it (WS event + refresh). A refresh that was already in
+   flight when the user acted carries a snapshot from before the action, so it is
+   dropped (refreshNowPlaying compares its start time with _lastUserActionAt) —
+   otherwise it would paint the previous state back over the optimistic one. */
+let _lastUserActionAt = 0;
+
 document.getElementById('btn-play').addEventListener('click', async () => {
   const isPlaying = document.getElementById('btn-play').dataset.state === 'playing';
+  _lastUserActionAt = Date.now();
+  paintPlayState(!isPlaying);            // the icon flips at once…
+  setClock(clockPosMs(), !isPlaying);    // …and so does the clock
   if (isPlaying) {
     await rpc('core.playback.pause');
   } else {
     await fetch(API + '/toogle_play');
   }
-  setTimeout(refreshNowPlaying, 200);
+  refreshNowPlaying();
 });
-/* Optimistic skip: paint the destination track's name/artist IMMEDIATELY from the
-   tracklist we already hold, then let the server confirm (WS event + refresh). The
-   UI feels instant instead of waiting a full network round-trip. */
+/* Optimistic skip: the destination row is already in the tracklist we hold, so
+   the whole header switches to it IMMEDIATELY — title, artist, album, duration,
+   cover (from the cache the prefetch filled), status, tags and details — then the
+   server confirms. _optTlid remembers where a chain of quick taps has got to, so
+   a second "next" before the first is confirmed moves on from the right row. */
+let _optTlid = null, _expectedUri = null;
 function optimisticSkip(delta) {
-  const i = matrixTlItems.findIndex(it => it.tlid === currentTlid);
+  const from = _optTlid != null ? _optTlid : currentTlid;
+  const i = matrixTlItems.findIndex(it => it.tlid === from);
   const dest = i >= 0 ? matrixTlItems[i + delta] : null;
   if (!dest) return;
-  setTrackName(dest.name || '—');
-  document.getElementById('hero-title').textContent = dest.name || '';
-  const aa = document.getElementById('artist-name');
-  if (aa) aa.textContent = dest.artist || '—';
-  fitHeroTitle();
+  _lastUserActionAt = Date.now();
+  _optTlid = dest.tlid; _expectedUri = dest.uri || null;
+  currentDurationMs = dest.length || 0;
+  document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
+  updateCurrentRow(document.getElementById('tracklist-wrap'), dest.tlid);
+  switchNowPlayingTo(dest.uri, dest);
 }
 document.getElementById('btn-next').addEventListener('click', async () => {
   resetProgress();
@@ -3023,8 +3131,28 @@ async function fetchStatus(uri) {
 function updateStatusBadge(text) {
   const el = document.getElementById('track-status-badge');
   const ot = (text || '').split(' - ')[0].trim().toLowerCase();
-  el.textContent = formatStatus(text);
+  const label = formatStatus(text);
+  const changed = el.textContent !== label;
+  el.textContent = label;
   el.className   = STATUS_CLASS[ot] || '';
+  if (changed && label) npAnimateIn(el);
+}
+
+/* Header badge for a track that just became current: the cached value at once when
+   there is one (never the previous track's), then a fresh read — guarded, so a slow
+   answer for a track already skipped again cannot land on the next one. */
+let _badgeReq = null;
+function loadStatusBadge(uri) {
+  if (uri === _badgeReq) return;
+  _badgeReq = uri;
+  updateStatusBadge(getCachedStatus(uri) || '');
+  fetch(API + '/track_status?uri=' + encodeURIComponent(uri))
+    .then(r => r.ok ? r.text() : '')
+    .then(t => {
+      statusCache.set(uri, { text: t, ts: Date.now() });
+      if (npTargetUri() === uri) updateStatusBadge(t);
+    })
+    .catch(() => {});
 }
 
 async function fetchTracklistStatuses(tracks) {
@@ -3058,12 +3186,108 @@ async function refreshVolume() {
   document.getElementById('volume-icon').innerHTML = volSvg;
 }
 
+/* Refresh generation. Every WS event and the 10s poll start a refresh, and several
+   are routinely in flight at once — a single track change fires
+   playback_state_changed, track_playback_ended, track_playback_started and
+   tracklist_changed. Each awaits the network, so an OLDER refresh could resume
+   after a NEWER one had painted, and repaint its stale snapshot over it: the
+   previous title back on top of the new one, or a whole track back onto a header
+   that had just been emptied (the "0 tracks · 0 boxes" screen still showing a
+   title). Only the latest refresh may paint; the others drop out at their await. */
+let _npGen = 0, _npEmptyPainted = false;
+function npTargetUri() { return _expectedUri || matrixCurUri; }
+
+/* The play/pause glyph. Only rewritten when the state actually flips — rewriting
+   innerHTML on every refresh repainted the button and made it flicker. Also called
+   optimistically by the button itself. */
+function paintPlayState(playing) {
+  const playBtn = document.getElementById('btn-play');
+  const playState = playing ? 'playing' : 'paused';
+  if (playBtn.dataset.state === playState) return;
+  playBtn.dataset.state = playState;
+  playBtn.innerHTML = playing
+    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+}
+
+/* Restart the entrance fade on an element whose content was just replaced. The new
+   content lands at once — nothing waits on a fade-out — and comes in from nothing,
+   so the change registers without the previous text lingering for a beat. */
+function npAnimateIn(...els) {
+  els.forEach(el => { if (!el) return; el.classList.remove('np-in'); void el.offsetWidth; el.classList.add('np-in'); });
+}
+
+/* Title / artist / album, from a tracklist row (optimistic skip) or the confirmed
+   track (refresh). Returns whether anything changed: the refresh confirming an
+   optimistic skip paints the same text and must not re-run the fade. */
+function paintTrackText(name, artist, album, artistUri) {
+  const nameEl = document.getElementById('track-name'), heroEl = document.getElementById('hero-title');
+  const artistEl = document.getElementById('artist-name'), albumEl = document.getElementById('album-name');
+  const n = name || '—', a = artist || '—', al = album || '';
+  const changed = nameEl.textContent !== n || artistEl.textContent !== a || (albumEl && albumEl.textContent !== al);
+  if (!changed) return false;
+  setTrackName(n);
+  heroEl.textContent = name || '';
+  fitHeroTitle();
+  artistEl.textContent = a;
+  artistEl.classList.toggle('obj-link', !!artistUri);
+  if (albumEl) albumEl.textContent = al;
+  npAnimateIn(nameEl, heroEl, document.getElementById('artist-album'));
+  return true;
+}
+
+/* Everything that changes when the current track does, in one place — called by
+   the optimistic skip with the tracklist row and by the refresh with the confirmed
+   track. Idempotent per uri: the refresh that confirms a skip must not wipe what
+   the skip has already loaded (tags, badge, details, cover). */
+let _switchUri = null;
+function switchNowPlayingTo(uri, { name, artist, artistUri, album }) {
+  if (!uri || _switchUri === uri) return;
+  _switchUri = uri;
+  _npEmptyPainted = false;
+  document.getElementById('track-details')?.classList.add('switching');   // fades the old details out
+  document.getElementById('now-playing')?.classList.toggle('radio-np', _isStreamUri(uri));
+  // For a radio this is the station name (or a neutral label when mopidy only has
+  // the stream url as name); maybeShowRadioTitle refines it with the live title.
+  const isStream = _isStreamUri(uri);
+  paintTrackText(isStream && (!name || _isStreamUri(name)) ? 'Radio' : name, artist, album, artistUri);
+  updateHeroAccent(uri);
+  clearTrackTags();
+  fetchAndRenderTrackTags(uri);
+  loadStatusBadge(uri);
+  renderTrackDetails(uri);
+  loadCover(uri);
+}
+
+/* No current track: the header goes back to its empty state — ALL of it. The old
+   code cleared the hero title, cover, badge and details but left the title line,
+   artist, album, tags and progress bar showing the last track. */
+function clearNowPlayingHeader(playing) {
+  _switchUri = null;
+  paintTrackText('', 'O2M', '', '');
+  document.getElementById('now-playing')?.classList.remove('radio-np');
+  clearTrackTags();
+  _badgeReq = null; updateStatusBadge('');
+  setCoverGenerated(null);
+  resetProgress();
+  document.getElementById('prog-duration').textContent = '';
+  renderTrackDetails(null);
+  updateMediaSession(null, playing, '');
+  _radioLast = { title: null, artist: null, album: null, visual: null };
+}
+
 async function refreshNowPlaying() {
-  const [curR, stateR, tlR] = await Promise.all([
+  const gen = ++_npGen, startedAt = Date.now();
+  // All four reads go out together: the position used to wait for the other
+  // three — one more round trip before anything was painted.
+  const [curR, stateR, tlR, posR] = await Promise.all([
     rpc('core.playback.get_current_tl_track'),
     rpc('core.playback.get_state'),
     rpc('core.tracklist.get_tl_tracks'),
+    rpc('core.playback.get_time_position'),
   ]);
+  if (gen !== _npGen) return;                 // superseded while waiting: the newer snapshot wins
+  if (startedAt <= _lastUserActionAt) return; // taken before (or in the same ms as) the user's action: stale
 
   const tlt   = curR?.result;
   const track = tlt?.track;
@@ -3072,6 +3296,7 @@ async function refreshNowPlaying() {
   const tracks  = tlR?.result || [];
 
   currentTlid      = tlid;
+  _optTlid = null; _expectedUri = null;       // the server has spoken; optimistic pointers are done
   matrixCurUri     = track?.uri ?? null;
   registerTrackMeta(track);   // so the "More" menu's Copy link can resolve a podcast episode page
   currentTrackObj  = track || null;
@@ -3081,73 +3306,34 @@ async function refreshNowPlaying() {
     uri: t?.uri, tlid: id,
     name:   t?.name || '',
     artist: (t?.artists || []).map(a => a.name).join(', '),
+    artistUri: (t?.artists || [])[0]?.uri || '',
+    album:  (t?.album && t.album.uri) ? (t.album.name || '') : '',   // what the optimistic skip paints
+    length: t?.length || 0,
   }));
   const trackChanged = matrixCurUri !== lastNpUri;
   lastNpUri = matrixCurUri;
-  setClock((await rpc('core.playback.get_time_position'))?.result ?? 0, playing);
+  setClock(posR?.result ?? 0, playing);
 
   fetchTrackFeatures([matrixCurUri, ...matrixTlItems.map(i => i.uri)].filter(Boolean));
-  if (trackChanged) fetchAndRenderTrackTags(matrixCurUri);
-
-  const playBtn = document.getElementById('btn-play');
-  const playState = playing ? 'playing' : 'paused';
-  // Only rewrite the SVG when the state actually flips — rewriting innerHTML on
-  // every refresh (10s safety net + each WS event) repaints the button and makes
-  // it flicker during playback.
-  if (playBtn.dataset.state !== playState) {
-    playBtn.dataset.state = playState;
-    playBtn.innerHTML = playing
-      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
-      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
-  }
+  paintPlayState(playing);
 
   if (track) {
-    // For radios the mopidy "track" IS the stream; its header (title/artist/album)
-    // is driven live by maybeShowRadioTitle. Skip the raw stream-name writes here so
-    // the title doesn't flip stream-name↔song on every refresh (that was the flicker).
-    if (!_isStreamUri(track.uri)) {
-      setTrackName(track.name || '—');
-      document.getElementById('hero-title').textContent   = track.name || '';
-      fitHeroTitle();
-      const artistEl = document.getElementById('artist-name');
-      artistEl.textContent = (track.artists || []).map(a => a.name).join(', ') || '—';
-      artistEl.classList.toggle('obj-link', !!((track.artists || [])[0]?.uri));
-      const albumEl = document.getElementById('album-name');
-      if (albumEl) albumEl.textContent = (track.album && track.album.uri) ? (track.album.name || '') : '';
+    if (trackChanged) {
+      switchNowPlayingTo(track.uri, {
+        name: track.name, album: (track.album && track.album.uri) ? track.album.name : '',
+        artist: (track.artists || []).map(a => a.name).join(', '),
+        artistUri: (track.artists || [])[0]?.uri || '',
+      });
+      // Podcasts / news: channel · source and the publication date replace artist/album.
+      updateSpokenHeader(track);
+      prefetchNextCover();
     }
-    // Radio → header artist/album inert (see .radio-np CSS).
-    document.getElementById('now-playing')?.classList.toggle('radio-np', _isStreamUri(track.uri));
-    updateHeroAccent(track.uri);
-
     // Radios: live now-playing (song title on line 1, "STATION · artist" on line 2).
     maybeShowRadioTitle(track);
-
-    // O2M metadata (status badge, cover, details): only on track change —
-    // avoids /track_status and /track_info being refetched every 10s.
-    // Fetches run in PARALLEL (they were sequential → the cover lagged behind).
-    if (trackChanged) {
-      fetch(API + '/track_status?uri=' + encodeURIComponent(track.uri))
-        .then(r => r.ok ? r.text() : '').then(updateStatusBadge)
-        .catch(() => updateStatusBadge(''));
-      updateSpokenHeader(track);
-      renderTrackDetails(track.uri);
-      rpc('core.library.get_images', {uris: [track.uri]}).then(imgR => {
-        const imgs = imgR?.result?.[track.uri] || [];
-        const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
-        lastCoverUrl = best ? imageUrl(best.uri || best) : '';
-        if (lastCoverUrl) setCoverSmooth(lastCoverUrl); else setCoverGenerated(track.uri);
-        updateMediaSession(track, playing, lastCoverUrl);
-        prefetchNextCover();
-      }).catch(() => {});
-    }
     updateMediaSession(track, playing, lastCoverUrl);
-  } else {
-    setCoverGenerated(null);
-    document.getElementById('hero-title').textContent = '';
-    fitHeroTitle();
-    updateStatusBadge('');
-    updateMediaSession(null, playing, '');
-    renderTrackDetails(null);
+  } else if (trackChanged || !_npEmptyPainted) {
+    clearNowPlayingHeader(playing);
+    _npEmptyPainted = true;
   }
 
   renderTracklist(tracks, tlid);
@@ -4116,25 +4302,35 @@ async function wireRadioActions() {
   renderPlaylistEditor(uri, 'radio-playlists');   // no-op unless editing is unlocked
 }
 
+let _detailsReq = null;   // uri of the latest request: an older, slower fetch must not paint over it
 async function renderTrackDetails(uri) {
   const host = tdPanel.body();
-  if (!uri) { if (host) host.innerHTML = ''; detailsUri = null; tdPanel.ev = null; return; }
+  const panel = document.getElementById('track-details');
+  if (uri !== null && uri === _detailsReq) {          // already shown, or loading
+    if (detailsUri === uri) panel?.classList.remove('switching');
+    return;
+  }
+  _detailsReq = uri;
+  if (!uri) { if (host) host.innerHTML = ''; detailsUri = null; tdPanel.ev = null; panel?.classList.remove('switching'); return; }
   // Radios: render the radio-context panel instead of the (meaningless) stream stats.
   if (_isStreamUri(uri)) {
+    let d = null;
+    try { d = await fetch(API + '/radio_now_playing').then(r => r.json()); } catch (e) {}
+    if (_detailsReq !== uri) return;
     detailsUri = uri;
-    try {
-      const d = await fetch(API + '/radio_now_playing').then(r => r.json());
-      renderRadioDetails(d);
-    } catch (e) { renderRadioDetails(null); }
+    renderRadioDetails(d);
+    panel?.classList.remove('switching');
     requestAnimationFrame(syncDetailsWidth);
     return;
   }
   try {
     const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
+    if (_detailsReq !== uri) return;
     detailsUri = uri;
     tdPanel.render(info, { hero: false });   // hero off: the now-playing cover is already up top
     requestAnimationFrame(syncDetailsWidth);
-  } catch (e) { if (host) host.innerHTML = ''; }
+  } catch (e) { if (_detailsReq === uri && host) host.innerHTML = ''; }
+  if (_detailsReq === uri) panel?.classList.remove('switching');
 }
 
 // Per-panel favourite toggle. Reads the current state from the DOM (the cell's .on
@@ -6435,17 +6631,23 @@ function syncTagsRow() {
   bar.classList.toggle('is-empty', !hasContent);
 }
 
-async function fetchAndRenderTrackTags(uri) {
-  if (!uri || uri === lastTagsUri) return; // null URI ne reset pas lastTagsUri
-  lastTagsUri = uri;
-
+/* Empty the tags row (chips + energy/valence) and forget which track it showed. */
+function clearTrackTags() {
+  lastTagsUri = null;
   const bar = document.getElementById('track-tags-row');
   const evEl = document.getElementById('track-ev');
+  if (!bar) return;
   [...bar.querySelectorAll('.tag-chip')].forEach(el => el.remove());
-  evEl.textContent = '';
+  if (evEl) evEl.textContent = '';
   syncTagsRow();
+}
 
-  if (!uri) return;
+async function fetchAndRenderTrackTags(uri) {
+  if (!uri || uri === lastTagsUri) return;   // same track: keep what is there
+  clearTrackTags();
+  lastTagsUri = uri;
+  const bar = document.getElementById('track-tags-row');
+  const evEl = document.getElementById('track-ev');
 
   try {
     const tags = await fetch(API + '/track_tags?uri=' + encodeURIComponent(uri)).then(r => r.json());
@@ -6734,28 +6936,69 @@ function setCoverGenerated(uri) {
   // 84x84 on mobile — without "slice" you get empty letterbox bands.
   if (svg) svg.setAttribute('preserveAspectRatio', 'xMidYMid slice');
   wrap.classList.add('gen');
+  // Forced style pass: #cover-gen has just become displayed at opacity 0 (when a
+  // switch is in progress); lifting the class in the same pass would skip the fade.
+  void gen.offsetWidth;
+  wrap.classList.remove('switching');
   return true;
 }
 
 function setCoverSmooth(url) {
   const el = document.getElementById('cover');
+  const wrap = document.getElementById('cover-wrap');
   if (!el || !url) return;
   // Before the early return: otherwise going back to an unchanged real cover would
   // leave the <img> hidden behind the generated one.
-  document.getElementById('cover-wrap')?.classList.remove('gen');
-  if (el.src === url) return;
+  wrap?.classList.remove('gen');
+  if (el.src === url) { wrap?.classList.remove('switching'); return; }
   const img = new Image();
+  const swap = () => { el.src = url; el.classList.remove('cover-fading'); wrap?.classList.remove('switching'); };
   img.onload = () => {
+    // A track switch has already faded the old artwork out: swap and fade in.
+    // Otherwise (same track, new artwork — radios) run the short crossfade.
+    if (wrap?.classList.contains('switching')) { swap(); return; }
     el.classList.add('cover-fading');
-    setTimeout(() => { el.src = url; el.classList.remove('cover-fading'); }, 120);
+    setTimeout(swap, 120);
   };
-  img.onerror = () => { el.src = url; };
+  img.onerror = swap;
   img.src = url;
 }
 
-/* Warm the browser image cache with the NEXT track's cover so pressing next shows
-   it instantly (get_images is served from mopidy's cache; the image itself comes
-   from the CDN once and stays cached). */
+/* Artwork url per track uri ('' = no artwork). Filled by the prefetch of the next
+   track and by every lookup, so a skip to a prefetched track paints its cover with
+   no round trip at all. Bounded; a failed lookup is not cached. */
+const coverUrlCache = new Map();
+async function resolveCoverUrl(uri) {
+  if (coverUrlCache.has(uri)) return coverUrlCache.get(uri);
+  const r = await rpc('core.library.get_images', {uris: [uri]});
+  const imgs = r?.result?.[uri] || [];
+  const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+  const url = best ? imageUrl(best.uri || best) : '';
+  if (r && r.result) {
+    if (coverUrlCache.size > 400) coverUrlCache.delete(coverUrlCache.keys().next().value);
+    coverUrlCache.set(uri, url);
+  }
+  return url;
+}
+function applyCover(uri, url) {
+  lastCoverUrl = url;
+  if (url) setCoverSmooth(url); else setCoverGenerated(uri);
+  if (currentTrackObj && currentTrackObj.uri === uri) updateMediaSession(currentTrackObj, progPlaying, url);
+  prefetchNextCover();
+}
+/* Cover for the track that just became current: immediate when cached, otherwise
+   the previous artwork fades out while the lookup runs — the header never shows
+   the old cover under the new title. Guarded against a lookup outrun by another
+   skip. */
+function loadCover(uri) {
+  if (coverUrlCache.has(uri)) { applyCover(uri, coverUrlCache.get(uri)); return; }
+  document.getElementById('cover-wrap')?.classList.add('switching');
+  resolveCoverUrl(uri).then(url => { if (npTargetUri() === uri) applyCover(uri, url); }).catch(() => {});
+}
+
+/* Warm the caches with the NEXT track's cover so pressing next shows it instantly:
+   the url goes into coverUrlCache (get_images is served from mopidy's cache) and
+   the image itself into the browser cache (from the CDN once). */
 let _prefetchedCoverUri = null;
 async function prefetchNextCover() {
   try {
@@ -6763,10 +7006,8 @@ async function prefetchNextCover() {
     const next = (i >= 0 && matrixTlItems[i + 1]) ? matrixTlItems[i + 1] : null;
     if (!next?.uri || next.uri === _prefetchedCoverUri) return;
     _prefetchedCoverUri = next.uri;
-    const r = await rpc('core.library.get_images', {uris: [next.uri]});
-    const imgs = r?.result?.[next.uri] || [];
-    const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
-    if (best) { const im = new Image(); im.src = imageUrl(best.uri || best); }
+    const url = await resolveCoverUrl(next.uri);
+    if (url) { const im = new Image(); im.src = url; }
   } catch (e) {}
 }
 
