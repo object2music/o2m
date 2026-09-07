@@ -107,12 +107,14 @@
        shows through — the active category is the one that comes forward, and an
        inactive one still says which category it is.
        Measured over the worst pixel of the pictures (the violet): ink on the white
-       pane 12.3:1; ink on the veil 4.95:1; and the two panes are 2.5:1 apart from
-       each other, so the state reads at a glance. A purer lime veil was tried and
-       dropped: at this transparency it puts the ink at 3.6:1, under AA. */
-    --tile-on:  rgba(255,255,255,.94);
+       pane 10.2:1; ink on the veil 4.95:1. A purer lime veil was tried and dropped:
+       at this transparency it puts the ink at 3.6:1, under AA. */
+    --tile-on:  rgba(255,255,255,.82);
     --tile-off: rgba(242,246,216,.45);
     --tile-on-ink: var(--text);
+    /* ALL is opaque (see its rule): a lime-cast disc when off, white when on, so it
+       speaks the tiles' language without going translucent over them. */
+    --tile-all-off: #CFDD97;
 
     --mx-bg: #FFFFFF;
   }
@@ -1890,12 +1892,17 @@
   [data-theme="creme"] .basic-toggle.on,   [data-theme="bulletin"] .basic-toggle.on {
     background: var(--tile-on); border-color: transparent; color: var(--tile-on-ink);
   }
-  /* ALL is a small disc sitting ON TOP of the tiles, so it cannot use the same
-     white-pane state — white on white would say nothing, and a translucent disc
-     would show the tiles' edges through it. It stays opaque and takes its state
-     from the accent ring and ink, which is what the base rule already does. */
+  /* ALL is a small disc sitting ON TOP of the tiles, so it cannot go translucent —
+     it would show their edges through it. It stays opaque and says its state with
+     the fill instead, in the tiles' own language: lime-cast when off, white when on.
+     Its OFF state used to be --bg, which is all but white on this theme: with only
+     Music active the disc still read as switched on. */
+  [data-theme="creme"] #basic-all, [data-theme="bulletin"] #basic-all {
+    background: var(--tile-all-off); border-color: var(--border-strong); color: var(--text);
+  }
   [data-theme="creme"] #basic-all.on, [data-theme="bulletin"] #basic-all.on {
     background: var(--card); border-color: var(--accent); color: var(--accent);
+    box-shadow: 0 3px 16px rgba(44,40,92,.22);
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
@@ -2918,12 +2925,97 @@ function basicBgUrl() {
   if (c === 'custom') return _lsGet(BASIC_BG_DATA);
   return c;
 }
+let _basicBgUrl = '';
 function initBasicBackground() {
   let url = basicBgUrl();
   if (!url) url = '/static/basic-bg/' + BASIC_BGS[Math.floor(Math.random() * BASIC_BGS.length)];
+  _basicBgUrl = url;
   // Safe unquoted-content-wise: the shipped paths have no quotes, and a base64 data
   // URL is restricted to A-Za-z0-9+/= — neither can close the url() early.
   document.documentElement.style.setProperty('--basic-bg', 'url("' + url + '")');
+  tuneBasicBackdrop(url);
+}
+
+/* ── The picture tunes the VEIL, not the palette ─────────────────────────────
+   What adapts to the background image is how strongly it is veiled, and nothing
+   else. The ink, the accent and the dial colours stay the theme's, measured once.
+   That is on purpose: a colour lifted from an arbitrary image carries no contrast
+   guarantee — the lime in these very pictures sits at 1.7:1 on the ground, and had
+   an extractor elected it as the accent, every accent line in the app would have
+   gone invisible, silently, depending on which picture was loaded.
+   The veil, by contrast, is measurable end to end. We sample the image, take a dark
+   percentile rather than the mean (a half-black, half-white picture has an innocent
+   mean and a pane that fails over its dark half), then walk the veil up in steps
+   until the ink on an INACTIVE pane — the thinnest one, so the worst case — clears
+   4.5:1 over that sample. The lightest veil that passes wins, so a flat graphic
+   keeps its colour and a dark photo gets veiled as much as it needs.
+   Failing quietly is fine here: a cross-origin picture taints the canvas and we
+   simply keep the veil the theme declares. */
+const BASIC_INK_MIN = 4.5;   // WCAG AA for the pane labels
+const BASIC_DARK_PCT = 0.15; // protect all but the darkest 15% of the picture
+/* The veil has a second, non-negotiable job: pulling the picture toward the theme's
+   ground so the panes read as belonging to it. The four shipped graphics clear the
+   ink bar with no veil at all, and left to the measurement alone they would come
+   back fully saturated. So the search starts at this floor and only ever goes up. */
+const BASIC_VEIL_FLOOR = 0.14;
+
+function _cssRGBA(v) {
+  v = (v || '').trim();
+  let m = /^#([0-9a-fA-F]{3,8})$/.exec(v);
+  if (m) {
+    let h = m[1];
+    if (h.length === 3 || h.length === 4) h = h.split('').map(c => c + c).join('');
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16),
+            h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1];
+  }
+  m = /rgba?\(([^)]+)\)/i.exec(v);
+  if (!m) return null;
+  const n = m[1].split(/[,\s/]+/).filter(Boolean).map(parseFloat);
+  if (n.length < 3 || n.some(isNaN)) return null;
+  return [n[0], n[1], n[2], n.length > 3 ? n[3] : 1];
+}
+function _lum(c) {
+  const f = x => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+}
+function _contrast(a, b) {
+  const la = _lum(a), lb = _lum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+function _mix(fg, a, bg) { return [0, 1, 2].map(i => Math.round(a * fg[i] + (1 - a) * bg[i])); }
+
+function tuneBasicBackdrop(url) {
+  if (!url) return;
+  const root = document.documentElement;
+  const cs = getComputedStyle(root);
+  const ground = _cssRGBA(cs.getPropertyValue('--bg'));
+  const off    = _cssRGBA(cs.getPropertyValue('--tile-off'));
+  const ink    = _cssRGBA(cs.getPropertyValue('--text'));
+  if (!ground || !off || !ink) return;   // theme without panes (dark, mono, posters)
+  const img = new Image();
+  img.onerror = () => {};
+  img.onload = () => {
+    const N = 24, cv = document.createElement('canvas');
+    cv.width = N; cv.height = N;
+    let d;
+    try {
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, N, N);
+      d = ctx.getImageData(0, 0, N, N).data;
+    } catch (e) { return; }             // tainted canvas → keep the declared veil
+    const px = [];
+    for (let i = 0; i < d.length; i += 4) px.push([d[i], d[i + 1], d[i + 2]]);
+    px.sort((a, b) => _lum(a) - _lum(b));
+    const worst = px[Math.floor(px.length * BASIC_DARK_PCT)];
+    let alpha = 0.85;
+    for (let a = BASIC_VEIL_FLOOR; a <= 0.851; a += 0.05) {
+      const pane = _mix(off, off[3], _mix(ground, a, worst));
+      if (_contrast(ink, pane) >= BASIC_INK_MIN) { alpha = Math.round(a * 100) / 100; break; }
+    }
+    root.style.setProperty('--basic-bg-veil',
+      `rgba(${Math.round(ground[0])},${Math.round(ground[1])},${Math.round(ground[2])},${alpha})`);
+  };
+  img.src = url;
 }
 
 /* ── Settings ────────────────────────────────────────────────────────────────
@@ -4900,7 +4992,15 @@ function drawMoodMatrix(canvas, ev, pad) {
   const cssW = canvas.offsetWidth;
   if (cssW <= 0) return;                       // panel hidden / not laid out
   const dpr = window.devicePixelRatio || 1;
-  if (canvas.width !== Math.round(cssW * dpr)) { canvas.width = Math.round(cssW * dpr); canvas.height = canvas.width; }
+  const need = Math.round(cssW * dpr);
+  // The HEIGHT has to be tested too, not just the width. A freshly rendered <canvas>
+  // starts at the HTML default 300x150. On a display with devicePixelRatio 1 and the
+  // matrix at its 300px max-width (which is exactly what the mobile layout gives it),
+  // `need` comes out at 300 — equal to that default width — so a width-only test found
+  // nothing to do and left the height at 150. The backing store stayed 300x150 and the
+  // browser stretched it into the square CSS box: everything came out twice as tall,
+  // the two bottom quadrant names fell outside it, and the dot sat far below its value.
+  if (canvas.width !== need || canvas.height !== need) { canvas.width = need; canvas.height = need; }
   const ctx = canvas.getContext('2d');
   const W = canvas.width / dpr, inner = W - 2 * pad;
   const mx = pad + inner / 2, my = pad + inner / 2;
@@ -7333,6 +7433,9 @@ function applyTheme(name) {
   if (name === 'invert') updateHeroAccent(matrixCurUri);
   else document.documentElement.style.removeProperty('--hero-accent');
   document.getElementById('top-zone')?.classList.remove('cover-lit');  // reset overprint recolor toggle
+  // Re-measure the veil: the ground and the pane token it is computed against are
+  // per-theme. Same picture, no re-draw — only initBasicBackground draws one.
+  tuneBasicBackdrop(_basicBgUrl);
   readThemeColors();
   requestAnimationFrame(fitHeroTitle);
   requestAnimationFrame(syncDetailsWidth);   // standard themes: re-match details↔cover width
