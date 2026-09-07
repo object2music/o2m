@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Mopidy-O2M"
+version = "0.1.0"
+description = "Mopidy extension for O2M — object-driven playback and playlist building"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Patrick Vincent" }]
+dependencies = [
+    # Pinned to what the image runs today (Mopidy 3.4.2 on Python 3.10).
+    # Mopidy 4 exists (4.0.0 2026-04-24, needs Python >= 3.13) and moving to
+    # it is an open decision — see README. Lift the pin when the stack moves.
+    "mopidy >= 3.4, < 4",
+    "Pykka >= 2.0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/object2music/o2m"
+
+# This is what makes Mopidy find the extension: it scans the `mopidy.ext`
+# entry point group at startup. `mopidy deps` lists what it found.
+[project.entry-points."mopidy.ext"]
+o2m = "mopidy_o2m:Extension"
+
+[tool.setuptools]
+packages = ["mopidy_o2m"]
+
+[tool.setuptools.package-data]
+mopidy_o2m = ["ext.conf"]
