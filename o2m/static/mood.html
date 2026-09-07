@@ -103,9 +103,15 @@
     --c-opening: #584F9D;   /* Basic DISCOVERY: violet */
     --c-mood:    #EA5634;   /* Basic MOOD: orange */
 
-    /* Basic tiles (all sizes): ON = lime pane, OFF = frosted white pane. */
-    --tile-on:  rgba(185,206,6,.88);
-    --tile-off: rgba(255,255,255,.78);
+    /* Basic tiles: ON = a crisp white pane, OFF = a thin lime veil the picture
+       shows through — the active category is the one that comes forward, and an
+       inactive one still says which category it is.
+       Measured over the worst pixel of the pictures (the violet): ink on the white
+       pane 12.3:1; ink on the veil 4.95:1; and the two panes are 2.5:1 apart from
+       each other, so the state reads at a glance. A purer lime veil was tried and
+       dropped: at this transparency it puts the ink at 3.6:1, under AA. */
+    --tile-on:  rgba(255,255,255,.94);
+    --tile-off: rgba(242,246,216,.45);
     --tile-on-ink: var(--text);
 
     --mx-bg: #FFFFFF;
@@ -1861,9 +1867,15 @@
      Recolouring the label and hairline alone is nearly invisible on this light
      ground, so the active tile (and ALL) is a lime pane with the ink on it (7.6:1).
      Remove with the palette block above. */
-  [data-theme="creme"] .basic-toggle.on,   [data-theme="bulletin"] .basic-toggle.on,
-  [data-theme="creme"] #basic-all.on,      [data-theme="bulletin"] #basic-all.on {
+  [data-theme="creme"] .basic-toggle.on,   [data-theme="bulletin"] .basic-toggle.on {
     background: var(--tile-on); border-color: transparent; color: var(--tile-on-ink);
+  }
+  /* ALL is a small disc sitting ON TOP of the tiles, so it cannot use the same
+     white-pane state — white on white would say nothing, and a translucent disc
+     would show the tiles' edges through it. It stays opaque and takes its state
+     from the accent ring and ink, which is what the base rule already does. */
+  [data-theme="creme"] #basic-all.on, [data-theme="bulletin"] #basic-all.on {
+    background: var(--card); border-color: var(--accent); color: var(--accent);
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
@@ -1948,69 +1960,68 @@
     #dial-bmood, #dial-bdl { width: 224px; height: 158px; }
     #txt-bmood, #txt-bdl { font-size: var(--t-body-s); }
 
-    /* ── Basic dashboard on a picture ─────────────────────────────────────────
-       Trial (Sept 2026), desktop/tablet and standard themes only — overprint and
-       invert keep their poster layouts. The section paints a full-bleed picture
-       and the controls sit on frosted panes over it. An actuator that is OFF
-       veils the picture (the category is dimmed); one that is ON lets it through
-       (or, in Bulletin, becomes a lime pane) — the state reads from across the
-       room, not from a hairline. The picture and its treatment come from
-       --basic-bg / --basic-bg-filter, one pair per theme for now; a user upload
-       can later just set that variable. Test pictures: the RSD15 waves. */
-    [data-theme="dark"] {
-      --basic-bg: url(/static/basic-bg/wave-orange-violet.jpg);
-      --basic-bg-filter: brightness(.45) saturate(.85);
-    }
-    [data-theme="creme"], [data-theme="bulletin"] {
-      --basic-bg: url(/static/basic-bg/wave-violet-lime.jpg);
-      --basic-bg-filter: saturate(.92);
-    }
-    [data-theme="mono"] {
-      --basic-bg: url(/static/basic-bg/wave-lime-pink.jpg);
-      --basic-bg-filter: grayscale(1) brightness(1.15) contrast(.85);
-      --tile-on: rgba(255,255,255,.35); --tile-off: rgba(255,255,255,.82);
-    }
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) #basic-section {
-      position: relative; isolation: isolate; overflow: hidden;
-    }
-    /* The picture lives on a pseudo-element so it can take a filter without
-       filtering the controls. z-index -1 inside the isolated section: under the
-       in-flow children, over the section's own background. */
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) #basic-section::before {
-      content: ''; position: absolute; inset: 0; z-index: -1;
-      background: var(--basic-bg) center / cover no-repeat;
-      filter: var(--basic-bg-filter, none);
-    }
-    /* Panes. color-mix needs a 2023+ browser; the --fill-2 line before it is the
-       fallback (a flat translucent fill, still legible). */
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) .basic-toggle,
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) #basic-dials,
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) #basic-status {
-      background: var(--fill-2);
-      background: var(--tile-off, color-mix(in srgb, var(--bg) 80%, transparent));
-      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-      border: 1px solid var(--border-soft);
-    }
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) .basic-toggle {
-      transition: background .25s, color .2s, border-color .2s;
-    }
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) .basic-toggle.on {
-      background: var(--tile-on, color-mix(in srgb, var(--bg) 22%, transparent));
-      border-color: var(--accent);
-    }
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) .basic-toggle.pending {
-      border-color: var(--accent);
-    }
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) #basic-dials {
-      padding: 22px 26px;
-    }
-    /* Status line: a pane of its own, shrink-wrapped, and a size up — on a picture
-       the label size read as fine print. */
-    html.basic:not([data-theme="overprint"]):not([data-theme="invert"]) #basic-status {
-      justify-self: center; padding: 10px 22px;
-      font-size: var(--t-body); letter-spacing: .06em; gap: 12px;
-    }
   }
+
+  /* ── Basic dashboard on a picture ────────────────────────────────────────────
+     Trial (Sept 2026), BULLETIN ONLY — dark and mono were not asked for and keep
+     their plain grounds; overprint and invert keep their poster layouts. Applies
+     at every width, phone included.
+     The section paints a full-bleed picture and the controls sit on frosted panes
+     over it: an actuator that is OFF veils the picture, one that is ON becomes a
+     crisp white card. The picture is chosen in JS (initBasicBackground) and set as
+     --basic-bg on the root, so a stored choice — the upload path to come — is one
+     variable away; the treatment stays here. */
+  /* Veil laid over the picture: takes the edge off the saturation and pulls it
+     toward the theme's ground, so the panes read as belonging to it. */
+  [data-theme="creme"], [data-theme="bulletin"] { --basic-bg-veil: rgba(248,247,253,.14); }
+
+  /* The picture is a background ON THE SECTION, not a positioned layer.
+     Two things rule that out: a filtered ::before would need its own stacking
+     context to sit under the controls, and — the real constraint — #basic-section
+     is a scroll container on short viewports (overflow-y: auto). An absolutely
+     positioned layer scrolls with the content, so the picture would slide away
+     under the panes; a fixed one covers the whole viewport, tracklist included.
+     A background is painted against the element's own box and stays put in both
+     cases. The tint that a filter used to give is the first layer instead. */
+  html.basic[data-theme="creme"] #basic-section,
+  html.basic[data-theme="bulletin"] #basic-section {
+    background-image: linear-gradient(var(--basic-bg-veil), var(--basic-bg-veil)),
+                      var(--basic-bg);
+    background-size: cover, cover;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
+  }
+  /* Panes. */
+  html.basic[data-theme="creme"] .basic-toggle,
+  html.basic[data-theme="bulletin"] .basic-toggle,
+  html.basic[data-theme="creme"] #basic-dials,
+  html.basic[data-theme="bulletin"] #basic-dials,
+  html.basic[data-theme="creme"] #basic-status,
+  html.basic[data-theme="bulletin"] #basic-status {
+    background: var(--tile-off);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border: 1px solid var(--border-soft);
+    transition: background .25s, color .2s, border-color .2s;
+  }
+  html.basic[data-theme="creme"] #basic-dials,
+  html.basic[data-theme="bulletin"] #basic-dials { padding: 18px 20px; }
+  /* Status line: its own shrink-wrapped pane, a size up — over a picture the label
+     size read as fine print. */
+  html.basic[data-theme="creme"] #basic-status,
+  html.basic[data-theme="bulletin"] #basic-status {
+    align-self: center; justify-self: center;
+    padding: 9px 18px; font-size: var(--t-body); letter-spacing: .06em; gap: 10px;
+  }
+  html.basic[data-theme="creme"] .basic-toggle.pending,
+  html.basic[data-theme="bulletin"] .basic-toggle.pending { border-color: var(--accent); }
+
+  @media (min-width: 700px) {
+    html.basic[data-theme="creme"] #basic-dials,
+    html.basic[data-theme="bulletin"] #basic-dials { padding: 22px 26px; }
+    html.basic[data-theme="creme"] #basic-status,
+    html.basic[data-theme="bulletin"] #basic-status { padding: 10px 22px; gap: 12px; }
+  }
+
   /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
      Sits on the status line of the now-playing header. */
   /* Network quality dot — colour driven by html[data-net], so several dots
@@ -2845,7 +2856,21 @@ async function toggleBasicCat(btn, wantOn) {
   setTimeout(refreshNowPlaying, 3000);
 }
 
+/* Basic view background. A stored choice wins — that is the hook the upload path
+   will set; with none, one of the shipped pictures is drawn at random for the page,
+   so the view is not always the same wall. Set on the root as --basic-bg; only the
+   Bulletin rules read it, so the other themes are unaffected by the draw. */
+const BASIC_BGS = ['wave-violet-lime.jpg', 'wave-orange-violet.jpg',
+                   'wave-lime-pink.jpg', 'wave-orange-lime.jpg'];
+function initBasicBackground() {
+  let url = '';
+  try { url = localStorage.getItem('o2m-basic-bg') || ''; } catch (e) {}
+  if (!url) url = '/static/basic-bg/' + BASIC_BGS[Math.floor(Math.random() * BASIC_BGS.length)];
+  document.documentElement.style.setProperty('--basic-bg', 'url("' + url + '")');
+}
+
 function initBasicView() {
+  initBasicBackground();
   document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn =>
     btn.addEventListener('click', () => requestBasicCat(btn)));
   document.getElementById('basic-all')?.addEventListener('click', (e) => toggleBasicAll(e.currentTarget));
