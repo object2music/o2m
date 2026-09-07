@@ -1248,8 +1248,13 @@ if __name__ == "__main__":
         if data.get('apply') is False:
             return jsonify({'status': 'settings_saved', 'tracks_added': 0})
         added = o2mHandler.apply_mood_settings()
-        if added is not None and added < 0:
-            # Skipped: user boxes are active → mood affects their future recommendations.
+        if added is None:
+            # Only podcast/info/radio boxes are active: nothing depends on the mood,
+            # the settings are stored for the next Music launch.
+            return jsonify({'status': 'settings_saved', 'tracks_added': 0})
+        if added < 0:
+            # Skipped: user music boxes active without the auto session → the mood
+            # affects their future recommendations only.
             return jsonify({'status': 'boxes_active', 'tracks_added': 0})
         return jsonify({'status': 'ok', 'tracks_added': added})
 

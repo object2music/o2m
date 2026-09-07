@@ -1979,8 +1979,8 @@ class O2mToMopidy:
     def reload_active_boxes(self):
         """Rebuild the tracklist by re-running box_action on EVERY active box.
         In discover mode a single call rebuilds from all active boxes at once;
-        otherwise each box is refilled in turn. Shared by starting_mode(start=True)
-        and apply_mood_settings (live mood change).
+        otherwise each box is refilled in turn. Used by starting_mode(start=True);
+        a live mood change (apply_mood_settings) rebuilds the music boxes only.
         Locked (reentrant): `self._reload_seen` is shared instance state reset to
         None in a finally at the end of the method — two overlapping calls (e.g.
         two /api/mood POSTs firing close together, both reaching
@@ -2155,64 +2155,108 @@ class O2mToMopidy:
             print(f"play_or_resume: already playing or unknown state, no action")
 
     def apply_mood_settings(self):
-        """Apply a mood change coming from the interface.
+        """Apply a mood / discover-level change coming from the interface.
 
-        Two cases:
-        - Auto/mood mode (auto box active, or nothing active): full clean reload —
-          clear the whole tracklist + per-track box state, then RELOAD EVERY active
-          box with the new mood/discover_level (not just the auto box). If nothing is
-          active, self-activate the auto box (DB 'auto:library' or a simulated fill).
-        - A user box active WITHOUT the auto session (e.g. a single playlist): no
-          rebuild (returns -1); the new mood biases its future live recommendations.
+        Only the boxes whose content DEPENDS on the mood are rebuilt: the music
+        ones (the auto mix and any other music-category box). Podcast, info and
+        radio boxes are left exactly as they are — an episode or a stream does not
+        depend on the mood, and rebuilding them (the previous "clear everything and
+        reload every active box") restarted the one being listened to and re-drew
+        their sources for nothing.
 
-        Returns tracks added, or -1 when skipped (user box active, no auto).
+        - Music box(es) active with the auto session → their tracks are removed and
+          they are refilled with the new settings; everything else stays in place.
+          If a music track was playing, the first fresh one takes over; a podcast
+          or stream being listened to keeps playing.
+        - Music box(es) active WITHOUT the auto session (e.g. a single playlist
+          tapped in the Full view) → no rebuild (returns -1); the new mood biases
+          their future live recommendations.
+        - Only spoken/radio boxes active → nothing to rebuild (returns None): the
+          settings are stored for the next Music launch.
+        - Nothing active → self-activate the auto box (DB 'auto:library' or a
+          simulated fill).
+
+        Returns tracks added, -1 when skipped, None when nothing depended on the mood.
         """
-        auto_active = any('auto:library' in (getattr(b, 'data', '') or '') for b in self.activeboxs)
-        user_boxes = [b for b in self.activeboxs
-                      if 'auto:library' not in (getattr(b, 'data', '') or '')]
+        with self._box_ops_lock():
+            if not self.activeboxs:
+                box = self.dbHandler.get_box_by_data_contains('auto:library')
+                if box is not None:
+                    self.activeboxs.append(box)
+                    self.box_action(box)
+                else:
+                    fallback = self.dbHandler.get_box_by_option_type('new_mopidy') or Box(
+                        uid='auto_sim', option_type='new_mopidy', data='auto:library', option_sort=None)
+                    self.tracklistfill_auto(fallback, self.max_results, self.discover_level)
+                added = self.mopidyHandler.tracklist.get_length()
+                self._start_if_stopped()
+                print(f"apply_mood_settings: started the auto mix, added {added} "
+                      f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
+                return max(0, added)
 
-        # Case 2: user box(es) active without the auto/mood session → don't disrupt.
-        if user_boxes and not auto_active:
-            print("apply_mood_settings: user box(es) active (no auto) → no rebuild")
-            return -1
+            music_boxes = [b for b in self.activeboxs
+                           if self._box_category(getattr(b, 'data', ''), getattr(b, 'option_type', ''))
+                           in ('music', 'other')]
+            if not music_boxes:
+                print("apply_mood_settings: only spoken/radio boxes active → nothing to rebuild")
+                return None
+            if not any('auto:library' in (getattr(b, 'data', '') or '') for b in music_boxes):
+                print("apply_mood_settings: user music box(es) active (no auto) → no rebuild")
+                return -1
 
-        # Case 1: clean clear of the whole tracklist + per-track box state (no volume
-        # reset), then rebuild from scratch with the new mood.
-        try:
-            self.mopidyHandler.playback.stop()
-            self.mopidyHandler.tracklist.clear()
-            self._track_info.clear()
-        except Exception as e:
-            print(f"apply_mood_settings: clear error: {e}")
+            music_uids = {b.uid for b in music_boxes}
+            try:
+                before = {t.tlid for t in self.mopidyHandler.tracklist.get_tl_tracks()}
+                cur_tlid = self.mopidyHandler.playback.get_current_tlid()
+            except Exception:
+                before, cur_tlid = set(), None
+            cur_was_music = cur_tlid is not None and \
+                (self._track_info.get(cur_tlid) or {}).get('box_id') in music_uids
 
-        if self.activeboxs:
-            # Reload EVERY active box (auto + any user boxes) with the new mood/DL.
-            self.reload_active_boxes()
-        else:
-            # Nothing active → start the auto/mood mix.
-            box = self.dbHandler.get_box_by_data_contains('auto:library')
-            if box is not None:
-                self.activeboxs.append(box)
-                self.box_action(box)
-            else:
-                fallback = self.dbHandler.get_box_by_option_type('new_mopidy') or Box(
-                    uid='auto_sim', option_type='new_mopidy', data='auto:library', option_sort=None)
-                self.tracklistfill_auto(fallback, self.max_results, self.discover_level)
+            # Remove the music boxes' tracks the way a deactivation does (the box
+            # itself stays active), then refill each with the new settings.
+            for b in music_boxes:
+                try:
+                    self.box_action_remove(b, b)
+                except Exception as e:
+                    print(f"apply_mood_settings: remove {b.uid}: {e}")
+            self.last_box_uid = None   # one_box_changed's NFC "same tag = next song" guard
+            for b in music_boxes:
+                try:
+                    self.box_action(b)
+                except Exception as e:
+                    print(f"apply_mood_settings: refill {b.uid}: {e}")
 
-        added = self.mopidyHandler.tracklist.get_length()
+            try:
+                after = self.mopidyHandler.tracklist.get_tl_tracks()
+            except Exception:
+                after = []
+            fresh = [t for t in after if t.tlid not in before]
 
-        # Start playback from the top of the fresh mix.
+            # A music track was playing (removed above, so playback stopped or fell
+            # onto whatever was next) → the first fresh music track takes over. A
+            # podcast/stream being listened to is untouched. Not the top of the
+            # tracklist: that may be a kept podcast.
+            try:
+                if fresh and (cur_was_music or self.mopidyHandler.playback.get_state() == "stopped"):
+                    self.mopidyHandler.playback.play(tlid=fresh[0].tlid)
+            except Exception as e:
+                print(f"apply_mood_settings: play error: {e}")
+
+            print(f"apply_mood_settings: rebuilt {len(music_boxes)} music box(es), added {len(fresh)}, "
+                  f"kept {len(after) - len(fresh)} "
+                  f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
+            return len(fresh)
+
+    def _start_if_stopped(self):
+        """Start playback from the top of the tracklist if nothing is playing."""
         try:
             if self.mopidyHandler.playback.get_state() == "stopped":
                 tl = self.mopidyHandler.tracklist.get_tl_tracks()
                 if tl:
                     self.mopidyHandler.playback.play(tlid=tl[0].tlid)
         except Exception as e:
-            print(f"apply_mood_settings: play error: {e}")
-
-        print(f"apply_mood_settings: reloaded {len(self.activeboxs)} box(es), added {added} "
-              f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
-        return max(0, added)
+            print(f"_start_if_stopped: {e}")
 
     def initialize_playback(self, window=1, allow_box=True):
         """

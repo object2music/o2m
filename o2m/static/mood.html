@@ -926,7 +926,7 @@
     #mood-matrix { touch-action: pan-y; }
   }
 
-  /* ── Auto toggle (mood en direct) ── */
+  /* ── Auto toggle (live mood) ── */
   #auto-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
   #btn-auto {
     display: inline-flex; align-items: center; gap: 6px;
@@ -939,6 +939,7 @@
   #btn-auto.active {
     color: var(--bg); background: var(--accent); border-color: var(--accent);
   }
+  #btn-auto:disabled { opacity: .5; cursor: default; }
   #auto-hint { font-size: var(--t-label); color: var(--muted); }
 
   /* ── Matrix tooltip ── */
@@ -2155,7 +2156,7 @@
 
     <div class="panel-body">
       <div id="auto-bar">
-        <button id="btn-auto" type="button" title="Auto: les réglages rafraîchissent le mix en direct">
+        <button id="btn-auto" type="button" title="Auto: dial changes refresh the mix live">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           <span>Auto</span>
         </button>
@@ -2423,11 +2424,25 @@ function makeDraggable(id, onChange) {
 function isAutoMode() {
   return autoToggle || moodSessionActive || autoBoxActive;
 }
+/* The Auto button shows isAutoMode() and, when tapped, sets it — including the
+   implicit session (moodSessionActive), which used to make it a one-way switch:
+   lit by a mood fill, a tap only flipped autoToggle underneath and it stayed lit.
+   Two cases take the decision away from the button, and it says so:
+   - a box whose name contains "auto" is active → live mode is the box's, disabled;
+   - a fill is in flight (mixBusy) → disabled by setMixBusy, as the tiles are. */
 function updateAutoBtn() {
-  document.getElementById('btn-auto')?.classList.toggle('active', isAutoMode());
+  const b = document.getElementById('btn-auto');
+  if (!b) return;
+  b.classList.toggle('active', isAutoMode());
+  b.disabled = mixBusy || autoBoxActive;
+  b.title = autoBoxActive ? 'Live mode is set by the active auto box'
+          : mixBusy      ? 'Applying…'
+          : isAutoMode() ? 'Auto is on: dial changes refresh the mix live — tap to stop'
+                         : 'Auto is off: tap so dial changes refresh the mix live';
 }
 function setAutoToggle(on) {
   autoToggle = on;
+  if (!on) moodSessionActive = false;   // switching off ends the implicit session too
   localStorage.setItem('mood-auto', on ? '1' : '0');
   updateAutoBtn();
 }
@@ -2444,11 +2459,17 @@ function shouldApplyMood() {
    the AUTO button — but NOT the four category tiles: those are independent
    switches and queue up behind the running one (see requestBasicCat). */
 let mixBusy = false;
-function setMixBusy(on) {
+function setMixBusy(on, lockTiles = false) {
   mixBusy = !!on;
   document.body.classList.toggle('mix-busy', mixBusy);
   if (mixBusy) clearTimeout(applyTimer);   // drop a change debounced just before
   document.querySelectorAll('#basic-all, #btn-auto').forEach(b => { b.disabled = mixBusy; });
+  // lockTiles: a rebuild that REPLACES the whole queue (dial change, auto-mix start)
+  // parks the category tiles too — a category toggled meanwhile would be half in,
+  // half out of the new queue. A single tile's own fill does not (queue instead).
+  if (lockTiles || !mixBusy)
+    document.querySelectorAll('#basic-toggles .basic-toggle').forEach(b => { b.disabled = mixBusy; });
+  updateAutoBtn();
 }
 
 function scheduleApply() {
@@ -2466,6 +2487,9 @@ async function applyMood() {
   const basicIdle = isBasic() && basicCats
     && !Object.values(basicCats).some(l => Array.isArray(l) && l.some(b => b.active));
   setFeedback(basicIdle ? 'Saving…' : 'Applying…');
+  // The server rebuilds the queue for the duration of this call: dials, tiles, ALL
+  // and Auto are parked meanwhile (same pulse as a tile fill), released in finally.
+  setMixBusy(true, true);
   try {
     const body = { energy: appState.energy, valence: appState.valence,
                    discover_level: appState.dl, genres: appState.genres };
@@ -2485,8 +2509,12 @@ async function applyMood() {
     moodSessionActive = true;   // on est désormais dans un mix mood → potards en direct
     updateAutoBtn();
     setTimeout(refreshNowPlaying, 400);
-    setTimeout(refreshBoxStates, 500);   // allume tout de suite la box auto activée côté serveur
+    setTimeout(refreshBoxStates, 500);   // lights the server-activated auto box straight away
   } catch(e) { setFeedback('Network error'); }
+  finally {
+    setMixBusy(false);
+    if (isBasic()) refreshBasicToggles();   // tiles were parked (skipped by the sync): catch up now
+  }
 }
 
 /* ── Network quality indicator (green / orange / red) ──────────────────────────
@@ -6884,7 +6912,7 @@ function showAudioTapOverlay() {
       const len = (await rpc('core.tracklist.get_length'))?.result ?? 0;
       if (!len) {
         setFeedback('Starting the auto mix…');
-        setMixBusy(true);
+        setMixBusy(true, true);
         for (const c of shuffledCats()) {
           try { await fetch(API + '/basic_toggle?cat=' + c + '&mode=add'); } catch (e) {}
         }
@@ -7412,7 +7440,7 @@ async function init() {
     }
   });
   autoToggle = localStorage.getItem('mood-auto') === '1';
-  document.getElementById('btn-auto')?.addEventListener('click', () => setAutoToggle(!autoToggle));
+  document.getElementById('btn-auto')?.addEventListener('click', () => setAutoToggle(!isAutoMode()));
   updateAutoBtn();
   document.addEventListener('fullscreenchange', updateFsBtn);
   document.addEventListener('webkitfullscreenchange', updateFsBtn);
