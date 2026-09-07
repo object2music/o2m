@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>O2M Stats</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Design system : source unique des tokens (voir DESIGN_SYNC.md). -->
+<link rel="stylesheet" href="/static/ds/o2m.css">
+<script>
+  /* The theme follows the one picked in Mood: same key, same default. Applied
+     before paint to avoid a flash. No switcher here — Mood stays the settings
+     surface, so data-theme is fixed for the page's lifetime (which lets us read
+     the tokens once for Chart.js). */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme')
+          || localStorage.getItem('o2m2-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    // The PWA chrome colour follows the theme's ground instead of a frozen navy.
+    var m = document.createElement('meta');
+    m.name = 'theme-color';
+    m.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#15120E';
+    document.head.appendChild(m);
+  })();
+  /* Going back from Mood after a theme change: a page restored from the bfcache
+     would keep the stale data-theme. */
+  addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    var t = localStorage.getItem('o2m2-theme') || 'dark';
+    if (t !== document.documentElement.getAttribute('data-theme')) location.reload();
+  });
+</script>
+<script src="/static/chart.umd.min.js"></script>
+<style>
+  /* ── REVERT SWITCH — type scale ───────────────────────────────────────────
+     This page's 11/13/15/17/21px sizes are now read from the system's tokens
+     (--t-label / --t-body-s / --t-body / --t-body-l / --t-h3). The values are
+     IDENTICAL today: the rendering is unchanged, only the source of the value
+     moves. If a future design-system release shifts the scale and that unbalances
+     the interface, UNCOMMENT this block to pin today's sizes back — with no
+     change to the design system.
+  :root {
+    --t-label: 11px; --t-body-s: 13px; --t-body: 15px;
+    --t-body-l: 17px; --t-h3: 21px;
+  }
+     ──────────────────────────────────────────────────────────────────────── */
+
+  /* No :root here: every token comes from ds/o2m.css. */
+  body { min-height: 100vh; padding: var(--sp-5) var(--sp-4) 84px; }
+
+  /* Unified footer (shared look with the Mood page) */
+  #site-footer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--border);
+  }
+  #site-footer .brand { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+  .footer-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .footer-link {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--muted); text-decoration: none; background: transparent;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 11px;
+    cursor: pointer; font-family: inherit; line-height: 1;
+  }
+  .footer-link:hover { color: var(--text); border-color: var(--text); }
+  .footer-link svg { width: 15px; height: 15px; display: block; }
+  #btn-snapcast.playing { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 500px) { #site-footer .brand { display: none; } }
+  h1 { font-family: var(--font-head); font-size: var(--t-h2); font-weight: 800;
+       text-transform: uppercase; margin-bottom: 4px; color: var(--text); }
+  .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 28px; }
+  .subtitle a { color: var(--muted); text-decoration: none; }
+  .subtitle a:hover { color: var(--text); }
+
+  .section { margin-bottom: 32px; }
+  .section-title {
+    font-family: var(--font-mono); font-size: var(--t-label); text-transform: uppercase;
+    letter-spacing: .12em; color: var(--muted); margin-bottom: 12px;
+  }
+  .section-note { font-size: var(--t-label); color: var(--muted); margin: -6px 0 12px; }
+  .card {
+    background: var(--surface); border-radius: var(--radius); padding: var(--sp-4);
+    border: 1px solid var(--border);
+  }
+  .chart-wrap { position: relative; width: 100%; }
+  .chart-wrap canvas { max-height: 260px; }
+  .chart-wide canvas { max-height: 320px; }
+  /* Square scatter so Energy (x) and Valence (y) share the same pixel scale */
+  .scatter-wrap { max-width: 460px; margin: 0 auto; }
+  .scatter-wrap canvas { max-height: 460px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 500px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Comparative table */
+  .table-scroll { overflow-x: auto; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: var(--t-body-s); min-width: 640px; }
+  table.cmp th, table.cmp td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
+  table.cmp thead th {
+    font-size: var(--t-label); text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  table.cmp tbody td { border-bottom: 1px solid var(--border); }
+  table.cmp tbody tr:last-child td { border-bottom: none; }
+  table.cmp tr.totals td { font-weight: 700; border-top: 2px solid var(--border); color: var(--text); }
+  /* Square, like the system's own marker (.o2m-badge::before). Identity is carried
+     by the adjacent label, so the colour is only a discreet cue. */
+  .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: var(--radius);
+             background: var(--faint); margin-right: 7px; vertical-align: baseline; }
+  .num-muted { color: var(--muted); }
+
+  /* Playlist change log */
+  table.cmp.log th, table.cmp.log td { text-align: left; }
+  table.cmp.log td.when { color: var(--muted); font-variant-numeric: tabular-nums; }
+  table.cmp.log td.track { white-space: normal; max-width: 280px; }
+  .badge { display: inline-block; font-family: var(--font-mono); font-size: var(--t-label);
+           font-weight: 700; padding: 2px 8px; border-radius: var(--radius);
+           text-transform: uppercase; letter-spacing: .03em; }
+  .badge.add    { background: var(--fill-2); color: var(--ok); }
+  .badge.remove { background: var(--fill-1); color: var(--danger); }
+  .arrow { color: var(--muted); margin: 0 5px; }
+  .otype { color: var(--text); }
+
+  /* Pager */
+  .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
+  .pager button {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 12px; font: inherit; font-size: var(--t-body-s); cursor: pointer;
+  }
+  .pager button:hover:not(:disabled) { border-color: var(--text); }
+  .pager button:disabled { opacity: .4; cursor: default; }
+  .pager .pager-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Mood bars */
+  .mood-list { display: flex; flex-direction: column; gap: 10px; }
+  .mood-row { display: flex; flex-direction: column; gap: 4px; }
+  .mood-header { display: flex; justify-content: space-between; align-items: baseline; }
+  .mood-label { font-size: var(--t-body-s); font-weight: 600; }
+  .mood-count { font-size: 12px; color: var(--muted); }
+  .mood-bar-bg { background: var(--track-bg); border-radius: var(--radius); height: 8px; overflow: hidden; }
+  .mood-bar-fill { height: 100%; border-radius: var(--radius); transition: width .5s; }
+
+  #error-msg { color: var(--accent); font-size: var(--t-body-s); margin-bottom: 16px; display: none; }
+</style>
+</head>
+<body>
+
+<h1>O2M Stats</h1>
+<p class="subtitle">Music library &mdash; <a href="/mood">&#8592; Mood</a></p>
+
+<div id="error-msg"></div>
+
+<!-- 0. Library vs adjacent comparison -->
+<div class="section">
+  <div class="section-title">Library vs adjacent tracks</div>
+  <div class="section-note">
+    Library-side categories (library / favorites / incoming) are the tracks really kept in
+    albums &amp; playlists. <em>New</em> holds adjacent tracks fed by history and album/artist
+    warmups. Provenance is resolved as playlist&nbsp;&gt;&nbsp;album&nbsp;&gt;&nbsp;artist.
+  </div>
+  <div class="card table-scroll">
+    <table class="cmp" id="cmp-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Tracks</th>
+          <th>Popularity<br>(avg read_end)</th>
+          <th>Avg plays<br>(read_count)</th>
+          <th>Avg full<br>(read_count_end)</th>
+          <th>Avg skips</th>
+          <th>Liked</th>
+          <th>Mood</th>
+          <th>Provenance<br>(pl / al / ar)</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="9" style="color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 0b. Charts derived from the breakdown -->
+<div class="section">
+  <div class="two-col">
+    <div class="card">
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">Provenance by category (track count)</div>
+      <div class="chart-wrap"><canvas id="chart-provenance"></canvas></div>
+    </div>
+    <div class="card">
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">Popularity by category (avg read_end)</div>
+      <div class="chart-wrap"><canvas id="chart-popularity"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- 1+2. Mood tags & Energy × Valence matrix (same row) -->
+<div class="section">
+  <div class="two-col">
+    <div>
+      <div class="section-title">Mood tags</div>
+      <div class="card">
+        <div class="mood-list" id="mood-list">
+          <div style="color:var(--muted);font-size: var(--t-body-s)">Loading…</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title">Energy &times; Valence matrix</div>
+      <div class="card chart-wide">
+        <div class="chart-wrap scatter-wrap">
+          <canvas id="chart-scatter"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Distribution read_end -->
+<div class="section">
+  <div class="section-title">Listen-completion rate distribution (read_end)</div>
+  <div class="card">
+    <div class="chart-wrap">
+      <canvas id="chart-read-end"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- 4. read_count + read_count_end -->
+<div class="section">
+  <div class="section-title">Total vs. complete plays distribution</div>
+  <div class="two-col">
+    <div class="card">
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">read_count</div>
+      <div class="chart-wrap"><canvas id="chart-read-count"></canvas></div>
+    </div>
+    <div class="card">
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">read_count_end</div>
+      <div class="chart-wrap"><canvas id="chart-read-count-end"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. last_read_date by month -->
+<div class="section">
+  <div class="section-title">Plays by month (last 12 months)</div>
+  <div class="card chart-wide">
+    <div class="chart-wrap">
+      <canvas id="chart-last-read"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- 6. Recent state changes (playlist log) -->
+<div class="section">
+  <div class="section-title">Recent state changes</div>
+  <div class="section-note">
+    Hard add/remove operations on stored playlists (and saved tracks), logged whenever a
+    track is promoted or demoted between option_type buckets.
+  </div>
+  <div class="card table-scroll">
+    <table class="cmp log" id="log-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Action</th>
+          <th>Track</th>
+          <th>Playlist</th>
+          <th>Transition</th>
+        </tr>
+      </thead>
+      <tbody><tr><td colspan="5" style="color:var(--muted)">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="pager" id="log-pager"></div>
+</div>
+
+<footer id="site-footer">
+  <span class="brand">O2M &middot; Stats</span>
+  <nav class="footer-nav">
+    <a class="footer-link" href="/mood"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Mood</a>
+    <a class="footer-link" href="/iris/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>Iris</a>
+    <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
+    <button class="footer-link" id="btn-snapcast" title="Snapcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>Listen</button>
+  </nav>
+</footer>
+
+<script src="/static/snapstream.bundle.js"></script>
+<script>
+const API = location.origin + '/api';
+
+/* ── Snapcast: keep the audio stream alive across pages ──────────────────────
+   The Mood page persists its connection state in localStorage['snap-autoconnect'].
+   Here we read the same key (and /api/client_config for the WS URL) so that
+   arriving on Stats from Mood resumes the same Snapcast stream — on the first
+   user gesture for desktop/tablet, automatically on phones. */
+let snapWsUrl = null, snapPlayer = null;
+
+function isPhoneDevice() {
+  const ua = navigator.userAgent;
+  const minSide = Math.min(window.screen?.width || 9999, window.screen?.height || 9999);
+  if (/iPad/.test(ua)) return false;
+  if (/iPhone|iPod/.test(ua)) return true;
+  if (/Android/.test(ua) && /Mobile/.test(ua)) return minSide <= 600;
+  if (/Windows Phone|BlackBerry|Opera Mini|IEMobile/.test(ua)) return true;
+  const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  return touch && minSide <= 480;
+}
+
+function _snapStart() {
+  if (snapPlayer || !snapWsUrl || !window.SnapStream) return;
+  snapPlayer = new window.SnapStream(snapWsUrl);
+  document.getElementById('btn-snapcast')?.classList.add('playing');
+}
+
+function toggleSnapcast() {
+  if (snapPlayer) {
+    try { snapPlayer.stop(); } catch (e) {}
+    snapPlayer = null;
+    document.getElementById('btn-snapcast')?.classList.remove('playing');
+    localStorage.setItem('snap-autoconnect', '0');
+  } else {
+    if (!snapWsUrl || !window.SnapStream) return;
+    _snapStart();
+    localStorage.setItem('snap-autoconnect', '1');
+  }
+}
+
+function autoConnectSnapIfNeeded() {
+  const pref = localStorage.getItem('snap-autoconnect');
+  const shouldConnect = isPhoneDevice() || pref === '1';
+  if (!shouldConnect || !snapWsUrl) return;
+  // AudioContext needs a user gesture on a freshly loaded document — reconnect on
+  // the first click/tap (keep listeners until a player actually exists).
+  const onGesture = () => {
+    _snapStart();
+    if (snapPlayer) {
+      document.removeEventListener('click', onGesture);
+      document.removeEventListener('touchstart', onGesture);
+    }
+  };
+  document.addEventListener('click', onGesture);
+  document.addEventListener('touchstart', onGesture, { passive: true });
+}
+
+async function initSnapcast() {
+  try {
+    const cfg = await fetch(API + '/client_config').then(r => r.json());
+    snapWsUrl = cfg.snap_ws_url || null;
+  } catch (e) {}
+  const btn = document.getElementById('btn-snapcast');
+  if (!snapWsUrl) { btn?.remove(); return; }
+  btn?.addEventListener('click', toggleSnapcast);
+  autoConnectSnapIfNeeded();
+}
+
+/* ── Colours: no literals left, everything comes from the design-system tokens ──
+   Read once (data-theme is fixed for the page's lifetime, see the pre-paint script).
+   The system's <link> precedes this script, so getComputedStyle sees resolved values.
+   Every read has a fallback: a mistyped token name returns '' and Chart.js would then
+   paint transparent — a silent failure that reads as "the chart didn't load". */
+let T = {};
+function readTokens() {
+  const s = getComputedStyle(document.documentElement);
+  const g = (n, fb) => (s.getPropertyValue(n).trim() || fb);
+  T = {
+    text:   g('--text', '#F3EEE3'),
+    muted:  g('--muted', '#9C9486'),
+    faint:  g('--faint', '#6E665A'),
+    accent: g('--accent', '#FF5A00'),
+    border: g('--border', 'rgba(243,238,227,.13)'),
+    fill3:  g('--fill-3', 'rgba(243,238,227,.10)'),
+    // bare "R,G,B" triplets → composable inside rgba()
+    mood: {
+      happy:     g('--mood-happy', '243,238,227'),
+      energetic: g('--mood-energetic', '255,90,0'),
+      calm:      g('--mood-calm', '156,148,134'),
+      dark:      g('--mood-dark', '110,102,90'),
+    },
+  };
+}
+/* Alpha-aware: the old code did `colour + 'cc'`, which only works on hex and would
+   silently corrupt an rgba() coming from a token. */
+const moodRGBA = (k, a = 1) => `rgba(${T.mood[k] || '120,120,120'},${a})`;
+const moodSolid = k => moodRGBA(k, 1);
+/* Real moods carry the theme ramp; everything else (unknown/_/null) collapses into
+   a single discreet tone — those are not categories worth telling apart. */
+function moodColor(key, a = 1) {
+  return ['calm', 'energetic', 'dark', 'happy'].includes(key) ? moodRGBA(key, a) : T.faint;
+}
+
+const MOOD_LABELS = {
+  calm: 'Calm', energetic: 'Energetic', dark: 'Dark',
+  happy: 'Happy', '_': 'Unclassified', 'null': 'NULL', unknown: 'Unknown',
+};
+
+/* ── Category metadata (breakdown) ── */
+const CAT_LABELS = {
+  library: 'Library', favorites: 'Favorites', incoming: 'Incoming',
+  new: 'New (adjacent)', hidden_trash: 'Hidden / Trash',
+  podcast_info: 'Podcast / Info', other: 'Other', all: 'All',
+};
+const PROV_LABELS = { playlist: 'Playlist', album: 'Album', artist: 'Artist', unknown: 'Unknown' };
+/* Provenance is ORDINAL (precedence playlist > album > artist), not categorical:
+   a descending value ramp expresses that better than four hues. */
+const provRamp = () => [T.text, T.muted, T.faint, T.fill3];
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+const fmtPct = v => (v * 100).toFixed(0) + '%';
+const fmtInt = v => Number(v).toLocaleString();
+
+/* ── Comparative table ── */
+function renderBreakdownTable(data) {
+  const tbody = document.querySelector('#cmp-table tbody');
+  const rows = (data.categories || []).slice();
+  tbody.innerHTML = '';
+
+  const rowHtml = (r, isTotal) => {
+    const label = CAT_LABELS[r.category] || r.category;
+    const p = r.provenance || {};
+    const provStr = `${fmtInt(p.playlist || 0)} / ${fmtInt(p.album || 0)} / ${fmtInt(p.artist || 0)}`;
+    return `<tr class="${isTotal ? 'totals' : ''}">
+      <td><span class="cat-dot"></span>${label}</td>
+      <td>${fmtInt(r.count)}</td>
+      <td>${fmtPct(r.avg_read_end)}</td>
+      <td>${r.avg_read_count}</td>
+      <td>${r.avg_read_count_end}</td>
+      <td>${r.avg_skipped}</td>
+      <td>${fmtInt(r.liked)} <span class="num-muted">(${r.liked_pct}%)</span></td>
+      <td>${r.mood_pct}%</td>
+      <td class="num-muted">${provStr}</td>
+    </tr>`;
+  };
+
+  rows.forEach(r => { tbody.innerHTML += rowHtml(r, false); });
+  if (data.totals && data.totals.count) tbody.innerHTML += rowHtml(data.totals, true);
+}
+
+/* ── Provenance stacked bar (per category) ── */
+function renderProvenanceChart(data) {
+  const cats = data.categories || [];
+  const labels = cats.map(c => CAT_LABELS[c.category] || c.category);
+  const provKeys = ['playlist', 'album', 'artist', 'unknown'];
+  const ramp = provRamp();
+  const datasets = provKeys.map((k, i) => ({
+    label: PROV_LABELS[k],
+    data: cats.map(c => (c.provenance || {})[k] || 0),
+    backgroundColor: ramp[i],
+    borderColor: T.border,
+    borderWidth: 1,
+  }));
+  new Chart(document.getElementById('chart-provenance'), {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true, animation: false,
+      plugins: { legend: { labels: { color: T.text, font: { size: 11 }, boxWidth: 10 } } },
+      scales: {
+        x: { stacked: true, ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border } },
+        y: { stacked: true, ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border },
+             title: { display: true, text: 'tracks', color: T.muted } },
+      },
+    },
+  });
+}
+
+/* ── Popularity per category (avg read_end) ── */
+function renderPopularityChart(data) {
+  const cats = data.categories || [];
+  const labels = cats.map(c => CAT_LABELS[c.category] || c.category);
+  new Chart(document.getElementById('chart-popularity'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: cats.map(c => c.avg_read_end),
+        // Single series: colouring each bar by its own identity would encode
+        // nothing beyond its length. One hue.
+        backgroundColor: T.accent,
+        borderColor: T.accent,
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => 'read_end ' + (ctx.parsed.y * 100).toFixed(0) + '%' } },
+      },
+      scales: {
+        x: { ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border } },
+        y: { min: 0, max: 1, ticks: { color: T.muted, font: { size: 10 }, callback: v => (v * 100) + '%' },
+             grid: { color: T.border } },
+      },
+    },
+  });
+}
+
+/* ── Playlist change log ── */
+function fmtDate(epoch) {
+  if (!epoch) return '—';
+  const d = new Date(epoch * 1000);
+  return d.toLocaleString(undefined, {
+    year: '2-digit', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function cleanPlaylistName(name, uri) {
+  if (name) return name.replace(/^playlist:/, '');
+  if (uri === 'spotify:saved') return 'Saved tracks';
+  if (uri) return uri.replace(/^spotify:playlist:/, 'playlist ');
+  return '—';
+}
+
+const LOG_PAGE_SIZE = 25;
+let logEntries = [];
+let logPage = 0;
+
+function renderPlaylistLog(data) {
+  logEntries = data.log || [];
+  logPage = 0;
+  renderLogPage();
+}
+
+function renderLogPage() {
+  const tbody = document.querySelector('#log-table tbody');
+  const pager = document.getElementById('log-pager');
+  if (logEntries.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">No state changes recorded.</td></tr>';
+    pager.innerHTML = '';
+    return;
+  }
+  const pageCount = Math.ceil(logEntries.length / LOG_PAGE_SIZE);
+  logPage = Math.max(0, Math.min(logPage, pageCount - 1));
+  const start = logPage * LOG_PAGE_SIZE;
+  const slice = logEntries.slice(start, start + LOG_PAGE_SIZE);
+
+  tbody.innerHTML = '';
+  slice.forEach(e => {
+    const action = (e.action || '').toLowerCase();
+    const badge = `<span class="badge ${action === 'remove' ? 'remove' : 'add'}">${action || '?'}</span>`;
+    const transition = (e.from_option_type || e.to_option_type)
+      ? `<span class="otype">${e.from_option_type || '—'}</span><span class="arrow">→</span><span class="otype">${e.to_option_type || '—'}</span>`
+      : '<span class="num-muted">—</span>';
+    tbody.innerHTML += `<tr>
+      <td class="when">${fmtDate(e.event_date)}</td>
+      <td>${badge}</td>
+      <td class="track">${e.track_name || '<span class="num-muted">—</span>'}</td>
+      <td>${cleanPlaylistName(e.playlist_name, e.playlist_uri)}</td>
+      <td>${transition}</td>
+    </tr>`;
+  });
+
+  pager.innerHTML =
+    `<button id="log-prev"${logPage === 0 ? ' disabled' : ''}>&larr; Newer</button>` +
+    `<span class="pager-info">${start + 1}–${start + slice.length} of ${logEntries.length}</span>` +
+    `<button id="log-next"${logPage >= pageCount - 1 ? ' disabled' : ''}>Older &rarr;</button>`;
+  document.getElementById('log-prev').onclick = () => { logPage--; renderLogPage(); };
+  document.getElementById('log-next').onclick = () => { logPage++; renderLogPage(); };
+}
+
+/* ── Mood bars ── */
+function renderMoodBars(dist) {
+  const el = document.getElementById('mood-list');
+  const total = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
+  const order = ['calm', 'energetic', 'dark', 'happy', '_', 'null'];
+  const keys = [...new Set([...order, ...Object.keys(dist)])];
+  el.innerHTML = '';
+  keys.forEach(key => {
+    const count = dist[key] || 0;
+    if (count === 0 && !['calm','energetic','dark','happy'].includes(key)) return;
+    const pct = ((count / total) * 100).toFixed(1);
+    const color = moodColor(key);
+    const label = MOOD_LABELS[key] || key;
+    el.innerHTML += `
+      <div class="mood-row">
+        <div class="mood-header">
+          <span class="mood-label" style="color:${color}">${label}</span>
+          <span class="mood-count">${count.toLocaleString()} (${pct}%)</span>
+        </div>
+        <div class="mood-bar-bg">
+          <div class="mood-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+      </div>`;
+  });
+}
+
+/* ── Scatter ── */
+function renderScatter(scatter) {
+  const groups = {};
+  scatter.forEach(p => {
+    const m = p.mood || 'unknown';
+    if (!groups[m]) groups[m] = [];
+    groups[m].push({ x: p.energy, y: p.valence, name: p.name, artist: p.artist });
+  });
+
+  const datasets = Object.entries(groups).map(([mood, pts]) => ({
+    label: MOOD_LABELS[mood] || mood,
+    data: pts,
+    backgroundColor: moodColor(mood, .7),
+    pointRadius: 3,
+    pointHoverRadius: 5,
+  }));
+
+  new Chart(document.getElementById('chart-scatter'), {
+    type: 'scatter',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1,
+      animation: false,
+      scales: {
+        x: {
+          title: { display: true, text: 'Energy', color: T.muted },
+          min: 0, max: 1,
+          ticks: { color: T.muted },
+          grid: { color: T.border },
+        },
+        y: {
+          title: { display: true, text: 'Valence', color: T.muted },
+          min: 0, max: 1,
+          ticks: { color: T.muted },
+          grid: { color: T.border },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: T.text, font: { size: 11 }, boxWidth: 10 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const d = ctx.raw;
+              return `${d.artist ? d.artist + ' — ' : ''}${d.name || ''} (${ctx.parsed.x.toFixed(2)}, ${ctx.parsed.y.toFixed(2)})`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+/* ── Bar chart helper ── */
+function barChart(id, labels, data, color, xLabel) {
+  new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: color, borderColor: color, borderWidth: 1 }],
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: T.muted, font: { size: 10 } },
+          grid: { color: T.border },
+          title: xLabel ? { display: true, text: xLabel, color: T.muted } : undefined,
+        },
+        y: {
+          ticks: { color: T.muted, font: { size: 10 } },
+          grid: { color: T.border },
+          title: { display: true, text: 'tracks', color: T.muted },
+        },
+      },
+    },
+  });
+}
+
+/* ── Read end histogram ── */
+function renderReadEnd(hist) {
+  const labels = hist.map(b => `${Math.round(b[0] * 100)}%`);
+  const data = hist.map(b => b[2]);
+  barChart('chart-read-end', labels, data, T.accent, 'Listen-completion rate');
+}
+
+/* ── Count histograms ── */
+function countLabel(lo, hi) {
+  return hi === null ? `${lo}+` : `${lo}–${hi - 1}`;
+}
+
+function renderCountHist(id, hist, color) {
+  const labels = hist.map(b => countLabel(b[0], b[1]));
+  const data = hist.map(b => b[2]);
+  barChart(id, labels, data, color);
+}
+
+/* ── Last read by month ── */
+function renderLastRead(hist) {
+  const labels = hist.map(h => h.month);
+  const data = hist.map(h => h.count);
+  new Chart(document.getElementById('chart-last-read'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: T.accent,
+        borderColor: T.accent,
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: T.muted, font: { size: 10 } }, grid: { color: T.border } },
+        y: {
+          ticks: { color: T.muted, font: { size: 10 } },
+          grid: { color: T.border },
+          title: { display: true, text: 'tracks', color: T.muted },
+        },
+      },
+    },
+  });
+}
+
+/* ── Init ── */
+async function init() {
+  readTokens();
+  Chart.defaults.color = T.muted;
+  Chart.defaults.borderColor = T.border;
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  try {
+    const [breakdown, playlistLog, moodData, trackData] = await Promise.all([
+      fetch(API + '/stats/breakdown').then(r => r.json()),
+      fetch(API + '/stats/playlist_log?limit=200').then(r => r.json()),
+      fetch(API + '/stats/mood').then(r => r.json()),
+      fetch(API + '/stats/tracks').then(r => r.json()),
+    ]);
+
+    if (breakdown.categories && breakdown.categories.length > 0) {
+      renderBreakdownTable(breakdown);
+      renderProvenanceChart(breakdown);
+      renderPopularityChart(breakdown);
+    }
+
+    renderPlaylistLog(playlistLog);
+
+    renderMoodBars(moodData.mood_distribution || {});
+    if (moodData.scatter && moodData.scatter.length > 0) {
+      renderScatter(moodData.scatter);
+    }
+
+    if (trackData.read_end_hist && trackData.read_end_hist.length > 0) {
+      renderReadEnd(trackData.read_end_hist);
+    }
+    if (trackData.read_count_hist && trackData.read_count_hist.length > 0) {
+      renderCountHist('chart-read-count', trackData.read_count_hist, T.accent);
+    }
+    if (trackData.read_count_end_hist && trackData.read_count_end_hist.length > 0) {
+      renderCountHist('chart-read-count-end', trackData.read_count_end_hist, T.accent);
+    }
+    if (trackData.last_read_hist && trackData.last_read_hist.length > 0) {
+      renderLastRead(trackData.last_read_hist);
+    }
+  } catch (e) {
+    showError('Loading error: ' + e.message);
+  }
+}
+
+init();
+initSnapcast();
+</script>
+</body>
+</html>
