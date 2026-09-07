@@ -48,7 +48,11 @@ browse_root = $PODCAST_BROWSE_ROOT
 
 [o2m]
 enabled = true
-api_url = http://o2m:${PORT_O2M_API:-6681}/api/
+# Service name + the port o2m listens on INSIDE the network, which is always
+# 6681. PORT_O2M_API is the host-side mapping (6691 on o2m_1, 6701 on o2m_2)
+# and must not be used here — it is not reachable from this container.
+# O2M_API_URL overrides the whole thing for bare-metal installs.
+api_url = ${O2M_API_URL:-http://o2m:6681/api/}
 CONF
 chmod 666 /etc/mopidy/mopidy.conf
 echo "mopidy.conf created (Mopidy 4, no Iris)."

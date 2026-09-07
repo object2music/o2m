@@ -1,8 +1,7 @@
 # Mopidy-O2M
 
-O2M's own Mopidy extension. Currently a working skeleton: it registers itself with
-Mopidy and exposes an `[o2m]` config section, but adds no backend, frontend or HTTP
-handler yet.
+O2M's own Mopidy extension. It registers itself with Mopidy, exposes an `[o2m]` config
+section and serves its own HTTP app under `/o2m/`. It registers no backend yet.
 
 ## Why it lives in this repo
 
@@ -77,9 +76,31 @@ then silently builds and installs a package named `UNKNOWN-0.0.0` and Mopidy fin
 extension at all, with no error anywhere. `pip install --upgrade setuptools` (>= 61)
 first. The trixie base of `Dockerfile4` is new enough not to need this.
 
+## The HTTP app
+
+Mopidy mounts the extension's own app at **`/o2m/`** — `registry.add("http:app", ...)`,
+the same contract Mopidy-Local uses, unchanged between Mopidy 3 and 4. (Mopidy 4 did move
+the HTTP frontend itself from `mopidy.http` to `mopidy._exts.http`, so `from mopidy import
+http` no longer resolves — but an extension never needs it: the factory only returns
+Tornado route tuples.)
+
+| Route | What it is |
+|---|---|
+| `GET /o2m/status` | JSON probe: extension version, configured `api_url`, and Mopidy's live URI schemes read off `core` |
+| `GET /o2m/` | the package's own static assets (`mopidy_o2m/static/`), currently a placeholder page |
+
+This is the alternative to the legacy Iris integration: assets live inside the package and
+are served by the extension, instead of being copied over `mopidy_iris/static/` at image
+build time.
+
+`/o2m/status` is worth keeping: it is what caught `api_url` pointing at the host-side port
+(`http://o2m:6691/api/`) instead of the port o2m listens on inside the compose network
+(`6681`) — a URL that is simply unreachable from the mopidy container.
+
 ## Verify
 
 ```bash
-mopidy deps          # lists Mopidy-O2M 0.1.0
-mopidy config        # shows the [o2m] section
+mopidy deps                              # lists mopidy-o2m 0.2.0
+mopidy config                            # shows the [o2m] section
+curl http://<host>:<PORT_MOPIDY>/o2m/status
 ```

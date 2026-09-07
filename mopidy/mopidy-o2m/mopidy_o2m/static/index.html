@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mopidy-O2M</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; padding: 3rem 1.5rem;
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; justify-content: center;
+  }
+  main { max-width: 34rem; }
+  h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 .25rem; }
+  p { margin: 0 0 1rem; opacity: .8; }
+  a { color: inherit; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+  .row { display: flex; align-items: center; gap: .5rem; }
+  svg { width: 18px; height: 18px; flex: none; }
+</style>
+<main>
+  <div class="row">
+    <!-- Feather "activity" -->
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+    </svg>
+    <h1>Mopidy-O2M</h1>
+  </div>
+  <p>
+    The extension is installed and serving its own assets from inside the
+    package. This page is a placeholder — the O2M interface itself is served by
+    the O2M API container, not from here.
+  </p>
+  <p><a href="status"><code>/o2m/status</code></a> returns the extension version,
+     its configured API URL and Mopidy's URI schemes.</p>
+</main>

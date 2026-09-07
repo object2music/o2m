@@ -1,20 +1,26 @@
 """Mopidy-O2M — the O2M extension for Mopidy.
 
-Deliberately a no-op for now: it registers itself, reads its config and adds
-nothing to the registry. That is enough for `mopidy deps` to list it and for
-`[o2m]` to appear in `mopidy config`, which is what we want to verify before
-wiring any behaviour in.
+Targets the Mopidy 4 extension API and is verified loading on 3.4.2 as well;
+everything it uses (`ext.Extension`, `config.read`, `config.String`, the
+registry, the `http:app` factory contract) is unchanged between the two.
 
-Targets the Mopidy 3.x extension API because that is what the image runs;
-everything used here is unchanged in Mopidy 4 (see pyproject.toml, README).
+What it does today: serves its own HTTP app under `/o2m/` — a status probe and
+the package's own static assets. It registers no backend yet.
+
+It must never depend on Mopidy-Iris. The Mopidy 4 image does not install Iris at
+all; the legacy `o2m.js` / `o2m.css` copies into `mopidy_iris/static/` stay in
+the non-plugin code and are not to be reproduced here.
 """
 
 import logging
 import pathlib
+from importlib.metadata import version
 
 from mopidy import config, ext
 
-__version__ = "0.1.0"
+# Single source of truth is pyproject.toml, read back from the installed
+# distribution metadata — the same thing Mopidy-Local does.
+__version__ = version("Mopidy-O2M")
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +41,12 @@ class Extension(ext.Extension):
         return schema
 
     def setup(self, registry):
-        # Nothing registered yet. This is where a backend
-        # (registry.add("backend", ...)), a frontend or an HTTP handler
-        # (registry.add("http:app", ...)) will go.
-        #
-        # Never depend on Mopidy-Iris here, nor write into its files: the o2m.js /
-        # o2m.css edits stay in the non-plugin code. Anything this extension needs
-        # to show in a browser it serves itself under /o2m/. See README.
-        logger.info("Mopidy-O2M %s loaded (no components registered yet)", self.version)
+        # Mounted by Mopidy at /o2m/. No backend registered yet — that is where
+        # a backend (registry.add("backend", ...)) or a frontend will go.
+        registry.add("http:app", {"name": self.ext_name, "factory": self.webapp})
+        logger.info("Mopidy-O2M %s loaded — HTTP app at /%s/", self.version, self.ext_name)
+
+    def webapp(self, config, core):
+        from .web import factory  # noqa: PLC0415 — deferred like Mopidy-Local's
+
+        return factory(config, core)
