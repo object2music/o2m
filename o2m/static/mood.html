@@ -266,7 +266,7 @@
   /* Welcome flow and playback pairing — same bottom-sheet as #track-details / #obj-panel:
      same top line (--sheet-top), same slide, same backdrop. Visibility (not just the
      translate) is what hides a closed sheet, as documented on the details sheet. */
-  #welcome, #pairing {
+  #welcome, #pairing, #settings {
     position: fixed; left: 0; right: 0; bottom: 0;
     top: min(var(--sheet-top, 32vh), 45vh);
     z-index: 400; overflow-y: auto;
@@ -277,7 +277,27 @@
     transition: transform .26s var(--ease, ease), visibility .26s var(--ease, ease);
     display: flex; align-items: flex-start; justify-content: center; padding: 22px 16px 28px;
   }
-  #welcome.show, #pairing.show { transform: translateY(0); visibility: visible; }
+  #welcome.show, #pairing.show, #settings.show { transform: translateY(0); visibility: visible; }
+  /* Settings: the welcome flow's sheet chrome, but laid out as a surface — sections
+     you read down, not steps you walk through. */
+  #settings .wc-card { max-width: 560px; }
+  .set-sec { text-align: left; margin: 18px 0 22px; }
+  .set-sec-h { font-family: var(--font-mono); font-size: var(--t-label); letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 5px; }
+  .set-note { color: var(--muted); font-size: var(--t-body-s); line-height: 1.5; margin: 0 0 12px; }
+  .set-bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+  .set-bg { aspect-ratio: 16 / 10; padding: 0; position: relative; cursor: pointer;
+    background: var(--fill-2) center / cover no-repeat;
+    border: 2px solid var(--border); font: inherit; color: var(--text); }
+  .set-bg.sel { border-color: var(--accent); }
+  /* The caption sits on an arbitrary picture, so its ground is a literal scrim: a
+     token-derived one would turn white on the light themes and vanish. */
+  .set-bg-tag { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px;
+    background: rgba(255,255,255,.88); color: #1A1A1A; font-family: var(--font-mono);
+    font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .set-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+  .set-row .wc-btn { margin: 0; }
   #wc-backdrop { position: fixed; inset: 0; z-index: 395; background: rgba(0,0,0,.5);
     opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s; }
   #wc-backdrop.show { opacity: 1; visibility: visible; }
@@ -1898,6 +1918,11 @@
   }
   #basic-status .eq-icon { position: static; }
   #basic-status .bs-sep { opacity: .5; }
+  /* In the Basic view this line is the only readout on screen, so it takes the body
+     size rather than the label size — at label size it read as fine print, and on a
+     picture even more so. All themes. */
+  html.basic #basic-status { font-size: var(--t-body); letter-spacing: .06em; gap: 10px; }
+  @media (min-width: 700px) { html.basic #basic-status { gap: 12px; } }
   #basic-dials { display: flex; justify-content: center; gap: 24px; align-items: flex-start; }
   /* Both dials' viewBox is wider (label ring): give them their own size so the
      knob circle renders as large as a plain dial (.dial-svg caps at 108px). */
@@ -2009,8 +2034,19 @@
      size read as fine print. */
   html.basic[data-theme="creme"] #basic-status,
   html.basic[data-theme="bulletin"] #basic-status {
-    align-self: center; justify-self: center;
-    padding: 9px 18px; font-size: var(--t-body); letter-spacing: .06em; gap: 10px;
+    align-self: center; justify-self: center; padding: 9px 18px;
+  }
+  /* The ON state has to be restated HERE. The Bulletin fill rule further up is
+     [data-theme] .basic-toggle.on — three classes, no element — while the OFF pane
+     rule above is html.basic[data-theme] .basic-toggle, which carries an element on
+     top of the same three: it out-specified the active state AND came later in the
+     sheet, so every tile painted as OFF. Same selector shape as the OFF rule, one
+     class more, and after it. The shadow is what makes the white card sit above the
+     picture rather than in it. */
+  html.basic[data-theme="creme"] .basic-toggle.on,
+  html.basic[data-theme="bulletin"] .basic-toggle.on {
+    background: var(--tile-on); border-color: transparent; color: var(--tile-on-ink);
+    box-shadow: 0 3px 16px rgba(44,40,92,.22);
   }
   html.basic[data-theme="creme"] .basic-toggle.pending,
   html.basic[data-theme="bulletin"] .basic-toggle.pending { border-color: var(--accent); }
@@ -2019,7 +2055,7 @@
     html.basic[data-theme="creme"] #basic-dials,
     html.basic[data-theme="bulletin"] #basic-dials { padding: 22px 26px; }
     html.basic[data-theme="creme"] #basic-status,
-    html.basic[data-theme="bulletin"] #basic-status { padding: 10px 22px; gap: 12px; }
+    html.basic[data-theme="bulletin"] #basic-status { padding: 10px 22px; }
   }
 
   /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
@@ -2355,6 +2391,7 @@
     <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
     <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
     <a class="footer-link" id="footer-backoffice" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>Backoffice</a>
+    <button class="footer-link" id="footer-settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Settings</button>
     <a class="footer-link" id="link-basic" href="/basic" onclick="try{localStorage.setItem('o2m-view','basic')}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Basic</a>
     <a class="footer-link" id="link-full" href="/mood?full=1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Full</a>
     <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
@@ -2389,6 +2426,9 @@
 
 <!-- Playback pairing, same modal as the welcome flow (filled by openPairingModal) -->
 <div id="pairing"><div class="wc-card"><div class="wc-body"></div></div></div>
+
+<!-- Settings (filled by renderSettings) -->
+<div id="settings"><div class="wc-card"><div class="wc-body"></div></div></div>
 
 <div id="matrix-tooltip">
   <div class="tt-name"></div>
@@ -2856,17 +2896,119 @@ async function toggleBasicCat(btn, wantOn) {
   setTimeout(refreshNowPlaying, 3000);
 }
 
-/* Basic view background. A stored choice wins — that is the hook the upload path
-   will set; with none, one of the shipped pictures is drawn at random for the page,
-   so the view is not always the same wall. Set on the root as --basic-bg; only the
-   Bulletin rules read it, so the other themes are unaffected by the draw. */
+/* ── Basic view background ───────────────────────────────────────────────────
+   The choice lives in THIS browser, deliberately: the shipped pictures ship with
+   the app, so a device that has never been set up still gets a proper background
+   rather than an empty box. Nothing to store server-side, nothing to keep in sync
+   between instances.
+     o2m-basic-bg       '' → draw at random · a /static path · 'custom'
+     o2m-basic-bg-data  the uploaded picture, as a data URL
+   Set on the root as --basic-bg; only the Bulletin rules read it, so the other
+   themes are unaffected by the draw. */
 const BASIC_BGS = ['wave-violet-lime.jpg', 'wave-orange-violet.jpg',
                    'wave-lime-pink.jpg', 'wave-orange-lime.jpg'];
+const BASIC_BG_KEY  = 'o2m-basic-bg';
+const BASIC_BG_DATA = 'o2m-basic-bg-data';
+const BASIC_BG_MAX  = 1600;   // longest side kept for an upload
+
+function _lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function basicBgChoice() { return _lsGet(BASIC_BG_KEY); }
+function basicBgUrl() {
+  const c = basicBgChoice();
+  if (c === 'custom') return _lsGet(BASIC_BG_DATA);
+  return c;
+}
 function initBasicBackground() {
-  let url = '';
-  try { url = localStorage.getItem('o2m-basic-bg') || ''; } catch (e) {}
+  let url = basicBgUrl();
   if (!url) url = '/static/basic-bg/' + BASIC_BGS[Math.floor(Math.random() * BASIC_BGS.length)];
+  // Safe unquoted-content-wise: the shipped paths have no quotes, and a base64 data
+  // URL is restricted to A-Za-z0-9+/= — neither can close the url() early.
   document.documentElement.style.setProperty('--basic-bg', 'url("' + url + '")');
+}
+
+/* ── Settings ────────────────────────────────────────────────────────────────
+   A surface, not a sequence: it reuses the welcome flow's sheet chrome (.wc-card,
+   setSheet, the shared backdrop) and none of its step machinery — a settings screen
+   is opened at the item you want, not walked through from step 1.
+   Sections are meant to be added below; the background is the first one. */
+function openSettings() { renderSettings(); setSheet('settings', true); }
+
+function renderSettings() {
+  const body = document.querySelector('#settings .wc-body');
+  if (!body) return;
+  const cur = basicBgChoice();
+  const custom = _lsGet(BASIC_BG_DATA);
+  const tile = (val, label, css) =>
+    `<button class="set-bg${cur === val ? ' sel' : ''}" data-bg="${objEsc(val)}" style="${css}" title="${objEsc(label)}">
+       <span class="set-bg-tag">${objEsc(label)}</span></button>`;
+  const pretty = n => n.replace(/^wave-/, '').replace(/\.jpg$/, '').replace(/-/g, ' ');
+  body.innerHTML = `
+    <div class="wc-title">Settings</div>
+    <div class="set-sec">
+      <div class="set-sec-h">Basic background</div>
+      <div class="set-note">Behind the Basic dashboard, in the Bulletin theme. Stored in this
+        browser only, so each device can have its own. Your picture is resized before it is
+        stored and never leaves the device.</div>
+      <div class="set-bgs" id="set-bgs">
+        ${tile('', 'Random', '')}
+        ${BASIC_BGS.map(n => tile('/static/basic-bg/' + n, pretty(n),
+            `background-image:url('/static/basic-bg/${n}')`)).join('')}
+        ${custom ? tile('custom', 'Yours', `background-image:url('${custom}')`) : ''}
+      </div>
+      <div class="set-row">
+        <label class="wc-btn" for="set-bg-file">Upload a picture…</label>
+        <input id="set-bg-file" type="file" accept="image/*" hidden>
+        ${custom ? '<button class="wc-skip" id="set-bg-clear" style="margin:0">Remove mine</button>' : ''}
+      </div>
+    </div>
+    <button class="wc-skip" id="set-close">Close</button>`;
+
+  body.querySelectorAll('.set-bg').forEach(b => b.addEventListener('click', () => {
+    try { localStorage.setItem(BASIC_BG_KEY, b.dataset.bg); } catch (e) {}
+    initBasicBackground(); renderSettings();
+  }));
+  document.getElementById('set-bg-file')?.addEventListener('change', e => {
+    _setBgUpload(e.target.files && e.target.files[0]);
+    e.target.value = '';   // so re-picking the same file fires change again
+  });
+  document.getElementById('set-bg-clear')?.addEventListener('click', () => {
+    try { localStorage.removeItem(BASIC_BG_DATA); localStorage.setItem(BASIC_BG_KEY, ''); } catch (e) {}
+    initBasicBackground(); renderSettings(); setFeedback('Background reset');
+  });
+  document.getElementById('set-close')?.addEventListener('click', () => setSheet('settings', false));
+}
+
+/* An upload is downscaled and re-encoded through a canvas before being stored: a
+   camera file is several MB and would blow the browser's storage quota outright,
+   and the re-encode drops the EXIF (orientation aside, that is where the GPS tag
+   lives) on the way. */
+function _setBgUpload(file) {
+  if (!file) return;
+  setFeedback('Reading the picture…');
+  const fr = new FileReader();
+  fr.onerror = () => setFeedback('Could not read that picture');
+  fr.onload = () => {
+    const img = new Image();
+    img.onerror = () => setFeedback('Could not read that picture');
+    img.onload = () => {
+      const scale = Math.min(1, BASIC_BG_MAX / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width  = Math.max(1, Math.round(img.width  * scale));
+      c.height = Math.max(1, Math.round(img.height * scale));
+      let data;
+      try {
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        data = c.toDataURL('image/jpeg', .82);
+      } catch (e) { setFeedback('Could not read that picture'); return; }
+      try {
+        localStorage.setItem(BASIC_BG_DATA, data);
+        localStorage.setItem(BASIC_BG_KEY, 'custom');
+      } catch (e) { setFeedback('Picture too large for this browser'); return; }
+      initBasicBackground(); renderSettings(); setFeedback('Background updated');
+    };
+    img.src = fr.result;
+  };
+  fr.readAsDataURL(file);
 }
 
 function initBasicView() {
@@ -7240,7 +7382,7 @@ let _wcPoll = null;
    toggling the class in five places. Same behaviour as the details/object sheets. */
 function setSheet(id, open) {
   document.getElementById(id)?.classList.toggle('show', open);
-  const anyOpen = ['welcome', 'pairing']
+  const anyOpen = ['welcome', 'pairing', 'settings']
     .some(x => document.getElementById(x)?.classList.contains('show'));
   document.getElementById('wc-backdrop')?.classList.toggle('show', anyOpen);
 }
@@ -7586,9 +7728,11 @@ async function init() {
   document.getElementById('obj-backdrop')?.addEventListener('click', closeObjPanel);
   // Same affordance as the other sheets: tapping the backdrop closes the topmost one.
   document.getElementById('wc-backdrop')?.addEventListener('click', () => {
-    if (document.getElementById('pairing')?.classList.contains('show')) setSheet('pairing', false);
+    if (document.getElementById('settings')?.classList.contains('show')) setSheet('settings', false);
+    else if (document.getElementById('pairing')?.classList.contains('show')) setSheet('pairing', false);
     else if (document.getElementById('welcome')?.classList.contains('show')) _wcSkip();
   });
+  document.getElementById('footer-settings')?.addEventListener('click', openSettings);
   document.getElementById('artist-name')?.addEventListener('click', () => {
     const a = (currentTrackObj?.artists || [])[0];
     if (a?.uri) openArtist(a.uri, a.name);
@@ -7624,7 +7768,9 @@ async function init() {
     if (row.dataset.boxUid)    return openBox(row.dataset.boxUid);
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && document.body.classList.contains('obj-open')) closeObjPanel();
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('settings')?.classList.contains('show')) setSheet('settings', false);
+    else if (document.body.classList.contains('obj-open')) closeObjPanel();
   });
   // Content search: expand the field on the icon, debounce input, Enter = now.
   const searchBox = document.getElementById('search-box');
