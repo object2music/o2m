@@ -72,6 +72,56 @@ def _install_resilient_ws_listener():
 
 _install_resilient_ws_listener()
 
+
+def _install_mopidy4_model_compat():
+    """Teach mopidyapi to read Mopidy 4's model marker.
+
+    Mopidy 3 tagged every serialised model with ``__model__``. Mopidy 4's models
+    are pydantic, and the **websocket event stream** tags them ``model`` instead
+    (the JSON-RPC path still emits ``__model__``, so only events are affected).
+    mopidyapi's ``deserialize_mopidy`` only knows ``__model__``, so on Mopidy 4
+    an event payload stays a plain dict and the listener dies on
+    ``'dict' object has no attribute 'track'`` — no ``track_playback_ended``,
+    therefore no stats and no dynamic refill, while HTTP/RPC keeps working. Same
+    silent half-failure as the handshake bug above, different cause.
+
+    Accept either marker. All three call sites are rebound, not just the module
+    attribute: ``client`` and ``wsclient`` both do
+    ``from .parsedata import deserialize_mopidy`` at import time, so patching
+    ``parsedata`` alone would leave the event path on the old function.
+
+    Harmless on Mopidy 3: nothing there emits a ``model`` key.
+    """
+    from collections import namedtuple
+    from mopidyapi import client, parsedata, wsclient
+
+    def deserialize(data):
+        if isinstance(data, dict):
+            # Only treat 'model' as a marker when it names a model (a string),
+            # so an ordinary payload carrying a 'model' field is left alone.
+            marker = None
+            if "__model__" in data:
+                marker = "__model__"
+            elif isinstance(data.get("model"), str):
+                marker = "model"
+            if marker:
+                fields = [k for k in data if k != marker]
+                nt = namedtuple(str(data[marker]), fields)
+                return nt(**{k: deserialize(data[k]) for k in fields})
+            return {k: deserialize(v) for k, v in data.items()}
+        if isinstance(data, list):
+            return [deserialize(d) for d in data]
+        # Pass anything else through. The stock version raised ValueError on
+        # e.g. a float, which Mopidy 4 does send.
+        return data
+
+    parsedata.deserialize_mopidy = deserialize
+    client.deserialize_mopidy = deserialize
+    wsclient.deserialize_mopidy = deserialize
+
+
+_install_mopidy4_model_compat()
+
 if __name__ == "__main__":
 
 #CONFS AND CONSTS
