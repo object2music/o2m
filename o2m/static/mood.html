@@ -260,8 +260,17 @@
      room it has — it stays centred and never wider than its container. The top
      margin sets it apart from the lifecycle scale above, in every view. */
   .tp-matrix { width: 100%; max-width: 300px; aspect-ratio: 1 / 1;
-    margin: 7px auto 0; display: block; touch-action: none;
+    margin: 16px auto 0; display: block; touch-action: none;
     background: var(--card); border: 1px solid var(--border-strong); }
+  /* From Playlists down, the panel stops being a table of values and becomes a
+     stack of controls: the playlist selector, the lifecycle scale, the matrix.
+     At the list's own 7px row gap they read as three more table rows, so each gets
+     room to stand as its own block. Applied to both panels, not just the details
+     column: the two render the same body and are meant to look identical.
+     #td-lifecycle carried a margin in the desktop rule only, so on a phone the
+     scale was flush against the list. */
+  [data-row="playlists"] { margin-top: 14px; }
+  #td-lifecycle, #obj-lifecycle { margin: 16px 0; }
   body.edit-mode .tp-matrix { cursor: crosshair; }
   .tl-item.obj-openable { cursor: pointer; }
   /* ── First-launch welcome overlay ── */
@@ -771,7 +780,7 @@
       margin-inline: auto;
     }
     #td-lifecycle, #obj-lifecycle {
-      margin: 7px 0;
+      margin: 16px 0;
     }
     /* Overprint keeps its poster grid: there the details column matches the cover
        square (--ovp-w) rather than the whole header. `:root[...]` is needed to
