@@ -311,6 +311,12 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .set-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
   .set-row .wc-btn { margin: 0; }
+  /* Maintenance actions: several equal-weight buttons, so they get a tighter gap
+     than a row built around one primary action. */
+  .set-actions { gap: 10px; }
+  .set-actions .wc-btn { padding: 10px 16px; }
+  .set-select { font: inherit; color: inherit; background: transparent;
+    border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; cursor: pointer; }
   #wc-backdrop { position: fixed; inset: 0; z-index: 395; background: rgba(0,0,0,.5);
     opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s; }
   #wc-backdrop.show { opacity: 1; visibility: visible; }
@@ -436,7 +442,7 @@
   body.edit-mode .td-playlists {
     display: flex; justify-content: flex-end;
   }
-  /* Trigger button — same look as footer-link / footer-more-toggle */
+  /* Trigger button — same look as a footer link */
   .pl-trigger {
     display: inline-flex; align-items: center; gap: 7px;
     background: none; border: 1px solid var(--border); cursor: pointer;
@@ -1089,21 +1095,12 @@
     border-top: 1px solid var(--border);
     display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
   }
-  /* Order: brand · styles (themes) · nav buttons all on the LEFT; the 3 warmups are
-     grouped and glued to the RIGHT (margin-left:auto absorbs the free space).
-     .footer-extra wraps "Clear today" + the warmups group; display:contents on
-     desktop/mobile keeps them as plain flex children of #footer-links (no visual
-     change) — only the tablet breakpoint below turns it into a collapsible panel. */
+  /* Order: brand · styles (themes) · nav buttons, all on the left. The maintenance
+     controls that used to be glued right behind a "More" popup now live in Settings —
+     which is also what removed the popup and its two breakpoint variants. */
   #footer-links .tb-brand       { order: 0; }
   #footer-links #theme-switcher { order: 1; margin-left: 0; }
   #footer-links .footer-link    { order: 2; }
-  #footer-links .footer-extra   { display: contents; }
-  #footer-links .footer-more-toggle { display: none; }
-  #footer-links .footer-warmups { order: 3; margin-left: auto; display: flex; align-items: center; gap: 7px; }
-  #footer-links .footer-pick { display: inline-flex; align-items: center; gap: 5px; opacity: .85; }
-  #footer-links .footer-pick svg { width: 15px; height: 15px; }
-  #footer-links .footer-pick select { font: inherit; color: inherit; background: transparent;
-    border: 1px solid currentColor; border-radius: 6px; padding: 2px 6px; cursor: pointer; }
   /* Mobile: keep the footer on a single line, swipe horizontally to reach all items.
      touch-action:pan-x makes the browser commit slightly-diagonal swipes to THIS bar
      instead of hijacking them as vertical page scrolls; the taller padding gives the
@@ -1126,38 +1123,15 @@
   @media (min-width: 700px) and (max-width: 1024px) {
     #footer-links { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
     #footer-links > * { flex-shrink: 0; }
-    #footer-links .footer-more-toggle { display: inline-flex; order: 3; margin-left: auto; }
-    #footer-links .footer-extra { display: none; }
-    /* Fixed positioning so the popup escapes #footer-links's overflow-y:hidden clip. */
-    #footer-links .footer-extra.open {
-      display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-      position: fixed; right: 14px; bottom: 50px;
-      background: var(--surface); border: 1px solid var(--border);
-      padding: 10px; min-width: 220px; z-index: 50;
-    }
-    #footer-links .footer-extra.open .footer-warmups {
-      margin-left: 0; flex-direction: column; align-items: stretch; gap: 8px;
-    }
   }
-  /* Overprint: same single-line + "More" dropdown as tablet, but at every width
-     ≥700px (not just the 700–1024 tablet band) — frees the vertical room the
-     matrix needs in fullscreen too. */
+  /* Overprint: same single-line footer as tablet, but at every width ≥700px (not
+     just the 700–1024 band) — frees the vertical room the matrix needs in
+     fullscreen too. */
   @media (min-width: 700px) {
     [data-theme="overprint"] #footer-links {
       flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
     }
     [data-theme="overprint"] #footer-links > * { flex-shrink: 0; }
-    [data-theme="overprint"] #footer-links .footer-more-toggle { display: inline-flex; order: 3; margin-left: auto; }
-    [data-theme="overprint"] #footer-links .footer-extra { display: none; }
-    [data-theme="overprint"] #footer-links .footer-extra.open {
-      display: flex; flex-direction: column; align-items: stretch; gap: 8px;
-      position: fixed; right: 14px; bottom: 50px;
-      background: var(--surface); border: 1px solid var(--border);
-      padding: 10px; min-width: 220px; z-index: 50;
-    }
-    [data-theme="overprint"] #footer-links .footer-extra.open .footer-warmups {
-      margin-left: 0; flex-direction: column; align-items: stretch; gap: 8px;
-    }
   }
   .footer-link {
     font-size: var(--t-label); color: var(--muted); text-decoration: none;
@@ -2421,23 +2395,6 @@
     <a class="footer-link" id="link-basic" href="/basic" onclick="try{localStorage.setItem('o2m-view','basic')}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Basic</a>
     <a class="footer-link" id="link-full" href="/mood?full=1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Full</a>
     <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
-    <button class="footer-link footer-more-toggle" id="footer-more-toggle" title="More" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>More</button>
-    <div class="footer-extra" id="footer-extra">
-      <button class="footer-link" onclick="clearTodayHistory(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Clear today</button>
-      <div class="footer-warmups">
-        <label class="footer-pick" title="Tapped object filter variant (A/B test)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-          <select id="pick-mode" onchange="setPickMode(this.value)">
-            <option value="hybrid">Pick: Hybrid (P0)</option>
-            <option value="temp">Pick: Temp (P1)</option>
-            <option value="band">Pick: Band (P2)</option>
-          </select>
-        </label>
-        <button class="footer-link" onclick="triggerWarmup('moods')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Warmup moods</button>
-        <button class="footer-link" onclick="triggerWarmup('genres')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>Warmup genres</button>
-        <button class="footer-link" onclick="triggerWarmup('retry_sentinels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Warmup retry</button>
-      </div>
-    </div>
   </div>
 
 <div id="obj-backdrop"></div>
@@ -3072,6 +3029,29 @@ function renderSettings() {
         ${custom ? '<button class="wc-skip" id="set-bg-clear" style="margin:0">Remove mine</button>' : ''}
       </div>
     </div>
+    <div class="set-sec">
+      <div class="set-sec-h">Maintenance</div>
+      <div class="set-note">Enrichment runs on its own in the background; these force a pass
+        now. Clearing today's history removes this day's plays from the stats.</div>
+      <div class="set-row set-actions">
+        <button class="wc-btn" id="set-warm-moods">Warmup moods</button>
+        <button class="wc-btn" id="set-warm-genres">Warmup genres</button>
+        <button class="wc-btn" id="set-warm-retry">Warmup retry</button>
+        <button class="wc-btn" id="set-clear-today">Clear today's history</button>
+      </div>
+    </div>
+    <div class="set-sec">
+      <div class="set-sec-h">Selection</div>
+      <div class="set-note">Which sampler picks tracks when a box is tapped (A/B test).
+        Hybrid is the default.</div>
+      <div class="set-row">
+        <select id="pick-mode" class="set-select" onchange="setPickMode(this.value)">
+          <option value="hybrid">Hybrid (P0)</option>
+          <option value="temp">Temp (P1)</option>
+          <option value="band">Band (P2)</option>
+        </select>
+      </div>
+    </div>
     <button class="wc-skip" id="set-close">Close</button>`;
 
   body.querySelectorAll('.set-bg').forEach(b => b.addEventListener('click', () => {
@@ -3086,6 +3066,11 @@ function renderSettings() {
     try { localStorage.removeItem(BASIC_BG_DATA); localStorage.setItem(BASIC_BG_KEY, ''); } catch (e) {}
     initBasicBackground(); renderSettings(); setFeedback('Background reset');
   });
+  document.getElementById('set-warm-moods')?.addEventListener('click', () => triggerWarmup('moods'));
+  document.getElementById('set-warm-genres')?.addEventListener('click', () => triggerWarmup('genres'));
+  document.getElementById('set-warm-retry')?.addEventListener('click', () => triggerWarmup('retry_sentinels'));
+  document.getElementById('set-clear-today')?.addEventListener('click', e => clearTodayHistory(e.currentTarget));
+  initPickMode();
   document.getElementById('set-close')?.addEventListener('click', () => setSheet('settings', false));
 }
 
@@ -7066,6 +7051,8 @@ async function setPickMode(mode) {
     setFeedback('Pick mode: ' + d.mode);
   } catch(e) { setFeedback('Pick mode error'); }
 }
+/* The select lives in the Settings sheet now, so this runs when that sheet is
+   rendered rather than at load time — the element does not exist before. */
 async function initPickMode() {
   try {
     const d = await fetch(API + '/expand_pick_mode').then(r => r.json());
@@ -7073,7 +7060,6 @@ async function initPickMode() {
     if (sel && d.mode) sel.value = d.mode;
   } catch(e) {}
 }
-initPickMode();
 
 async function fetchTrackFeatures(uris) {
   const missing = [...new Set(uris)].filter(u => u && !(u in matrixFeatures));
@@ -7772,21 +7758,6 @@ async function init() {
     document.getElementById('top-zone')?.classList.toggle('cover-lit'));
   document.getElementById('btn-snapcast')?.addEventListener('click', toggleSnapcast);
   document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
-  // Tablet "More" dropdown (Clear today / pick-mode / warmups folded out of the
-  // single-line footer — see the (min-width:700px) and (max-width:1024px) CSS rule).
-  document.getElementById('footer-more-toggle')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const extra = document.getElementById('footer-extra');
-    const open = extra?.classList.toggle('open');
-    document.getElementById('footer-more-toggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-  document.addEventListener('click', (e) => {
-    const extra = document.getElementById('footer-extra');
-    if (extra?.classList.contains('open') && !extra.contains(e.target) && e.target.id !== 'footer-more-toggle') {
-      extra.classList.remove('open');
-      document.getElementById('footer-more-toggle')?.setAttribute('aria-expanded', 'false');
-    }
-  });
   autoToggle = localStorage.getItem('mood-auto') === '1';
   document.getElementById('btn-auto')?.addEventListener('click', () => setAutoToggle(!isAutoMode()));
   updateAutoBtn();
