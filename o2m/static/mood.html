@@ -327,9 +327,13 @@
     color: var(--muted); display: inline-flex; }
   .sheet-close:hover { color: var(--text); }
   .sheet-close svg { width: 18px; height: 18px; display: block; }
-  /* A sheet carrying the head reads as a panel, not a centred card: its body is
-     left-aligned and it takes the object panel's width. */
-  .wc-card:has(.sheet-head) { text-align: left; max-width: 620px; }
+  /* Two shapes of sheet, and the head does NOT decide which — it only provides the
+     title and the ✕. Settings is a PANEL: it holds grids and lists, so like the
+     object panel it takes the whole sheet width, left-aligned, with the object
+     panel's padding. Welcome and pairing stay centred cards: short, stepped
+     dialogs where a full-width column would read as broken. */
+  #settings { align-items: stretch; justify-content: flex-start; padding: 14px 16px 26px; }
+  #settings .wc-card { max-width: none; width: 100%; text-align: left; }
   #wc-backdrop { position: fixed; inset: 0; z-index: 395; background: rgba(0,0,0,.5);
     opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s; }
   #wc-backdrop.show { opacity: 1; visibility: visible; }
