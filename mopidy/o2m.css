@@ -32,6 +32,27 @@ input[type="number"] {
   display: none;
 }
 
+/* Box toggle — intermediate "in progress" state.
+   A box activation/deactivation can take several seconds (cascade fills,
+   Spotify RPC). While the request is in flight the button turns amber, pulses,
+   and is not clickable — so the user always knows what is being processed and
+   can't double-fire the toggle (which serialises behind the box-ops lock). */
+.sidebar__menu__item--pending {
+  color: #f0a000 !important;
+  cursor: wait !important;
+  pointer-events: none;
+  opacity: 0.85;
+  animation: o2m_pending_pulse 1s ease-in-out infinite;
+}
+.sidebar__menu__item--pending .icon {
+  color: #f0a000 !important;
+}
+@keyframes o2m_pending_pulse {
+  0%   { opacity: 0.45; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+
 ul.details {
   opacity: 1;
 }

@@ -149,6 +149,9 @@ dump.sql
 o2m/.flask_session/
 o2m/o2m.conf
 o2m/.cache_spotipy
+o2m/.cache_spotify_instance
+o2m/.cache_spotify_stream
+o2m/.cache_spotify_stream_pending
 data/
 
 
@@ -158,3 +161,7 @@ frontend/node_modules/
 
 #Backend
 backend/pb_data/
+
+# o2m runtime/secrets (auto-generated per environment — never commit)
+o2m/.edit_cookie_secret
+o2m/.spotify_rate_limit

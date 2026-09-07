@@ -9,7 +9,14 @@ class SpotifyHandler:
         o2m_config = util.get_config_file("o2m.conf")["o2m"]
         self._lastfm_api_key = o2m_config.get("lastfm_api_key", "").strip() or None
         self.cache_path = ".cache_spotipy"
-        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify"
+        # Instance baseline = the fixed "house" account. Streaming (librespot blob) is pinned
+        # to it, and the Web API falls back to it when no per-user overlay is signed in.
+        self.instance_cache_path = ".cache_spotify_instance"
+        # Streaming identity (librespot/login5) — separate PKCE token, see below.
+        self.stream_cache_path = ".cache_spotify_stream"
+        self.stream_pending_path = ".cache_spotify_stream_pending"
+        # Unified scope: Web API (Spotipy) + streaming (librespot/mopidy-spotify) + identity (edit-auth /v1/me)
+        self.scope = "user-library-read playlist-modify-private playlist-modify-public user-read-recently-played user-top-read user-follow-modify user-follow-read playlist-read-private playlist-read-collaborative user-library-modify streaming user-read-private user-read-email"
         os.environ['SPOTIPY_REDIRECT_URI'] = self.spotipy_config["spotipy_redirect_uri"]
         os.environ['SPOTIPY_CLIENT_ID'] = self.spotipy_config["client_id_spotipy"]
         os.environ['SPOTIPY_CLIENT_SECRET'] = self.spotipy_config["client_secret_spotipy"]
@@ -17,11 +24,145 @@ class SpotifyHandler:
         self._rate_limited_until = self._load_rate_limit()
         self._last_retry_after = None  # captured from Retry-After response header
         self._db = None  # set via set_db_handler() after DatabaseHandler is ready
+        self._mopidy = None  # set via set_mopidy_handler(); fallback source for playlists
+        self._tag_mood_map = self._build_tag_mood_map_from_class()
         self.init_token_sp()
 
     def set_db_handler(self, db_handler):
         """Inject the DatabaseHandler to enable local cache read/write."""
         self._db = db_handler
+        self._init_tag_features()
+
+    def set_mopidy_handler(self, mopidy_handler):
+        """Inject the Mopidy client, used as a fallback source for playlist content.
+
+        Mopidy reaches Spotify through its own quota-approved application, so it still
+        serves the playlists our app is refused on (403 on playlists owned by someone
+        else, 404 on Spotify's editorial ones)."""
+        self._mopidy = mopidy_handler
+
+    @staticmethod
+    def _spotify_id(uri):
+        """'spotify:album:1C2h…' → '1C2h…' (None for anything else)."""
+        if uri and isinstance(uri, str) and uri.startswith('spotify:'):
+            return uri.rsplit(':', 1)[-1] or None
+        return None
+
+    def _playlist_items_via_mopidy(self, playlist_id):
+        """Read a playlist's content through Mopidy, shaped like Web API entries so the
+        regular caching path consumes them unchanged. Returns [] when unavailable.
+
+        Mopidy exposes no `added_at`, so it comes back None — save_playlist_track keeps
+        whatever it already had rather than inventing a date."""
+        if not self._mopidy:
+            return []
+        try:
+            playlist = self._mopidy.playlists.lookup(uri=f"spotify:playlist:{playlist_id}")
+        except Exception as e:
+            print(f"mopidy playlist lookup failed for {playlist_id}: {e}")
+            return []
+
+        items = []
+        for track in (getattr(playlist, 'tracks', None) or []):
+            uri = getattr(track, 'uri', None)
+            if not uri:
+                continue
+            album = getattr(track, 'album', None)
+            album_id = self._spotify_id(getattr(album, 'uri', None))
+            data = {
+                'uri':          uri,
+                'name':         getattr(track, 'name', None),
+                'duration_ms':  getattr(track, 'length', None),
+                'track_number': getattr(track, 'track_no', None),
+                'artists': [
+                    {'id': self._spotify_id(getattr(a, 'uri', None)), 'name': getattr(a, 'name', None)}
+                    for a in (getattr(track, 'artists', None) or []) if getattr(a, 'name', None)
+                ],
+            }
+            if album_id:
+                data['album'] = {'id': album_id, 'uri': album.uri, 'name': getattr(album, 'name', None)}
+            items.append({'track': data, 'added_at': None})
+        return items
+
+    def _init_tag_features(self):
+        """Seed TagFeature table if empty, then load into instance attributes."""
+        if not self._db:
+            return
+        try:
+            from src.o2mmodels import TagFeature
+            if TagFeature.select().count() == 0:
+                self._seed_tag_features()
+            self._reload_tag_features()
+        except Exception as e:
+            print(f"_init_tag_features error: {e} — falling back to hardcoded dicts")
+            self._tag_mood_map = self._build_tag_mood_map_from_class()
+
+    def _seed_tag_features(self):
+        """Populate TagFeature from hardcoded class-level dicts (runs once on first startup)."""
+        from src.o2mmodels import TagFeature, db as _db
+        entries = {}  # tag → {energy, valence, mood, is_noise}
+
+        for tag, (energy, valence) in self.__class__._TAG_FEATURES.items():
+            entries[tag] = {'energy': energy, 'valence': valence, 'mood': None, 'is_noise': 0}
+
+        for cat, tags in self.__class__._MOOD_TAGS.items():
+            for tag in tags:
+                if tag not in entries:
+                    entries[tag] = {'energy': None, 'valence': None, 'mood': cat, 'is_noise': 0}
+                elif entries[tag]['mood'] is None:
+                    entries[tag]['mood'] = cat
+
+        for cat, tags in self.__class__._GENRE_MOOD.items():
+            for tag in tags:
+                if tag not in entries:
+                    entries[tag] = {'energy': None, 'valence': None, 'mood': cat, 'is_noise': 0}
+                elif entries[tag]['mood'] is None:
+                    entries[tag]['mood'] = cat
+
+        for tag in self.__class__._NOISE_TAGS:
+            if tag not in entries:
+                entries[tag] = {'energy': None, 'valence': None, 'mood': None, 'is_noise': 1}
+            else:
+                entries[tag]['is_noise'] = 1
+
+        with _db.atomic():
+            for tag, data in entries.items():
+                TagFeature.insert({'tag': tag, **data}).on_conflict_ignore().execute()
+        print(f"_seed_tag_features: {len(entries)} entries seeded to DB")
+
+    def _reload_tag_features(self):
+        """Load TagFeature table into instance attributes, replacing hardcoded dicts."""
+        from src.o2mmodels import TagFeature
+        tag_features = {}
+        tag_mood_map = {}
+        noise_tags = set()
+
+        for tf in TagFeature.select():
+            if tf.is_noise:
+                noise_tags.add(tf.tag)
+                continue
+            if tf.energy is not None and tf.valence is not None:
+                tag_features[tf.tag] = (tf.energy, tf.valence)
+            if tf.mood:
+                tag_mood_map[tf.tag] = tf.mood
+
+        self._TAG_FEATURES = tag_features
+        self._tag_mood_map = tag_mood_map
+        self._NOISE_TAGS   = frozenset(noise_tags)
+        print(f"_reload_tag_features: {len(tag_features)} features, "
+              f"{len(tag_mood_map)} mood mappings, {len(noise_tags)} noise tags")
+
+    def _build_tag_mood_map_from_class(self):
+        """Fallback: build {tag: mood_cat} from hardcoded class constants."""
+        m = {}
+        for cat, tags in self.__class__._MOOD_TAGS.items():
+            for t in tags:
+                m[t] = cat
+        for cat, tags in self.__class__._GENRE_MOOD.items():
+            for t in tags:
+                if t not in m:
+                    m[t] = cat
+        return m
 
     def cache_track_from_mopidy(self, mopidy_track):
         """Populate track cache from a Mopidy track object — zero API calls.
@@ -123,7 +264,8 @@ class SpotifyHandler:
     def _fetch_and_cache_playlist_tracks(self, playlist):
         """Fetch and cache tracks for a playlist.
         Tries playlist_items first; on 403 falls back to sp.playlist() which
-        embeds the first 100 tracks without requiring elevated quota.
+        embeds the first 100 tracks without requiring elevated quota; then, still
+        empty-handed, to Mopidy (see _playlist_items_via_mopidy).
         Returns list of track URIs (may be empty if truly inaccessible)."""
         playlist_id = playlist['id']
 
@@ -143,29 +285,58 @@ class SpotifyHandler:
         # Primary: playlist_items (full pagination)
         try:
             response = self.sp.playlist_items(playlist_id, additional_types=('track',))
-            return _save_items(response.get('items') or [])
+            items = response.get('items') or []
+            tracks = _save_items(items)
+            if tracks or not items:
+                return tracks  # resolved, or genuinely empty — no need to look further
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
                 return []
-            if e.http_status != 403:
+            if e.http_status not in (403, 404):
                 raise
 
-        # Fallback on 403: sp.playlist() embeds first 100 tracks in metadata
-        print(f"playlist_items 403 for '{playlist['name']}' — trying sp.playlist() fallback")
+        # Fallback on 403/404: sp.playlist() embeds the first 100 tracks in metadata
+        # (the 2026 API nests them under 'items' instead of 'tracks').
         try:
             pl_data = self.sp.playlist(playlist_id)
-            items = (pl_data.get('tracks') or pl_data or {}).get('items') or []
-            return _save_items(items)
+            page = (pl_data.get('tracks') or pl_data.get('items') or {}) if pl_data else {}
+            tracks = _save_items(page.get('items') or [])
+            if tracks or page.get('total') == 0:
+                return tracks  # resolved, or genuinely empty
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
-            else:
-                print(f"sp.playlist() also failed for '{playlist['name']}': {e}")
-            return []
+                return []
+            if e.http_status not in (403, 404):
+                print(f"sp.playlist() failed for '{playlist['name']}': {e}")
         except Exception as e:
             print(f"sp.playlist() fallback error for '{playlist['name']}': {e}")
-            return []
+
+        # Last resort: Mopidy, whose application still reads playlists ours is refused on.
+        items = self._playlist_items_via_mopidy(playlist_id)
+        if items:
+            print(f"playlist '{playlist['name']}' unavailable via Web API — served by mopidy")
+        return _save_items(items)
+
+    def _playlist_is_gone(self, playlist_id):
+        """True only when Spotify positively says the playlist no longer exists.
+
+        Absence from `current_user_playlists` proves nothing: a playlist you own but
+        removed from your library keeps existing and simply stops being listed. So we
+        ask for it directly, and treat anything other than a definitive 404/400 —
+        a 403, a rate limit, a network hiccup — as 'unknown', which keeps the cache."""
+        try:
+            self.sp.playlist(playlist_id)
+            return False
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+                return False
+            return e.http_status in (400, 404)
+        except Exception as e:
+            print(f"_playlist_is_gone({playlist_id}) inconclusive: {e}")
+            return False
 
     def _cache_artist(self, artist_data):
         if self._db and artist_data and artist_data.get('id'):
@@ -174,6 +345,72 @@ class SpotifyHandler:
     def _cache_album(self, album_data):
         if self._db and album_data and album_data.get('id'):
             self._db.save_album(album_data)
+
+    def search_music(self, query, limit=8):
+        """Live Spotify search across track/artist/album — the "live" counterpart
+        to the local-cache keyword search (content-search feature). Complements,
+        never blocks on, the DB-first results."""
+        if not query or self.sp is None or self._is_rate_limited():
+            return {'tracks': [], 'artists': [], 'albums': []}
+        try:
+            r = self.sp.search(q=query, type='track,artist,album', limit=limit)
+        except Exception as e:
+            try: self._on_rate_limit(e)
+            except Exception: pass
+            print(f"search_music({query!r}) error: {e}")
+            return {'tracks': [], 'artists': [], 'albums': []}
+        tracks = [{'uri': t['uri'], 'name': t['name'], 'length': t.get('duration_ms'),
+                   'artists': [a['name'] for a in t.get('artists') or []]}
+                  for t in ((r.get('tracks') or {}).get('items') or [])]
+        artists = [{'uri': a['uri'], 'name': a['name'],
+                    'image': ((a.get('images') or [{}])[0].get('url'))}
+                   for a in ((r.get('artists') or {}).get('items') or [])]
+        albums = [{'uri': al['uri'], 'name': al['name'],
+                   'artist': ', '.join(a['name'] for a in al.get('artists') or []),
+                   'image': ((al.get('images') or [{}])[0].get('url'))}
+                  for al in ((r.get('albums') or {}).get('items') or [])]
+        return {'tracks': tracks, 'artists': artists, 'albums': albums}
+
+    def backfill_album(self, album_id):
+        """Fetch a full album from Spotify and persist it (album row + all tracks +
+        artist/album links) into the O2M DB, so the detail page serves it fully from
+        cache next time. Lazy — called only when the DB copy is incomplete. Returns
+        True on success."""
+        if not album_id or self.sp is None or self._is_rate_limited():
+            return False
+        try:
+            album = self.sp.album(album_id)
+        except Exception as e:
+            try: self._on_rate_limit(e)
+            except Exception: pass
+            print(f"backfill_album({album_id}) error: {e}")
+            return False
+        if not album or not album.get('id'):
+            return False
+        try:
+            self._db.save_album(album)
+            album_min = {k: v for k, v in album.items() if k != 'tracks'}
+            page = album.get('tracks') or {}
+            items = list(page.get('items') or [])
+            while page.get('next'):
+                try:
+                    page = self.sp.next(page)
+                except Exception:
+                    break
+                items += page.get('items') or []
+            for it in items:
+                if not it or not it.get('uri'):
+                    continue
+                it = dict(it)
+                it['album'] = album_min  # simplified album tracks lack the album field
+                try:
+                    self._db.save_track_metadata(it)
+                except Exception:
+                    pass
+            return True
+        except Exception as e:
+            print(f"backfill_album({album_id}) persist error: {e}")
+            return False
 
     def _cache_track(self, track_data):
         if self._db and track_data and track_data.get('uri'):
@@ -225,11 +462,39 @@ class SpotifyHandler:
         self._save_rate_limit()
         print(f"Rate limited by Spotify — skipping API calls for {retry_after}s ({retry_after//3600}h {(retry_after%3600)//60}m)")
 
-    def init_token_sp(self):
+    def seed_instance_cache_if_absent(self):
+        """Establish the instance baseline (fixed house account) once, from whatever active
+        token already exists. Never overwrite it afterwards — so a guest signing in later
+        overlays only the Web API, it cannot hijack the streaming/fallback account."""
+        import shutil
+        try:
+            if os.path.exists(self.instance_cache_path):
+                return
+            if os.path.exists(self.cache_path):
+                shutil.copyfile(self.cache_path, self.instance_cache_path)
+                print("Seeded Spotify instance baseline from active cache.")
+        except Exception as e:
+            print(f"seed instance cache error: {e}")
+
+    def reload_sp(self):
+        """(Re)build self.sp from the active per-user overlay (.cache_spotipy) if valid,
+        else fall back to the instance baseline (.cache_spotify_instance). Returns the cache
+        path used, or None if neither holds a valid token."""
         import requests
-        cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=self.cache_path)
-        auth_manager = spotipy.oauth2.SpotifyOAuth(scope=self.scope,cache_handler=cache_handler,show_dialog=False)
-        if auth_manager.validate_token(cache_handler.get_cached_token()):
+        for path in (self.cache_path, self.instance_cache_path):
+            cache_handler = spotipy.cache_handler.CacheFileHandler(cache_path=path)
+            tok = cache_handler.get_cached_token()
+            if not tok:
+                continue
+            # Build the live Web-API client against the token's OWN granted scope, not the
+            # full unified self.scope. Otherwise a scope expansion (e.g. adding `streaming`)
+            # makes validate_token reject a still-valid token via its scope-subset check,
+            # dropping the Web API until the user re-auths. Only the LOGIN (spotipy_init) and
+            # stream-token paths require the full self.scope.
+            client_scope = tok.get("scope") or self.scope
+            auth_manager = spotipy.oauth2.SpotifyOAuth(scope=client_scope, cache_handler=cache_handler, show_dialog=False)
+            if not auth_manager.validate_token(tok):
+                continue
             session = requests.Session()
             def _capture_retry_after(response, *args, **kwargs):
                 if response.status_code == 429:
@@ -241,8 +506,172 @@ class SpotifyHandler:
             # retries=0: disable spotipy's internal blocking retry-on-429.
             # Our _on_rate_limit() handles 429 immediately without freezing the thread.
             self.sp = spotipy.Spotify(auth_manager=auth_manager, retries=0, requests_session=session)
-        else:
-            print("Token is not valid")
+            return path
+        print("Token is not valid (no active overlay nor instance baseline)")
+        return None
+
+    def init_token_sp(self):
+        self.seed_instance_cache_if_absent()
+        self.reload_sp()
+
+    # ── Streaming identity (librespot / login5) ───────────────────────────────
+    # Since 2026-08-10 Spotify's login5 rejects every access token minted by a
+    # third-party client_id, which killed playback (mopidy-spotify#437,
+    # go-librespot#364). Only tokens obtained through the desktop ("keymaster")
+    # client are still accepted, so streaming gets its OWN PKCE identity, kept
+    # strictly apart from the Web API one: desktop credentials are rate-limited
+    # (429) on api.spotify.com, so this token must never be used for Web API calls.
+    # Constants mirror librespot (core/src/config.rs, src/main.rs).
+    KEYMASTER_CLIENT_ID = "65b708073fc0480ea92a077233ca87bd"
+    KEYMASTER_REDIRECT_URI = "http://127.0.0.1:8898/login"
+    KEYMASTER_SCOPES = (
+        "app-remote-control playlist-modify playlist-modify-private "
+        "playlist-modify-public playlist-read playlist-read-collaborative "
+        "playlist-read-private streaming ugc-image-upload user-follow-modify "
+        "user-follow-read user-library-modify user-library-read user-modify "
+        "user-modify-playback-state user-modify-private user-personalized "
+        "user-read-birthdate user-read-currently-playing user-read-email "
+        "user-read-play-history user-read-playback-position "
+        "user-read-playback-state user-read-private user-read-recently-played "
+        "user-top-read"
+    )
+    _TOKEN_URL = "https://accounts.spotify.com/api/token"
+
+    @staticmethod
+    def _b64url(raw):
+        import base64
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    def _read_json(self, path):
+        try:
+            with open(path) as fh:
+                return json.load(fh)
+        except Exception:
+            return None
+
+    def _write_json(self, path, data):
+        with open(path, "w") as fh:
+            json.dump(data, fh)
+        try:
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+
+    def stream_authorize_url(self):
+        """Start the PKCE pairing: return the Spotify authorize URL and stash the
+        verifier. The redirect is a loopback URI that nothing listens on — the
+        operator pastes the resulting URL back into stream_exchange()."""
+        import hashlib, secrets, urllib.parse
+        verifier = self._b64url(secrets.token_bytes(64))
+        challenge = self._b64url(hashlib.sha256(verifier.encode()).digest())
+        state = self._b64url(secrets.token_bytes(16))
+        self._write_json(self.stream_pending_path, {"verifier": verifier, "state": state})
+        params = {
+            "response_type": "code",
+            "client_id": self.KEYMASTER_CLIENT_ID,
+            "redirect_uri": self.KEYMASTER_REDIRECT_URI,
+            "scope": self.KEYMASTER_SCOPES,
+            "code_challenge_method": "S256",
+            "code_challenge": challenge,
+            "state": state,
+        }
+        return "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode(params)
+
+    def stream_exchange(self, redirect_url):
+        """Finish the pairing from the pasted redirect URL. Returns (ok, message)."""
+        import urllib.parse, requests
+        pending = self._read_json(self.stream_pending_path)
+        if not pending:
+            return False, "No pairing in progress — request a new sign-in link."
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(redirect_url.strip()).query)
+        if "error" in qs:
+            return False, f"Spotify refused the authorization: {qs['error'][0]}"
+        code = (qs.get("code") or [None])[0]
+        if not code:
+            return False, "No 'code' found in that URL."
+        if (qs.get("state") or [None])[0] != pending.get("state"):
+            return False, "State mismatch — request a new sign-in link and retry."
+        try:
+            resp = requests.post(self._TOKEN_URL, timeout=20, data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": self.KEYMASTER_REDIRECT_URI,
+                "client_id": self.KEYMASTER_CLIENT_ID,
+                "code_verifier": pending["verifier"],
+            })
+        except Exception as e:
+            return False, f"Spotify unreachable: {e}"
+        if resp.status_code != 200:
+            return False, f"Token exchange failed ({resp.status_code}): {resp.text[:200]}"
+        tok = resp.json()
+        if "streaming" not in (tok.get("scope") or ""):
+            return False, "Token granted without the 'streaming' scope — playback would still fail."
+        tok["expires_at"] = int(time.time()) + int(tok.get("expires_in", 3600))
+        # Stable id for this pairing. Not derived from the refresh_token: Spotify rotates
+        # it on every refresh, which would make the identity (and so the credentials-cache
+        # purge downstream) churn hourly.
+        import secrets
+        tok["pair_id"] = secrets.token_hex(6)
+        self._write_json(self.stream_cache_path, tok)
+        try:
+            os.remove(self.stream_pending_path)
+        except Exception:
+            pass
+        print(f"Spotify streaming identity paired (keymaster), id {self.stream_identity()}.")
+        return True, "Streaming identity paired."
+
+    def stream_token(self):
+        """Valid keymaster access token for librespot, refreshed on demand.
+        Returns None when no streaming identity is paired (callers fall back)."""
+        import requests
+        tok = self._read_json(self.stream_cache_path)
+        if not tok or not tok.get("refresh_token"):
+            return None
+        if int(tok.get("expires_at", 0)) - 60 > time.time():
+            return tok.get("access_token")
+        try:
+            resp = requests.post(self._TOKEN_URL, timeout=20, data={
+                "grant_type": "refresh_token",
+                "refresh_token": tok["refresh_token"],
+                "client_id": self.KEYMASTER_CLIENT_ID,
+            })
+        except Exception as e:
+            print(f"stream token refresh error: {e}")
+            return None
+        if resp.status_code != 200:
+            print(f"stream token refresh failed ({resp.status_code}): {resp.text[:200]}")
+            return None
+        new = resp.json()
+        # Spotify may omit refresh_token on refresh — keep the current one (librespot#1732).
+        new.setdefault("refresh_token", tok["refresh_token"])
+        new["expires_at"] = int(time.time()) + int(new.get("expires_in", 3600))
+        if tok.get("pair_id"):
+            new["pair_id"] = tok["pair_id"]
+        self._write_json(self.stream_cache_path, new)
+        return new.get("access_token")
+
+    def stream_identity(self):
+        """Short stable id of the paired streaming identity, or None. The mopidy
+        backend keys its credentials-cache purge on this: the librespot blob is
+        derived from the token, so a blob minted by the old client_id stays
+        rejected by login5 until it is wiped. Stable across token refreshes —
+        it only changes when the operator re-pairs."""
+        import secrets
+        tok = self._read_json(self.stream_cache_path)
+        if not tok or not tok.get("refresh_token"):
+            return None
+        if not tok.get("pair_id"):  # cache written before pair_id existed
+            tok["pair_id"] = secrets.token_hex(6)
+            self._write_json(self.stream_cache_path, tok)
+        return "km-" + tok["pair_id"]
+
+    def stream_unpair(self):
+        """Drop the streaming identity — playback falls back to the legacy token."""
+        for path in (self.stream_cache_path, self.stream_pending_path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
     def refresh_token0(self):
         cached_token = self.spo.get_cached_token()
@@ -417,25 +846,12 @@ class SpotifyHandler:
                                 if aid and aid not in followed_set and aid not in seed_artist_ids:
                                     external_ids.append(aid)
                     else:
-                        # Last resort: sp.search(genre:...)
-                        for genre in list(target_genres)[:3]:
-                            if len(external_ids) >= n_external or self._is_rate_limited():
-                                break
-                            try:
-                                results = self.sp.search(
-                                    q=f'genre:"{genre}"', type='artist', limit=20,
-                                    offset=random.randint(0, 50)
-                                )
-                                for artist in results.get('artists', {}).get('items', []):
-                                    aid = artist['id']
-                                    if aid not in followed_set and aid not in seed_artist_ids:
-                                        external_ids.append(aid)
-                            except spotipy.SpotifyException as e:
-                                if e.http_status == 429:
-                                    self._on_rate_limit(e)
-                                break
-                            except Exception:
-                                pass
+                        # Spotify's `genre:` search filter is restricted — it returns 400
+                        # "Invalid limit" even at offset=0 — so this last-resort call is dead
+                        # (contributes nothing, spams the logs). Disabled: artist resolution
+                        # relies on the DB-first / followed-artist paths above; genre→artist
+                        # discovery should go through the Last.fm path when needed.
+                        pass
                     random.shuffle(external_ids)
                     candidates.extend(external_ids[:n_external])
                     random.shuffle(candidates)
@@ -611,6 +1027,64 @@ class SpotifyHandler:
             print(f"Error getting resource name for {uri}: {e}")
             return uri
 
+################### SAVED / LIKED TRACKS #################
+
+    def _track_id(self, track_uri):
+        return str(track_uri).split(':')[-1]
+
+    def is_track_saved(self, track_uri):
+        """True/False si le morceau est dans les titres likés du compte serveur, None si erreur."""
+        try:
+            return bool(self.sp.current_user_saved_tracks_contains([self._track_id(track_uri)])[0])
+        except Exception as e:
+            print(f"is_track_saved error: {e}")
+            return None
+
+    def set_track_saved(self, track_uri, saved):
+        """Ajoute/retire le morceau des titres likés du compte serveur."""
+        tid = [self._track_id(track_uri)]
+        if saved:
+            self.sp.current_user_saved_tracks_add(tid)
+        else:
+            self.sp.current_user_saved_tracks_delete(tid)
+        return True
+
+    def set_album_saved(self, album_uri, saved=True):
+        """Add/remove an album from the user's saved albums (Spotify library)."""
+        aid = [album_uri.rsplit(':', 1)[1]]
+        if saved:
+            self.sp.current_user_saved_albums_add(albums=aid)
+        else:
+            self.sp.current_user_saved_albums_delete(albums=aid)
+        return True
+
+    def is_album_saved(self, album_uri):
+        """True/False if the album is in the user's saved albums, None on error."""
+        try:
+            return bool(self.sp.current_user_saved_albums_contains(
+                albums=[album_uri.rsplit(':', 1)[1]])[0])
+        except Exception as e:
+            print(f"is_album_saved error: {e}")
+            return None
+
+    def set_artist_followed(self, artist_uri, followed=True):
+        """Follow/unfollow an artist on the user's account."""
+        aid = [artist_uri.rsplit(':', 1)[1]]
+        if followed:
+            self.sp.user_follow_artists(ids=aid)
+        else:
+            self.sp.user_unfollow_artists(ids=aid)
+        return True
+
+    def is_artist_followed(self, artist_uri):
+        """True/False if the user follows the artist, None on error."""
+        try:
+            return bool(self.sp.current_user_following_artists(
+                ids=[artist_uri.rsplit(':', 1)[1]])[0])
+        except Exception as e:
+            print(f"is_artist_followed error: {e}")
+            return None
+
 ################### PLAYLISTS #############################
 
     def add_tracks_playlist(self, username, playlist_uri, track_uris):
@@ -729,7 +1203,7 @@ class SpotifyHandler:
     def get_playlists_tracks(self,limit=1,discover_level=5):
         if self._is_rate_limited():
             if self._db:
-                cached_ids = self._db.get_all_cached_playlist_ids()
+                cached_ids = self._db.get_all_cached_playlist_ids(in_library_only=True)
                 if cached_ids:
                     print(f"get_playlists_tracks: rate-limited, using {len(cached_ids)} cached playlists")
                     t_list, lib_link = [], []
@@ -817,9 +1291,16 @@ class SpotifyHandler:
             print(f"cache_all_playlists error: {e}")
             return 0
 
+        seen_ids = set()          # every playlist the account still holds
+        listing_complete = True   # False if the listing itself was truncated
+
         while response and response.get('items'):
             for playlist in response['items']:
-                if not playlist or playlist.get('name') == 'Trash':
+                if not playlist:
+                    continue
+                # Recorded before the Trash skip: skipped ≠ gone.
+                seen_ids.add(playlist['id'])
+                if playlist.get('name') == 'Trash':
                     continue
                 if self._is_rate_limited():
                     return cached
@@ -843,6 +1324,8 @@ class SpotifyHandler:
 
                 before = cached
                 position = 0
+                current_uris = set()
+                pl_complete = True
                 while items_response:
                     for item in (items_response.get('items') or []):
                         if self._is_rate_limited():
@@ -850,6 +1333,7 @@ class SpotifyHandler:
                         track = (item.get('track') or item.get('item')) if item else None
                         if track and track.get('uri'):
                             self._cache_track(track)
+                            current_uris.add(track['uri'])
                             if self._db:
                                 added_at = item.get('added_at')
                                 self._db.save_playlist_track(
@@ -866,18 +1350,77 @@ class SpotifyHandler:
                         if e.http_status == 429:
                             self._on_rate_limit(e)
                             return cached
+                        pl_complete = False
                         break
                     except Exception:
+                        pl_complete = False
                         break
-                print(f"cache_all_playlists: '{playlist.get('name')}' → {cached - before} tracks cached")
+                # Nothing resolved: either the playlist really is empty, or the Web API
+                # refused it silently (a 403 comes back as a zero-entry page, not an
+                # exception). Ask mopidy, whose application still reads those.
+                source = 'spotipy'
+                if not current_uris:
+                    items = self._playlist_items_via_mopidy(playlist['id'])
+                    if items:
+                        source = 'mopidy'
+                        for position, item in enumerate(items):
+                            track = item['track']
+                            self._cache_track(track)
+                            current_uris.add(track['uri'])
+                            if self._db:
+                                self._db.save_playlist_track(
+                                    playlist['id'], track['uri'],
+                                    position=position, added_at=None)
+                            cached += 1
+
+                # Reconcile removals done directly on Spotify: drop links no longer
+                # in the playlist. Only on a COMPLETE fetch (a partial page must not
+                # delete the tracks it simply didn't reach) — and never on an empty
+                # result for a playlist we do hold tracks for: no data ≠ emptied.
+                # Mopidy is excluded on purpose: its playlist view refreshes on its own
+                # schedule, so a track we added moments ago may not be in it yet, and
+                # reconciling against it would drop that link.
+                if pl_complete and self._db and source == 'spotipy':
+                    known = self._db.get_playlist_track_uris(playlist['id']) if not current_uris else None
+                    if known:
+                        print(f"cache_all_playlists: '{playlist.get('name')}' → no track readable "
+                              f"({len(known)} cached) — skipping reconcile")
+                    else:
+                        removed = self._db.reconcile_playlist_tracks(playlist['id'], current_uris)
+                        if removed:
+                            print(f"cache_all_playlists: '{playlist.get('name')}' → removed {removed} stale link(s)")
+                print(f"cache_all_playlists: '{playlist.get('name')}' → {cached - before} tracks cached ({source})")
 
             if response.get('next'):
                 try:
                     response = self.sp.next(response)
                 except Exception:
+                    listing_complete = False
                     break
             else:
                 break
+
+        # Playlists that really disappeared would keep their cached tracks forever, and
+        # selection would still draw from them. Two conditions before dropping anything:
+        # a COMPLETE listing (a truncated one would look like mass deletion), and a
+        # per-playlist confirmation — being absent from the listing is NOT proof of
+        # deletion, an owned playlist removed from the library still exists.
+        if listing_complete and seen_ids and self._db:
+            # First, record what left the library. Spotify keeps a removed playlist
+            # alive for ~90 days, so this is the signal that actually matters day to
+            # day: stop drawing from it, without erasing anything.
+            left = self._db.set_playlists_in_library(seen_ids)
+            if left:
+                print(f"cache_all_playlists: {left} playlist(s) left the library "
+                      f"— kept in cache, no longer used for selection")
+            for playlist_id in set(self._db.get_all_cached_playlist_ids()) - seen_ids:
+                if not self._playlist_is_gone(playlist_id):
+                    print(f"cache_all_playlists: playlist {playlist_id} no longer listed "
+                          f"but still exists — keeping its cache")
+                    continue
+                links = self._db.drop_playlist(playlist_id)
+                print(f"cache_all_playlists: playlist {playlist_id} gone from Spotify "
+                      f"— dropped it and its {links} link(s)")
 
         print(f"cache_all_playlists: {cached} tracks cached")
         if self._db:
@@ -887,12 +1430,12 @@ class SpotifyHandler:
     # ─── Cache health ──────────────────────────────────────────────────────────
 
     # TTL (days) between warmup runs per entity type
-    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14, 'moods': 30}
+    _WARMUP_TTL = {'liked': 7, 'artists': 7, 'albums': 7, 'playlist_tracks': 3, 'genres': 14, 'moods': 30, 'mood_retry': 1, 'mood_retry_all': 1, 'spotify_features': 7}
 
     _MOOD_TAGS = {
         'calm':      {'ambient', 'calm', 'chill', 'chillout', 'relaxing', 'peaceful', 'mellow',
                       'soft', 'gentle', 'background', 'meditation', 'sleep', 'quiet', 'downtempo',
-                      'lo-fi', 'lofi', 'slow', 'new age', 'nature', 'atmospheric'},
+                      'lo fi', 'lofi', 'slow', 'new age', 'nature', 'atmospheric'},
         'energetic': {'energetic', 'energy', 'upbeat', 'dance', 'workout', 'intense', 'driving',
                       'fast', 'exciting', 'party', 'power', 'aggressive', 'hard', 'loud',
                       'high energy', 'adrenaline', 'pump up'},
@@ -906,82 +1449,155 @@ class SpotifyHandler:
     _GENRE_MOOD = {
         'calm':      {'classical', 'piano', 'jazz', 'folk', 'acoustic', 'ambient', 'new age',
                       'chamber', 'baroque', 'bossa nova', 'easy listening', 'smooth jazz',
-                      'instrumental', 'world', 'meditation', 'drone'},
+                      'instrumental', 'world', 'meditation',
+                      'chanson', 'chanson francaise', 'french pop',
+                      'singer songwriter',
+                      'contemporary jazz', 'jazz manouche', 'cool jazz', 'nu jazz',
+                      'lo fi', 'lofi', 'neo soul'},
         'energetic': {'metal', 'punk', 'hardcore', 'edm', 'techno', 'house', 'drum and bass',
-                      'dubstep', 'electro', 'trance', 'breakbeat', 'industrial'},
-        'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave', 'post-punk'},
-        'happy':     {'pop', 'reggae', 'funk', 'soul', 'disco', 'ska'},
+                      'dubstep', 'electro', 'trance', 'breakbeat', 'industrial',
+                      'rock', 'alternative', 'alternative rock', 'indie rock', 'hard rock',
+                      'progressive rock', 'post rock', 'classic rock',
+                      'post punk', 'new wave', 'jangle pop', 'britpop', 'indie pop',
+                      'synthpop', 'art pop', 'psychedelic pop', 'psychedelic', 'neo psychedelia',
+                      'hip hop', 'rap', 'electronic', 'r&b', 'indie',
+                      'bebop', 'post bop', 'free jazz', 'acid jazz', 'jazz fusion', 'fusion'},
+        'dark':      {'blues', 'gothic', 'black metal', 'doom metal', 'darkwave',
+                      'experimental', 'noise', 'avant garde', 'drone metal', 'shoegaze',
+                      'dark folk', 'dark ambient', 'emo', 'grunge',
+                      'drone', 'trip hop'},
+        'happy':     {'pop', 'reggae', 'funk', 'soul', 'disco', 'ska',
+                      'african', 'afrobeat', 'afropop', 'latin', 'cumbia', 'salsa', 'samba',
+                      'swing', 'big band', 'dance', 'pop rock', 'world music'},
     }
 
-    # Numeric (energy, valence) per Last.fm tag — averaged across all matching tags.
-    # energy: 0.0 = sleep/ambient  → 1.0 = metal/hardcore
-    # valence: 0.0 = dark/grief    → 1.0 = joyful/euphoric
+    # Numeric (energy, valence) per Last.fm tag — weighted average across matching tags.
+    # energy: 0.0 = silence/sleep  → 1.0 = extreme metal
+    # valence: 0.0 = grief/despair → 1.0 = euphoria/joy
+    # Instruments (trumpet, guitar…) intentionally absent — they describe timbre, not mood.
     _TAG_FEATURES = {
         # ── Very low energy ───────────────────────────────────────────────────────
-        'sleep':          (0.05, 0.50), 'ambient':        (0.10, 0.55),
-        'meditation':     (0.08, 0.62), 'drone':          (0.10, 0.45),
+        'sleep':          (0.05, 0.50), 'ambient':        (0.10, 0.52),
+        'meditation':     (0.08, 0.62), 'drone':          (0.08, 0.38),
         'nature':         (0.10, 0.65),
-        # ── Low energy ────────────────────────────────────────────────────────────
-        'calm':           (0.20, 0.60), 'chill':          (0.25, 0.60),
-        'chillout':       (0.25, 0.60), 'relaxing':       (0.20, 0.65),
-        'peaceful':       (0.18, 0.70), 'mellow':         (0.25, 0.55),
-        'soft':           (0.20, 0.60), 'gentle':         (0.18, 0.65),
-        'background':     (0.15, 0.55), 'quiet':          (0.15, 0.60),
-        'downtempo':      (0.30, 0.50), 'lo-fi':          (0.25, 0.55),
-        'lofi':           (0.25, 0.55), 'slow':           (0.20, 0.50),
-        'new age':        (0.12, 0.65), 'atmospheric':    (0.20, 0.50),
-        # ── Low-medium energy ─────────────────────────────────────────────────────
-        'classical':      (0.30, 0.55), 'piano':          (0.28, 0.55),
-        'acoustic':       (0.32, 0.60), 'folk':           (0.32, 0.62),
-        'jazz':           (0.35, 0.60), 'instrumental':   (0.30, 0.55),
-        'bossa nova':     (0.35, 0.65), 'smooth jazz':    (0.30, 0.60),
-        'easy listening': (0.25, 0.60), 'chamber':        (0.28, 0.55),
-        'baroque':        (0.32, 0.55), 'world':          (0.42, 0.60),
+        # ── Low energy — ambiance calme ───────────────────────────────────────────
+        'calm':           (0.18, 0.62), 'chill':          (0.22, 0.62),
+        'chillout':       (0.22, 0.60), 'relaxing':       (0.18, 0.65),
+        'peaceful':       (0.15, 0.70), 'mellow':         (0.25, 0.58),
+        'soft':           (0.18, 0.62), 'gentle':         (0.15, 0.65),
+        'background':     (0.12, 0.55), 'quiet':          (0.12, 0.58),
+        'downtempo':      (0.28, 0.48), 'lo fi':          (0.22, 0.55),
+        'lofi':           (0.22, 0.55), 'slow':           (0.18, 0.48),
+        'new age':        (0.10, 0.65), 'atmospheric':    (0.18, 0.48),
+        # ── Low-medium energy — acoustique / classique ────────────────────────────
+        'classical':      (0.32, 0.55), 'piano':          (0.30, 0.55),
+        'acoustic':       (0.38, 0.62), 'folk':           (0.38, 0.65),
+        'instrumental':   (0.32, 0.55), 'easy listening': (0.25, 0.62),
+        'chamber':        (0.28, 0.55), 'baroque':        (0.30, 0.55),
+        'chanson':        (0.35, 0.58),
+        # ── Jazz — famille ────────────────────────────────────────────────────────
+        # Jazz = présence, swing, sophistication — PAS lounge (0.35 était trop bas)
+        'jazz':           (0.52, 0.60), 'smooth jazz':    (0.35, 0.62),
+        'cool jazz':      (0.40, 0.60), 'bossa nova':     (0.45, 0.72),
+        'nu jazz':        (0.50, 0.58), 'jazz manouche':  (0.55, 0.68),
+        'acid jazz':      (0.62, 0.65), 'jazz fusion':    (0.65, 0.55),
+        'bebop':          (0.72, 0.58), 'post-bop':       (0.65, 0.55),
+        'swing':          (0.68, 0.78), 'big band':       (0.65, 0.72),
+        'electro jazz':   (0.60, 0.62), 'groovy':         (0.68, 0.75),
         # ── Medium energy ─────────────────────────────────────────────────────────
-        'country':        (0.50, 0.65), 'blues':          (0.45, 0.35),
-        'soul':           (0.50, 0.65), 'r&b':            (0.52, 0.65),
-        'indie':          (0.52, 0.58), 'alternative':    (0.55, 0.55),
-        'pop':            (0.60, 0.70), 'reggae':         (0.55, 0.75),
-        'funk':           (0.65, 0.75), 'disco':          (0.70, 0.78),
-        'ska':            (0.68, 0.75), 'rock':           (0.65, 0.55),
-        'hip-hop':        (0.65, 0.55), 'hip hop':        (0.65, 0.55),
-        'rap':            (0.68, 0.55),
-        # ── Dark/sad valence ──────────────────────────────────────────────────────
-        'sad':            (0.35, 0.15), 'melancholic':    (0.30, 0.15),
-        'melancholy':     (0.30, 0.15), 'dark':           (0.40, 0.20),
-        'gloomy':         (0.30, 0.15), 'depressing':     (0.25, 0.10),
-        'emotional':      (0.35, 0.30), 'heartbreak':     (0.30, 0.15),
-        'sorrow':         (0.25, 0.15), 'lonely':         (0.25, 0.20),
-        'grief':          (0.20, 0.08), 'bittersweet':    (0.38, 0.40),
-        'introspective':  (0.30, 0.35), 'gothic':         (0.45, 0.22),
-        'darkwave':       (0.50, 0.25), 'post-punk':      (0.60, 0.30),
-        # ── Happy/positive valence ────────────────────────────────────────────────
-        'happy':          (0.65, 0.90), 'feel good':      (0.65, 0.88),
+        'world':          (0.50, 0.62), 'country':        (0.55, 0.68),
+        'blues':          (0.50, 0.28), 'soul':           (0.58, 0.70),
+        'r&b':            (0.60, 0.65), 'indie':          (0.62, 0.55),
+        'alternative':    (0.65, 0.48), 'pop':            (0.65, 0.72),
+        'reggae':         (0.58, 0.78), 'funk':           (0.72, 0.78),
+        'disco':          (0.75, 0.80), 'ska':            (0.72, 0.78),
+        'rock':           (0.72, 0.50), 'hip hop':        (0.70, 0.52),
+        'rap':            (0.72, 0.50),
+        'trip hop':       (0.35, 0.42), 'shoegaze':       (0.60, 0.32),
+        # rock / pop sous-genres
+        'indie rock':     (0.70, 0.50), 'indie pop':      (0.62, 0.65),
+        'jangle pop':     (0.65, 0.60), 'britpop':        (0.68, 0.55),
+        'new wave':       (0.68, 0.45), 'post punk':      (0.70, 0.28),
+        'synthpop':       (0.72, 0.62), 'art pop':        (0.58, 0.60),
+        'psychedelic pop':(0.62, 0.65), 'psychedelic':    (0.60, 0.58),
+        'neo psychedelia':(0.58, 0.55),
+        'alternative rock': (0.68, 0.48), 'hard rock':    (0.80, 0.42),
+        'progressive rock': (0.72, 0.50), 'classic rock':  (0.70, 0.50),
+        'grunge':         (0.75, 0.30), 'emo':            (0.65, 0.22),
+        'metalcore':      (0.88, 0.30), 'post rock':      (0.62, 0.42),
+        # ── Dark/sad ──────────────────────────────────────────────────────────────
+        'sad':            (0.30, 0.12), 'melancholic':    (0.28, 0.15),
+        'melancholy':     (0.28, 0.15), 'dark':           (0.42, 0.18),
+        'gloomy':         (0.28, 0.15), 'depressing':     (0.22, 0.10),
+        'emotional':      (0.35, 0.28), 'heartbreak':     (0.28, 0.12),
+        'sorrow':         (0.25, 0.15), 'lonely':         (0.22, 0.20),
+        'grief':          (0.18, 0.08), 'bittersweet':    (0.38, 0.38),
+        'introspective':  (0.30, 0.38), 'gothic':         (0.55, 0.20),
+        'darkwave':       (0.58, 0.22),
+        # ── Happy/positive ────────────────────────────────────────────────────────
+        'happy':          (0.68, 0.90), 'feel good':      (0.65, 0.88),
         'feelgood':       (0.65, 0.88), 'cheerful':       (0.62, 0.88),
-        'uplifting':      (0.65, 0.85), 'positive':       (0.60, 0.85),
-        'joyful':         (0.65, 0.90), 'fun':            (0.68, 0.88),
+        'uplifting':      (0.65, 0.85), 'positive':       (0.62, 0.85),
+        'joyful':         (0.68, 0.90), 'fun':            (0.70, 0.88),
         'summer':         (0.70, 0.85), 'sunshine':       (0.65, 0.88),
         'optimistic':     (0.62, 0.85), 'euphoric':       (0.82, 0.92),
         # ── High energy ───────────────────────────────────────────────────────────
         'energetic':      (0.85, 0.70), 'energy':         (0.85, 0.70),
         'upbeat':         (0.80, 0.80), 'dance':          (0.80, 0.78),
-        'workout':        (0.85, 0.70), 'intense':        (0.85, 0.58),
-        'driving':        (0.78, 0.58), 'fast':           (0.82, 0.60),
+        'workout':        (0.85, 0.68), 'intense':        (0.85, 0.55),
+        'driving':        (0.78, 0.58), 'fast':           (0.82, 0.58),
         'exciting':       (0.80, 0.75), 'party':          (0.82, 0.80),
-        'power':          (0.82, 0.62), 'high energy':    (0.88, 0.70),
-        'adrenaline':     (0.90, 0.62), 'pump up':        (0.88, 0.72),
+        'power':          (0.82, 0.60), 'high energy':    (0.88, 0.68),
+        'adrenaline':     (0.90, 0.60), 'pump up':        (0.88, 0.70),
         'electronic':     (0.68, 0.60), 'electro':        (0.72, 0.60),
         'edm':            (0.85, 0.70), 'house':          (0.80, 0.68),
-        'techno':         (0.85, 0.58), 'trance':         (0.85, 0.65),
-        'drum and bass':  (0.88, 0.60), 'dubstep':        (0.85, 0.52),
+        'techno':         (0.85, 0.55), 'trance':         (0.85, 0.65),
+        'drum and bass':  (0.88, 0.58), 'dubstep':        (0.85, 0.50),
         'breakbeat':      (0.82, 0.58),
         # ── Very high energy ──────────────────────────────────────────────────────
-        'punk':           (0.82, 0.55), 'metal':          (0.88, 0.38),
-        'hardcore':       (0.92, 0.48), 'black metal':    (0.88, 0.22),
-        'doom metal':     (0.70, 0.20), 'industrial':     (0.85, 0.32),
-        'aggressive':     (0.88, 0.38), 'hard':           (0.82, 0.48),
-        'loud':           (0.85, 0.52),
+        'punk':           (0.85, 0.52), 'metal':          (0.90, 0.35),
+        'hardcore':       (0.92, 0.40), 'black metal':    (0.90, 0.18),
+        'doom metal':     (0.72, 0.18), 'industrial':     (0.85, 0.28),
+        'aggressive':     (0.88, 0.35), 'hard':           (0.82, 0.45),
+        'loud':           (0.85, 0.50),
     }
+
+    # Tags Last.fm sans valeur musicale pour le scoring mood/energy/valence.
+    # Complété par _is_noise_tag() qui filtre aussi les tags décennie/année (80s, 1986…).
+    _NOISE_TAGS = frozenset({
+        # Personnel / collection
+        'seen live', 'favorites', 'favourite', 'favourites', 'love', 'loved',
+        'my favorite', 'favourite albums', 'favourite songs', 'my favourites',
+        'wishlist', 'to buy', 'owned',
+        # Qualité générique
+        'good', 'best', 'awesome', 'cool', 'great', 'amazing', 'beautiful',
+        'perfect', 'classic', 'all', 'under 2000',
+        # Nationalité (non-genre)
+        'american', 'british', 'english', 'german', 'swedish', 'norwegian',
+        'japanese', 'australian', 'canadian', 'irish', 'scottish',
+        'italian', 'spanish',
+        # Artiste utilisé comme tag
+        'manu chao', 'miles', 'the smiths', 'nirvana',
+        # Bruit divers
+        'various artists', 'unknown', 'albums i own', 'check', 'spotify',
+    })
+
+    import re as _re
+    _NOISE_TAG_RE = _re.compile(r'^\d+s?$')  # 80s, 1986, 00s, 2000s…
+
+    @staticmethod
+    def _normalize_tag(name):
+        """Lowercase, strip accents, hyphens→spaces, collapse whitespace."""
+        import unicodedata as _ud
+        n = name.lower().strip()
+        n = _ud.normalize('NFKD', n)
+        n = ''.join(c for c in n if not _ud.combining(c))
+        n = n.replace('-', ' ')
+        return ' '.join(n.split())
+
+    def _is_noise_tag(self, name):
+        n = self._normalize_tag(name)
+        return n in self._NOISE_TAGS or bool(self._NOISE_TAG_RE.match(n))
 
     def fetch_spotify_totals(self):
         """Fetch Spotify totals (liked, artists, albums, playlists) and store in CacheMeta.
@@ -1040,15 +1656,18 @@ class SpotifyHandler:
             return
         print("warmup: syncing liked tracks…")
         count = 0
+        liked_uris = set()
+        complete = False
         try:
             response = self.sp.current_user_saved_tracks(limit=50)
             while response and response.get('items'):
                 for item in response['items']:
                     if self._is_rate_limited():
-                        return
+                        return   # partial → no reconciliation (avoid false un-likes)
                     track = item.get('track')
                     if track and track.get('uri'):
                         self._cache_track(track)
+                        liked_uris.add(track['uri'])
                         if self._db:
                             self._db.mark_track_liked(track['uri'], item.get('added_at'))
                         count += 1
@@ -1056,6 +1675,7 @@ class SpotifyHandler:
                     response = self.sp.next(response)
                 else:
                     break
+            complete = True   # reached only if we paged everything without early return
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -1064,6 +1684,13 @@ class SpotifyHandler:
             print(f"warmup_liked_tracks error: {e}")
             return
         print(f"warmup: {count} liked tracks synced")
+        # Reconcile un-likes done directly on Spotify: clear liked=1 rows absent
+        # from the freshly-synced set. Only after a COMPLETE fetch, and never from
+        # an empty set (guarded in reconcile_liked) so a glitch can't wipe all likes.
+        if complete and self._db:
+            cleared = self._db.reconcile_liked(liked_uris)
+            if cleared:
+                print(f"warmup: cleared {cleared} stale like(s) un-liked on Spotify")
         if self._db:
             self._db.set_cache_meta('warmup_liked_at', count)
 
@@ -1117,19 +1744,14 @@ class SpotifyHandler:
         if self._db:
             self._db.set_cache_meta('warmup_albums_at', count)
 
-    def _lastfm_get_top_tags(self, artist_name, max_tags=8):
+    def _lastfm_get_top_tags(self, artist_name, max_tags=8, min_count=5):
         """Fetch top tags for an artist from Last.fm API.
 
         Returns a list of tag name strings (up to max_tags), or None on error.
-        Tags with count < 10 are filtered out to avoid noise.
         """
         import requests as req
         if not self._lastfm_api_key:
             return None
-        # Tags that are not genres (Last.fm crowdsourced noise)
-        _non_genre = {'seen live', 'favorites', 'favourite', 'love', 'loved', 'american',
-                      'british', 'french', 'german', 'swedish', 'norwegian', 'japanese',
-                      'all', 'good', 'best', 'classic', 'awesome', 'cool'}
         try:
             resp = req.get(
                 'https://ws.audioscrobbler.com/2.0/',
@@ -1152,7 +1774,7 @@ class SpotifyHandler:
             for t in tags:
                 name = (t.get('name') or '').strip().lower()
                 count = int(t.get('count') or 0)
-                if name and count >= 10 and name not in _non_genre:
+                if name and count >= min_count and not self._is_noise_tag(name):
                     result.append(name)
                 if len(result) >= max_tags:
                     break
@@ -1342,38 +1964,60 @@ class SpotifyHandler:
             'count_without': no_genre_count,
         }
 
-    def _lastfm_get_track_mood(self, artist_name, track_name):
+    def _lastfm_get_track_mood(self, artist_name, track_name, album_name=None,
+                               track_uri=None, album_id=None):
         """Return (mood, energy, valence) for a track via Last.fm tags.
 
-        Primary: track.getTopTags — specific to this recording.
-        Fallback: artist genres from ArtistGenre cache.
+        Fallback chain: track.getTopTags → album.getTopTags → artist genre cache → artist.getTopTags
+        track_uri / album_id: when provided, DB cache (TrackGenre / AlbumGenre) is checked before
+        calling the API, and results are persisted after a successful API call.
         Returns (None, None, None) if Last.fm key absent or no signal found.
         """
         if not self._lastfm_api_key:
             return None, None, None
 
-        def _score_mood(tags, category_map):
-            scores = {cat: 0 for cat in category_map}
-            for tag in tags:
-                tl = tag.lower()
-                for cat, keywords in category_map.items():
-                    if tl in keywords:
-                        scores[cat] += 1
+        def _score_mood(tags_wc):
+            # tags_wc: [(name, weight), ...] — weight = Last.fm count or 1 for equal weight
+            # Uses self._tag_mood_map: {normalized_tag: mood_cat} loaded from DB
+            scores = {'calm': 0, 'energetic': 0, 'dark': 0, 'happy': 0}
+            for tag, weight in tags_wc:
+                tn = self._normalize_tag(tag)
+                cat = self._tag_mood_map.get(tn)
+                if cat and cat in scores:
+                    scores[cat] += weight
             best_cat = max(scores, key=scores.get)
             return best_cat if scores[best_cat] > 0 else None
 
-        def _score_features(tags):
-            matches = [(e, v) for tag in tags
+        def _score_features(tags_wc):
+            # tags_wc: [(name, weight), ...] — weighted average of (energy, valence)
+            matches = [(e, v, w) for tag, w in tags_wc
                        for k, (e, v) in self._TAG_FEATURES.items()
-                       if tag.lower() == k]
+                       if self._normalize_tag(tag) == k]
             if not matches:
                 return None, None
+            total_w = sum(w for _, _, w in matches)
             return (
-                round(sum(e for e, v in matches) / len(matches), 3),
-                round(sum(v for e, v in matches) / len(matches), 3),
+                round(sum(e * w for e, _, w in matches) / total_w, 3),
+                round(sum(v * w for _, v, w in matches) / total_w, 3),
             )
 
-        # --- Primary: track.getTopTags ---
+        def _finalize(mood, energy, valence):
+            """Derive mood from quadrant when energy/valence are available; tag-mood as fallback only."""
+            if energy is not None:
+                # 4-quadrant Russell circumplex: mood = f(energy, valence)
+                mood = util.mood_from_energy_valence(energy, valence)
+            # else: no features found → keep tag-based mood as fallback
+            return mood, energy, valence
+
+        # --- Primary: track.getTopTags (DB cache first) ---
+        if track_uri and self._db:
+            cached = self._db.get_track_genres(track_uri)
+            if cached:
+                energy, valence = _score_features(cached)
+                mood = None if energy is not None else _score_mood(cached)
+                if energy is not None or mood:
+                    return _finalize(mood, energy, valence)
+
         try:
             url = (
                 f"https://ws.audioscrobbler.com/2.0/?method=track.getTopTags"
@@ -1386,29 +2030,167 @@ class SpotifyHandler:
             raw_tags = (data.get('toptags') or {}).get('tag') or []
             if isinstance(raw_tags, dict):
                 raw_tags = [raw_tags]
-            tags = [t['name'] for t in raw_tags if int(t.get('count', 0)) >= 3]
-            if tags:
-                mood = _score_mood(tags, self._MOOD_TAGS)
-                energy, valence = _score_features(tags)
-                if mood or energy is not None:
-                    return mood, energy, valence
+            tags_wc = [(t['name'], int(t.get('count', 0)))
+                       for t in raw_tags
+                       if int(t.get('count', 0)) >= 2
+                       and not self._is_noise_tag(t.get('name', ''))]
+            if tags_wc:
+                if track_uri and self._db:
+                    self._db.save_track_genres(track_uri, tags_wc)
+                energy, valence = _score_features(tags_wc)
+                mood = None if energy is not None else _score_mood(tags_wc)
+                if energy is not None or mood:
+                    return _finalize(mood, energy, valence)
         except Exception:
             pass
 
-        # --- Fallback: artist genre cache ---
+        # --- Fallback 1: album.getTopTags (DB cache first) ---
+        if album_id and self._db:
+            cached = self._db.get_album_genres(album_id)
+            if cached:
+                energy, valence = _score_features(cached)
+                mood = None if energy is not None else _score_mood(cached)
+                if energy is not None or mood:
+                    return _finalize(mood, energy, valence)
+
+        if album_name:
+            try:
+                url = (
+                    f"https://ws.audioscrobbler.com/2.0/?method=album.getTopTags"
+                    f"&artist={requests.utils.quote(artist_name)}"
+                    f"&album={requests.utils.quote(album_name)}"
+                    f"&autocorrect=1&api_key={self._lastfm_api_key}&format=json"
+                )
+                resp = requests.get(url, timeout=5)
+                data = resp.json()
+                raw_tags = (data.get('toptags') or {}).get('tag') or []
+                if isinstance(raw_tags, dict):
+                    raw_tags = [raw_tags]
+                tags_wc = [(t['name'], int(t.get('count', 0)))
+                           for t in raw_tags
+                           if int(t.get('count', 0)) >= 2
+                           and not self._is_noise_tag(t.get('name', ''))]
+                if tags_wc:
+                    if album_id and self._db:
+                        self._db.save_album_genres(album_id, tags_wc)
+                    energy, valence = _score_features(tags_wc)
+                    mood = None if energy is not None else _score_mood(tags_wc)
+                    if energy is not None or mood:
+                        return _finalize(mood, energy, valence)
+            except Exception:
+                pass
+
+        # --- Fallback 2: artist genre cache DB (poids égaux) ---
         try:
             artist_id = self._resolve_artist_spotify_id(artist_name, allow_api=False)
             if artist_id and self._db:
                 genres = self._db.get_artist_genres(artist_id)
                 if genres:
-                    mood = _score_mood(genres, self._GENRE_MOOD)
-                    energy, valence = _score_features(genres)
-                    if mood or energy is not None:
-                        return mood, energy, valence
+                    genres_wc = [(g, 1) for g in genres]
+                    energy, valence = _score_features(genres_wc)
+                    mood = None if energy is not None else _score_mood(genres_wc)
+                    if energy is not None or mood:
+                        return _finalize(mood, energy, valence)
+        except Exception:
+            pass
+
+        # --- Fallback 3: artist.getTopTags direct Last.fm (poids égaux) ---
+        try:
+            artist_tags = self._lastfm_get_top_tags(artist_name, min_count=5) or []
+            if artist_tags:
+                # Store in ArtistGenre for future cache hits, regardless of mood result
+                try:
+                    a_id = self._resolve_artist_spotify_id(artist_name, allow_api=False)
+                    if a_id and self._db:
+                        self._db.save_artist_genres(a_id, artist_tags)
+                except Exception:
+                    pass
+                artist_wc = [(t, 1) for t in artist_tags]
+                energy, valence = _score_features(artist_wc)
+                mood = None if energy is not None else _score_mood(artist_wc)
+                if energy is not None or mood:
+                    return _finalize(mood, energy, valence)
         except Exception:
             pass
 
         return None, None, None
+
+    def warmup_spotify_features(self, batch_size=100, max_batches=20):
+        """Fetch energy+valence from Spotify audio_features for all spotify:track: URIs.
+
+        Covers both NULL tracks and '_' sentinel tracks. 100 tracks per API call,
+        no sleep needed. Last.fm pipeline remains as fallback for local/non-Spotify tracks.
+        Returns (assigned, remaining) counts.
+        """
+        if not self.sp:
+            print("warmup_spotify_features: skipped (no Spotify connection)")
+            return 0, 0
+        if not self._db:
+            print("warmup_spotify_features: skipped (no DB)")
+            return 0, 0
+        # Check if endpoint was previously found to be unavailable (403)
+        disabled, _ = self._db.get_cache_meta('spotify_features_disabled')
+        if disabled:
+            print("warmup_spotify_features: skipped (audio_features endpoint unavailable for this app)")
+            return 0, 0
+
+        total_assigned = 0
+        for batch_num in range(max_batches):
+            if self._is_rate_limited():
+                print("warmup_spotify_features: rate-limited, stopping")
+                break
+
+            uris = self._db.get_spotify_tracks_without_features(limit=batch_size)
+            if not uris:
+                self._db.set_cache_meta('warmup_spotify_features_at', 1)
+                print("warmup_spotify_features: all Spotify tracks have features, TTL set")
+                break
+
+            print(f"warmup_spotify_features: batch {batch_num+1}/{max_batches} — {len(uris)} tracks")
+            try:
+                features_list = self.sp.audio_features(uris)
+            except spotipy.SpotifyException as e:
+                if e.http_status == 403:
+                    # Endpoint deprecated/unavailable for this Spotify app — disable permanently
+                    self._db.set_cache_meta('spotify_features_disabled', 1)
+                    print("warmup_spotify_features: audio_features endpoint returned 403 — disabled (Spotify API deprecation)")
+                elif e.http_status == 429:
+                    self._on_rate_limit(e)
+                else:
+                    print(f"warmup_spotify_features: Spotify error: {e}")
+                break
+            except Exception as e:
+                print(f"warmup_spotify_features: error: {e}")
+                break
+
+            batch_assigned = 0
+            for uri, features in zip(uris, features_list or []):
+                if not features:
+                    self._db.update_track_features(uri, mood='_')
+                    continue
+                energy = features.get('energy')
+                valence = features.get('valence')
+                if energy is None:
+                    self._db.update_track_features(uri, mood='_')
+                    continue
+                v = valence if valence is not None else 0.5
+                if energy > 0.5 and v > 0.5:
+                    mood = 'happy'
+                elif energy > 0.5:
+                    mood = 'energetic'
+                elif v > 0.5:
+                    mood = 'calm'
+                else:
+                    mood = 'dark'
+                self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
+                batch_assigned += 1
+
+            total_assigned += batch_assigned
+            print(f"warmup_spotify_features: batch done — {batch_assigned}/{len(uris)} assigned")
+
+        remaining = self._db.count_spotify_tracks_without_features()
+        print(f"warmup_spotify_features: session total {total_assigned} assigned, {remaining} remaining")
+        return total_assigned, remaining
 
     def warmup_track_moods(self, batch_size=50, max_batches=1):
         """Fetch Last.fm mood for tracks that don't have one yet.
@@ -1435,11 +2217,12 @@ class SpotifyHandler:
 
             print(f"warmup_track_moods: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks via Last.fm")
             batch_assigned = 0
-            for uri, track_name, artist_name in tracks:
+            for uri, track_name, artist_name, album_name, album_id in tracks:
                 if self._is_rate_limited():
                     break
                 try:
-                    mood, energy, valence = self._lastfm_get_track_mood(artist_name, track_name)
+                    mood, energy, valence = self._lastfm_get_track_mood(
+                        artist_name, track_name, album_name, track_uri=uri, album_id=album_id)
                     if mood or energy is not None:
                         self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
                         batch_assigned += 1
@@ -1454,9 +2237,85 @@ class SpotifyHandler:
             total_assigned += batch_assigned
             print(f"warmup_track_moods: batch done — {batch_assigned}/{len(tracks)} assigned")
 
-        remaining = len(self._db.get_tracks_without_mood(limit=1))
-        print(f"warmup_track_moods: session total {total_assigned} assigned, ~{remaining} remaining")
+        remaining = self._db.count_tracks_without_mood()
+        print(f"warmup_track_moods: session total {total_assigned} assigned, {remaining} remaining")
         return total_assigned, remaining
+
+    def warmup_retry_sentinels(self, batch_size=50, max_batches=2):
+        """Re-process tracks with mood='_' whose artist now has genres in DB.
+
+        These tracks were marked as 'no data' before artist genres were populated.
+        With the new fallback 2 (direct artist.getTopTags), they can now be resolved.
+        """
+        if not self._db or not self._lastfm_api_key:
+            return 0
+        total = 0
+        for batch_num in range(max_batches):
+            if self._is_rate_limited():
+                break
+            tracks = self._db.get_sentinel_tracks_with_artist_genres(limit=batch_size)
+            if not tracks:
+                print("warmup_retry_sentinels: no eligible sentinel tracks remaining")
+                break
+            print(f"warmup_retry_sentinels: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks")
+            batch_assigned = 0
+            for uri, track_name, artist_name, album_name, album_id in tracks:
+                if self._is_rate_limited():
+                    break
+                try:
+                    mood, energy, valence = self._lastfm_get_track_mood(
+                        artist_name, track_name, album_name, track_uri=uri, album_id=album_id)
+                    if mood or energy is not None:
+                        self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
+                        batch_assigned += 1
+                        print(f"  retry: {artist_name} – {track_name} → mood={mood} e={energy} v={valence}")
+                    time.sleep(0.25)
+                except Exception as e:
+                    print(f"warmup_retry_sentinels error ({track_name}): {e}")
+            total += batch_assigned
+            print(f"warmup_retry_sentinels: batch done — {batch_assigned}/{len(tracks)} resolved")
+        print(f"warmup_retry_sentinels: done — {total} total resolved")
+        return total
+
+    def warmup_retry_all_sentinels(self, batch_size=50, max_batches=5):
+        """Re-process ALL tracks with mood='_', not just those with cached artist genres.
+
+        Runs the full _lastfm_get_track_mood chain (track → album → artist cache → artist API).
+        Effective now that:
+        - thresholds are lower (count >= 2 for tracks/albums, >= 5 for artists)
+        - artist tags from Fallback 3 are stored in ArtistGenre for future hits
+        Tracks still unresolved keep mood='_'.
+        """
+        if not self._db or not self._lastfm_api_key:
+            return 0
+        total = 0
+        for batch_num in range(max_batches):
+            if self._is_rate_limited():
+                break
+            tracks = self._db.get_all_sentinel_tracks(limit=batch_size)
+            if not tracks:
+                print("warmup_retry_all_sentinels: no sentinel tracks remaining")
+                break
+            print(f"warmup_retry_all_sentinels: batch {batch_num+1}/{max_batches} — {len(tracks)} tracks")
+            batch_assigned = 0
+            for uri, track_name, artist_name, album_name, album_id in tracks:
+                if self._is_rate_limited():
+                    break
+                try:
+                    mood, energy, valence = self._lastfm_get_track_mood(
+                        artist_name, track_name, album_name, track_uri=uri, album_id=album_id)
+                    if mood or energy is not None:
+                        self._db.update_track_features(uri, mood=mood, energy=energy, valence=valence)
+                        batch_assigned += 1
+                        print(f"  resolved: {artist_name} – {track_name} → mood={mood} e={energy} v={valence}")
+                    # Do NOT re-mark as '_' here — leave sentinel as-is so we retry next run
+                    time.sleep(0.3)
+                except Exception as e:
+                    print(f"warmup_retry_all_sentinels error ({track_name}): {e}")
+            total += batch_assigned
+            print(f"warmup_retry_all_sentinels: batch done — {batch_assigned}/{len(tracks)} resolved")
+        print(f"warmup_retry_all_sentinels: done — {total} total resolved")
+        return total
 
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
@@ -1468,8 +2327,11 @@ class SpotifyHandler:
             ('albums',          self.warmup_saved_albums),
             ('artists',         self.get_all_followed_artists),   # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
-            ('genres',          self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
-            ('moods',           lambda: self.warmup_track_moods(batch_size=50, max_batches=5)),  # up to 250/startup
+            ('genres',            self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
+            ('spotify_features',  lambda: self.warmup_spotify_features(batch_size=100, max_batches=5)),  # up to 500/startup via Spotify
+            ('moods',             lambda: self.warmup_track_moods(batch_size=50, max_batches=5)),  # up to 250/startup via Last.fm fallback
+            ('mood_retry',        lambda: self.warmup_retry_sentinels(batch_size=50, max_batches=2)),  # retry '_' with cached artist genres
+            ('mood_retry_all',    lambda: self.warmup_retry_all_sentinels(batch_size=50, max_batches=2)),  # broader: all sentinels via full chain
         ]:
             if self._is_rate_limited():
                 print(f"warmup_cache: rate-limited, stopping before {entity_type}")

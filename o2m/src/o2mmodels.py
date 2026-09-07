@@ -72,13 +72,16 @@ class Box(BaseModel):
     description = TextField(null=True)  # description text
     read_count = IntegerField(default=0)  # Increment each time a tag is used
     last_read_date = TimestampField(null=True, utc=True)  # timestamp of last used date
-    option_type = CharField(default='normal')  # option card type : normal (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
+    option_type = CharField(default='library')  # option card type : library (default), new (discover card:only play new tracks), favorites (preferred tracks), hidden (not considered by stats)
     option_sort = CharField(null=True)  # shuffle, (asc, desc : date of tracks/podcasts)
     option_duration = IntegerField(null=True)  # max duration of a media : mostly useful for radios
     option_max_results = IntegerField(null=True)  # Max results associated to tag
     option_discover_level = IntegerField(default=5)  # Discover level (0-10) associated to tag
-    favorite= IntegerField(default=0) #Bool (is the box pinned or not)	
+    option_energy = FloatField(null=True)   # Target energy 0.0-1.0 (NULL = inherit global mood context)
+    option_valence = FloatField(null=True)  # Target valence/ambiance 0.0-1.0 (NULL = inherit global mood context)
+    favorite= IntegerField(default=0) #Bool (is the box pinned or not)
     public= IntegerField(default=0) #Bool (is the content shared or not)
+    image_url = TextField(null=True)  # optional cover/thumbnail URL for the box
 
     '''def __str__(self):
         #return "TAG UID : {} | MEDIA : {} | DESCRIPTION : {} | READ COUNT : {}| OPTION_TYPE : {}".format(self.uid, self.data, self.description, self.read_count, self.option_type)
@@ -123,6 +126,11 @@ class Track(BaseModel):
     mood = TextField(null=True)          # Last.fm mood: calm/energetic/dark/happy
     energy = FloatField(null=True)       # 0.0 (calm/sleep) → 1.0 (intense/metal)
     valence = FloatField(null=True)      # 0.0 (dark/sad) → 1.0 (joyful/euphoric)
+    popularity = FloatField(null=True)   # composite popularity score [0,1], recomputed in batch (stats_v2)
+    mood_edited_at = TimestampField(null=True, utc=True)  # set on MANUAL mood/energy/valence edit → locks the track against warmup overwrite
+    published_at = CharField(null=True)  # episode publication date 'YYYY-MM-DD' (spoken content; feed/API formats vary)
+    channel_id = CharField(null=True, index=True)  # → PodcastChannel.id (spoken content; one episode has exactly one channel)
+    episode_key = CharField(null=True, index=True)  # Radio France episode-page id: the SAME episode reaches us as an RSS item and as an API episode, under different audio files
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -146,9 +154,14 @@ class Track(BaseModel):
 
 
 class Stats_Raw(BaseModel):
+    # The physical primary key is the auto-increment `Id` column (see SHOW CREATE
+    # TABLE); read_date is a plain indexed timestamp, NOT the PK. Declaring read_date
+    # primary_key=True here misled the ORM (a second-resolution "PK" that isn't unique
+    # in the DB). Map the real PK so .save()/get_by_id behave correctly.
+    id = AutoField()
     read_date = TimestampField(
-        index=True, null=True, utc=True, primary_key=True
-    )  # date # Unique uri
+        index=True, null=True, utc=True
+    )  # date
     uri = CharField(default=0)
     read_hour = IntegerField(default=0)  # int
     username = TextField(null=True)  # user text
@@ -239,6 +252,36 @@ class ArtistGenre(BaseModel):
         indexes = ((('artist_id', 'genre_id'), True),)
 
 
+class TrackGenre(BaseModel):
+    """N:N  track.uri ↔ genre.id — persists Last.fm track.getTopTags with weight."""
+    track_uri = CharField(index=True)   # → Track.uri
+    genre_id  = IntegerField(index=True) # → Genre.id
+    weight    = IntegerField(default=0)  # Last.fm count
+
+    class Meta:
+        indexes = ((('track_uri', 'genre_id'), True),)
+
+
+class AlbumGenre(BaseModel):
+    """N:N  album.id ↔ genre.id — persists Last.fm album.getTopTags with weight."""
+    album_id = CharField(index=True)    # → Album.id
+    genre_id = IntegerField(index=True) # → Genre.id
+    weight   = IntegerField(default=0)  # Last.fm count
+
+    class Meta:
+        indexes = ((('album_id', 'genre_id'), True),)
+
+
+class TagFeature(BaseModel):
+    """Data-driven tag → (energy, valence, mood) mapping. Replaces hardcoded dicts.
+    Seeded at startup from SpotifyHandler class constants, then editable via UI."""
+    tag      = CharField(primary_key=True, max_length=100)  # normalized tag name
+    energy   = FloatField(null=True)    # 0.0–1.0
+    valence  = FloatField(null=True)    # 0.0–1.0
+    mood     = CharField(null=True, max_length=20)   # calm / energetic / dark / happy
+    is_noise = IntegerField(default=0)  # 1 = filter this tag from scoring
+
+
 class Playlist(BaseModel):
     id = CharField(unique=True, index=True, primary_key=True)  # Spotify playlist ID
     uri = CharField(null=True)
@@ -250,6 +293,11 @@ class Playlist(BaseModel):
     image_url = TextField(null=True)
     storage = CharField(default='sp')   # 'sp' or 'local'
     cached_at = TimestampField(null=True, utc=True)
+    # False once the playlist has left the account's library. Spotify keeps a removed
+    # playlist alive (and fetchable by id) for ~90 days, so its absence from the listing
+    # is not a deletion: we stop drawing from it instead of erasing what we know of it.
+    # NULL = never assessed, treated as in-library.
+    in_library = BooleanField(null=True, default=True)
 
 
 class PlaylistTrack(BaseModel):
@@ -282,6 +330,60 @@ class CacheMeta(BaseModel):
     key = CharField(unique=True, index=True, primary_key=True)
     value_int = IntegerField(null=True)
     updated_at = TimestampField(null=True, utc=True)
+
+
+class RfTaxonomy(BaseModel):
+    """Radio France themes/tags (OpenAPI `taxonomies`) — the vocabulary behind
+    the dynamic 'rf:sujet:<keyword>' box. `diffusions` filters take taxonomy
+    IDs, never paths, so the id is the payload — but the path's DEPTH decides
+    WHICH argument the id belongs to (themes / subthemes / subsubthemes), so it
+    is stored too. Only themes carry one: for some tags it is null and the API
+    raises on the field, so it is requested for THEME queries only.
+    """
+    id         = CharField(primary_key=True)        # "<uuid>_0"
+    kind       = CharField(null=True, index=True)   # THEME | TAG
+    title      = TextField(null=True)
+    title_norm = CharField(null=True, index=True)
+    path       = TextField(null=True)               # 'arts-divertissements/cinema'
+    cached_at  = TimestampField(null=True, utc=True)
+
+
+class PodcastChannel(BaseModel):
+    """A podcast source: an RSS feed or a Radio France show.
+
+    Episodes themselves stay in `Track` — that table is already a catalogue +
+    stats hybrid (most of its rows have never been played) and it is what the
+    lifecycle, the resume pool and the search buckets already read. What was
+    missing is the SOURCE they belong to: an RSS episode carries its feed in its
+    own uri, but a Radio France episode is a bare mp3 link that says nothing
+    about its show — hence Track.channel_id.
+    """
+    id         = CharField(primary_key=True)        # feed url (rss) or RF show id
+    kind       = CharField(null=True, index=True)   # 'rss' | 'rf'
+    title      = TextField(null=True)
+    title_norm = CharField(null=True, index=True)
+    url        = TextField(null=True)               # feed url, or the RF show page
+    # The RSS feed backing this channel. For 'rss' it is the id itself; for 'rf'
+    # it is discovered from the show page, and is what lets an API episode be
+    # served as a normal 'podcast+<feed>#<guid>' uri.
+    feed_url   = TextField(null=True)
+    rf_id      = CharField(null=True, index=True)   # Radio France show uuid, when the channel is one
+    station    = CharField(null=True)
+    image_url  = TextField(null=True)
+    cached_at  = TimestampField(null=True, utc=True)
+
+
+class EpisodeTaxonomy(BaseModel):
+    """Episode ↔ Radio France subject. Many-to-many on purpose: one episode
+    routinely carries several themes AND tags, so a column on Track could not
+    express it — this is what lets 'rf:sujet:<subject>' be answered from the DB
+    instead of re-querying the API on every box activation."""
+    track_uri   = CharField(index=True)
+    taxonomy_id = CharField(index=True)
+
+    class Meta:
+        primary_key = False
+        indexes = ((('track_uri', 'taxonomy_id'), True),)
 
 
 # ─── Database versioning ───────────────────────────────────────────────────────
@@ -416,7 +518,79 @@ def _migration_v6(migrator):
         print(f"migration_v6 backfill: {e}")
 
 
-SCHEMA_VERSION = 6
+def _migration_v7(migrator):
+    db.create_tables([TrackGenre, AlbumGenre], safe=True)
+
+
+def _migration_v8(migrator):
+    db.create_tables([TagFeature], safe=True)
+
+
+def _migration_v9(migrator):
+    _add_column_safe(migrator, 'box', 'option_energy', FloatField(null=True))
+    _add_column_safe(migrator, 'box', 'option_valence', FloatField(null=True))
+
+
+def _migration_v10(migrator):
+    # Rename the 'normal' option_type value to 'library' (clearer) on existing rows
+    for table in ('box', 'track'):
+        try:
+            db.execute_sql(f"UPDATE {table} SET option_type='library' WHERE option_type='normal'")
+        except Exception as e:
+            print(f"migration_v10 {table}: {e}")
+
+
+def _migration_v11(migrator):
+    _add_column_safe(migrator, 'track', 'popularity', FloatField(null=True))
+
+
+def _migration_v12(migrator):
+    _add_column_safe(migrator, 'track', 'mood_edited_at', TimestampField(null=True, utc=True))
+
+
+def _migration_v13(migrator):
+    _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
+
+
+def _migration_v21(migrator):
+    # One channel table. PodcastChannel already held the sources in use (RSS and
+    # RF); it now also carries the searchable RF catalogue that RfShow held, so
+    # a show is described in exactly one place. Copy is done by the app on
+    # startup (see DatabaseHandler.merge_rfshow_into_channels): a migration
+    # cannot be re-run, and the copy has to be idempotent.
+    _add_column_safe(migrator, 'podcastchannel', 'rf_id', CharField(null=True))
+
+
+def _migration_v20(migrator):
+    _add_column_safe(migrator, 'podcastchannel', 'feed_url', TextField(null=True))
+
+
+def _migration_v19(migrator):
+    _add_column_safe(migrator, 'track', 'episode_key', CharField(null=True))
+
+
+def _migration_v18(migrator):
+    db.create_tables([PodcastChannel, EpisodeTaxonomy], safe=True)
+    _add_column_safe(migrator, 'track', 'channel_id', CharField(null=True))
+
+
+def _migration_v17(migrator):
+    _add_column_safe(migrator, 'track', 'published_at', CharField(null=True))
+
+
+def _migration_v16(migrator):
+    _add_column_safe(migrator, 'rftaxonomy', 'path', TextField(null=True))
+
+
+def _migration_v15(migrator):
+    db.create_tables([RfTaxonomy], safe=True)
+
+
+def _migration_v14(migrator):
+    _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
+
+
+SCHEMA_VERSION = 21
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -425,6 +599,21 @@ _MIGRATIONS = [
     (4, "playlist_log_table", _migration_v4),
     (5, "track_mood_column", _migration_v5),
     (6, "track_energy_valence_columns", _migration_v6),
+    (7, "track_album_genre_tables", _migration_v7),
+    (8, "tagfeature_table", _migration_v8),
+    (9, "box_energy_valence_options", _migration_v9),
+    (10, "option_type_normal_to_library", _migration_v10),
+    (11, "track_popularity_column", _migration_v11),
+    (12, "track_mood_edited_at_column", _migration_v12),
+    (13, "box_image_url_column", _migration_v13),
+    (14, "playlist_in_library_column", _migration_v14),
+    (15, "radiofrance_show_taxonomy_tables", _migration_v15),
+    (16, "rftaxonomy_path_column", _migration_v16),
+    (17, "track_published_at_column", _migration_v17),
+    (18, "podcast_channel_episode_taxonomy", _migration_v18),
+    (19, "track_episode_key_column", _migration_v19),
+    (20, "podcastchannel_feed_url_column", _migration_v20),
+    (21, "podcastchannel_rf_id_column", _migration_v21),
 ]
 
 

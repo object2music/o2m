@@ -10,8 +10,13 @@ window.onload = function() {
   
   list = document.getElementsByClassName('sidebar__menu')[0];
   //host = window.location.host;
-  base_url = window.location.origin.split( '//' )[0]+'//'+window.location.origin.split( '//' )[1].split(':')[0];
-  base_url += ':6681/api/'
+  // Behind a reverse proxy (HTTPS, single 443 port) use same-origin /api/ which the
+  // proxy routes to the o2m API; on direct LAN access keep the explicit :6681 port.
+  if (window.location.protocol === 'https:') {
+    base_url = window.location.origin + '/api/';
+  } else {
+    base_url = window.location.protocol + '//' + window.location.hostname + ':6681/api/';
+  }
   backoffice_uri = 'http://localhost:5011'
   //backoffice_uri += 'sql.php?table=box&sql_query=SELECT+%2A+FROM+%60box%60++%0AORDER+BY+%60box%60.%60favorite%60++DESC&session_max_rows=100&is_browse_distinct=0'
   //alert(base_url)
@@ -40,10 +45,9 @@ window.onload = function() {
     try {
       if ((update_text.includes('podcast')) || (el.innerHTML.includes('podcast+'))){
         el.style.backgroundColor = "Gainsboro";
-        update_text = update_text.replace("normal","podcast");
+        update_text = update_text.replace("library","podcast");
       }
-      else if (update_text.includes('normal')){
-        update_text=update_text.replace("normal", "library");
+      else if (update_text.includes('library')){
         el.style.backgroundColor = "LightSkyBlue";
       }
       else if (update_text.includes('favorites')){
@@ -211,9 +215,13 @@ window.onload = function() {
     }
 
   function update_style_button_box(uid,b){
+    // Don't fight the in-progress visual: while a toggle is pending, the button
+    // shows the amber "processing" state — let the response reconcile it.
+    if (b.dataset.pending === "1") { return; }
     var xhr0 = new XMLHttpRequest();
     xhr0.onreadystatechange = function() {
         if (xhr0.readyState == xhr0.DONE) {
+            if (b.dataset.pending === "1") { return; }
             if (xhr0.status === 200) {
             if (xhr0.responseText=='1') {b.classList.add("sidebar__menu__item--active");}
             if (xhr0.responseText=='0') {b.classList.remove("sidebar__menu__item--active");}
@@ -223,17 +231,42 @@ window.onload = function() {
     xhr0.send();
   }
 
+  // Enter/leave the "in progress" state: amber + pulsing + not clickable.
+  function set_box_pending(b, on){
+    if (on){
+      b.dataset.pending = "1";
+      b.disabled = true;
+      b.classList.add("sidebar__menu__item--pending");
+    } else {
+      b.dataset.pending = "0";
+      b.disabled = false;
+      b.classList.remove("sidebar__menu__item--pending");
+    }
+  }
+
   function create_button_box(uid,name){
     var b = document.createElement("button");
     b.innerHTML = "<i class=\"icon icon--material \">recent_actors</i>"+name;
     b.className = "sidebar__menu__item icon icon--material";
-    b.onclick = function(){  
+    b.onclick = function(){
+        // Guard against double-fire: a box op is synchronous and serialises
+        // behind the server-side lock, so re-clicking only makes it slower.
+        if (b.dataset.pending === "1") { return; }
+        set_box_pending(b, true);
         var xhr = new XMLHttpRequest();
+        // The /api/box endpoint is synchronous: it returns only once the box
+        // action (cascade fills included) has completed. Wait for the real
+        // response instead of a fixed 1s timeout, then reconcile the state.
+        xhr.timeout = 120000; // safety net so a hung op eventually re-enables the button
+        var settle = function(){
+          set_box_pending(b, false);
+          update_style_button_box(uid,b);
+        };
+        xhr.onload = settle;
+        xhr.onerror = settle;
+        xhr.ontimeout = settle;
         xhr.open("GET",base_url+"box?uid="+uid+"&mode=toogle");
         xhr.send();
-        setTimeout(() => {
-          update_style_button_box(uid,b)
-      },1000);
     };
   list.insertBefore(b, list.children[0]);
   update_style_button_box(uid,b)
@@ -430,7 +463,10 @@ function enableSnapcastAndPlay() {
   }
 
   // Auto-play: start playback if tracklist non-empty and not already playing
-  const mopidyRpc = window.location.protocol + '//' + window.location.hostname + ':6680/mopidy/rpc';
+  // Behind a reverse proxy (HTTPS) use same-origin /mopidy/rpc; on LAN keep :6680.
+  const mopidyRpc = (window.location.protocol === 'https:')
+    ? window.location.origin + '/mopidy/rpc'
+    : window.location.protocol + '//' + window.location.hostname + ':6680/mopidy/rpc';
   const rpc = (method) => fetch(mopidyRpc, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -474,10 +510,18 @@ try {
   console.error('o2m: mobile audio overlay error', e);
 }
 
-// Initialize playback on smartphone devices (one-time on load)
+// Initialize playback on phone devices only (one-time on load).
+// Téléphone uniquement : pas d'alimentation auto (resume + lancement de box/tag)
+// sur desktop ni tablette. iPad n'a pas iPhone/iPod ; les tablettes Android n'ont
+// pas "Mobile" dans l'UA ; repli = écran tactile petit côté <= 480px.
 try {
-  const isSmartphone = (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) || /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
-  if (isSmartphone) {
+  const _ua = navigator.userAgent;
+  const isPhone = /iPhone|iPod/.test(_ua)
+    || (/Android/.test(_ua) && /Mobile/.test(_ua))
+    || /Windows Phone|BlackBerry|Opera Mini|IEMobile/.test(_ua)
+    || (((('ontouchstart' in window)) || navigator.maxTouchPoints > 0)
+        && Math.min(window.screen ? window.screen.width : 9999, window.screen ? window.screen.height : 9999) <= 480);
+  if (isPhone) {
     
     setTimeout(() => {
       fetch(base_url + "initialize_playback")
