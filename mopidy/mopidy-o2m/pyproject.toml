@@ -11,10 +11,13 @@ requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Patrick Vincent" }]
 dependencies = [
-    # Pinned to what the image runs today (Mopidy 3.4.2 on Python 3.10).
-    # Mopidy 4 exists (4.0.0 2026-04-24, needs Python >= 3.13) and moving to
-    # it is an open decision — see README. Lift the pin when the stack moves.
-    "mopidy >= 3.4, < 4",
+    # No upper bound on purpose. A `< 4` pin is actively harmful here: pip
+    # honours it while building the Mopidy 4 image and silently DOWNGRADES
+    # mopidy 4.0.3 to 3.4.2, leaving every other extension unsatisfied — a
+    # build that succeeds and a stack that is quietly wrong. Verified loading
+    # on both 3.4.2 and 4.0.3; everything the extension uses (ext.Extension,
+    # config.read, config.String, registry) is unchanged in Mopidy 4.
+    "mopidy >= 3.4",
     "Pykka >= 2.0.1",
 ]
 

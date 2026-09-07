@@ -17,30 +17,36 @@ with its history into a standalone repo.
 
 The extension must **never depend on Mopidy-Iris**, neither as a package dependency
 nor by reaching into its files. The existing Iris integration is a set of hard-coded
-edits — `mopidy/o2m.js` and `mopidy/o2m.css` are copied over `mopidy_iris/static/` at
-image build time, and `mopidy/mopidy_spotify_backend.py` is bind-mounted over
-`mopidy_spotify/backend.py`. Those stay where they are, in the non-plugin code; they
-are **not** to be reproduced here.
+edits — on the legacy Mopidy 3 image `mopidy/o2m.js` and `mopidy/o2m.css` are copied over
+`mopidy_iris/static/`, and `mopidy/mopidy_spotify_backend5.py` is bind-mounted over
+`mopidy_spotify/backend.py`. Those stay where they are, in the non-plugin code; they are
+**not** to be reproduced here. The Mopidy 4 image does not install Iris at all, so the
+question is settled there.
 
 Consequence for design: anything this extension wants to expose to a browser it serves
 itself, through its own `registry.add("http:app", ...)` handler under
 `/o2m/`, with its own static assets inside the package. That keeps the extension
 installable and useful on a Mopidy that has no Iris at all.
 
-## Mopidy 3 today, Mopidy 4 is an open decision
+## Targets Mopidy 4
 
-Pinned to `mopidy >= 3.4, < 4` because that is what the image runs today: Mopidy 3.4.2 on
-Python 3.10 (Ubuntu 22.04). **Mopidy 4 does exist** — 4.0.0 was released on 2026-04-24,
-4.0.3 on 2026-09-06 — and requires **Python >= 3.13**. Beware: pip inside the 3.10 image
-filters out every version whose `requires-python` it cannot satisfy, so `pip index
-versions mopidy` there stops at 3.4.2 and looks as if 4 did not exist. Check PyPI
-directly, not from the container.
+Declared as `mopidy >= 3.4`, **with no upper bound on purpose**, and verified loading on
+both 3.4.2 and 4.0.3. A `< 4` pin is not merely conservative here, it is harmful: pip
+honours it while building the Mopidy 4 image and silently downgrades mopidy 4.0.3 to
+3.4.2, leaving every other extension unsatisfied — the build succeeds and the stack is
+quietly wrong.
 
-Where the extensions O2M depends on stand (PyPI, 2026-09-07):
+Mopidy 4.0.0 was released 2026-04-24, 4.0.3 on 2026-09-06, and requires **Python >= 3.13**.
+Beware when checking versions: pip inside a Python 3.10 image filters out every release
+whose `requires-python` it cannot satisfy, so `pip index versions mopidy` there stops at
+3.4.2 and looks as if Mopidy 4 did not exist. Check PyPI directly, never from the old
+container.
+
+Where the extensions O2M depends on stand (PyPI, 2026-09-08):
 
 | Extension | Latest | Needs |
 |---|---|---|
-| Mopidy-Spotify | 5.0.0 (2026-04-25) | mopidy >= 4, py >= 3.13 — the image runs the **5.0.0a3 alpha**, the last pre-release that still ran on Mopidy 3 |
+| Mopidy-Spotify | 5.0.0 (2026-04-25) | mopidy >= 4, py >= 3.13 — **now installed**; the Mopidy 3 image ran the 5.0.0a3 alpha |
 | Mopidy-Local | 4.0.1 | mopidy >= 4.0.2 |
 | Mopidy-MPD | 4.0.1 | mopidy >= 4 |
 | Mopidy-Podcast / -iTunes | 4.0.0 | mopidy >= 4 |
@@ -48,28 +54,28 @@ Where the extensions O2M depends on stand (PyPI, 2026-09-07):
 | Mopidy-YouTube | 4.0.2 (2026-05-04) | mopidy >= 3.1, no upper bound, untested on 4 |
 | Mopidy-TuneIn | 1.1.0 (2021-01-12) | mopidy >= 3, unmaintained |
 
-So the ecosystem has split: the actively maintained backends have all moved to Mopidy 4,
-while the UI (Iris) has not. The skeleton itself only uses Extension API that is unchanged
-in 4 (`ext.Extension`, `config.read`, `config.String`, `registry`), so lifting the pin is a
-one-line change once the stack moves.
+The ecosystem had split — the maintained backends all moved to Mopidy 4, the UI (Iris)
+never did. That is why the Mopidy 4 image **drops Iris entirely** and O2M serves its own
+UI: the one blocker was a UI we had already decided to replace.
 
 ## Install
 
-Not wired into the image yet. To install it, add to `mopidy/Dockerfile` after the
-`pip install -r requirements.txt` line:
+Installed by `mopidy/Dockerfile4` (the Mopidy 4 image) — nothing to do by hand:
 
 ```dockerfile
 COPY ./mopidy-o2m /app/mopidy-o2m
-# setuptools 59.6.0 ships in the base image and predates PEP 621, so it ignores the
-# [project] table in pyproject.toml: pip then silently builds and installs a package
-# named UNKNOWN-0.0.0, and Mopidy finds no extension at all (no error anywhere).
-# setuptools >= 61 is required; verified working on pip 26.2.1 / setuptools 84.0.0.
-RUN python3 -m pip install --upgrade pip setuptools
-RUN python3 -m pip install /app/mopidy-o2m
+RUN pip install --break-system-packages --root-user-action=ignore -q /app/mopidy-o2m
 ```
 
-Then rebuild the mopidy image — a pull and restart will not pick it up, the extension
-lives in the image.
+The extension lives **in the image**, so a `git pull` and a restart will not pick up a
+change to it — the image has to be rebuilt.
+
+It is *not* installed in the legacy Mopidy 3 image (`mopidy/Dockerfile`), which is still
+what un-migrated instances run. If you ever add it there, note that the Ubuntu 22.04 base
+ships setuptools 59.6.0, which predates PEP 621 and ignores the `[project]` table: pip
+then silently builds and installs a package named `UNKNOWN-0.0.0` and Mopidy finds no
+extension at all, with no error anywhere. `pip install --upgrade setuptools` (>= 61)
+first. The trixie base of `Dockerfile4` is new enough not to need this.
 
 ## Verify
 
