@@ -120,6 +120,46 @@
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
 
+  /* ══ TEMPORARY — Bulletin: mark palettes aligned on the background ════════
+     The mark is built from --ring-a-* (ink half) and --ring-b-* (accent half). On
+     Bulletin those are the design system's navy and amber, which clash with the
+     violet-and-lime picture behind the Basic dashboard — the header logo and the
+     backdrop read as two unrelated brands.
+     Each block re-cuts the two ramps from one shipped picture's own pair, by the
+     same construction the design system uses: five steps lightening toward white at
+     0 / 10.5 / 21 / 31.5 / 42 percent. Fed the original navy, the formula returns
+     the design system's own ramp to within a couple of values — so these are the
+     same object in another colour, not a different logo.
+     ring-a takes the darker of the pair, and is DEEPENED where the pair is too
+     close in luminance to keep the two halves apart: the picture's own violet
+     against its own orange sits at 1.95:1, where the original navy/amber is at
+     7.33:1, and the mark would have read as one flat disc. Each ink half is taken
+     down until the halves clear 3:1. violet-lime, the pair of the default picture,
+     needed none.
+     Known and accepted: the accent half's outer ring sits at ~1.7:1 on this ground
+     in every variant — exactly where the original amber already sits (1.74:1), so
+     the silhouette is no weaker than the logo we have.
+     Scoped to Bulletin; no attribute at all means the original. Selected in
+     Settings. Remove with the palette block above. */
+  [data-theme="creme"][data-mark="violet-lime"], [data-theme="bulletin"][data-mark="violet-lime"] {
+    --ring-a-1:#584F9D; --ring-a-2:#6A61A7; --ring-a-3:#7B74B2; --ring-a-4:#8D86BC; --ring-a-5:#9E99C6;
+    --ring-b-1:#B9CE06; --ring-b-2:#C0D320; --ring-b-3:#C8D83A; --ring-b-4:#CFDD54; --ring-b-5:#D6E36F;
+  }
+  [data-theme="creme"][data-mark="orange-violet"], [data-theme="bulletin"][data-mark="orange-violet"] {
+    --ring-a-1:#393366; --ring-a-2:#4E4876; --ring-a-3:#635E86; --ring-a-4:#777396; --ring-a-5:#8C89A6;
+    --ring-b-1:#EA5634; --ring-b-2:#EC6849; --ring-b-3:#EE795F; --ring-b-4:#F18B74; --ring-b-5:#F39D89;
+  }
+  [data-theme="creme"][data-mark="lime-pink"], [data-theme="bulletin"][data-mark="lime-pink"] {
+    --ring-a-1:#B03F72; --ring-a-2:#B85381; --ring-a-3:#C16790; --ring-a-4:#C97B9E; --ring-a-5:#D190AD;
+    --ring-b-1:#B9CE06; --ring-b-2:#C0D320; --ring-b-3:#C8D83A; --ring-b-4:#CFDD54; --ring-b-5:#D6E36F;
+  }
+  [data-theme="creme"][data-mark="orange-lime"], [data-theme="bulletin"][data-mark="orange-lime"] {
+    --ring-a-1:#B04027; --ring-a-2:#B8543E; --ring-a-3:#C16854; --ring-a-4:#C97C6B; --ring-a-5:#D19082;
+    --ring-b-1:#B9CE06; --ring-b-2:#C0D320; --ring-b-3:#C8D83A; --ring-b-4:#CFDD54; --ring-b-5:#D6E36F;
+  }
+  /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
+
+
   /* ── REVERT SWITCH — design-system base/reset ─────────────────────────────
      ds/o2m.css sets body { font-size: 15px; line-height: 1.5 }: that is the
      system's typographic harmonisation. If it unbalances a view, UNCOMMENT the
@@ -309,6 +349,19 @@
     background: rgba(255,255,255,.88); color: #1A1A1A; font-family: var(--font-mono);
     font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .set-marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 14px; }
+  .set-mark { display: flex; flex-direction: column; align-items: center; gap: 7px;
+    background: none; border: none; padding: 0; cursor: pointer; font: inherit; color: var(--muted); }
+  /* The swatch is the mark's own construction in miniature: ink half on top, accent
+     half below, parted by the ground-coloured horizon. */
+  .set-mark i { display: block; width: 44px; height: 44px; border-radius: 50%;
+    background: linear-gradient(to bottom, var(--ma) 0 calc(50% - 1.5px),
+      var(--bg) calc(50% - 1.5px) calc(50% + 1.5px), var(--mb) calc(50% + 1.5px) 100%);
+    outline: 2px solid transparent; outline-offset: 3px; transition: outline-color .15s; }
+  .set-mark.sel i { outline-color: var(--accent); }
+  .set-mark.sel { color: var(--text); }
+  .set-mark span { font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em;
+    text-transform: uppercase; text-align: center; }
   .set-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
   .set-row .wc-btn { margin: 0; }
   /* Maintenance actions: several equal-weight buttons, so they get a tighter gap
@@ -2748,10 +2801,26 @@ async function refreshBasicToggles() {
       const boxes = basicCats[btn.dataset.cat] || [];
       btn.classList.toggle('on', boxes.some(b => b.active));
     });
-    const allBtn = document.getElementById('basic-all');
-    if (allBtn) allBtn.classList.toggle('on',
-      ['music', 'podcast', 'info', 'radio'].every(c => (basicCats[c] || []).some(b => b.active)));
+    syncAllButton();
   } catch(e) {}
+}
+
+/* ALL is a pure function of what the four tiles SHOW, never of the server state.
+   It used to be recomputed straight from basicCats while the tiles showed the state
+   the user had just asked for — optimistic, queued, or mid-fill — so the two
+   disagreed for as long as a fill took: turning the last category on left ALL dark
+   until the next poll caught up, and turning one off left it lit. Deriving it from
+   the tiles makes disagreeing impossible by construction.
+   Categories with no box at all are left out of the count. They can never turn on,
+   and counting them would keep ALL dark forever on an install that has no radio box
+   (or no podcast box, …) — which is also why it stayed dark after ALL had switched
+   on everything there was to switch on. */
+function syncAllButton() {
+  const allBtn = document.getElementById('basic-all');
+  if (!allBtn) return;
+  const tiles = [...document.querySelectorAll('#basic-toggles .basic-toggle')]
+    .filter(t => ((basicCats && basicCats[t.dataset.cat]) || []).length);
+  allBtn.classList.toggle('on', tiles.length > 0 && tiles.every(t => t.classList.contains('on')));
 }
 
 // ALL meta-button: any category active → everything off; nothing active → everything on.
@@ -2770,7 +2839,9 @@ let _allRunning = false;
 async function toggleBasicAll(btn) {
   if (!basicCats || mixBusy || _catDraining) return;
   const cats = shuffledCats();
-  const anyActive = cats.some(c => (basicCats[c] || []).some(b => b.active));
+  const tileOn = c => !!document.querySelector(`.basic-toggle[data-cat="${c}"]`)?.classList.contains('on');
+  // Read from the tiles, like everything else: the user is acting on what is shown.
+  const anyActive = cats.some(tileOn);
   // ALL is a sequence over the four tiles, so it and the tiles are mutually
   // exclusive: the tiles are parked for the run (a tap meanwhile would race it).
   const tiles = [...document.querySelectorAll('#basic-toggles .basic-toggle')];
@@ -2781,9 +2852,11 @@ async function toggleBasicAll(btn) {
   try {
     for (const c of cats) {
       const cbtn = document.querySelector(`.basic-toggle[data-cat="${c}"]`);
-      const isOn = (basicCats[c] || []).some(b => b.active);
-      // OFF pass: only categories currently on; ON pass: only those off.
-      if (anyActive === isOn && cbtn) await toggleBasicCat(cbtn);
+      // OFF pass: only categories currently on; ON pass: only those off. The target
+      // is stated rather than toggled, so a category that changed under us is a
+      // no-op instead of a flip in the wrong direction.
+      if (cbtn && anyActive === tileOn(c)) await toggleBasicCat(cbtn, !anyActive);
+      syncAllButton();   // the disc fills in as the sequence advances
     }
   } finally {
     _allRunning = false;
@@ -2818,11 +2891,13 @@ function requestBasicCat(btn) {
     _catQueue.splice(qi, 1);
     btn.classList.remove('pending');
     btn.classList.toggle('on', boxes.some(b => b.active));   // back to the server's truth
+    syncAllButton();
     setFeedback(_capCat(cat) + ' cancelled');
     return;
   }
   const wantOn = !btn.classList.contains('on');    // relative to what the user sees
   btn.classList.toggle('on', wantOn);              // instant feedback; confirmed later
+  syncAllButton();
   _catQueue.push({ cat, wantOn });
   if (_catDraining || mixBusy) {                   // something is filling: this one waits its turn
     btn.classList.add('pending');
@@ -2918,6 +2993,42 @@ function basicBgUrl() {
   if (c === 'custom') return _lsGet(BASIC_BG_DATA);
   return c;
 }
+/* ── The mark's palette ──────────────────────────────────────────────────────
+   The header logo is cut from --ring-a-* / --ring-b-*, which on Bulletin are the
+   design system's navy and amber. Against the violet-and-lime picture behind the
+   Basic dashboard the two read as unrelated brands. The choice below re-cuts the
+   ramps from one of the pictures' own pairs (the CSS blocks near the top).
+     o2m-mark  '' → follow the background · 'original' · a palette key
+   Following the background is the default: the picture itself is drawn at random,
+   so a fixed mark would clash again on the next load. A picture you uploaded has
+   no known pair, so 'follow' falls back to the original rather than guessing one
+   from its pixels — the same reason the palette is not extracted from the image. */
+const MARK_KEY = 'o2m-mark';
+const MARK_PALETTES = ['violet-lime', 'orange-violet', 'lime-pink', 'orange-lime'];
+/* Swatch colours only — the ramps themselves live in the CSS blocks. 'original' is
+   spelled out because reading --ring-a-1 back would return whatever override is
+   active, not the design system's value. */
+const MARK_SWATCH = {
+  original:        ['#28285B', '#F8B132'],
+  'violet-lime':   ['#584F9D', '#B9CE06'],
+  'orange-violet': ['#393366', '#EA5634'],
+  'lime-pink':     ['#B03F72', '#B9CE06'],
+  'orange-lime':   ['#B04027', '#B9CE06'],
+};
+function markChoice() { return _lsGet(MARK_KEY); }
+function resolvedMark() {
+  const c = markChoice();
+  if (c) return c;
+  const m = /wave-([a-z-]+)\.jpg$/.exec(_basicBgUrl || '');   // the files are named after their pair
+  return (m && MARK_PALETTES.includes(m[1])) ? m[1] : 'original';
+}
+function applyMark() {
+  const k = resolvedMark();
+  const root = document.documentElement;
+  if (k === 'original') root.removeAttribute('data-mark');
+  else root.setAttribute('data-mark', k);
+}
+
 let _basicBgUrl = '';
 function initBasicBackground() {
   let url = basicBgUrl();
@@ -2927,6 +3038,7 @@ function initBasicBackground() {
   // URL is restricted to A-Za-z0-9+/= — neither can close the url() early.
   document.documentElement.style.setProperty('--basic-bg', 'url("' + url + '")');
   tuneBasicBackdrop(url);
+  applyMark();   // the default choice follows whichever picture was just drawn
 }
 
 /* ── The picture tunes the VEIL, not the palette ─────────────────────────────
@@ -3027,6 +3139,10 @@ function renderSettings() {
     `<button class="set-bg${cur === val ? ' sel' : ''}" data-bg="${objEsc(val)}" style="${css}" title="${objEsc(label)}">
        <span class="set-bg-tag">${objEsc(label)}</span></button>`;
   const pretty = n => n.replace(/^wave-/, '').replace(/\.jpg$/, '').replace(/-/g, ' ');
+  const mk = markChoice();
+  const markTile = (val, label, [a, b]) =>
+    `<button class="set-mark${mk === val ? ' sel' : ''}" data-mark-set="${objEsc(val)}"
+       style="--ma:${a};--mb:${b}" title="${objEsc(label)}"><i></i><span>${objEsc(label)}</span></button>`;
   body.innerHTML = `
     ${sheetHead('Settings')}
     <div class="set-sec">
@@ -3044,6 +3160,17 @@ function renderSettings() {
         <label class="wc-btn" for="set-bg-file">Upload a picture…</label>
         <input id="set-bg-file" type="file" accept="image/*" hidden>
         ${custom ? '<button class="wc-skip" id="set-bg-clear" style="margin:0">Remove mine</button>' : ''}
+      </div>
+    </div>
+    <div class="set-sec">
+      <div class="set-sec-h">Mark</div>
+      <div class="set-note">The O2M logo is two ramps, an ink half and an accent half.
+        These re-cut them from a background's own pair so the logo and the picture stop
+        reading as two brands. Bulletin only; every other theme keeps its own.</div>
+      <div class="set-marks" id="set-marks">
+        ${markTile('', 'Follow', MARK_SWATCH[resolvedMark()])}
+        ${markTile('original', 'Original', MARK_SWATCH.original)}
+        ${MARK_PALETTES.map(k => markTile(k, k.replace('-', ' '), MARK_SWATCH[k])).join('')}
       </div>
     </div>
     <div class="set-sec">
@@ -3083,6 +3210,10 @@ function renderSettings() {
     try { localStorage.removeItem(BASIC_BG_DATA); localStorage.setItem(BASIC_BG_KEY, ''); } catch (e) {}
     initBasicBackground(); renderSettings(); setFeedback('Background reset');
   });
+  body.querySelectorAll('.set-mark').forEach(b => b.addEventListener('click', () => {
+    try { localStorage.setItem(MARK_KEY, b.dataset.markSet); } catch (e) {}
+    applyMark(); renderSettings();
+  }));
   document.getElementById('set-warm-moods')?.addEventListener('click', () => triggerWarmup('moods'));
   document.getElementById('set-warm-genres')?.addEventListener('click', () => triggerWarmup('genres'));
   document.getElementById('set-warm-retry')?.addEventListener('click', () => triggerWarmup('retry_sentinels'));
