@@ -4590,7 +4590,15 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       const uri = getUri();
       if (uri && uri.startsWith('spotify:track:')) {
         fetch(API + '/track_saved?uri=' + encodeURIComponent(uri)).then(r => r.json())
-          .then(d => { p.favSpotify = d.saved; renderFav(p); }).catch(() => {});
+          .then(d => {
+            // The answer is about `uri`, not about whatever the panel shows when it
+            // lands. Spotify's round-trip outlives a short track or a skip, so
+            // without this the previous track's heart was painted onto the new one —
+            // a filled heart on a track that had never been a favourite, with the
+            // DB and the live check both saying otherwise.
+            if (getUri() !== uri) return;
+            p.favSpotify = d.saved; renderFav(p);
+          }).catch(() => {});
       }
       renderPlaylistEditor(editUnlocked ? uri : null, playlistsId);
     },
