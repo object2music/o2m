@@ -44,7 +44,7 @@ end
 begin
      prog = irexec
      button = KEY_VOLUMEUP
-     config = mpc volume +2
+     config = mpc volume +1
      repeat = 1
 end
 
@@ -53,7 +53,7 @@ end
 begin
      prog = irexec
      button = KEY_VOLUMEDOWN
-     config = mpc volume -2
+     config = mpc volume -1
      repeat = 1
 end
 
