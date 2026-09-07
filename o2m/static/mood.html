@@ -317,6 +317,19 @@
   .set-actions .wc-btn { padding: 10px 16px; }
   .set-select { font: inherit; color: inherit; background: transparent;
     border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; cursor: pointer; }
+  /* Shared sheet chrome — deliberately the object panel's head, so the two families
+     of sheet stop looking like two different components. */
+  .sheet-head { display: flex; align-items: flex-start; gap: 10px; text-align: left;
+    margin: 0 0 6px; }
+  .sheet-title { flex: 1; min-width: 0; font-size: var(--t-body-l); font-weight: 600;
+    color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sheet-close { background: none; border: 0; padding: 4px; cursor: pointer;
+    color: var(--muted); display: inline-flex; }
+  .sheet-close:hover { color: var(--text); }
+  .sheet-close svg { width: 18px; height: 18px; display: block; }
+  /* A sheet carrying the head reads as a panel, not a centred card: its body is
+     left-aligned and it takes the object panel's width. */
+  .wc-card:has(.sheet-head) { text-align: left; max-width: 620px; }
   #wc-backdrop { position: fixed; inset: 0; z-index: 395; background: rgba(0,0,0,.5);
     opacity: 0; visibility: hidden; transition: opacity .26s, visibility .26s; }
   #wc-backdrop.show { opacity: 1; visibility: visible; }
@@ -3011,7 +3024,7 @@ function renderSettings() {
        <span class="set-bg-tag">${objEsc(label)}</span></button>`;
   const pretty = n => n.replace(/^wave-/, '').replace(/\.jpg$/, '').replace(/-/g, ' ');
   body.innerHTML = `
-    <div class="wc-title">Settings</div>
+    ${sheetHead('Settings')}
     <div class="set-sec">
       <div class="set-sec-h">Basic background</div>
       <div class="set-note">Behind the Basic dashboard, in the Bulletin theme. Stored in this
@@ -3052,7 +3065,7 @@ function renderSettings() {
         </select>
       </div>
     </div>
-    <button class="wc-skip" id="set-close">Close</button>`;
+`;
 
   body.querySelectorAll('.set-bg').forEach(b => b.addEventListener('click', () => {
     try { localStorage.setItem(BASIC_BG_KEY, b.dataset.bg); } catch (e) {}
@@ -3071,7 +3084,6 @@ function renderSettings() {
   document.getElementById('set-warm-retry')?.addEventListener('click', () => triggerWarmup('retry_sentinels'));
   document.getElementById('set-clear-today')?.addEventListener('click', e => clearTodayHistory(e.currentTarget));
   initPickMode();
-  document.getElementById('set-close')?.addEventListener('click', () => setSheet('settings', false));
 }
 
 /* An upload is downscaled and re-encoded through a canvas before being stored: a
@@ -7486,13 +7498,34 @@ function setupCollapsibles() {
    flow is a stepped welcome overlay; steps ③-⑤ (box wiring / first box / tour) plug
    into renderWelcome later. */
 let _wcPoll = null;
-/* Both sheets share the backdrop, so opening/closing goes through here rather than
-   toggling the class in five places. Same behaviour as the details/object sheets. */
+/* ── Bottom sheets: one registry, one set of behaviours ────────────────────────
+   Every sheet opens over the shared backdrop and is dismissed the same three ways:
+   the head's ✕, Escape, or a click anywhere outside its content. `close` is what
+   dismissing MEANS for that sheet — the wizard records a skip, the others just
+   hide — and the array order is the stacking order, so the first one open is the
+   one those three gestures act on. Add a sheet here, not in five handlers. */
+const SHEETS = [
+  { id: 'settings', close: () => setSheet('settings', false) },
+  { id: 'pairing',  close: () => setSheet('pairing', false) },
+  { id: 'welcome',  close: () => _wcSkip() },
+];
+const sheetIsOpen = id => !!document.getElementById(id)?.classList.contains('show');
+function topSheet() { return SHEETS.find(s => sheetIsOpen(s.id)) || null; }
+function closeTopSheet() { const s = topSheet(); if (s) s.close(); return !!s; }
+
+/* The head every sheet shares: title left, ✕ right — the object panel's pattern,
+   so a sheet is dismissed the same way wherever you are. Was a centred title and a
+   text "Close" at the bottom of the card, which read as a different component. */
+function sheetHead(title) {
+  return `<div class="sheet-head">
+      <div class="sheet-title">${objEsc(title || '')}</div>
+      <button class="sheet-close" data-sheet-close title="Close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>`;
+}
+
 function setSheet(id, open) {
   document.getElementById(id)?.classList.toggle('show', open);
-  const anyOpen = ['welcome', 'pairing', 'settings']
-    .some(x => document.getElementById(x)?.classList.contains('show'));
-  document.getElementById('wc-backdrop')?.classList.toggle('show', anyOpen);
+  document.getElementById('wc-backdrop')?.classList.toggle('show', !!topSheet());
 }
 /* An already-populated instance never sees the wizard, so nothing would tell it that
    playback is unauthorised — every Spotify track would just fail. Show a dismissible
@@ -7559,7 +7592,8 @@ async function openPairingModal(onPaired) {
 
   const render = (msg, ok) => {
     const note = msg ? `<div class="wc-warn"><b>${ok ? 'Done' : 'Not paired yet'}</b>${objEsc(msg)}</div>` : '';
-    body.innerHTML = `<div class="wc-logo">O2M</div>
+    body.innerHTML = `${sheetHead('Playback')}
+      <div class="wc-logo">O2M</div>
       <div class="wc-step">Playback</div>
       <div class="wc-title">Authorise playback</div>
       <div class="wc-sub">Spotify requires a separate authorisation to play audio. Once per instance.</div>
@@ -7819,12 +7853,15 @@ async function init() {
   document.getElementById('obj-next')?.addEventListener('click', objFwdNav);
   document.getElementById('obj-actions')?.addEventListener('click', (e) => { e.stopPropagation(); openObjActions(e.currentTarget); });
   document.getElementById('obj-backdrop')?.addEventListener('click', closeObjPanel);
-  // Same affordance as the other sheets: tapping the backdrop closes the topmost one.
-  document.getElementById('wc-backdrop')?.addEventListener('click', () => {
-    if (document.getElementById('settings')?.classList.contains('show')) setSheet('settings', false);
-    else if (document.getElementById('pairing')?.classList.contains('show')) setSheet('pairing', false);
-    else if (document.getElementById('welcome')?.classList.contains('show')) _wcSkip();
-  });
+  // The three dismiss gestures, wired once from the registry.
+  document.getElementById('wc-backdrop')?.addEventListener('click', closeTopSheet);
+  SHEETS.forEach(sh => document.getElementById(sh.id)?.addEventListener('click', (e) => {
+    // A sheet is a full-width panel holding a narrower card, so on a wide screen
+    // there is sheet surface either side of it. Clicking there used to do nothing
+    // while clicking ABOVE the sheet (the backdrop) closed — that was the
+    // inconsistency. e.target is the sheet itself only for that empty surface.
+    if (e.target === e.currentTarget || e.target.closest?.('[data-sheet-close]')) sh.close();
+  }));
   document.getElementById('footer-settings')?.addEventListener('click', openSettings);
   document.getElementById('artist-name')?.addEventListener('click', () => {
     const a = (currentTrackObj?.artists || [])[0];
@@ -7862,8 +7899,7 @@ async function init() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (document.getElementById('settings')?.classList.contains('show')) setSheet('settings', false);
-    else if (document.body.classList.contains('obj-open')) closeObjPanel();
+    if (!closeTopSheet() && document.body.classList.contains('obj-open')) closeObjPanel();
   });
   // Content search: expand the field on the icon, debounce input, Enter = now.
   const searchBox = document.getElementById('search-box');
