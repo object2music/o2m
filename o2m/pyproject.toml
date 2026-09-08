@@ -22,11 +22,27 @@ description = "O2M's core logic: boxes, selection, popularity, catalogue and sta
 requires-python = ">=3.10"
 authors = [{ name = "Patrick Vincent" }]
 dependencies = [
-    "peewee",
-    "PyMysql",
-    "numpy",
+    "peewee",          # playhouse ships with it — not a separate requirement
+    "PyMysql",         # driver peewee loads for MySQLDatabase; never imported directly
     "requests",
     "spotipy",
+    # Kept deliberately. o2m_core.o2mtomopidy.get_podcast_from_url uses
+    # feeds.parse() and Extension.get_url_opener(). Reimplementing them would mean
+    # reproducing mopidy-podcast's URI contract byte for byte — the guid fallback
+    # to the enclosure url, uritools.uriencode with its exact safe set, and a feed
+    # base taken from the URL *after* redirects. That contract keys 8300+ existing
+    # Track rows, and playback resolves `podcast+` through mopidy-podcast anyway,
+    # so dropping the import would hide the dependency rather than remove it.
+    "mopidy-podcast",
+]
+
+# Only o2m_core.nfcreader needs these, and __init__.py is empty so importing the
+# package never pulls it in. A facade that does not read NFC cards (a Home
+# Assistant integration, say) can install the core without the smartcard stack.
+[project.optional-dependencies]
+nfc = [
+    "pyscard",         # provides the `smartcard` module
+    "events",
 ]
 
 [project.urls]
