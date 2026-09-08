@@ -306,7 +306,6 @@
 
   /* Marqueur éditorial devant les libellés de section */
   .panel-head::before,
-  #genres-label::before,
   #tracklist-label > span:first-child::before {
     content: var(--eyebrow-mark, ""); color: var(--eyebrow-color, var(--accent));
   }
@@ -763,7 +762,11 @@
     padding: 0; font-size: var(--t-body-s); text-transform: uppercase; letter-spacing: .01em;
     color: var(--text); font-weight: 600; font-family: var(--font-head);
     white-space: nowrap; flex-shrink: 0;
+    /* Opens what carries the tag; the separator is a ::before on the chip, so the
+       underline has to sit on the text alone or it would drag the slash with it. */
+    background: none; border: 0; cursor: pointer;
   }
+  .tag-chip:hover { color: var(--accent); }
   .tag-chip:not(:first-child)::before {
     content: "/"; margin: 0 9px; color: var(--eyebrow-color, var(--accent)); font-weight: 700;
   }
@@ -957,8 +960,7 @@
     #boxes-panel .panel-body { padding: 0 12px 14px; }
     #dials { padding: 4px 10px 2px; }
     #matrix-section { padding: 2px 10px 6px; min-width: 0; }
-    #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
-    #tracklist-section { padding: 0; }
+      #tracklist-section { padding: 0; }
     #tracklist-wrap { padding: 0 12px 10px; }
   }
 
@@ -1151,17 +1153,6 @@
                                 display: flex; gap: 8px; }
 
   /* ── Genres ── */
-  #genres-section { padding: 10px 14px 6px; }
-  #genres-label { font-size: 12px; color: var(--muted); text-transform: uppercase;
-                  letter-spacing: .08em; margin-bottom: 8px; }
-  #genres-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
-  .genre-chip {
-    padding: 5px 13px; border-radius: 0; font-size: var(--t-body-s); font-weight: 500;
-    border: none; background: var(--fill-2); color: var(--muted);
-    cursor: pointer; transition: all .15s;
-  }
-  .genre-chip.active { background: var(--accent); color: #fff; }
-  .genre-chip:active { transform: scale(.95); }
 
   /* ── Tracklist ── */
   #tracklist-section { padding: 10px 14px 4px; }
@@ -1173,7 +1164,7 @@
   #tracklist-count { font-size: var(--t-label); color: var(--muted); }
 
   /* Harmonisation des titres de section (comme les tags sous le titre) */
-  .panel-head, .dial-label, #genres-label,
+  .panel-head, .dial-label,
   #tracklist-label > span:first-child {
     font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s);
     text-transform: uppercase; letter-spacing: .02em; color: var(--text);
@@ -1519,15 +1510,6 @@
     display: inline-flex; align-items: center; gap: 6px;
   }
   .tb-eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--accent); flex-shrink: 0; }
-
-  /* Genre chips → o2m-chip : square, hairline border, mono, active = solid orange. */
-  #genres-wrap { gap: var(--sp-2); }
-  .genre-chip {
-    font-family: var(--font-mono); font-size: var(--t-label); letter-spacing: .1em;
-    text-transform: uppercase; padding: 6px 12px; font-weight: 500;
-    background: none; border: 1px solid var(--border); color: var(--muted);
-  }
-  .genre-chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #190E04); }
 
   /* Status badge → o2m-badge : mono label, leading colour square (kept). */
   #track-status-badge {
@@ -2463,11 +2445,6 @@
       </svg>
       <div class="dial-sub">focused ↔ adventurous</div>
     </div>
-  </div>
-  <div id="genres-section">
-    <div id="genres-label">Genres</div>
-
-    <div id="genres-wrap"></div>
   </div>
   </div><!-- /panel-body -->
   </div><!-- /left-panel -->
@@ -5119,26 +5096,6 @@ function startEditAuth() {
   }, 1000);
 }
 
-/* ── Genres ── */
-async function loadGenres() {
-  try {
-    const genres = await fetch(API + '/genres').then(r => r.json());
-    const wrap = document.getElementById('genres-wrap');
-    genres.slice(0, 20).forEach(g => {
-      const chip = document.createElement('button');
-      chip.className = 'genre-chip';
-      chip.textContent = g.name;
-      chip.dataset.name = g.name;
-      chip.addEventListener('click', () => {
-        chip.classList.toggle('active');
-        appState.genres = [...wrap.querySelectorAll('.genre-chip.active')].map(c => c.dataset.name);
-        scheduleApply();
-      });
-      wrap.appendChild(chip);
-    });
-  } catch(e) {}
-}
-
 /* ── Volume slider ── */
 let volumeTimer = null;
 document.getElementById('volume-slider').addEventListener('input', e => {
@@ -7181,6 +7138,29 @@ async function searchLoadMore() {
   } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Load more'; } }
 }
 
+/* A tag chip opens everything carrying that tag. It reuses the search view's
+   renderer — same rows, same sections — but its kind is 'Tag', not 'Search': the
+   header's editable query field belongs to a text search, and a tag is not one.
+   The answer is capped per type rather than paged (has_more false server-side), so
+   no "Load more" appears. */
+async function openTagSearch(tag) {
+  if (!tag) return;
+  objNavTo();
+  objSetHead('Tag', tag, 'tracks · albums · artists');
+  objSetActionUris([]);
+  openObjPanel();
+  objLoading('Loading…');
+  let d;
+  try { d = await fetch(API + '/tag_search?tag=' + encodeURIComponent(tag) + '&limit=25').then(r => r.json()); }
+  catch (e) { objBody().innerHTML = '<div class="obj-empty">Tag search failed.</div>'; return; }
+  if (!d || d.error) {
+    objBody().innerHTML = `<div class="obj-empty">${objEsc((d && d.error) || 'Tag search failed')}</div>`;
+    return;
+  }
+  _searchState = { q: tag, limit: 25, offset: 0, data: d };
+  _searchRender();
+}
+
 async function openSearch(q, opts) {
   const inPlace = !!(opts && opts.inPlace);   // live-edit from the header field: no nav push, no spinner
   if (!inPlace) objNavTo();
@@ -7358,9 +7338,14 @@ async function fetchAndRenderTrackTags(uri) {
   try {
     const tags = await fetch(API + '/track_tags?uri=' + encodeURIComponent(uri)).then(r => r.json());
     tags.slice(0, 12).forEach(({name}) => {
-      const chip = document.createElement('span');
+      // A button, not a span: it is an action, so it gets keyboard focus and a role
+      // for free rather than a click handler bolted onto inert text.
+      const chip = document.createElement('button');
+      chip.type = 'button';
       chip.className = 'tag-chip';
       chip.textContent = name;
+      chip.title = 'Show everything tagged ' + name;
+      chip.addEventListener('click', () => openTagSearch(name));
       bar.insertBefore(chip, evEl);
     });
   } catch(e) {}
@@ -7812,7 +7797,6 @@ function resetMood() {
   setDial('energy', appState.energy);
   setDial('valence', appState.valence);
   setDial('dl', appState.dl / 10);
-  document.querySelectorAll('#genres-wrap .genre-chip.active').forEach(c => c.classList.remove('active'));
   scheduleApply();
   setFeedback('Mood reset');
 }
@@ -8194,6 +8178,21 @@ async function init() {
   document.getElementById('obj-next')?.addEventListener('click', objFwdNav);
   document.getElementById('obj-actions')?.addEventListener('click', (e) => { e.stopPropagation(); openObjActions(e.currentTarget); });
   document.getElementById('obj-backdrop')?.addEventListener('click', closeObjPanel);
+  /* Clicking outside the object panel dismisses it, the same affordance as every
+     sheet. The backdrop alone could not carry this: from 700px up the panel is an
+     in-place overlay of the content area (absolute, inset 0) and the backdrop is
+     switched off entirely, so there was nothing outside it to click — searching or
+     opening an album simply would not close.
+     pointerdown, not click, so an opener that lives outside the panel still works:
+     we dismiss on the press, its own click then opens the new object, and the two
+     history entries cancel out. */
+  document.addEventListener('pointerdown', (e) => {
+    if (!document.body.classList.contains('obj-open')) return;
+    const panel = document.getElementById('obj-panel');
+    if (!panel || panel.contains(e.target)) return;
+    if (e.target.closest?.('#obj-backdrop')) return;   // its own handler covers it
+    closeObjPanel();
+  });
   // The three dismiss gestures, wired once from the registry.
   document.getElementById('wc-backdrop')?.addEventListener('click', closeTopSheet);
   SHEETS.forEach(sh => document.getElementById(sh.id)?.addEventListener('click', (e) => {
@@ -8265,7 +8264,6 @@ async function init() {
   });
   checkEditStatus();
   initOnboarding();
-  await loadGenres();
   await loadBoxes();
   // Laisse au WS le temps de s'ouvrir (≤300ms) → préfère WS sur HTTP mais ne bloque plus longtemps
   await Promise.race([wsReady, new Promise(r => setTimeout(r, 300))]);
