@@ -42,7 +42,7 @@ RUN pip install --break-system-packages --root-user-action=ignore -q \
 # o2m's own python deps (from mopidy/requirements.txt, minus the mopidy
 # extensions installed above and minus Iris).
 RUN pip install --break-system-packages --root-user-action=ignore -q \
-      spotipy requests mock six events yt_dlp mopidyapi \
+      spotipy requests mock six yt_dlp mopidyapi \
       peewee PyMysql numpy flask flask_cors flask_session mysql-connector-python
 
 # Compat shim: `mopidy.internal` was removed in Mopidy 4, but Mopidy-TuneIn
