@@ -189,6 +189,14 @@ if __name__ == "__main__":
         try:
             if mopidy is None:
                 mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
+                # Fail loudly on an incomplete player rather than at the first
+                # call on a code path nobody exercised. MopidyAPI satisfies the
+                # port today; this is the guard for whatever replaces it.
+                from o2m_core.player import check_conformance
+                _missing = check_conformance(mopidy)
+                if _missing:
+                    print(f"WARNING: the player does not satisfy o2m_core's port, "
+                          f"missing: {', '.join(_missing)}")
             o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
             strer = 0
         except Exception as err_value:
