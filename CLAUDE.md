@@ -30,11 +30,11 @@ docker compose --profile dev up -d
 ```
 
 ### Run the o2m Python tests
-Tests live in `o2m/src/test_popularity.py` (popularity scoring). Run from the repo root
-(package-prefixed, since it imports `src.popularity`):
+Tests live in `o2m/o2m_core/test_popularity.py` (popularity scoring). Run from the repo root
+(package-prefixed, since it imports `o2m_core.popularity`):
 ```bash
 cd o2m
-python3 -m unittest src.test_popularity
+python3 -m unittest o2m_core.test_popularity
 ```
 
 ### Run o2m locally (outside Docker)
@@ -49,7 +49,7 @@ python3 main.py
 
 The main application is in `o2m/main.py` — it starts Flask on port 6681 and wires everything together.
 
-### Key source files in `o2m/src/`:
+### Key source files in `o2m/o2m_core/`:
 - **`o2mtomopidy.py`** — Central logic class `O2mToMopidy`. Manages active NFC boxes, tracklist filling, Spotify recommendations, and stats tracking. This is where most business logic lives.
 - **`o2mmodels.py`** — Peewee ORM models. Connects to MySQL or SQLite based on `o2m.conf`; the connection is initialized at module import time. Current models:
   - **Core**: `Box` (an NFC object: content + settings), `Track` (one row per uri — stats AND cached metadata, the central table), `Stats_Raw` (one row per play: the raw log behind hourly habits), `PlaylistLog`.
@@ -79,7 +79,7 @@ state, not a box type, and is what the UI shows as STATUS. Observed in prod: `ne
 `library` 8,841 · `info` 7,110 · `podcast` 2,199 · `favorites` 765 · `hidden` 753 ·
 `incoming` 405 · `trash` 177 (plus 2,456 empty, i.e. never classified).
 
-## Popularity Algorithm (`o2m/src/popularity.py`)
+## Popularity Algorithm (`o2m/o2m_core/popularity.py`)
 
 `compute_popularity(...)` → a single float in **[0, 1]**, pure/DB-free, recomputed in
 batch by `DatabaseHandler.recompute_popularity` and persisted on `Track.popularity`.
@@ -104,7 +104,7 @@ top of the module):
 **except `trash` → forced 0**. Non-music (`podcast`/`info`, streams) is left unscored
 (`popularity = NULL`, `is_scorable` guard) and ignored by selection.
 
-## Auto-Selection Algorithm (`o2m/src/o2mtomopidy.py`)
+## Auto-Selection Algorithm (`o2m/o2m_core/o2mtomopidy.py`)
 
 `tracklistfill_auto` composes the AUTO mix from sources whose **proportions vary with
 `discover_level` (DL)**. Each source gets a linear weight in DL; the weights are then
@@ -176,7 +176,7 @@ all come from that shape. Radio France episodes used to be bare mp3 links
 unfinished pool, the volume ducking and the client's stream test. They are now converted
 to the `podcast+` shape (see below); the mp3 form survives only as a fallback.
 
-### Radio France (`o2m/src/radiofrance.py`)
+### Radio France (`o2m/o2m_core/radiofrance.py`)
 Two unrelated APIs, both used:
 - **livemeta** (`api.radiofrance.fr/livemeta/pull/<id>`) — what is playing *right now* on a
   live stream. No key.

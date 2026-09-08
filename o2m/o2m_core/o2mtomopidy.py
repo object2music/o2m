@@ -4,10 +4,10 @@ import random
 from mopidy_podcast import Extension, feeds
 from urllib import parse, error as url_error
 
-import src.util as util
-from src.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
-from src.spotifyhandler import SpotifyHandler
-from src import radiofrance as rf
+import o2m_core.util as util
+from o2m_core.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
+from o2m_core.spotifyhandler import SpotifyHandler
+from o2m_core import radiofrance as rf
 
 '''
 option_type 

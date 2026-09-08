@@ -1,9 +1,9 @@
 import logging, subprocess, os, spotipy, json, threading, requests
 
 from mopidyapi import MopidyAPI
-from src import util
-from src.o2mtomopidy import O2mToMopidy
-from src.spotifyhandler import SpotifyHandler
+from o2m_core import util
+from o2m_core.o2mtomopidy import O2mToMopidy
+from o2m_core.spotifyhandler import SpotifyHandler
 from time import sleep
 
 from flask import Flask, request, session, redirect
@@ -397,7 +397,7 @@ if __name__ == "__main__":
         per-DB, so an already-populated instance (incl. the o2m_0/o2m_1 shared prod DB)
         is never treated as fresh, and there's nothing to keep in sync."""
         from flask import jsonify, request
-        from src.o2mmodels import Playlist
+        from o2m_core.o2mmodels import Playlist
         try:
             liked = o2mHandler.dbHandler.count_cached('liked')
             albums = o2mHandler.dbHandler.count_cached('albums')
@@ -455,7 +455,7 @@ if __name__ == "__main__":
         system boxes to them, and creates the generic starter boxes. Pass dry_run=1 to
         get the plan without side effects. A marker box makes it a no-op once done."""
         from flask import jsonify
-        from src.o2mmodels import Box, Playlist
+        from o2m_core.o2mmodels import Box, Playlist
         data = request.get_json(silent=True) or {}
         dry = bool(data.get('dry_run'))
         db = o2mHandler.dbHandler
@@ -615,7 +615,7 @@ if __name__ == "__main__":
         except Exception as e:
             pass
         try:
-            from src import directory
+            from o2m_core import directory
             seen = {c.get('uri') for c in results['podcast_channels']}
             if first_page:
                 results['podcast_channels'] += [c for c in directory.search_podcasts(q, timeout=6)
@@ -625,7 +625,7 @@ if __name__ == "__main__":
         # A pasted radiofrance.fr page (show OR episode) resolves to the show plus
         # its recent episodes, so it can be played or added to a box directly.
         try:
-            from src import radiofrance as _rf
+            from o2m_core import radiofrance as _rf
             if first_page and _rf.is_rf_url(q):
                 hit = o2mHandler.rf_resolve_url(q)
                 if hit:
@@ -690,7 +690,7 @@ if __name__ == "__main__":
         if not url:
             return jsonify({'name': '', 'episodes': []})
         try:
-            from src import radiofrance as _rf
+            from o2m_core import radiofrance as _rf
             show = _rf.show_by_url(o2mHandler._rf_api_key, url)
             eps = _rf.episodes_of_show(o2mHandler._rf_api_key, url, first=30)
             return jsonify({'name': (show or {}).get('name', ''), 'image': '',
@@ -730,7 +730,7 @@ if __name__ == "__main__":
         browses (podcast: top charts of ?genre=, radio: top stations of the
         country). Items are ready-to-use box data lines."""
         from flask import jsonify
-        from src import directory
+        from o2m_core import directory
         kind = (request.args.get('kind') or '').strip()
         q = (request.args.get('q') or '').strip()
         country = (request.args.get('country') or '').strip() or None
@@ -774,7 +774,7 @@ if __name__ == "__main__":
     def api_directory_genres():
         """Localized podcast genre list (iTunes), for browsing the directory."""
         from flask import jsonify
-        from src import directory
+        from o2m_core import directory
         try:
             country = (request.args.get('country') or '').strip() or None
             return jsonify({'genres': directory.podcast_genres(country)})
@@ -1332,7 +1332,7 @@ if __name__ == "__main__":
     @api.route('/api/track_features')
     def api_track_features():
         from flask import jsonify
-        from src.o2mmodels import Track
+        from o2m_core.o2mmodels import Track
         uris = request.args.getlist('uri')[:40]
         if not uris:
             return jsonify({})
@@ -1558,7 +1558,7 @@ if __name__ == "__main__":
         if not cid:
             return ''
         try:
-            from src.o2mmodels import PodcastChannel
+            from o2m_core.o2mmodels import PodcastChannel
             ch = PodcastChannel.get_or_none(PodcastChannel.id == cid)
             if ch and (ch.title or '').strip():
                 return ch.title.strip()

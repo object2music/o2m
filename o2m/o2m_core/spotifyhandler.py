@@ -1,7 +1,7 @@
 import configparser, os, json, sys, random, re, time
 from pathlib import Path
 import spotipy as spotipy
-import src.util as util
+import o2m_core.util as util
 
 class SpotifyHandler:
     def __init__(self):
@@ -89,7 +89,7 @@ class SpotifyHandler:
         if not self._db:
             return
         try:
-            from src.o2mmodels import TagFeature
+            from o2m_core.o2mmodels import TagFeature
             if TagFeature.select().count() == 0:
                 self._seed_tag_features()
             self._reload_tag_features()
@@ -99,7 +99,7 @@ class SpotifyHandler:
 
     def _seed_tag_features(self):
         """Populate TagFeature from hardcoded class-level dicts (runs once on first startup)."""
-        from src.o2mmodels import TagFeature, db as _db
+        from o2m_core.o2mmodels import TagFeature, db as _db
         entries = {}  # tag → {energy, valence, mood, is_noise}
 
         for tag, (energy, valence) in self.__class__._TAG_FEATURES.items():
@@ -132,7 +132,7 @@ class SpotifyHandler:
 
     def _reload_tag_features(self):
         """Load TagFeature table into instance attributes, replacing hardcoded dicts."""
-        from src.o2mmodels import TagFeature
+        from o2m_core.o2mmodels import TagFeature
         tag_features = {}
         tag_mood_map = {}
         noise_tags = set()
@@ -715,7 +715,7 @@ class SpotifyHandler:
 
             # ── 1. Resolve seed tracks → artist IDs ────────────────────────
             if seed_tracks:
-                from src.o2mmodels import TrackArtist
+                from o2m_core.o2mmodels import TrackArtist
                 track_ids = seed_tracks if isinstance(seed_tracks, list) else [seed_tracks]
                 track_ids = [self.normalize_spotify_id(t) for t in track_ids if t][:3]
                 for track_id in track_ids:
@@ -983,7 +983,7 @@ class SpotifyHandler:
                     if self._db:
                         if resource_type == 'playlist':
                             try:
-                                from src.o2mmodels import Playlist
+                                from o2m_core.o2mmodels import Playlist
                                 p = Playlist.get_by_id(resource_id)
                                 if p and p.name:
                                     return p.name
@@ -1845,7 +1845,7 @@ class SpotifyHandler:
         if not artist_name:
             return None
         if self._db:
-            from src.o2mmodels import Artist
+            from o2m_core.o2mmodels import Artist
             try:
                 return Artist.get(Artist.name == artist_name).id
             except Exception:
@@ -1874,7 +1874,7 @@ class SpotifyHandler:
         """
         if not self._db:
             return {'error': 'no db'}
-        from src.o2mmodels import ArtistGenre, Artist
+        from o2m_core.o2mmodels import ArtistGenre, Artist
         existing_before = ArtistGenre.select().count()
         artist_ids = self._db.get_artist_ids_without_genres(max_count=30)
         if not artist_ids:
@@ -2544,7 +2544,7 @@ class SpotifyHandler:
             return []
         # Cache-first: get album IDs from AlbumArtist, then tracks from AlbumTrack
         if self._db:
-            from src.o2mmodels import AlbumArtist
+            from o2m_core.o2mmodels import AlbumArtist
             album_ids = [
                 r.album_id for r in
                 AlbumArtist.select(AlbumArtist.album_id).where(AlbumArtist.artist_id == artist_id)

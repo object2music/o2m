@@ -7,7 +7,7 @@ from playhouse.reflection import generate_models, print_model
 from playhouse.shortcuts import model_to_dict, dict_to_model
 
 
-from src.o2mmodels import (
+from o2m_core.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
@@ -340,7 +340,7 @@ class DatabaseHandler():
         Non-music content (podcasts/infos/radios) is left unscored (NULL).
         Returns the number of tracks updated. Cheap enough to run on demand or
         on a periodic TTL."""
-        from src.popularity import compute_popularity, is_scorable, DEFAULT_PRIOR_COMPLETION
+        from o2m_core.popularity import compute_popularity, is_scorable, DEFAULT_PRIOR_COMPLETION
         prior = self.get_completion_prior() or DEFAULT_PRIOR_COMPLETION
         now = datetime.datetime.utcnow()
         updated = 0
