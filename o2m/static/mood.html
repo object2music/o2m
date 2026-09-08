@@ -30,7 +30,14 @@
   (function () {
     var t = new URLSearchParams(location.search).get('theme')
           || localStorage.getItem('o2m2-theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', t);
+    /* Bulletin2 is a SKIN over Bulletin, not a sixth token set. It rides on
+       data-theme="creme", so every Bulletin rule — the design system's included,
+       and that file is replaced wholesale on each sync — applies to it unchanged,
+       and data-skin carries only what it changes. Declaring a sixth theme name
+       would have meant copying fifty tokens the design system already owns. */
+    var base = t === 'bulletin2' ? 'creme' : t;
+    document.documentElement.setAttribute('data-theme', base);
+    if (t !== base) document.documentElement.setAttribute('data-skin', t);
     /* Basic view: /basic = simplified actuators (default on mobile). Same page,
        the mode is a root class so CSS can swap the middle section without flash. */
     var basic = /\/basic\/?$/.test(location.pathname);
@@ -119,6 +126,76 @@
     --mx-bg: #FFFFFF;
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
+
+  /* ══ TEMPORARY — BULLETIN2, a trial skin over Bulletin ═══════════════════
+     Three things separate it from Bulletin:
+       1. the picture is painted under the WHOLE interface, in every view, not
+          just behind the Basic dashboard;
+       2. every ground becomes a frosted pane so the picture reads through it;
+       3. three interface colours are taken from the picture at runtime
+          (applySkinPalette) instead of being fixed by the theme.
+     It is a skin, not a theme: data-theme stays "creme", so it inherits the whole
+     Bulletin token set and every Bulletin rule, and only the overrides below are
+     its own. Delete this block and the chip to remove it.
+
+     ── Grounds ──
+     One lever does the whole interface: every surface in the page paints
+     --bg / --surface / --card / --header-bg, so turning those four translucent
+     lets the picture through everywhere at once — header, columns, tracklist,
+     sheets, footer — with no per-element rule.
+     The alpha values are not free. Measured over the worst pixel of the shipped
+     pictures (the violet), ink at 4.5:1 needs a white veil at about .45 and lands
+     at 6.5:1 by .55, which is where the reading surfaces sit. The header is
+     deliberately lighter (.42): it carries a few large words, not a body of text,
+     and it is the panel most worth seeing through. */
+  [data-skin="bulletin2"] {
+    --bg:        rgba(248,247,253,.50);
+    --surface:   rgba(238,235,248,.55);
+    --card:      rgba(255,255,255,.62);
+    --raised:    rgba(255,255,255,.78);
+    --header-bg: rgba(238,235,248,.42);
+    --track-bg:  rgba(222,217,240,.55);
+    --mx-bg:     rgba(255,255,255,.72);
+    --tile-off:  rgba(242,246,216,.38);
+    --tile-on:   rgba(255,255,255,.80);
+  }
+  /* The picture goes on the body, fixed, so it stays put while anything above it
+     scrolls and every pane samples the same image rather than its own crop.
+     background-color sits BEHIND background-image, so the translucent --bg above
+     costs nothing here. */
+  [data-skin="bulletin2"] body {
+    background-image: linear-gradient(var(--basic-bg-veil), var(--basic-bg-veil)),
+                      var(--basic-bg);
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+  /* Bulletin paints the same picture on the Basic section. Left in place it would
+     be a second, differently-cropped copy of the same image inside the first —
+     a visible seam right across the dashboard. */
+  [data-skin="bulletin2"] #basic-section { background-image: none; }
+  /* Frosting. Only the large containers carry the blur, not every pane: the cost
+     of backdrop-filter scales with the area it samples, and these already cover
+     the whole screen between them. */
+  [data-skin="bulletin2"] #top-zone,
+  [data-skin="bulletin2"] .col,
+  [data-skin="bulletin2"] #track-details,
+  [data-skin="bulletin2"] #footer-links,
+  [data-skin="bulletin2"] #welcome,
+  [data-skin="bulletin2"] #pairing,
+  [data-skin="bulletin2"] #settings,
+  [data-skin="bulletin2"] #obj-panel {
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+    backdrop-filter: blur(14px) saturate(1.1);
+  }
+  /* The columns carry the blur but declare no background of their own, so the
+     tracklist would sit straight on the blurred picture: --text over the picture's
+     dark violet is nowhere near readable. They get the ground as a pane, which is
+     what the blur is there to support. */
+  [data-skin="bulletin2"] .col { background: var(--bg); }
+  /* --bg is a translucent pane here, so anything that used it as INK has to be
+     given a real colour back. */
+  [data-skin="bulletin2"] #btn-auto.active { color: var(--on-accent); }
+  /* ══ end TEMPORARY (bulletin2) ═══════════════════════════════════════════ */
 
   /* ══ TEMPORARY — Bulletin: mark palettes aligned on the background ════════
      The mark is built from --ring-a-* (ink half) and --ring-b-* (accent half). On
@@ -2453,6 +2530,7 @@
       <!-- The key stays "creme": that is what existing users have persisted in
            o2m2-theme (the design system keeps it as an alias). -->
       <button class="theme-chip" data-theme-set="creme">Bulletin</button>
+      <button class="theme-chip" data-theme-set="bulletin2">Bulletin2</button>
       <button class="theme-chip" data-theme-set="mono">Mono</button>
       <button class="theme-chip" data-theme-set="overprint">Overprint</button>
       <button class="theme-chip" data-theme-set="invert">Invert</button>
@@ -3039,6 +3117,121 @@ function initBasicBackground() {
   document.documentElement.style.setProperty('--basic-bg', 'url("' + url + '")');
   tuneBasicBackdrop(url);
   applyMark();   // the default choice follows whichever picture was just drawn
+  applySkinPalette();
+}
+
+/* ── Bulletin2: three interface colours taken from the picture ───────────────
+   Done at your request, and the reservation stands: a colour lifted from an
+   arbitrary image carries no contrast guarantee, so this cannot be a general
+   mechanism — it is a trial confined to one skin. Two things keep the trial
+   readable enough to judge:
+     · greys, near-black and near-white are skipped. They are most of a photograph
+       and none of its identity, and picking one would hand the interface a colour
+       that says nothing;
+     · every pick is darkened until it clears the ground. Without that floor a pale
+       pick lands around 1.5:1 and the control it drives is simply not on screen —
+       you would be reading a bug, not a palette.
+   What each colour drives: the darkest becomes the mark's ink half, DISCOVERY and
+   energy; the lightest becomes the accent half, MOOD and valence; the middle one
+   (when the picture has three) becomes the accent. With two, the accent is the
+   darkest. Inline custom properties, so they also outrank the Mark picker's CSS —
+   in this skin the picture decides, and the picker has no effect.
+   Every other theme, and Bulletin itself, is untouched: the properties are removed
+   the moment the skin is not bulletin2. */
+const SKIN2_GROUND = [248, 247, 253];   // the light every pane lifts toward
+const SKIN2_RAMP = [0, .105, .21, .315, .42];   // the design system's own five steps
+const SKIN2_VARS = ['--accent', '--accent-press', '--accent-soft', '--c-dl',
+  '--c-opening', '--c-energy', '--c-mood', '--c-valence']
+  .concat([1, 2, 3, 4, 5].map(i => '--ring-a-' + i))
+  .concat([1, 2, 3, 4, 5].map(i => '--ring-b-' + i));
+
+function _hex(c) {
+  return '#' + c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16)
+    .padStart(2, '0')).join('').toUpperCase();
+}
+function _deepen(c, t) { return c.map(v => v * (1 - t)); }
+function _rampOf(c) { return SKIN2_RAMP.map(t => _hex(c.map(v => v + (255 - v) * t))); }
+/* Darken until it clears `min` on the ground. Returns the original when it already
+   does, so a picture whose colours are strong keeps them exactly. */
+function _readable(c, min) {
+  let out = c;
+  for (let t = 0.05; t <= 0.75 && _contrast(out, SKIN2_GROUND) < min; t += 0.05) out = _deepen(c, t);
+  return out;
+}
+function _dominantColours(data, n) {
+  const buckets = new Map();
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx < 26 || mn > 236) continue;                 // near-black, near-white
+    if (mx === 0 || (mx - mn) / mx < 0.22) continue;    // greys: no identity
+    const k = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);   // 4 bits per channel
+    const e = buckets.get(k) || [0, 0, 0, 0];
+    e[0] += r; e[1] += g; e[2] += b; e[3]++; buckets.set(k, e);
+  }
+  const ranked = [...buckets.values()].sort((a, b) => b[3] - a[3]);
+  if (!ranked.length) return [];   // a fully grey or blown-out picture
+  /* A bucket has to carry real weight to count. On a flat two-colour graphic the
+     third-ranked colour is the ANTI-ALIASING SEAM between the two flats — a blend
+     of lime and pink is a brown — and taking it handed the accent a muddy colour
+     that is nowhere in the picture. Measured on the shipped set: the two real
+     colours hold 100% and 73-98% of the top bucket, the seam 2-6%. Anything under
+     a sixth of the leader is an edge, not a colour. */
+  const floor = ranked[0][3] / 6;
+  // Keep the picks apart too: a picture built on one colour would otherwise hand
+  // back five shades of it, and the roles would be indistinguishable.
+  const out = [];
+  const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 60;
+  for (const e of ranked) {
+    if (e[3] < floor) break;
+    const c = [e[0] / e[3], e[1] / e[3], e[2] / e[3]];
+    if (out.every(o => far(o, c))) out.push(c);
+    if (out.length === n) break;
+  }
+  return out;
+}
+
+function applySkinPalette() {
+  const root = document.documentElement;
+  const clear = () => SKIN2_VARS.forEach(v => root.style.removeProperty(v));
+  if (root.getAttribute('data-skin') !== 'bulletin2' || !_basicBgUrl) { clear(); return; }
+  const img = new Image();
+  img.onerror = clear;
+  img.onload = () => {
+    if (root.getAttribute('data-skin') !== 'bulletin2') return;   // switched away mid-load
+    const N = 40, cv = document.createElement('canvas');
+    cv.width = N; cv.height = N;
+    let d;
+    try {
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, N, N);
+      d = ctx.getImageData(0, 0, N, N).data;
+    } catch (e) { clear(); return; }              // tainted canvas → keep the theme's
+    const picks = _dominantColours(d, 3);
+    if (picks.length < 2) { clear(); return; }    // too little colour to say anything
+    const dark = [...picks].sort((a, b) => _lum(a) - _lum(b));
+    let ink = _readable(dark[0], 4.5);                       // ink half: it carries text
+    const comp = _readable(dark[dark.length - 1], 3.0);      // accent half: a graphic
+    // With two colours the accent is the ink itself. That is the design system's own
+    // reasoning for this theme — the accent reads as the ink raised in intensity,
+    // not as a guest colour — and it is what a two-colour picture actually offers.
+    const acc = _readable(dark.length > 2 ? dark[1] : dark[0], 4.5);
+    // The mark is two halves parted by a ground-coloured gap; below 3:1 between them
+    // it reads as one flat disc, so the ink half keeps going down until they part.
+    for (let t = 0.05; t <= 0.6 && _contrast(ink, comp) < 3.0; t += 0.05) ink = _deepen(dark[0], t);
+    const ra = _rampOf(ink), rb = _rampOf(comp);
+    const set = (k, v) => root.style.setProperty(k, v);
+    ra.forEach((v, i) => set('--ring-a-' + (i + 1), v));
+    rb.forEach((v, i) => set('--ring-b-' + (i + 1), v));
+    set('--accent', _hex(acc));
+    set('--accent-press', _hex(_deepen(acc, .18)));
+    set('--accent-soft', `rgba(${acc.map(Math.round).join(',')},.12)`);
+    set('--c-dl', _hex(acc));
+    set('--c-opening', _hex(ink));  set('--c-energy', _hex(ink));
+    set('--c-mood', _hex(comp));    set('--c-valence', _hex(comp));
+    readThemeColors();   // the matrix reads its colours from the tokens, not the DOM
+  };
+  img.src = _basicBgUrl;
 }
 
 /* ── The picture tunes the VEIL, not the palette ─────────────────────────────
@@ -7586,10 +7779,15 @@ function fitHeroTitle() {
 /* ── Init ── */
 /* ── Thèmes ── */
 function applyTheme(name) {
-  document.documentElement.setAttribute('data-theme', name);
-  localStorage.setItem('o2m2-theme', name);   // clé séparée : mood2 n'écrase pas mood
+  // See the pre-paint script: bulletin2 is Bulletin plus a skin.
+  const base = name === 'bulletin2' ? 'creme' : name;
+  document.documentElement.setAttribute('data-theme', base);
+  if (name === base) document.documentElement.removeAttribute('data-skin');
+  else document.documentElement.setAttribute('data-skin', name);
+  localStorage.setItem('o2m2-theme', name);   // separate key: mood2 never overwrites mood
   document.querySelectorAll('.theme-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.themeSet === name));
+  applySkinPalette();   // bulletin2 takes three colours from the picture; others clear them
   if (name === 'invert') updateHeroAccent(matrixCurUri);
   else document.documentElement.style.removeProperty('--hero-accent');
   document.getElementById('top-zone')?.classList.remove('cover-lit');  // reset overprint recolor toggle
