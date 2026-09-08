@@ -1257,6 +1257,29 @@ if __name__ == "__main__":
         return jsonify([{'name': name, 'weight': weight}
                         for name, weight in sorted(tags, key=lambda x: -x[1])])
 
+    @api.route('/api/tag_search')
+    def api_tag_search():
+        """Everything carrying one genre/tag — tracks, albums, artists.
+
+        Same row shapes as /api/search so the search view renders it unchanged.
+        DB only: a tag is our own enrichment, there is nothing to ask Spotify.
+        has_more is false because the answer is capped per type rather than paged —
+        a tag is a browse, not a query being narrowed."""
+        from flask import jsonify
+        tag = (request.args.get('tag') or '').strip()
+        if not tag:
+            return jsonify({'error': 'tag required'}), 400
+        try:
+            limit = max(1, min(int(request.args.get('limit') or 25), 50))
+        except Exception:
+            limit = 25
+        try:
+            d = o2mHandler.dbHandler.search_by_genre(tag, limit=limit)
+            d['has_more'] = False
+            return jsonify(d)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/warmup_retry_sentinels')
     def api_warmup_retry_sentinels():
         """Trigger full retry of all sentinel tracks via the complete Last.fm chain (background)."""
