@@ -122,6 +122,27 @@ def _install_mopidy4_model_compat():
 
 _install_mopidy4_model_compat()
 
+
+# --- Playback event transport -------------------------------------------------
+# Mopidy playback events reach us one of two ways:
+#   'websocket'  the mopidyapi client below (historic, still the default)
+#   'http'       pushed in-process by the Mopidy-O2M extension's frontend,
+#                which POSTs to /api/event
+# Exactly one is authoritative, so an event is never counted twice. The websocket
+# transport is what the two compat shims above exist to prop up; switching to
+# 'http' is what eventually retires them.
+#
+# Set with O2M_EVENT_SOURCE. Changing it needs only an o2m restart — no image
+# rebuild — so the switch and the rollback are both cheap.
+_EVENT_SOURCE = (os.environ.get("O2M_EVENT_SOURCE") or "websocket").strip().lower()
+
+# Filled in where the handlers are defined, which sits inside the Spotify-config
+# block: with no Spotify config there are no handlers at all, and /api/event
+# reports that rather than pretending it dispatched. That gate is pre-existing
+# behaviour, mirrored here deliberately rather than quietly widened.
+_EVENT_HANDLERS = {}
+
+
 if __name__ == "__main__":
 
 #CONFS AND CONSTS
@@ -1776,6 +1797,69 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/event', methods=['POST'])
+    def api_event():
+        """Playback event pushed in-process by the Mopidy-O2M extension.
+
+        The alternative to the websocket listener: the extension receives the
+        event as a method call inside Mopidy and POSTs it here, so there is no
+        socket to drop, no reconnection to get wrong and no model marker to
+        deserialise — the three things that have each silently killed stats and
+        refill while playback carried on.
+
+        Accepted always, dispatched only when this instance is configured to
+        take events over HTTP (O2M_EVENT_SOURCE=http). Otherwise the websocket
+        listener is authoritative and this reports dispatched=false, so the two
+        transports can both be live without double-counting a play.
+        """
+        from flask import jsonify
+        payload = request.get_json(silent=True) or {}
+        name = payload.get('event')
+        if name not in _EVENT_HANDLERS and name not in (
+            'track_playback_started', 'track_playback_ended', 'track_playback_paused'
+        ):
+            return jsonify({'error': f'unknown event {name!r}'}), 400
+
+        if _EVENT_SOURCE != 'http':
+            return jsonify({'ok': True, 'dispatched': False, 'source': _EVENT_SOURCE})
+
+        handler = _EVENT_HANDLERS.get(name)
+        if handler is None:
+            # No handlers registered at all — this instance has no Spotify
+            # config, so it never listened for these events on any transport.
+            return jsonify({'ok': True, 'dispatched': False, 'reason': 'no handlers'})
+
+        # Rebuild just enough of the event shape the handlers read: event name,
+        # tl_track.tlid, tl_track.track.{uri,name,length,track_no} and
+        # time_position. SimpleNamespace rather than a Mopidy model on purpose —
+        # the API must not depend on Mopidy's model classes.
+        from types import SimpleNamespace
+        tl = payload.get('tl_track') or {}
+        tr = tl.get('track') or {}
+        if not tr.get('uri'):
+            return jsonify({'error': 'tl_track.track.uri is required'}), 400
+        event = SimpleNamespace(
+            event=name,
+            time_position=payload.get('time_position') or 0,
+            tl_track=SimpleNamespace(
+                tlid=tl.get('tlid'),
+                track=SimpleNamespace(
+                    uri=tr.get('uri'),
+                    name=tr.get('name'),
+                    length=tr.get('length'),
+                    track_no=tr.get('track_no'),
+                ),
+            ),
+        )
+        try:
+            handler(event)
+        except Exception as e:
+            # Never 500 back into Mopidy's sender thread for a stats failure:
+            # report it and let playback carry on.
+            print(f"api_event({name}) failed: {e}")
+            return jsonify({'ok': False, 'dispatched': False, 'error': str(e)}), 200
+        return jsonify({'ok': True, 'dispatched': True})
+
     @api.route('/mood2')
     def mood2_ui():
         # Transitional alias → same as /mood (kept so existing test links don't 404).
@@ -2238,6 +2322,11 @@ with the house Premium account.</li>
         # Fonction called when track started
         @mopidy.on_event("track_playback_started")
         #@mopidy.audio.AudioListener.state_changed("PAUSED","PLAYING",None)
+        def on_ws_track_started(event):
+            if _EVENT_SOURCE != "websocket":
+                return  # the extension pushes this over HTTP instead
+            track_started_event(event)
+
         def track_started_event(event):
             track = event.tl_track.track
             print (event)
@@ -2389,11 +2478,23 @@ with the house Premium account.</li>
 
         @mopidy.on_event("track_playback_ended")
         def event_track_playback_ended(event):
+            if _EVENT_SOURCE != "websocket":
+                return  # the extension pushes this over HTTP instead
             track_ended_event(event)
 
         @mopidy.on_event("track_playback_paused")
         def event_track_playback_paused(event):
+            if _EVENT_SOURCE != "websocket":
+                return  # the extension pushes this over HTTP instead
             track_ended_event(event)
+
+        # Publish the handlers for the HTTP transport. Same functions, same
+        # closure over o2mHandler/mopidy — only the transport differs, so the
+        # two paths can never drift apart.
+        _EVENT_HANDLERS["track_playback_started"] = track_started_event
+        _EVENT_HANDLERS["track_playback_ended"] = track_ended_event
+        _EVENT_HANDLERS["track_playback_paused"] = track_ended_event
+        print(f"Mopidy event transport: {_EVENT_SOURCE}")
 
     # Fonction called when status change ie : stop but impossible to catch track before
     """@mopidy.on_event('playback_state_changed')

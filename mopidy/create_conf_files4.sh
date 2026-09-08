@@ -53,6 +53,10 @@ enabled = true
 # and must not be used here — it is not reachable from this container.
 # O2M_API_URL overrides the whole thing for bare-metal installs.
 api_url = ${O2M_API_URL:-http://o2m:6681/api/}
+# The frontend pushes playback events to that API. The o2m service only acts
+# on them when it runs with O2M_EVENT_SOURCE=http; otherwise it accepts and
+# ignores them and its websocket listener stays authoritative.
+forward_events = ${O2M_FORWARD_EVENTS:-true}
 CONF
 chmod 666 /etc/mopidy/mopidy.conf
 echo "mopidy.conf created (Mopidy 4, no Iris)."
