@@ -36,14 +36,6 @@ dependencies = [
     "mopidy-podcast",
 ]
 
-# Only o2m_core.nfcreader needs these, and __init__.py is empty so importing the
-# package never pulls it in. A facade that does not read NFC cards (a Home
-# Assistant integration, say) can install the core without the smartcard stack.
-[project.optional-dependencies]
-nfc = [
-    "pyscard",         # provides the `smartcard` module
-    "events",
-]
 
 [project.urls]
 Homepage = "https://github.com/object2music/o2m"

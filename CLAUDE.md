@@ -59,13 +59,16 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   **Schema migrations**: `SCHEMA_VERSION` (currently **21**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
 - **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, and auth.
-- **`nfcreader.py`** — NFC/smartcard reader integration via `pyscard`. Fires events on card insert/remove.
 
 ### Configuration
 Config is read from `/etc/mopidy/o2m.conf` (Linux) or `~/.config/mopidy/o2m.conf` (macOS). In Docker, `o2m/create_conf_files.sh` generates this file from environment variables at container start. Key sections: `[o2m]`, `[spotipy]`, `[spotify]`, `[local]`.
 
 ### Data flow
-1. NFC card detected by `nfcreader.py` → triggers `O2mToMopidy.get_new_cards()`
+1. NFC card detected by the **separate** reader project
+   ([object2music/o2m_nfc](https://github.com/object2music/o2m_nfc)), which activates
+   the box through the O2M API — it is not part of this repo. The old in-tree
+   `nfcreader.py` was dead since 2023 (it still called a `get_new_cards()` that no
+   longer existed) and has been removed.
 2. Card UID looked up in `Box` table → retrieves media data (Spotify URI, M3U playlist path, podcast URL, etc.)
 3. `box_action()` builds and fills the Mopidy tracklist based on box type and `option_type`
 4. `discover_level` (0–10) controls the ratio of familiar vs. new tracks

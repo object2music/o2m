@@ -3,7 +3,6 @@ spotipy
 requests
 mock
 six
-events
 
 # mopidy websocket client
 mopidyapi
