@@ -8,7 +8,11 @@ version = "0.2.0"
 description = "Mopidy extension for O2M — object-driven playback and playlist building"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
+# The repository is GPL v3 (see LICENSE at its root), so this cannot be
+# Apache-2.0 as it wrongly claimed. Declared as -only rather than
+# -or-later because the bare LICENSE file asserts no "any later version"
+# clause; change it if that is the intent.
+license = { text = "GPL-3.0-only" }
 authors = [{ name = "Patrick Vincent" }]
 dependencies = [
     # No upper bound on purpose. A `< 4` pin is actively harmful here: pip
@@ -19,6 +23,17 @@ dependencies = [
     # config.read, config.String, registry) is unchanged in Mopidy 4.
     "mopidy >= 3.4",
     "Pykka >= 2.0.1",
+]
+
+# `Framework :: Mopidy` is what makes the extension discoverable as one on
+# PyPI, and is the convention every listed extension follows.
+classifiers = [
+    "Framework :: Mopidy",
+    "Environment :: No Input/Output (Daemon)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
 ]
 
 [project.urls]
