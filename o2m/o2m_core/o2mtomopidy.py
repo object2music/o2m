@@ -8,6 +8,7 @@ import o2m_core.util as util
 from o2m_core.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
 from o2m_core.spotifyhandler import SpotifyHandler
 from o2m_core import radiofrance as rf
+from o2m_core import boxdirectives as bdir
 
 '''
 option_type 
@@ -88,6 +89,16 @@ class O2mToMopidy:
         self.mood_energy = 0.5     # float 0.0-1.0 target energy
         self.mood_valence = 0.5    # float 0.0-1.0 target valence (ambiance)
         self.mood_genres = []      # list of genre name strings
+
+        # ── Who wins: the box's own mood/DL, or the dials? ───────────────────
+        # A box states an intent ("this object is calm"); so does a hand on a dial.
+        # The later one wins, which is why these are timestamps and not booleans:
+        # touching a dial outranks the active box, and putting a new object down is
+        # itself a fresh intent that outranks the dial again. A session-wide boolean
+        # (what discover_level_on still is, kept for the legacy paths) could only
+        # say "the dials have spoken, forever".
+        self._ui_touched_at = {'dl': None, 'mood': None}
+        self._box_activated_at = None
 
         # ── Radio now-playing + auto-save to library ─────────────────────────
         self._radio_np = None          # last known {title,artist,album,key,is_music,source} for the UI
@@ -225,6 +236,71 @@ class O2mToMopidy:
         return self._local_to_spotify.get(uri, uri)
 
 #TAG MANAGEMENT
+    @staticmethod
+    def stats_hour():
+        """The hour listening HABITS are keyed on — always UTC.
+
+        Two different notions of "now" live in this file and they must not be
+        confused. read_hour is written in UTC (update_stat_raw) across 100k+ rows,
+        so every lookup against it asks in UTC: this is an internal correlation, it
+        does not need to be human-readable. Everything a person reads or writes —
+        a box's time window, a broadcast schedule — uses local time instead, which
+        is what datetime.now() gives now that the containers set TZ.
+        """
+        return datetime.datetime.now(datetime.timezone.utc).hour
+
+    def note_ui_override(self, what):
+        """Record a dial gesture ('dl' or 'mood') as the newest intent."""
+        self._ui_touched_at[what] = datetime.datetime.now()
+
+    def note_box_activation(self):
+        """Record that an object was PUT DOWN — a fresh intent that outranks the
+        dials again.
+
+        Deliberately not called from box_action: eight internal paths go through
+        that (cascade includes, every reload, applying a mood), so stamping there
+        made a rebuild count as a new activation and the dial gesture that caused
+        the rebuild lost to the box it was meant to override."""
+        self._box_activated_at = datetime.datetime.now()
+
+    def ui_override_active(self, what):
+        """Does the dial still outrank the active box for this setting?"""
+        t = self._ui_touched_at.get(what)
+        if t is None:
+            return False
+        return self._box_activated_at is None or t > self._box_activated_at
+
+    def effective_mood(self, box):
+        """(energy, valence) for a fill, by the settled precedence:
+        dial gesture newer than the activation, else a box directive (a matching
+        time window beats an unconditional line), else the box column, else the
+        session default."""
+        if self.ui_override_active('mood'):
+            return self.mood_energy, self.mood_valence
+        d = bdir.read_directives(getattr(box, 'data', '') or '')
+        energy = d['energy']
+        valence = d['valence']
+        if energy is None:
+            energy = getattr(box, 'option_energy', None)
+        if valence is None:
+            valence = getattr(box, 'option_valence', None)
+        if energy is None:
+            energy = self.mood_energy
+        if valence is None:
+            valence = self.mood_valence
+        return energy, valence
+
+    def effective_dl(self, box):
+        """Discover level for a fill, same precedence as effective_mood."""
+        if self.ui_override_active('dl') or self.discover_level_on:
+            return self.discover_level
+        dl = bdir.read_directives(getattr(box, 'data', '') or '')['dl']
+        if dl is None:
+            dl = getattr(box, 'option_discover_level', None)
+        if dl is None:
+            dl = self.discover_level
+        return int(dl)
+
     def box_action(self,box):
         if self.configO2M["discover"] == "true":
             try: 
@@ -422,7 +498,7 @@ class O2mToMopidy:
         if box == None:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
-        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results, "library","o2m:history")
+        go = self.add_tracks(box, self.get_common_tracks(self.stats_hour(),window,max_results), max_results, "library","o2m:history")
         #go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info","o2m:info")
         if go > 0:
             self.play_or_resume()
@@ -910,12 +986,9 @@ class O2mToMopidy:
             window = int(round(discover_level / 2))
             tracklist_uris= []
 
-            # Effective mood criteria: box option overrides else global context (default 0.5/0.5).
-            # Applied to every entry below to bias selection towards energy/ambiance.
-            energy = getattr(active_box, 'option_energy', None)
-            if energy is None: energy = self.mood_energy
-            valence = getattr(active_box, 'option_valence', None)
-            if valence is None: valence = self.mood_valence
+            # Effective mood criteria — see effective_mood for the precedence
+            # (dial gesture > box directive > box column > session default).
+            energy, valence = self.effective_mood(active_box)
             radius = discover_level / 20.0 + 0.05   # DL=0 → 0.05, DL=10 → 0.55 (same as apply_mood_settings)
             OVERSAMPLE, POOL_CAP = 3, 60
             def _pool(c): return min(c * OVERSAMPLE, POOL_CAP)   # oversampled fetch size for an entry
@@ -966,7 +1039,7 @@ class O2mToMopidy:
             #Common tracks
             if base_counts.get('common', 0) > 0:
                 print(f"\nAUTO : Common {base_counts['common']} tracks\n")
-                common = self.get_common_tracks(datetime.datetime.now().hour,window,_pool(base_counts['common']))
+                common = self.get_common_tracks(self.stats_hour(),window,_pool(base_counts['common']))
                 common = self._mood_pick(common, base_counts['common'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, common, base_counts['common'], "library","o2m:history")
 
@@ -1107,7 +1180,9 @@ class O2mToMopidy:
                 continue
             label = None
             for raw in (box.data or '').splitlines():
-                line = raw.strip()
+                # A time window says WHEN a line plays, not whether the box refers to
+                # it: drop the prefix so a gated feed is still catalogued and listed.
+                line = bdir.split_condition(raw)[1]
                 if not line:
                     continue
                 if line.startswith('#'):
@@ -1130,7 +1205,9 @@ class O2mToMopidy:
         for box in Box.select():
             label = None
             for raw in (box.data or '').splitlines():
-                line = raw.strip()
+                # A time window says WHEN a line plays, not whether the box refers to
+                # it: drop the prefix so a gated feed is still catalogued and listed.
+                line = bdir.split_condition(raw)[1]
                 if not line:
                     continue
                 if line.startswith('podcast+'):
@@ -1329,16 +1406,10 @@ class O2mToMopidy:
             return max(0, max_results - live - _planned[0])
         if max_results>0:
             
-            #If discover level has been pushed by api since the begining of session, we priorise it
-            discover_level = self.discover_level
-            if not(self.discover_level_on) and (self.get_option_for_box(box, "option_discover_level")!=None) :
-                discover_level = self.get_option_for_box(box, "option_discover_level")
-
-            # Effective mood criteria for cache-expansion filtering (box option else global context)
-            energy = getattr(box, 'option_energy', None)
-            if energy is None: energy = self.mood_energy
-            valence = getattr(box, 'option_valence', None)
-            if valence is None: valence = self.mood_valence
+            # Discover level and mood — see effective_dl / effective_mood for the
+            # precedence (dial gesture > box directive > box column > session default).
+            discover_level = self.effective_dl(box)
+            energy, valence = self.effective_mood(box)
 
             # Smart selection (popularity/mood/cooldown via _expand_pick) is the DEFAULT:
             # it applies when option_sort is 'smart' OR unspecified (NULL/empty).
@@ -1395,6 +1466,16 @@ class O2mToMopidy:
                     print(f"rf:sujet prefetch pool: {e}")
 
             for content in data:
+                # A time window may prefix ANY line. Outside its window the line is
+                # as if absent; inside it, the prefix is stripped and the rest is
+                # dispatched normally — so gating the news to the morning costs the
+                # branches below nothing. Directives (dl:/mood:) were already read
+                # by the pre-pass in effective_dl / effective_mood, so they must not
+                # fall through to the branches and be mistaken for content.
+                _applies, content = bdir.line_applies(content)
+                if not _applies or bdir.is_directive(content):
+                    continue
+
                 #Other box called (cascade include)
                 if "box:" in content :
                     box_uid = content.split(":", 1)[1].strip()
@@ -1434,7 +1515,7 @@ class O2mToMopidy:
                 elif "herenow:library" in content :
                     window = int(round(discover_level / 2))
                     max_result1 = int(round(max_results/2))
-                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+                    tracklist_uris.append(self.get_common_tracks(self.stats_hour(),window,max_result1))
                     tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
 
                 # auto:library testing (daily habits + library auto extract)
@@ -1485,7 +1566,7 @@ class O2mToMopidy:
                 elif "now:library" in content :
                     print ("now:library")
                     window = int(round(discover_level / 2))
-                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
+                    tracklist_uris.append(self.get_common_tracks(self.stats_hour(),window,max_results))
 
                 # infos:library (more recent news podcasts (to be updated))
                 elif "infos:library" in content :
@@ -1901,7 +1982,7 @@ class O2mToMopidy:
         feeds, shows, subjects = set(), set(), set()
         for b in Box.select():
             for raw in (b.data or '').splitlines():
-                line = raw.strip()
+                line = bdir.split_condition(raw)[1]   # see the note above: when ≠ whether
                 if not line or line.startswith('#'):
                     continue
                 if line.startswith('podcast+'):
@@ -2529,7 +2610,7 @@ class O2mToMopidy:
 
                 if box is None:
                     # Fallback: pick a box from stats_raw history matching current hour
-                    hour = datetime.datetime.now().hour
+                    hour = self.stats_hour()   # keyed on read_hour, which is UTC
                     try:
                         uris = self.dbHandler.get_stat_raw_by_hour(hour, window, 1, 'box:')
                     except Exception as e:
@@ -2714,6 +2795,9 @@ class O2mToMopidy:
         data = box.data.split("\n")
         data = [x for x in data if not x.startswith('#')]
         data = [x for x in data if not x.startswith('\r')]
+        # Strip any time-window prefix: the substring test below would otherwise
+        # match and hand back a "08:00-10:00 > spotify:playlist:…" as the uri.
+        data = [bdir.split_condition(x)[1] for x in data]
         #Loop on lines containing the playlist uris
         for content in data:
             #Taking the first one. Pb if manies ?
@@ -3339,12 +3423,14 @@ class O2mToMopidy:
             #stat.read_end = True
             stat.read_count_end += 1
             if stat.read_count_end > 0 and stat.day_time_average != None:
+                # Same frame as read_hour (UTC): this averages listening hours and is
+                # only ever compared against them, never shown to anyone.
                 stat.day_time_average = (
-                    datetime.datetime.now().hour
+                    self.stats_hour()
                     + stat.day_time_average * (stat.read_count_end - 1)
                 ) / (stat.read_count_end)
             else:
-                stat.day_time_average = datetime.datetime.now().hour
+                stat.day_time_average = self.stats_hour()
         elif (fix == False):
             #if stat.read_end != True: stat.read_end = False
             stat.skipped_count += 1

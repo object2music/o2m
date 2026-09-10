@@ -289,6 +289,7 @@ if __name__ == "__main__":
                 try:
                     o2mHandler.activeboxs.append(box)  #adding box to list
                     print(f"added box {box}") 
+                    o2mHandler.note_box_activation()   # newest intent: outranks the dials
                     o2mHandler.box_action(box)
                     #box.add_count()  # Incrémente le compteur de contacts pour ce box
                     return "TAG added"
@@ -1060,6 +1061,7 @@ if __name__ == "__main__":
         if dl != None:
             o2mHandler.discover_level = int(dl)
             o2mHandler.discover_level_on = True
+            o2mHandler.note_ui_override('dl')   # newest intent: outranks the active box
 
             #Should we relaunch when dl is changed?
             state = o2mHandler.mopidyHandler.playback.get_state()
@@ -1391,6 +1393,13 @@ if __name__ == "__main__":
             o2mHandler.mood_genres = data['genres'] if isinstance(data['genres'], list) else []
         if 'discover_level' in data:
             o2mHandler.discover_level = int(data['discover_level'])
+        # A dial gesture is the newest intent and outranks the active box's own
+        # mood/DL — until the next object is put down. Either axis counts: the
+        # matrix sends both, the BASIC mood dial can send one.
+        if 'energy' in data or 'valence' in data:
+            o2mHandler.note_ui_override('mood')
+        if 'discover_level' in data:
+            o2mHandler.note_ui_override('dl')
         # apply=false → store the settings only (no rebuild, no auto-box launch).
         # Used by the /basic view when no actuator is on: the dials set the values
         # that the next Music launch will use.
@@ -2472,7 +2481,9 @@ with the house Premium account.</li>
                         if active_box.data == 'spotify:favorites':
                             library_link = 'o2m:favorites'
                         else:
-                            data_lines = [x for x in active_box.data.split("\n")
+                            from o2m_core import boxdirectives as _bdir
+                            data_lines = [_bdir.split_condition(x)[1]
+                                          for x in active_box.data.split("\n")
                                           if not x.startswith('#') and not x.startswith('\r')]
                             for content in data_lines:
                                 if 'spotify:playlist' in content:
