@@ -1388,8 +1388,13 @@ if __name__ == "__main__":
     @api.route('/api/mood', methods=['GET'])
     def api_mood_get():
         from flask import jsonify
-        dist = o2mHandler.dbHandler.get_mood_distribution()
-        pending = o2mHandler.dbHandler.count_tracks_without_mood()
+        # ?light=1 skips the two aggregates over the whole track table, which cost
+        # ~590ms against the shared production database. The UI polls this to catch
+        # a box activated elsewhere (an NFC tap, another device), and neither the
+        # distribution nor the pending count is used for that.
+        light = request.args.get('light') in ('1', 'true')
+        dist = {} if light else o2mHandler.dbHandler.get_mood_distribution()
+        pending = 0 if light else o2mHandler.dbHandler.count_tracks_without_mood()
         # What is ACTUALLY driving the mix right now. The three values above are the
         # session's — the dials' own state — and a box that forces a mood or a
         # discover level outranks them until a dial is touched. Without this the

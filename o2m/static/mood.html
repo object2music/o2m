@@ -7411,7 +7411,7 @@ function updateBoxesCount() {
    the mix changes. */
 async function syncMoodDials() {
   let s;
-  try { s = await fetch(API + '/mood').then(r => r.json()); } catch (e) { return; }
+  try { s = await fetch(API + '/mood?light=1').then(r => r.json()); } catch (e) { return; }
   const e2  = s.effective_energy  ?? s.energy  ?? 0.5;
   const v2  = s.effective_valence ?? s.valence ?? 0.6;
   const dl2 = s.effective_dl      ?? s.discover_level ?? 5;
@@ -8412,6 +8412,10 @@ async function init() {
   await refreshVolume();
   setInterval(refreshNowPlaying, 10000);   // safety net + clock resync (WS events drive real-time)
   setInterval(refreshVolume, 15000);
+  // A box can be activated from anywhere — an NFC tap, another device — and the
+  // dials would keep showing the previous mood until the page was reloaded. Cheap
+  // enough to poll: ?light=1 skips the two table-wide aggregates.
+  setInterval(syncMoodDials, 15000);
   setInterval(tickProgress, 250);          // local display, NO network
   // Mobile with Snapcast → "tap to start audio" splash (handles the gesture, snap
   // connect and playback). Otherwise: desktop snap-state restore + phone auto-init.
