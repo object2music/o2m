@@ -2041,6 +2041,13 @@
      done, and a slow pulse. A second tap cancels it. */
   .basic-toggle.pending { border-style: dashed; animation: basic-pulse 2.2s ease-in-out infinite; }
   @keyframes basic-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+  /* Where a forced mood/DL comes from. Same quiet register as the dial captions:
+     it explains a value, it is not a control. */
+  .mood-forced-hint {
+    font-family: var(--font-mono); font-size: var(--t-label); letter-spacing: .06em;
+    color: var(--accent); text-align: center; margin-top: 8px;
+  }
+  #basic-status .mood-forced-hint { margin: 0; }
   /* Filling the queue takes seconds. Moving a dial meanwhile fires a second,
      concurrent rebuild: part of the queue is dropped and part is not, and the
      result is longer than either would have been. The dials say so and stop
@@ -2364,6 +2371,7 @@
       <span id="bs-boxes">0 boxes</span>
       <span class="bs-sep">·</span>
       <span class="net-dot" title="Network"></span>
+      <span class="mood-forced-hint" data-mood-forced hidden></span>
     </div>
     <div class="basic-toggles" id="basic-toggles">
       <button class="basic-toggle" data-cat="music" data-o2m-actuator="music">Music</button>
@@ -2481,6 +2489,9 @@
       </svg>
       <div class="dial-sub">focused ↔ adventurous</div>
     </div>
+    <!-- Filled by syncMoodDials when a box forces the mood or the discover level;
+         the dials would otherwise read as hand-set. -->
+    <div class="mood-forced-hint" data-mood-forced hidden></div>
   </div>
   </div><!-- /panel-body -->
   </div><!-- /left-panel -->
@@ -3058,6 +3069,7 @@ async function toggleBasicCat(btn, wantOn) {
   if (!_allRunning) btn.disabled = false;   // ALL re-enables the four together at the end
   await refreshBasicToggles();
   refreshBoxStates();   // sync the hidden full-view buttons too (keeps autoBoxActive right)
+  syncMoodDials();      // a box may force the mood/DL the dials show
   setTimeout(refreshNowPlaying, 800);
   setTimeout(refreshNowPlaying, 3000);
 }
@@ -6269,17 +6281,38 @@ const BOX_KEYWORDS = {
   'meta_podcasts':         'All podcast sources',
   'meta_infos':            'All info sources',
   'meta_radios':           'All radio sources',
+  // Settings, not sources: read before the box is filled (see boxdirectives.py).
+  'mood:calm':             'Force a mood (calm · intense · normy · happy · energetic)',
+  'dl:5':                  'Force the discovery level (0-10)',
 };
 const _bxIsKeyword = line => Object.prototype.hasOwnProperty.call(BOX_KEYWORDS, line);
+/* A line may be prefixed by a time window ("08:00-10:00 > …"), which says WHEN it
+   applies and nothing about what it is — so strip it before asking what kind of
+   line this is, and keep the two apart everywhere below. */
+const BX_WINDOW_RE = /^\s*(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})\s*>\s*(.*)$/;
+function _bxSplitWindow(line) {
+  const m = BX_WINDOW_RE.exec(line || '');
+  return m ? { window: m[1].replace(/\s+/g, ''), rest: m[2].trim() } : { window: '', rest: (line || '').trim() };
+}
+/* mood:calm | mood:0.3,0.8 | dl:7 — read by the pre-pass server-side, never served
+   as content, so the editor must show them as settings rather than as sources. */
+const BX_SETTING_RE = /^(dl|mood)\s*:\s*\S/i;
+
 function _bxIsDirective(line) {
-  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:)/.test(line)
-      || _bxIsKeyword(line);
+  const { rest } = _bxSplitWindow(line);
+  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:)/.test(rest)
+      || BX_SETTING_RE.test(rest)
+      || _bxIsKeyword(rest);
 }
 function _bxNewItem(line, label, disabled) {
-  if (_bxIsKeyword(line)) return { kind: 'keyword', value: line, label: label || null, disabled: !!disabled };
-  if (/^(spotify:(album|artist|track|playlist):|box:)/.test(line))
-    return { kind: 'uri', uri: line, label: label || null, disabled: !!disabled };
-  return { kind: 'pair', uri: line, label: label || null, disabled: !!disabled };   // podcast+/stream/local…
+  // The window travels with the line: it is part of what the user typed, and
+  // serializeBoxData writes `uri`/`value` back verbatim, so keeping it here is what
+  // makes a gated line survive an edit untouched.
+  const { window, rest } = _bxSplitWindow(line);
+  if (!window && _bxIsKeyword(rest)) return { kind: 'keyword', value: rest, label: label || null, disabled: !!disabled };
+  if (!window && /^(spotify:(album|artist|track|playlist):|box:)/.test(rest))
+    return { kind: 'uri', uri: rest, label: label || null, disabled: !!disabled };
+  return { kind: 'pair', uri: line.trim(), label: label || null, disabled: !!disabled };
 }
 function parseBoxData(text) {
   const items = [];
@@ -6325,8 +6358,31 @@ function serializeBoxData(items) {
 function _bxItemMeta(it) {
   if (it.kind === 'comment') return { icon: ICON.hash, tag: 'comment', name: it.text.replace(/^#+\s*/, ''), sub: '' };
   if (it.kind === 'raw')     return { icon: ICON.hash, tag: 'raw', name: it.text, sub: '' };
+  // Settings come first and cover BOTH classifications: the picker seeds exact
+  // strings ('mood:calm', 'dl:5') which land as keywords, while anything the user
+  // types ('mood:happy', 'dl:7') lands as a pair. Reading them here keeps the two
+  // looking the same instead of one showing its help text as a name.
+  const raw = it.kind === 'keyword' ? it.value : it.uri;
+  const { window, rest } = _bxSplitWindow(raw || '');
+  const when = window ? window + ' · ' : '';
+  if (raw && BX_SETTING_RE.test(rest)) {
+    const isDl = /^dl/i.test(rest);
+    const val = rest.split(':').slice(1).join(':').trim();
+    return {
+      icon: isDl ? ICON.zap : ICON.sun,
+      tag: (isDl ? 'discovery' : 'mood') + (window ? ', timed' : ''),
+      name: it.label || (when + (isDl ? 'Discovery ' + val : 'Mood ' + val)),
+      sub: it.label ? raw : '',
+    };
+  }
   if (it.kind === 'keyword') return { icon: ICON.zap, tag: 'auto', name: it.label || BOX_KEYWORDS[it.value], sub: it.value };
-  const u = it.uri;
+  // A gated keyword is still that keyword: without this a window turned
+  // 'infos:library' into an anonymous "uri" row.
+  if (_bxIsKeyword(rest)) {
+    return { icon: ICON.zap, tag: 'auto, timed',
+             name: it.label || (when + BOX_KEYWORDS[rest]), sub: raw };
+  }
+  const u = rest;
   const res = _resolveCache.get(u);
   const resolved = res ? (res.name + (res.sub ? ' — ' + res.sub : '')) : null;
   let icon = ICON.hash, tag = 'uri';
@@ -6340,7 +6396,8 @@ function _bxItemMeta(it) {
   else if (/^rf:(subject|sujet):/.test(u))    { icon = ICON.zap;   tag = 'rf subject'; }
   else if (/^(https?:|tunein:)/.test(u))      { icon = ICON.radio; tag = 'stream'; }
   else if (/^(local:|m3u:|file:)/.test(u))    { icon = ICON.music; tag = 'local'; }
-  return { icon, tag, name: it.label || resolved || u, sub: (it.label || resolved) ? u : '' };
+  if (window) tag += ', timed';
+  return { icon, tag, name: when + (it.label || resolved || u), sub: (it.label || resolved) ? raw : '' };
 }
 
 /* ── Content editor + inline "Add content" browser ────────────────────────
@@ -7346,6 +7403,32 @@ function updateBoxesCount() {
 
 // Resync immédiat de l'état actif de toutes les boxes (ex: la box auto que le
 // backend vient d'activer suite à un réglage mood) — sans attendre le poll 10min.
+/* The dials show what is DRIVING the mix, not merely what they were last set to.
+   A box can force a mood or a discover level and outrank the session (see
+   effective_mood server-side), and until this existed the matrix read 0.5/0.5/5
+   while the mix ran on the box's "calm" — the control lying about what it
+   controls. Refreshed when a box is toggled, which is exactly when what drives
+   the mix changes. */
+async function syncMoodDials() {
+  let s;
+  try { s = await fetch(API + '/mood').then(r => r.json()); } catch (e) { return; }
+  const e2  = s.effective_energy  ?? s.energy  ?? 0.5;
+  const v2  = s.effective_valence ?? s.valence ?? 0.6;
+  const dl2 = s.effective_dl      ?? s.discover_level ?? 5;
+  appState.energy = e2; appState.valence = v2; appState.dl = dl2;
+  setDial('energy', e2); setDial('valence', v2); setDial('dl', dl2 / 10);
+  if (typeof setBasicMoodDial === 'function') setBasicMoodDial(basicMoodIndex());
+  if (typeof setBasicDlDial === 'function') setBasicDlDial(basicDlIndex());
+  // Say WHERE the value comes from when it is not the dials' own: a forced value
+  // that looks hand-set is worse than no indication at all.
+  const hint = s.forced_by ? 'set by ' + s.forced_by : '';
+  document.querySelectorAll('[data-mood-forced]').forEach(el => {
+    el.textContent = hint;
+    el.hidden = !hint;
+  });
+  document.body.classList.toggle('mood-forced', !!s.forced_by);
+}
+
 function refreshBoxStates() {
   document.querySelectorAll('#boxes-wrap .box-btn').forEach(btn => {
     if (btn.dataset.uid) checkBoxActive(btn.dataset.uid, btn);
@@ -7484,7 +7567,7 @@ async function clearAllBoxes() {
   // so a residual active box can't block the mood-matrix rebuild.
   try { await fetch(API + '/clear_boxes'); } catch(e) {}
   setFeedback('All boxes cleared');
-  setTimeout(() => { refreshBoxStates(); refreshNowPlaying(); }, 400);
+  setTimeout(() => { refreshBoxStates(); refreshNowPlaying(); syncMoodDials(); }, 400);
 }
 
 /* Clear today's listening history (stats_raw since 00:00). */
@@ -8203,14 +8286,7 @@ async function init() {
   connectMopidyWS();   // real-time + RPC over WebSocket (automatic HTTP fallback)
 
   try {
-    const s  = await fetch(API + '/mood').then(r => r.json());
-    const e  = s.energy  ?? 0.5;
-    const v  = s.valence ?? 0.6;
-    const dl = s.discover_level ?? 5;
-    appState.energy = e; appState.valence = v; appState.dl = dl;
-    setDial('energy', e);
-    setDial('valence', v);
-    setDial('dl', dl / 10);
+    await syncMoodDials();
   } catch(e) {}
   initBasicView();   // no-op outside /basic
   netProbe();

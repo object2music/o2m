@@ -220,14 +220,10 @@ at the same **episode page**, whose trailing numeric id is an exact join — the
 - Non-RF RSS boxes still query their feed live at fill time — that is intended.
 
 ### Box patterns for spoken content
-`podcasts:unfinished` (resume what was started) · `podcasts:channel` (the box's own feeds) ·
-`infos:library` (scheduled news flash) · `meta_podcasts` / `meta_infos` / `meta_radios`
-(all sources of a category) · `rf:show:<url>` (one Radio France show) · `rf:sujet:<keyword>`
-(episodes matching a Radio France theme or tag, refilled dynamically).
-
-Note there is **no `meta_music`**: `meta_fill` handles the `music` category, but
-`_META_PATTERNS` has no entry for it, so it cannot be written in a box. The BASIC view's
-ALL button is a UI action over the four categories, not a pattern.
+`podcasts:unfinished`, `podcasts:channel`, `infos:library`, `meta_podcasts` / `meta_infos` /
+`meta_radios`, `rf:show:` and `rf:sujet:` — all defined once in **Box Data: the complete
+line reference** below, with every other line type. Kept in one place on purpose: two
+lists of the same patterns drift.
 
 ### Behaviours to know
 - **Classification** (`_spoken_type_for_uri`): box heritage first (`info` beats `podcast`),
@@ -240,6 +236,102 @@ ALL button is a UI action over the four categories, not a pattern.
 - **Pre-roll ads**: a fixed skip per host (30s for Radio France and BBC hosts, overridable
   with `podcast_ad_skip = host:ms`), applied only on a fresh start. It cannot be detected:
   no feed exposes chapters or ad markers, and `itunes:duration` already includes the ad.
+
+## Box Data: the complete line reference
+
+A box's `data` is a list of lines. Each is one of four things, and the dispatcher in
+`tracklistappend_box` is the authority — `BOX_KEYWORDS` in `mood.html` is the picker's
+copy of the same list, and the two are currently in parity (verified by comparing the
+dispatch branches against the picker).
+
+### 1. Sources — a literal thing to play
+| Line | What it adds |
+|---|---|
+| `spotify:track:…` · `spotify:album:…` · `spotify:artist:…` · `spotify:playlist:…` | that object |
+| `podcast+<feed_url>` | the feed's episodes (`?max_results=N` caps it) |
+| `podcast+<feed_url>#<guid>` | one episode |
+| `rf:show:<url>` | one Radio France show |
+| `http(s)://…` · `tunein:…` | a radio stream |
+| `local:…` · `m3u:…` · `file:…` | local files |
+| `yt:…` · `youtube:…` | YouTube |
+| `box:<uid>` | **another box**, included whole (cascade) |
+
+### 2. Smart patterns — a rule that resolves to tracks at fill time
+| Pattern | What it draws |
+|---|---|
+| `auto:library` | the full AUTO mix (all sources, DL-weighted — see the selection section) |
+| `auto_simple:library` | the AUTO mix, reduced set of sources |
+| `auto_podcast:library` | the AUTO mix with podcasts mixed in |
+| `spotify:library` | saved albums + artists |
+| `spotify:library2` | saved albums + artists + liked tracks |
+| `o2m:favorites` | O2M favourites (`spotify:favorites` is the legacy spelling, still honoured) |
+| `newrecent:library` | recent library additions, drawn uniformly |
+| `newnotcompleted:library` | started but never finished |
+| `now:library` | what is usually played at this hour |
+| `herenow:library` | daily habits (hour + library extract) |
+| `albums:spotify` | a random saved album or artist |
+| `albums:local` | a random local album |
+| `podcasts:unfinished` | episodes already started, most recent first |
+| `podcasts:channel` | the episodes of this box's own feeds |
+| `infos:library` | the scheduled news bulletin (see the two-clocks note below) |
+| `rf:sujet:<keyword>` | Radio France episodes matching a theme or tag, refilled dynamically |
+| `meta_podcasts` · `meta_infos` · `meta_radios` | every source of that category, across all boxes |
+| `recommendation:…` | live Spotify recommendations (legacy; the API has since been restricted) |
+
+There is **no `meta_music`**: `meta_fill` handles the `music` category, but
+`_META_PATTERNS` has no entry for it, so it cannot be written in a box. The BASIC view's
+ALL button is a UI action over the four categories, not a pattern.
+
+### 3. Settings — read BEFORE the box is filled
+These force what the dials would otherwise decide (`o2m_core/boxdirectives.py`):
+
+| Line | Effect |
+|---|---|
+| `mood:calm` | one of `intense` · `calm` · `normy` · `happy` · `energetic` — the BASIC detents |
+| `mood:0.3,0.8` | the precise `energy,valence` pair |
+| `dl:7` | discover level, 0-10 |
+
+They are read in a **pre-pass**, never in the dispatch loop: the fill settles its mood and
+DL before serving any entry, so a `mood:` line placed after `auto:library` would otherwise
+have had no effect on it and the order inside the box would silently change the result.
+
+**Precedence**, ordered in time rather than ranked (`effective_mood` / `effective_dl`):
+a dial gesture newer than the activation → a box directive (a matching time window beats an
+unconditional line, whatever the order typed) → the box column (`option_energy` /
+`option_valence` / `option_discover_level`) → the session default. Putting an object down is
+itself a fresh intent and hands precedence back to the box, which is why the activation is
+stamped at the API entry point and **not** in `box_action` — eight internal paths go through
+that one (cascade includes, every reload, applying a mood).
+
+`GET /api/mood` exposes `effective_energy` / `effective_valence` / `effective_dl` /
+`forced_by` alongside the session values, so the dials can show what is actually driving
+the mix rather than what they were last set to.
+
+### 4. Labels and disabling
+A `#` line immediately before a directive is its **human label**; a `#` in front of a
+directive **disables** it. Anything unrecognised is kept verbatim as a raw line —
+`parseBoxData` / `serializeBoxData` round-trip losslessly, verified.
+
+### Time windows — any line can be gated
+    08:00-10:00 > infos:library
+    18:00-23:00 > meta_radios
+    22:00-02:00 > dl:2
+
+Start inclusive, end exclusive; a window whose end is not after its start **wraps midnight**.
+The prefix is generic on purpose: gating the morning news is as useful as gating a mood.
+
+**Two clocks, and they must not be confused.** Windows and the `infos:library` bulletin
+grid are read in LOCAL time (`boxdirectives.local_now`: the process timezone when the
+deployment sets TZ, else `Europe/Paris` explicitly — every instance's compose is its own
+file and cannot be relied on). Listening HABITS (`now:library`, `herenow:library`, the
+`common` bucket, `day_time_average`) are read in UTC via `O2mToMopidy.stats_hour`, because
+`read_hour` is written in UTC across 100k+ rows. They agreed only by accident while the
+containers ran on UTC; setting a timezone without splitting them would have offset every
+habit query by two hours.
+
+Window-aware scanning matters elsewhere too: a window says WHEN a line plays, not whether
+the box refers to it, so the catalogue warmup and the directory listings strip the prefix
+before matching — otherwise a gated feed would stop being pre-cached.
 
 ## Frontend (`frontend/`)
 

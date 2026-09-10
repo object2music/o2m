@@ -1390,11 +1390,33 @@ if __name__ == "__main__":
         from flask import jsonify
         dist = o2mHandler.dbHandler.get_mood_distribution()
         pending = o2mHandler.dbHandler.count_tracks_without_mood()
+        # What is ACTUALLY driving the mix right now. The three values above are the
+        # session's — the dials' own state — and a box that forces a mood or a
+        # discover level outranks them until a dial is touched. Without this the
+        # matrix showed 0.5/0.5/5 while the mix ran on the box's "calm", which is
+        # the control lying about what it controls.
+        eff_e, eff_v, eff_dl, forced = (o2mHandler.mood_energy, o2mHandler.mood_valence,
+                                        o2mHandler.discover_level, None)
+        try:
+            active = [b for b in (o2mHandler.activeboxs or [])]
+            if active:
+                box = active[0]
+                eff_e, eff_v = o2mHandler.effective_mood(box)
+                eff_dl = o2mHandler.effective_dl(box)
+                if (eff_e, eff_v, eff_dl) != (o2mHandler.mood_energy, o2mHandler.mood_valence,
+                                              o2mHandler.discover_level):
+                    forced = box.description or box.uid
+        except Exception as e:
+            print(f"api_mood_get effective: {e}")
         return jsonify({
             'energy':          o2mHandler.mood_energy,
             'valence':         o2mHandler.mood_valence,
             'genres':          o2mHandler.mood_genres,
             'discover_level':  o2mHandler.discover_level,
+            'effective_energy':  eff_e,
+            'effective_valence': eff_v,
+            'effective_dl':      eff_dl,
+            'forced_by':         forced,
             'distribution':    dist,
             'tracks_pending':  pending,
         })
