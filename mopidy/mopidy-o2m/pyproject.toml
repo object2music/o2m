@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "Mopidy-O2M"
+version = "0.4.0"
+description = "Mopidy extension for O2M — object-driven playback and playlist building"
+readme = "README.md"
+requires-python = ">=3.10"
+# The repository is GPL v3 (see LICENSE at its root), so this cannot be
+# Apache-2.0 as it wrongly claimed. Declared as -only rather than
+# -or-later because the bare LICENSE file asserts no "any later version"
+# clause; change it if that is the intent.
+license = { text = "GPL-3.0-only" }
+authors = [{ name = "Patrick Vincent" }]
+dependencies = [
+    # No upper bound on purpose. A `< 4` pin is actively harmful here: pip
+    # honours it while building the Mopidy 4 image and silently DOWNGRADES
+    # mopidy 4.0.3 to 3.4.2, leaving every other extension unsatisfied — a
+    # build that succeeds and a stack that is quietly wrong. Verified loading
+    # on both 3.4.2 and 4.0.3; everything the extension uses (ext.Extension,
+    # config.read, config.String, registry) is unchanged in Mopidy 4.
+    "mopidy >= 3.4",
+    "Pykka >= 2.0.1",
+]
+
+# `Framework :: Mopidy` is what makes the extension discoverable as one on
+# PyPI, and is the convention every listed extension follows.
+classifiers = [
+    "Framework :: Mopidy",
+    "Environment :: No Input/Output (Daemon)",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
+]
+
+[project.urls]
+Homepage = "https://github.com/object2music/o2m"
+
+# This is what makes Mopidy find the extension: it scans the `mopidy.ext`
+# entry point group at startup. `mopidy deps` lists what it found.
+[project.entry-points."mopidy.ext"]
+o2m = "mopidy_o2m:Extension"
+
+[tool.setuptools]
+packages = ["mopidy_o2m"]
+
+[tool.setuptools.package-data]
+mopidy_o2m = ["ext.conf", "static/*"]

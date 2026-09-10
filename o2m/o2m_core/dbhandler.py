@@ -7,7 +7,7 @@ from playhouse.reflection import generate_models, print_model
 from playhouse.shortcuts import model_to_dict, dict_to_model
 
 
-from src.o2mmodels import (
+from o2m_core.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
@@ -340,7 +340,7 @@ class DatabaseHandler():
         Non-music content (podcasts/infos/radios) is left unscored (NULL).
         Returns the number of tracks updated. Cheap enough to run on demand or
         on a periodic TTL."""
-        from src.popularity import compute_popularity, is_scorable, DEFAULT_PRIOR_COMPLETION
+        from o2m_core.popularity import compute_popularity, is_scorable, DEFAULT_PRIOR_COMPLETION
         prior = self.get_completion_prior() or DEFAULT_PRIOR_COMPLETION
         now = datetime.datetime.utcnow()
         updated = 0
@@ -1155,6 +1155,89 @@ class DatabaseHandler():
         except Exception as e:
             print(f"get_genres_with_counts error: {e}")
             return []
+
+    def search_by_genre(self, name, limit=25):
+        """Everything carrying a genre/tag, in the search view's row shapes.
+
+        A tag reaches a track through its ARTIST, not directly: trackgenre and
+        albumgenre exist but are empty — nothing populates them — while artistgenre
+        carries 6k+ rows. That is also why /api/track_tags falls back to artist
+        genres, so the chips shown on a track are already its artist's. The direct
+        link is still queried first, so this starts working per-track the day
+        save_track_genres is actually fed.
+
+        Matching is on the normalised name, the key tags are stored under, so the
+        chip on screen and the lookup agree."""
+        out = {'tracks': [], 'albums': [], 'artists': []}
+        key = _normalize_genre(name or '')
+        if not key:
+            return out
+        try:
+            gids = [g.id for g in Genre.select(Genre.id).where(Genre.name == key)]
+            if not gids:
+                return out
+            aids = [r.artist_id for r in
+                    ArtistGenre.select(ArtistGenre.artist_id).where(ArtistGenre.genre_id.in_(gids))]
+
+            seen = set()
+            for t in (Track.select(Track.uri, Track.name, Track.duration_ms)
+                      .join(TrackGenre, on=(Track.uri == TrackGenre.track_uri))
+                      .where(TrackGenre.genre_id.in_(gids) & Track.name.is_null(False))
+                      .order_by(TrackGenre.weight.desc(), Track.uri)
+                      .limit(limit)):
+                seen.add(t.uri)
+                out['tracks'].append({'uri': t.uri, 'name': t.name, 'length': t.duration_ms})
+            if aids and len(out['tracks']) < limit:
+                # Most-played first: a tag browse is only useful if it opens on
+                # something recognisable rather than the deepest corner of the library.
+                for t in (Track.select(Track.uri, Track.name, Track.duration_ms)
+                          .join(TrackArtist, on=(Track.uri == TrackArtist.track_uri))
+                          .where(TrackArtist.artist_id.in_(aids) & Track.name.is_null(False))
+                          .order_by(Track.read_count_end.desc(), Track.popularity.desc(), Track.uri)
+                          .limit(limit * 3)):
+                    if t.uri in seen:
+                        continue
+                    seen.add(t.uri)
+                    out['tracks'].append({'uri': t.uri, 'name': t.name, 'length': t.duration_ms})
+                    if len(out['tracks']) >= limit:
+                        break
+
+            seen_al = set()
+            for al in (Album.select()
+                       .join(AlbumGenre, on=(Album.id == AlbumGenre.album_id))
+                       .where(AlbumGenre.genre_id.in_(gids))
+                       .order_by(AlbumGenre.weight.desc(), Album.id)
+                       .limit(limit)):
+                seen_al.add(al.id)
+                out['albums'].append({
+                    'uri': al.uri or f'spotify:album:{al.id}', 'name': al.name,
+                    'artist': al.artist_name, 'image': al.image_url,
+                })
+            if aids and len(out['albums']) < limit:
+                for al in (Album.select()
+                           .join(AlbumArtist, on=(Album.id == AlbumArtist.album_id))
+                           .where(AlbumArtist.artist_id.in_(aids))
+                           .order_by(Album.name, Album.id)
+                           .limit(limit * 3)):
+                    if al.id in seen_al:
+                        continue
+                    seen_al.add(al.id)
+                    out['albums'].append({
+                        'uri': al.uri or f'spotify:album:{al.id}', 'name': al.name,
+                        'artist': al.artist_name, 'image': al.image_url,
+                    })
+                    if len(out['albums']) >= limit:
+                        break
+
+            for a in (Artist.select().where(Artist.id.in_(aids))
+                      .order_by(Artist.name, Artist.id).limit(limit)):
+                out['artists'].append({
+                    'uri': a.uri or f'spotify:artist:{a.id}', 'name': a.name,
+                    'image': a.image_url,
+                })
+        except Exception as e:
+            print(f"search_by_genre({name}) error: {e}")
+        return out
 
     def get_artist_ids_without_genres(self, max_count=500):
         """Return artist IDs that have a name in the Artist table but no genre entry yet.

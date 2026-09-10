@@ -8,7 +8,7 @@ import unittest
 import datetime
 
 try:
-    from src.popularity import (
+    from o2m_core.popularity import (
         compute_popularity, is_scorable, DEFAULT_PRIOR_COMPLETION,
         FORCED_LOW_SCORE, LIKE_BONUS, REC_FLOOR,
     )

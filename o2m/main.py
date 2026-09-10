@@ -1,9 +1,9 @@
 import logging, subprocess, os, spotipy, json, threading, requests
 
 from mopidyapi import MopidyAPI
-from src import util
-from src.o2mtomopidy import O2mToMopidy
-from src.spotifyhandler import SpotifyHandler
+from o2m_core import util
+from o2m_core.o2mtomopidy import O2mToMopidy
+from o2m_core.spotifyhandler import SpotifyHandler
 from time import sleep
 
 from flask import Flask, request, session, redirect
@@ -72,6 +72,77 @@ def _install_resilient_ws_listener():
 
 _install_resilient_ws_listener()
 
+
+def _install_mopidy4_model_compat():
+    """Teach mopidyapi to read Mopidy 4's model marker.
+
+    Mopidy 3 tagged every serialised model with ``__model__``. Mopidy 4's models
+    are pydantic, and the **websocket event stream** tags them ``model`` instead
+    (the JSON-RPC path still emits ``__model__``, so only events are affected).
+    mopidyapi's ``deserialize_mopidy`` only knows ``__model__``, so on Mopidy 4
+    an event payload stays a plain dict and the listener dies on
+    ``'dict' object has no attribute 'track'`` — no ``track_playback_ended``,
+    therefore no stats and no dynamic refill, while HTTP/RPC keeps working. Same
+    silent half-failure as the handshake bug above, different cause.
+
+    Accept either marker. All three call sites are rebound, not just the module
+    attribute: ``client`` and ``wsclient`` both do
+    ``from .parsedata import deserialize_mopidy`` at import time, so patching
+    ``parsedata`` alone would leave the event path on the old function.
+
+    Harmless on Mopidy 3: nothing there emits a ``model`` key.
+    """
+    from collections import namedtuple
+    from mopidyapi import client, parsedata, wsclient
+
+    def deserialize(data):
+        if isinstance(data, dict):
+            # Only treat 'model' as a marker when it names a model (a string),
+            # so an ordinary payload carrying a 'model' field is left alone.
+            marker = None
+            if "__model__" in data:
+                marker = "__model__"
+            elif isinstance(data.get("model"), str):
+                marker = "model"
+            if marker:
+                fields = [k for k in data if k != marker]
+                nt = namedtuple(str(data[marker]), fields)
+                return nt(**{k: deserialize(data[k]) for k in fields})
+            return {k: deserialize(v) for k, v in data.items()}
+        if isinstance(data, list):
+            return [deserialize(d) for d in data]
+        # Pass anything else through. The stock version raised ValueError on
+        # e.g. a float, which Mopidy 4 does send.
+        return data
+
+    parsedata.deserialize_mopidy = deserialize
+    client.deserialize_mopidy = deserialize
+    wsclient.deserialize_mopidy = deserialize
+
+
+_install_mopidy4_model_compat()
+
+
+# --- Playback event transport -------------------------------------------------
+# Mopidy playback events reach us one of two ways:
+#   'websocket'  the mopidyapi client below (historic, still the default)
+#   'http'       pushed in-process by the Mopidy-O2M extension's frontend,
+#                which POSTs to /api/event
+# Exactly one is authoritative, so an event is never counted twice. The websocket
+# transport is what the two compat shims above exist to prop up; switching to
+# 'http' is what eventually retires them.
+#
+# Set with O2M_EVENT_SOURCE. Changing it needs only an o2m restart — no image
+# rebuild — so the switch and the rollback are both cheap.
+_EVENT_SOURCE = (os.environ.get("O2M_EVENT_SOURCE") or "websocket").strip().lower()
+
+# Filled in where the handlers are defined, which sits inside the Spotify-config
+# block: with no Spotify config there are no handlers at all, and /api/event
+# reports that rather than pretending it dispatched. That gate is pre-existing
+# behaviour, mirrored here deliberately rather than quietly widened.
+_EVENT_HANDLERS = {}
+
+
 if __name__ == "__main__":
 
 #CONFS AND CONSTS
@@ -118,6 +189,14 @@ if __name__ == "__main__":
         try:
             if mopidy is None:
                 mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
+                # Fail loudly on an incomplete player rather than at the first
+                # call on a code path nobody exercised. MopidyAPI satisfies the
+                # port today; this is the guard for whatever replaces it.
+                from o2m_core.player import check_conformance
+                _missing = check_conformance(mopidy)
+                if _missing:
+                    print(f"WARNING: the player does not satisfy o2m_core's port, "
+                          f"missing: {', '.join(_missing)}")
             o2mHandler = O2mToMopidy(mopidy, o2mConf, mopidyConf, logging)
             strer = 0
         except Exception as err_value:
@@ -326,7 +405,7 @@ if __name__ == "__main__":
         per-DB, so an already-populated instance (incl. the o2m_0/o2m_1 shared prod DB)
         is never treated as fresh, and there's nothing to keep in sync."""
         from flask import jsonify, request
-        from src.o2mmodels import Playlist
+        from o2m_core.o2mmodels import Playlist
         try:
             liked = o2mHandler.dbHandler.count_cached('liked')
             albums = o2mHandler.dbHandler.count_cached('albums')
@@ -384,7 +463,7 @@ if __name__ == "__main__":
         system boxes to them, and creates the generic starter boxes. Pass dry_run=1 to
         get the plan without side effects. A marker box makes it a no-op once done."""
         from flask import jsonify
-        from src.o2mmodels import Box, Playlist
+        from o2m_core.o2mmodels import Box, Playlist
         data = request.get_json(silent=True) or {}
         dry = bool(data.get('dry_run'))
         db = o2mHandler.dbHandler
@@ -544,7 +623,7 @@ if __name__ == "__main__":
         except Exception as e:
             pass
         try:
-            from src import directory
+            from o2m_core import directory
             seen = {c.get('uri') for c in results['podcast_channels']}
             if first_page:
                 results['podcast_channels'] += [c for c in directory.search_podcasts(q, timeout=6)
@@ -554,7 +633,7 @@ if __name__ == "__main__":
         # A pasted radiofrance.fr page (show OR episode) resolves to the show plus
         # its recent episodes, so it can be played or added to a box directly.
         try:
-            from src import radiofrance as _rf
+            from o2m_core import radiofrance as _rf
             if first_page and _rf.is_rf_url(q):
                 hit = o2mHandler.rf_resolve_url(q)
                 if hit:
@@ -619,7 +698,7 @@ if __name__ == "__main__":
         if not url:
             return jsonify({'name': '', 'episodes': []})
         try:
-            from src import radiofrance as _rf
+            from o2m_core import radiofrance as _rf
             show = _rf.show_by_url(o2mHandler._rf_api_key, url)
             eps = _rf.episodes_of_show(o2mHandler._rf_api_key, url, first=30)
             return jsonify({'name': (show or {}).get('name', ''), 'image': '',
@@ -659,7 +738,7 @@ if __name__ == "__main__":
         browses (podcast: top charts of ?genre=, radio: top stations of the
         country). Items are ready-to-use box data lines."""
         from flask import jsonify
-        from src import directory
+        from o2m_core import directory
         kind = (request.args.get('kind') or '').strip()
         q = (request.args.get('q') or '').strip()
         country = (request.args.get('country') or '').strip() or None
@@ -703,7 +782,7 @@ if __name__ == "__main__":
     def api_directory_genres():
         """Localized podcast genre list (iTunes), for browsing the directory."""
         from flask import jsonify
-        from src import directory
+        from o2m_core import directory
         try:
             country = (request.args.get('country') or '').strip() or None
             return jsonify({'genres': directory.podcast_genres(country)})
@@ -815,6 +894,50 @@ if __name__ == "__main__":
             box.image_url = (data['image_url'] or '').strip() or None; changed['image_url'] = box.image_url
         return changed
 
+    @api.route('/api/box_tracks')
+    def api_box_tracks():
+        """What a box WOULD play, without activating it.
+
+        The read-only counterpart of /api/box, which is an action: it activates
+        the box and fills the tracklist. This resolves the same content through
+        the same dispatcher and throws the mutation away, so a client — the
+        Mopidy extension's browse, chiefly — can list a box without playing it.
+
+        Resolution runs under the box lock, so it cannot interleave with a real
+        fill. It is not free: an auto box hits Spotify and the DB exactly as a
+        real fill would.
+        """
+        from flask import jsonify
+        uid = request.args.get('uid')
+        if not uid:
+            return jsonify({'error': 'uid required'}), 400
+        box = o2mHandler.dbHandler.get_box_by_uid(uid)
+        if box is None:
+            return jsonify({'error': 'box not found'}), 404
+        try:
+            limit = max(1, min(int(request.args.get('limit') or 0) or o2mHandler.max_results, 100))
+        except Exception:
+            limit = o2mHandler.max_results
+        if request.args.get('detail'):
+            # Diagnostic view: what each uri would be attributed to. Used to
+            # compare attribution across a refactor, which a uri list cannot show.
+            try:
+                entries, flat = o2mHandler.resolve_box_plan(box, max_results=limit)
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+            return jsonify({'uid': box.uid, 'inline': entries, 'returned': flat})
+        try:
+            uris = o2mHandler.resolve_box_uris(box, max_results=limit)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'uid': box.uid,
+            'description': box.description,
+            'option_type': box.option_type,
+            'count': len(uris),
+            'uris': uris,
+        })
+
     @api.route('/api/box_edit', methods=['POST'])
     @require_edit_auth
     def api_box_edit():
@@ -917,6 +1040,9 @@ if __name__ == "__main__":
         if box != None:
             if box in o2mHandler.activeboxs: return("1")
             else: return("0")
+        # No uid, or an unknown one: fall through used to return None, which
+        # Flask turns into a 500. "not activated" is the honest answer.
+        return("0")
 
     #API Opening Level
     #Get the value
@@ -1186,6 +1312,29 @@ if __name__ == "__main__":
         return jsonify([{'name': name, 'weight': weight}
                         for name, weight in sorted(tags, key=lambda x: -x[1])])
 
+    @api.route('/api/tag_search')
+    def api_tag_search():
+        """Everything carrying one genre/tag — tracks, albums, artists.
+
+        Same row shapes as /api/search so the search view renders it unchanged.
+        DB only: a tag is our own enrichment, there is nothing to ask Spotify.
+        has_more is false because the answer is capped per type rather than paged —
+        a tag is a browse, not a query being narrowed."""
+        from flask import jsonify
+        tag = (request.args.get('tag') or '').strip()
+        if not tag:
+            return jsonify({'error': 'tag required'}), 400
+        try:
+            limit = max(1, min(int(request.args.get('limit') or 25), 50))
+        except Exception:
+            limit = 25
+        try:
+            d = o2mHandler.dbHandler.search_by_genre(tag, limit=limit)
+            d['has_more'] = False
+            return jsonify(d)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/warmup_retry_sentinels')
     def api_warmup_retry_sentinels():
         """Trigger full retry of all sentinel tracks via the complete Last.fm chain (background)."""
@@ -1261,7 +1410,7 @@ if __name__ == "__main__":
     @api.route('/api/track_features')
     def api_track_features():
         from flask import jsonify
-        from src.o2mmodels import Track
+        from o2m_core.o2mmodels import Track
         uris = request.args.getlist('uri')[:40]
         if not uris:
             return jsonify({})
@@ -1487,7 +1636,7 @@ if __name__ == "__main__":
         if not cid:
             return ''
         try:
-            from src.o2mmodels import PodcastChannel
+            from o2m_core.o2mmodels import PodcastChannel
             ch = PodcastChannel.get_or_none(PodcastChannel.id == cid)
             if ch and (ch.title or '').strip():
                 return ch.title.strip()
@@ -1725,6 +1874,69 @@ if __name__ == "__main__":
             return jsonify({'ok': True, 'gained': o2mHandler.meta_fill(cat)})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/event', methods=['POST'])
+    def api_event():
+        """Playback event pushed in-process by the Mopidy-O2M extension.
+
+        The alternative to the websocket listener: the extension receives the
+        event as a method call inside Mopidy and POSTs it here, so there is no
+        socket to drop, no reconnection to get wrong and no model marker to
+        deserialise — the three things that have each silently killed stats and
+        refill while playback carried on.
+
+        Accepted always, dispatched only when this instance is configured to
+        take events over HTTP (O2M_EVENT_SOURCE=http). Otherwise the websocket
+        listener is authoritative and this reports dispatched=false, so the two
+        transports can both be live without double-counting a play.
+        """
+        from flask import jsonify
+        payload = request.get_json(silent=True) or {}
+        name = payload.get('event')
+        if name not in _EVENT_HANDLERS and name not in (
+            'track_playback_started', 'track_playback_ended', 'track_playback_paused'
+        ):
+            return jsonify({'error': f'unknown event {name!r}'}), 400
+
+        if _EVENT_SOURCE != 'http':
+            return jsonify({'ok': True, 'dispatched': False, 'source': _EVENT_SOURCE})
+
+        handler = _EVENT_HANDLERS.get(name)
+        if handler is None:
+            # No handlers registered at all — this instance has no Spotify
+            # config, so it never listened for these events on any transport.
+            return jsonify({'ok': True, 'dispatched': False, 'reason': 'no handlers'})
+
+        # Rebuild just enough of the event shape the handlers read: event name,
+        # tl_track.tlid, tl_track.track.{uri,name,length,track_no} and
+        # time_position. SimpleNamespace rather than a Mopidy model on purpose —
+        # the API must not depend on Mopidy's model classes.
+        from types import SimpleNamespace
+        tl = payload.get('tl_track') or {}
+        tr = tl.get('track') or {}
+        if not tr.get('uri'):
+            return jsonify({'error': 'tl_track.track.uri is required'}), 400
+        event = SimpleNamespace(
+            event=name,
+            time_position=payload.get('time_position') or 0,
+            tl_track=SimpleNamespace(
+                tlid=tl.get('tlid'),
+                track=SimpleNamespace(
+                    uri=tr.get('uri'),
+                    name=tr.get('name'),
+                    length=tr.get('length'),
+                    track_no=tr.get('track_no'),
+                ),
+            ),
+        )
+        try:
+            handler(event)
+        except Exception as e:
+            # Never 500 back into Mopidy's sender thread for a stats failure:
+            # report it and let playback carry on.
+            print(f"api_event({name}) failed: {e}")
+            return jsonify({'ok': False, 'dispatched': False, 'error': str(e)}), 200
+        return jsonify({'ok': True, 'dispatched': True})
 
     @api.route('/mood2')
     def mood2_ui():
@@ -2188,6 +2400,11 @@ with the house Premium account.</li>
         # Fonction called when track started
         @mopidy.on_event("track_playback_started")
         #@mopidy.audio.AudioListener.state_changed("PAUSED","PLAYING",None)
+        def on_ws_track_started(event):
+            if _EVENT_SOURCE != "websocket":
+                return  # the extension pushes this over HTTP instead
+            track_started_event(event)
+
         def track_started_event(event):
             track = event.tl_track.track
             print (event)
@@ -2339,11 +2556,23 @@ with the house Premium account.</li>
 
         @mopidy.on_event("track_playback_ended")
         def event_track_playback_ended(event):
+            if _EVENT_SOURCE != "websocket":
+                return  # the extension pushes this over HTTP instead
             track_ended_event(event)
 
         @mopidy.on_event("track_playback_paused")
         def event_track_playback_paused(event):
+            if _EVENT_SOURCE != "websocket":
+                return  # the extension pushes this over HTTP instead
             track_ended_event(event)
+
+        # Publish the handlers for the HTTP transport. Same functions, same
+        # closure over o2mHandler/mopidy — only the transport differs, so the
+        # two paths can never drift apart.
+        _EVENT_HANDLERS["track_playback_started"] = track_started_event
+        _EVENT_HANDLERS["track_playback_ended"] = track_ended_event
+        _EVENT_HANDLERS["track_playback_paused"] = track_ended_event
+        print(f"Mopidy event transport: {_EVENT_SOURCE}")
 
     # Fonction called when status change ie : stop but impossible to catch track before
     """@mopidy.on_event('playback_state_changed')

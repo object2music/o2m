@@ -16,7 +16,7 @@ from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigr
 from playhouse.shortcuts import ReconnectMixin, model_to_dict, dict_to_model
 
 sys.path.append(".")
-import src.util as util
+import o2m_core.util as util
 
 
 class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):

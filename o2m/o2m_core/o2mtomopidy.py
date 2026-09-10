@@ -4,10 +4,10 @@ import random
 from mopidy_podcast import Extension, feeds
 from urllib import parse, error as url_error
 
-import src.util as util
-from src.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
-from src.spotifyhandler import SpotifyHandler
-from src import radiofrance as rf
+import o2m_core.util as util
+from o2m_core.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
+from o2m_core.spotifyhandler import SpotifyHandler
+from o2m_core import radiofrance as rf
 
 '''
 option_type 
@@ -375,7 +375,15 @@ class O2mToMopidy:
                     #print (f"Max results : {max_results}")
                 
                 prev_tl_length = self.mopidyHandler.tracklist.get_length()
-                tracklist_uris = self.tracklistappend_box(box,max_results)
+                # plan_out: tracklistappend_box no longer adds anything itself on
+                # this path. The four patterns that used to add inline now
+                # describe what to add, and we apply it here — each with its own
+                # library_link and bypass_remove_filter, which a flat uri list
+                # cannot carry. directly_added below still measures the tracklist
+                # delta, so it accounts for these exactly as before.
+                plan = []
+                tracklist_uris = self.tracklistappend_box(box, max_results, plan_out=plan)
+                self.apply_fill_plan(box, plan)
                 #Flatten
                 tracklist_uris = list(util.flatten_list(tracklist_uris))
                 #Remove '' items
@@ -679,6 +687,160 @@ class O2mToMopidy:
                     #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
 
+    # ── Read-only resolution ──────────────────────────────────────────────────
+    # Everything above mutates the tracklist as it resolves: tracklistappend_box
+    # dispatches every box pattern and calls add_tracks inline rather than
+    # returning uris, and tracklistfill_auto does the same across its seven
+    # sources. So there was no way to ask "what would this box play?" without
+    # playing it — which is why the Mopidy extension cannot browse a box.
+    #
+    # Rather than restructure 331 + 138 lines of the most load-bearing logic in
+    # the product, this exploits an invariant that actually holds: on the fill
+    # path every tracklist mutation funnels through add_tracks. The only
+    # tracklist.add/remove calls a fill can reach are inside it — the others
+    # belong to deactivation, startup and the reco-after-track path, none of
+    # which a fill enters. Swapping add_tracks for a recorder therefore makes a
+    # whole fill read-only, whatever pattern it takes.
+
+    def apply_fill_plan(self, tag_box, plan):
+        """Add what a plan_out fill described, each entry with its own flags.
+
+        The counterpart of tracklistappend_box(plan_out=...). Kept in one place
+        because the classification is the whole point: a per-source
+        library_link, and bypass_remove_filter for the branches whose uris are
+        pre-filtered in the DB and which add_tracks' REMOVE logic would
+        otherwise drop entirely.
+        """
+        added = 0
+        for entry in plan or []:
+            added += self.add_tracks(
+                tag_box, entry['uris'], entry['max_results'],
+                library_link=entry['library_link'],
+                bypass_remove_filter=entry['bypass_remove_filter'],
+            ) or 0
+        return added
+
+    @contextlib.contextmanager
+    def capture_fill(self, timeout=None):
+        """Run a fill without touching the tracklist; collect what it would add.
+
+        Yields the list of captured entries, each a dict with the uris and the
+        classification add_tracks was given.
+
+        Takes the box lock STRICTLY, unlike _box_ops_lock which proceeds without
+        it on timeout. That is right for a fill (better late than never) and
+        wrong here: the recorder is installed on the instance, so a real fill
+        running concurrently would be captured instead of applied and its tracks
+        silently dropped. If the lock cannot be had, this refuses.
+        """
+        captured = []
+        wait = self._box_lock_timeout if timeout is None else timeout
+        if not self._box_lock.acquire(timeout=wait):
+            raise RuntimeError(f"capture_fill: box lock not acquired within {wait}s")
+        real_add_tracks = self.add_tracks
+        # Also swap the player out. The fill *reads* it (tracklist.get_length as
+        # a budget check, library.get_distinct), and those reads deadlocked the
+        # Mopidy extension: its backend actor asked o2m to resolve, o2m called
+        # back into Mopidy's core, and core was already blocked waiting for that
+        # backend to return from browse(). An inert player removes the re-entry.
+        from o2m_core.player import InertPlayer
+        real_player = self.mopidyHandler
+
+        def _recorder(active_box, uris=None, max_results=15, force_option_type=None,
+                      library_link='', bypass_remove_filter=False):
+            items = [u for u in (uris or []) if u]
+            captured.append({
+                'uris': items,
+                'max_results': max_results,
+                'option_type': force_option_type or getattr(active_box, 'option_type', None),
+                'library_link': library_link,
+                'bypass_remove_filter': bypass_remove_filter,
+            })
+            # add_tracks returns how many it added; callers that read it use it
+            # as a budget. Approximate rather than lie with 0, which would make
+            # a caller think nothing landed and over-fetch.
+            return min(len(items), max_results or len(items))
+
+        self.add_tracks = _recorder
+        self.mopidyHandler = InertPlayer()
+        try:
+            yield captured
+        finally:
+            self.add_tracks = real_add_tracks
+            self.mopidyHandler = real_player
+            self._box_lock.release()
+
+    def resolve_box_plan(self, box, max_results=None):
+        """Like resolve_box_uris, but keeps the classification each uri would get.
+
+        Returns (entries, returned_uris): the add_tracks calls a fill would make,
+        with their library_link and bypass_remove_filter, plus the uris it hands
+        back to its caller. Diagnostic — it is what makes an attribution change
+        visible, which a uri list alone cannot show.
+        """
+        if box is None:
+            return [], []
+        if max_results is None:
+            max_results = getattr(box, 'option_max_results', None) or self.max_results
+        try:
+            # Both mechanisms, side by side: plan_out is what the apply paths use,
+            # capture_fill catches anything still adding inline (tracklistfill_auto
+            # reached through auto:library). Comparing them is how the plan_out
+            # migration was checked — they must describe the same adds.
+            plan = []
+            with self.capture_fill() as captured:
+                returned = self.tracklistappend_box(box, max_results,
+                                                    attribute_to=box, plan_out=plan)
+            captured = list(plan) + list(captured)
+        except Exception as e:
+            print(f"resolve_box_plan({getattr(box, 'uid', '?')}): {e}")
+            return [], []
+        flat = [u for u in util.flatten_list(returned or []) if isinstance(u, str) and u]
+        return captured, flat
+
+    def resolve_box_uris(self, box, max_results=None, discover_level=None):
+        """The uris this box WOULD add, in order, without adding them.
+
+        Goes through tracklistappend_box, which is the single dispatcher for box
+        data patterns (auto:library, meta_*, playlists, feeds, rf:show:, tags…),
+        so this covers every kind of box rather than a hand-picked subset.
+
+        Returns [] rather than raising if the fill fails: a caller browsing a box
+        wants an empty listing, not a traceback.
+
+        Note it OVER-reports compared to what a real fill would add. Resolution
+        runs against InertPlayer, whose tracklist always reads empty, so the
+        per-source budget never gets consumed: two sources sharing a budget of
+        30 will each offer 30 here, where a real fill gives the second one
+        nothing left. This is a listing, not a prediction of the tracklist.
+        """
+        if box is None:
+            return []
+        if max_results is None:
+            max_results = getattr(box, 'option_max_results', None) or self.max_results
+        try:
+            with self.capture_fill() as captured:
+                returned = self.tracklistappend_box(box, max_results, attribute_to=box)
+        except Exception as e:
+            print(f"resolve_box_uris({getattr(box, 'uid', '?')}): {e}")
+            return []
+        # Both halves matter, and missing the second one made every box except
+        # the auto one resolve to nothing. tracklistappend_box RETURNS most uris
+        # for its caller to add — box_action flattens and adds them after the
+        # call — and only four branches (spotify:library, newnotcompleted,
+        # newrecent, albums:spotify) add inline. The auto box looked fine only
+        # because tracklistfill_auto adds all seven of its sources inline.
+        # Order mirrors box_action: inline adds happen during the call, the
+        # returned ones after.
+        candidates = [u for entry in captured for u in entry['uris']]
+        candidates += [u for u in util.flatten_list(returned or []) if u]
+        seen, out = set(), []
+        for uri in candidates:
+            if isinstance(uri, str) and uri and uri not in seen:
+                seen.add(uri)
+                out.append(uri)
+        return out[:max_results]
+
     def _enrich_track_features_sync(self, track, uri, stat=None):
         """Enrich (mood/energy/valence) one track via Last.fm if it lacks them.
         Blocking — call from a background thread. Skips already-enriched, non-music,
@@ -813,7 +975,9 @@ class O2mToMopidy:
                 print(f"\nAUTO : Incoming {base_counts['incoming']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('incoming')
                 library_link = self.get_spotify_playlist_from_box(box1)
-                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']),attribute_to=active_box)
+                _plan = []
+                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']),attribute_to=active_box,plan_out=_plan)
+                self.apply_fill_plan(active_box, _plan)
                 incoming = self._mood_pick(incoming, base_counts['incoming'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, incoming, base_counts['incoming'], "incoming",library_link)
 
@@ -829,7 +993,9 @@ class O2mToMopidy:
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #Using specific playlist (normaly elif)
                 if box1 != None:
-                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']),attribute_to=active_box)
+                    _plan = []
+                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']),attribute_to=active_box,plan_out=_plan)
+                    self.apply_fill_plan(active_box, _plan)
                     fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius, discover_level)
                     library_link = self.get_spotify_playlist_from_box(box1)
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
@@ -840,7 +1006,10 @@ class O2mToMopidy:
                 box1 = self.dbHandler.get_box_by_option_type('podcast')
                 if box1:
                     print(f"\nAUTO : Podcasts {base_counts['podcasts']} tracks\n")                
-                    self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['podcasts'],attribute_to=active_box), base_counts['podcasts'], "podcast","o2m:podcast")
+                    _plan = []
+                    _pods = self.tracklistappend_box(box1,base_counts['podcasts'],attribute_to=active_box,plan_out=_plan)
+                    self.apply_fill_plan(active_box, _plan)
+                    self.add_tracks(active_box, _pods, base_counts['podcasts'], "podcast","o2m:podcast")
             
             #Albums/Artists
             if base_counts.get('albums_artists', 0) > 0:
@@ -869,7 +1038,9 @@ class O2mToMopidy:
             if base_counts.get('news', 0) > 0:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('new')
-                news = self.tracklistappend_box(box1,_pool(base_counts['news']),attribute_to=active_box)
+                _plan = []
+                news = self.tracklistappend_box(box1,_pool(base_counts['news']),attribute_to=active_box,plan_out=_plan)
+                self.apply_fill_plan(active_box, _plan)
                 news = self._mood_pick(news, base_counts['news'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, news, base_counts['news'], "new","o2m:new")
     
@@ -1101,7 +1272,7 @@ class O2mToMopidy:
                     print(f"meta_remove({cat}) on {b.uid}: {e}")
             return removed
 
-    def tracklistappend_box(self,box,max_results,attribute_to=None):
+    def tracklistappend_box(self,box,max_results,attribute_to=None,plan_out=None):
         # attribute_to: the box that dynamically-added tracks (skip badge, box_id
         # in _track_info, and hence deactivation cleanup) get tagged under.
         # Defaults to `box` itself (the normal case: a box's own data is being
@@ -1122,6 +1293,40 @@ class O2mToMopidy:
         #Variables
         tracklist_uris = []
         tl_length_at_start = self.mopidyHandler.tracklist.get_length()
+        # Four content patterns (spotify:library, newnotcompleted:library,
+        # newrecent:library, albums:spotify) carry a per-source library_link, and
+        # two of them bypass_remove_filter because their uris are pre-filtered in
+        # the DB — the REMOVE logic in add_tracks would otherwise drop them all.
+        # A flat uri list cannot express either, which is why they used to add
+        # inline while every other branch returned uris to the caller.
+        #
+        # plan_out turns them into "describe what to add" instead. Passing None
+        # keeps the historic inline behaviour verbatim, so a caller not yet
+        # migrated is untouched.
+        _planned = [0]
+
+        def _plan_or_add(uris, remaining, library_link='', bypass_remove_filter=False):
+            items = [u for u in (uris or []) if u]
+            if not items:
+                return 0
+            if plan_out is None:
+                return self.add_tracks(tag_box, items, remaining,
+                                       library_link=library_link,
+                                       bypass_remove_filter=bypass_remove_filter)
+            plan_out.append({'uris': items, 'max_results': remaining,
+                             'option_type': getattr(tag_box, 'option_type', None),
+                             'library_link': library_link,
+                             'bypass_remove_filter': bypass_remove_filter})
+            added = min(len(items), remaining or len(items))
+            _planned[0] += added
+            return added
+
+        def _remaining():
+            # Budget consumed so far: what actually landed in the tracklist (the
+            # historic measure) plus what has only been planned. One of the two
+            # is always zero, so on the legacy path this is the old expression.
+            live = self.mopidyHandler.tracklist.get_length() - tl_length_at_start
+            return max(0, max_results - live - _planned[0])
         if max_results>0:
             
             #If discover level has been pushed by api since the begining of session, we priorise it
@@ -1253,10 +1458,10 @@ class O2mToMopidy:
                     album_pairs = self.spotifyHandler.get_my_albums_tracks(max_result1, 1, return_pairs=True)
                     artist_pairs = self.spotifyHandler.get_my_artists_tracks(max_result1, 1, return_pairs=True)
                     for uri, source in album_pairs + artist_pairs:
-                        remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
+                        remaining = _remaining()
                         if remaining <= 0:
                             break
-                        self.add_tracks(tag_box, [uri], remaining, library_link=source or '')
+                        _plan_or_add([uri], remaining, library_link=source or '')
 
                 # spotify:library (library random extract)
                 elif "spotify:library2" in content :
@@ -1288,20 +1493,20 @@ class O2mToMopidy:
 
                 # newnotcompleted:library — pre-filtered in DB, bypass REMOVE in add_tracks
                 elif "newnotcompleted:library" in content:
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
+                    remaining = _remaining()
                     if remaining > 0:
                         uri_new = self.get_new_tracks_notread(remaining)
                         if uri_new:
-                            self.add_tracks(tag_box, uri_new, remaining, library_link='o2m:newnotcompleted', bypass_remove_filter=True)
+                            _plan_or_add(uri_new, remaining, library_link='o2m:newnotcompleted', bypass_remove_filter=True)
 
                 # newrecent:library — pre-filtered in DB, bypass REMOVE in add_tracks
                 elif "newrecent:library" in content:
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
+                    remaining = _remaining()
                     if remaining > 0:
                         days = 60
                         uri_new = self.get_newrecent_tracks(remaining, days)
                         if uri_new:
-                            self.add_tracks(tag_box, uri_new, remaining, library_link='o2m:newrecent', bypass_remove_filter=True)
+                            _plan_or_add(uri_new, remaining, library_link='o2m:newrecent', bypass_remove_filter=True)
 
                 # album:local
                 elif "albums:local" in content :
@@ -1320,14 +1525,14 @@ class O2mToMopidy:
 
                 # albums:spotify — direct call to carry the selected album/artist as library_link
                 elif "albums:spotify" in content :
-                    remaining = max(0, max_results - (self.mopidyHandler.tracklist.get_length() - tl_length_at_start))
+                    remaining = _remaining()
                     if remaining > 0:
                         if (random.choice([1,2])) == 1:
                             uris, source = self.spotifyHandler.get_my_albums_tracks(1, 0, return_source=True)
                         else:
                             uris, source = self.spotifyHandler.get_my_artists_tracks(1, 0, return_source=True)
                         if uris:
-                            self.add_tracks(tag_box, uris, remaining, library_link=source or '')
+                            _plan_or_add(uris, remaining, library_link=source or '')
 
                 # Autos mode (to be optimized with the above code)
                 elif "auto:library" in content:

@@ -1,0 +1,44 @@
+# Declares o2m-core: O2M's logic, packaged so a second facade can depend on it.
+#
+# Why it lives here rather than in its own top-level directory: `o2m/` is the
+# Docker build context of the o2m image (`COPY ./ /app/`) AND the live bind
+# mount (`./o2m:/app`). Moving the package outside would put it out of the build
+# context and out of the mount, which would end the "edit Python, restart the
+# container" workflow that both dev and prod rely on. So the package sits inside,
+# and only `o2m_core` is part of the distribution — main.py, static/ and the
+# Dockerfile are the service around it, not part of what ships.
+#
+# Nothing installs this yet: the o2m service imports it from the working
+# directory. It exists so that the day a second consumer appears, the boundary
+# is already real and `pip install ./o2m` is all it takes.
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "o2m-core"
+version = "0.1.0"
+description = "O2M's core logic: boxes, selection, popularity, catalogue and stats"
+requires-python = ">=3.10"
+authors = [{ name = "Patrick Vincent" }]
+dependencies = [
+    "peewee",          # playhouse ships with it — not a separate requirement
+    "PyMysql",         # driver peewee loads for MySQLDatabase; never imported directly
+    "requests",
+    "spotipy",
+    # Kept deliberately. o2m_core.o2mtomopidy.get_podcast_from_url uses
+    # feeds.parse() and Extension.get_url_opener(). Reimplementing them would mean
+    # reproducing mopidy-podcast's URI contract byte for byte — the guid fallback
+    # to the enclosure url, uritools.uriencode with its exact safe set, and a feed
+    # base taken from the URL *after* redirects. That contract keys 8300+ existing
+    # Track rows, and playback resolves `podcast+` through mopidy-podcast anyway,
+    # so dropping the import would hide the dependency rather than remove it.
+    "mopidy-podcast",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/object2music/o2m"
+
+[tool.setuptools]
+packages = ["o2m_core"]

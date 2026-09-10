@@ -30,7 +30,14 @@
   (function () {
     var t = new URLSearchParams(location.search).get('theme')
           || localStorage.getItem('o2m2-theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', t);
+    /* Bulletin2 is a SKIN over Bulletin, not a sixth token set. It rides on
+       data-theme="creme", so every Bulletin rule — the design system's included,
+       and that file is replaced wholesale on each sync — applies to it unchanged,
+       and data-skin carries only what it changes. Declaring a sixth theme name
+       would have meant copying fifty tokens the design system already owns. */
+    var base = t === 'bulletin2' ? 'creme' : t;
+    document.documentElement.setAttribute('data-theme', base);
+    if (t !== base) document.documentElement.setAttribute('data-skin', t);
     /* Basic view: /basic = simplified actuators (default on mobile). Same page,
        the mode is a root class so CSS can swap the middle section without flash. */
     var basic = /\/basic\/?$/.test(location.pathname);
@@ -112,13 +119,133 @@
     --tile-on:  rgba(255,255,255,.82);
     --tile-off: rgba(242,246,216,.45);
     --tile-on-ink: var(--text);
-    /* ALL is opaque (see its rule): a lime-cast disc when off, white when on, so it
-       speaks the tiles' language without going translucent over them. */
-    --tile-all-off: #CFDD97;
 
     --mx-bg: #FFFFFF;
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
+
+  /* ══ TEMPORARY — BULLETIN2, a trial skin over Bulletin ═══════════════════
+     Three things separate it from Bulletin:
+       1. the picture is painted under the WHOLE interface, in every view, not
+          just behind the Basic dashboard;
+       2. every ground becomes a frosted pane so the picture reads through it;
+       3. three interface colours are taken from the picture at runtime
+          (applySkinPalette) instead of being fixed by the theme.
+     It is a skin, not a theme: data-theme stays "creme", so it inherits the whole
+     Bulletin token set and every Bulletin rule, and only the overrides below are
+     its own. Delete this block and the chip to remove it.
+
+     ── Grounds ──
+     One lever does the whole interface: every surface in the page paints
+     --bg / --surface / --card / --header-bg, so turning those four translucent
+     lets the picture through everywhere at once — header, columns, tracklist,
+     sheets, footer — with no per-element rule.
+     The alpha values are not free. Measured over the worst pixel of the shipped
+     pictures (the violet), ink at 4.5:1 needs a white veil at about .45 and lands
+     at 6.5:1 by .55, which is where the reading surfaces sit. The header is
+     deliberately lighter (.42): it carries a few large words, not a body of text,
+     and it is the panel most worth seeing through. */
+  [data-skin="bulletin2"] {
+    --bg:        rgba(248,247,253,.50);
+    --surface:   rgba(238,235,248,.55);
+    --card:      rgba(255,255,255,.62);
+    --raised:    rgba(255,255,255,.78);
+    --header-bg: rgba(238,235,248,.42);
+    --track-bg:  rgba(222,217,240,.55);
+    --mx-bg:     rgba(255,255,255,.72);
+    --tile-off:  rgba(242,246,216,.38);
+    --tile-on:   rgba(255,255,255,.80);
+  }
+  /* One picture, blurred ONCE at the source.
+     backdrop-filter was the wrong tool and it took two tries to see why: it blurs
+     what is behind ONE element, so each panel softened its own patch and the image
+     broke at every panel edge. Dropping it removed the seams but left the picture
+     sharp and saturated, sitting level with the interface instead of behind it.
+     A single fixed layer, blurred and desaturated as a whole, gives the depth cue
+     with no seam anywhere: there is one image and one blur for the entire page.
+     Geometry notes, both load-bearing:
+     · position: fixed keeps it still while anything above it scrolls, so every pane
+       shows the same region of the same image;
+     · inset is negative so the blur's soft edge falls outside the viewport rather
+       than showing as a pale frame around the screen;
+     · z-index -1 inside the stacking context body opens paints it above body's own
+       background and below every piece of content — which is exactly a backdrop. */
+  [data-skin="bulletin2"] body { position: relative; z-index: 0; }
+  [data-skin="bulletin2"] body::before {
+    content: ''; position: fixed; inset: -60px; z-index: -1; pointer-events: none;
+    background-image: linear-gradient(var(--basic-bg-veil), var(--basic-bg-veil)),
+                      var(--basic-bg);
+    background-size: cover, cover;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
+    /* saturate is what makes it recede as much as the blur does: at full strength
+       these greens and violets shout louder than anything the interface draws. */
+    filter: blur(var(--bg-blur, 12px)) saturate(.5) brightness(1.06);
+  }
+  /* Bulletin paints the same picture on the Basic section. Left in place it would
+     be a second, differently-cropped copy of the same image inside the first —
+     a visible seam right across the dashboard. */
+  [data-skin="bulletin2"] #basic-section { background-image: none; }
+  /* NO blur anywhere in this skin, deliberately. The point of putting the picture
+     under the whole interface is that it reads as ONE picture, and a blur is a
+     discontinuity as visible as a crop: every panel that carried one showed its own
+     softened version of the image while the panels between them showed it sharp.
+     The panes are flat veils instead, and their opacity alone carries the text —
+     the contrast figures above are composites, they never counted on the blur.
+     The trade-off, worth watching with a photograph rather than these flat waves:
+     fine detail now sits directly under the text. The veil tuner already raises the
+     veil for a busy or dark picture, which is the lever if it turns out not to be
+     enough. Dropping the blur also removes what was by far this skin's rendering
+     cost, since it sampled the full screen. */
+  /* The columns carry the blur but declare no background of their own, so the
+     tracklist would sit straight on the blurred picture: --text over the picture's
+     dark violet is nowhere near readable. They get the ground as a pane, which is
+     what the blur is there to support. */
+  [data-skin="bulletin2"] .col { background: var(--bg); }
+  /* --bg is a translucent pane here, so anything that used it as INK has to be
+     given a real colour back. */
+  [data-skin="bulletin2"] #btn-auto.active { color: var(--on-accent); }
+  /* ══ end TEMPORARY (bulletin2) ═══════════════════════════════════════════ */
+
+  /* ══ TEMPORARY — Bulletin: mark palettes aligned on the background ════════
+     The mark is built from --ring-a-* (ink half) and --ring-b-* (accent half). On
+     Bulletin those are the design system's navy and amber, which clash with the
+     violet-and-lime picture behind the Basic dashboard — the header logo and the
+     backdrop read as two unrelated brands.
+     Each block re-cuts the two ramps from one shipped picture's own pair, by the
+     same construction the design system uses: five steps lightening toward white at
+     0 / 10.5 / 21 / 31.5 / 42 percent. Fed the original navy, the formula returns
+     the design system's own ramp to within a couple of values — so these are the
+     same object in another colour, not a different logo.
+     ring-a takes the darker of the pair, and is DEEPENED where the pair is too
+     close in luminance to keep the two halves apart: the picture's own violet
+     against its own orange sits at 1.95:1, where the original navy/amber is at
+     7.33:1, and the mark would have read as one flat disc. Each ink half is taken
+     down until the halves clear 3:1. violet-lime, the pair of the default picture,
+     needed none.
+     Known and accepted: the accent half's outer ring sits at ~1.7:1 on this ground
+     in every variant — exactly where the original amber already sits (1.74:1), so
+     the silhouette is no weaker than the logo we have.
+     Scoped to Bulletin; no attribute at all means the original. Selected in
+     Settings. Remove with the palette block above. */
+  [data-theme="creme"][data-mark="violet-lime"], [data-theme="bulletin"][data-mark="violet-lime"] {
+    --ring-a-1:#584F9D; --ring-a-2:#6A61A7; --ring-a-3:#7B74B2; --ring-a-4:#8D86BC; --ring-a-5:#9E99C6;
+    --ring-b-1:#B9CE06; --ring-b-2:#C0D320; --ring-b-3:#C8D83A; --ring-b-4:#CFDD54; --ring-b-5:#D6E36F;
+  }
+  [data-theme="creme"][data-mark="orange-violet"], [data-theme="bulletin"][data-mark="orange-violet"] {
+    --ring-a-1:#393366; --ring-a-2:#4E4876; --ring-a-3:#635E86; --ring-a-4:#777396; --ring-a-5:#8C89A6;
+    --ring-b-1:#EA5634; --ring-b-2:#EC6849; --ring-b-3:#EE795F; --ring-b-4:#F18B74; --ring-b-5:#F39D89;
+  }
+  [data-theme="creme"][data-mark="lime-pink"], [data-theme="bulletin"][data-mark="lime-pink"] {
+    --ring-a-1:#B03F72; --ring-a-2:#B85381; --ring-a-3:#C16790; --ring-a-4:#C97B9E; --ring-a-5:#D190AD;
+    --ring-b-1:#B9CE06; --ring-b-2:#C0D320; --ring-b-3:#C8D83A; --ring-b-4:#CFDD54; --ring-b-5:#D6E36F;
+  }
+  [data-theme="creme"][data-mark="orange-lime"], [data-theme="bulletin"][data-mark="orange-lime"] {
+    --ring-a-1:#B04027; --ring-a-2:#B8543E; --ring-a-3:#C16854; --ring-a-4:#C97C6B; --ring-a-5:#D19082;
+    --ring-b-1:#B9CE06; --ring-b-2:#C0D320; --ring-b-3:#C8D83A; --ring-b-4:#CFDD54; --ring-b-5:#D6E36F;
+  }
+  /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
+
 
   /* ── REVERT SWITCH — design-system base/reset ─────────────────────────────
      ds/o2m.css sets body { font-size: 15px; line-height: 1.5 }: that is the
@@ -189,7 +316,6 @@
 
   /* Marqueur éditorial devant les libellés de section */
   .panel-head::before,
-  #genres-label::before,
   #tracklist-label > span:first-child::before {
     content: var(--eyebrow-mark, ""); color: var(--eyebrow-color, var(--accent));
   }
@@ -309,6 +435,19 @@
     background: rgba(255,255,255,.88); color: #1A1A1A; font-family: var(--font-mono);
     font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .set-marks { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 14px; }
+  .set-mark { display: flex; flex-direction: column; align-items: center; gap: 7px;
+    background: none; border: none; padding: 0; cursor: pointer; font: inherit; color: var(--muted); }
+  /* The swatch is the mark's own construction in miniature: ink half on top, accent
+     half below, parted by the ground-coloured horizon. */
+  .set-mark i { display: block; width: 44px; height: 44px; border-radius: 50%;
+    background: linear-gradient(to bottom, var(--ma) 0 calc(50% - 1.5px),
+      var(--bg) calc(50% - 1.5px) calc(50% + 1.5px), var(--mb) calc(50% + 1.5px) 100%);
+    outline: 2px solid transparent; outline-offset: 3px; transition: outline-color .15s; }
+  .set-mark.sel i { outline-color: var(--accent); }
+  .set-mark.sel { color: var(--text); }
+  .set-mark span { font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em;
+    text-transform: uppercase; text-align: center; }
   .set-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
   .set-row .wc-btn { margin: 0; }
   /* Maintenance actions: several equal-weight buttons, so they get a tighter gap
@@ -633,7 +772,11 @@
     padding: 0; font-size: var(--t-body-s); text-transform: uppercase; letter-spacing: .01em;
     color: var(--text); font-weight: 600; font-family: var(--font-head);
     white-space: nowrap; flex-shrink: 0;
+    /* Opens what carries the tag; the separator is a ::before on the chip, so the
+       underline has to sit on the text alone or it would drag the slash with it. */
+    background: none; border: 0; cursor: pointer;
   }
+  .tag-chip:hover { color: var(--accent); }
   .tag-chip:not(:first-child)::before {
     content: "/"; margin: 0 9px; color: var(--eyebrow-color, var(--accent)); font-weight: 700;
   }
@@ -827,8 +970,7 @@
     #boxes-panel .panel-body { padding: 0 12px 14px; }
     #dials { padding: 4px 10px 2px; }
     #matrix-section { padding: 2px 10px 6px; min-width: 0; }
-    #genres-section { padding: 8px 10px 10px; border-top: 1px solid var(--border); }
-    #tracklist-section { padding: 0; }
+      #tracklist-section { padding: 0; }
     #tracklist-wrap { padding: 0 12px 10px; }
   }
 
@@ -1021,17 +1163,6 @@
                                 display: flex; gap: 8px; }
 
   /* ── Genres ── */
-  #genres-section { padding: 10px 14px 6px; }
-  #genres-label { font-size: 12px; color: var(--muted); text-transform: uppercase;
-                  letter-spacing: .08em; margin-bottom: 8px; }
-  #genres-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
-  .genre-chip {
-    padding: 5px 13px; border-radius: 0; font-size: var(--t-body-s); font-weight: 500;
-    border: none; background: var(--fill-2); color: var(--muted);
-    cursor: pointer; transition: all .15s;
-  }
-  .genre-chip.active { background: var(--accent); color: #fff; }
-  .genre-chip:active { transform: scale(.95); }
 
   /* ── Tracklist ── */
   #tracklist-section { padding: 10px 14px 4px; }
@@ -1043,7 +1174,7 @@
   #tracklist-count { font-size: var(--t-label); color: var(--muted); }
 
   /* Harmonisation des titres de section (comme les tags sous le titre) */
-  .panel-head, .dial-label, #genres-label,
+  .panel-head, .dial-label,
   #tracklist-label > span:first-child {
     font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s);
     text-transform: uppercase; letter-spacing: .02em; color: var(--text);
@@ -1389,15 +1520,6 @@
     display: inline-flex; align-items: center; gap: 6px;
   }
   .tb-eyebrow::before { content: ''; width: 6px; height: 6px; background: var(--accent); flex-shrink: 0; }
-
-  /* Genre chips → o2m-chip : square, hairline border, mono, active = solid orange. */
-  #genres-wrap { gap: var(--sp-2); }
-  .genre-chip {
-    font-family: var(--font-mono); font-size: var(--t-label); letter-spacing: .1em;
-    text-transform: uppercase; padding: 6px 12px; font-weight: 500;
-    background: none; border: 1px solid var(--border); color: var(--muted);
-  }
-  .genre-chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #190E04); }
 
   /* Status badge → o2m-badge : mono label, leading colour square (kept). */
   #track-status-badge {
@@ -1894,16 +2016,22 @@
   [data-theme="creme"] .basic-toggle.on,   [data-theme="bulletin"] .basic-toggle.on {
     background: var(--tile-on); border-color: transparent; color: var(--tile-on-ink);
   }
-  /* ALL is a small disc sitting ON TOP of the tiles, so it cannot go translucent —
-     it would show their edges through it. It stays opaque and says its state with
-     the fill instead, in the tiles' own language: lime-cast when off, white when on.
-     Its OFF state used to be --bg, which is all but white on this theme: with only
-     Music active the disc still read as switched on. */
+  /* ALL takes the tiles' own two panes: the lime veil when off, the white card when
+     on. It was the one opaque control left in a view built entirely of veils, and
+     that is what made it look foreign.
+     It was kept opaque on purpose, and the reason was real: it is a disc sitting ON
+     TOP of the four tiles, so a translucent one shows their edges and the cross of
+     gaps between them. That is now accepted rather than avoided — in a design where
+     every surface is a veil over one picture, layers showing through each other is
+     the language, not a defect. What keeps the disc reading as a disc is the drop
+     shadow it already carries from its base rule, not a fill nothing else has.
+     Its OFF state before all this was --bg, which is all but white on this theme:
+     with only Music active the disc still read as switched on. */
   [data-theme="creme"] #basic-all, [data-theme="bulletin"] #basic-all {
-    background: var(--tile-all-off); border: none; color: var(--text);
+    background: var(--tile-off); border: none; color: var(--text);
   }
   [data-theme="creme"] #basic-all.on, [data-theme="bulletin"] #basic-all.on {
-    background: var(--card); color: var(--accent);
+    background: var(--tile-on); color: var(--accent);
     box-shadow: 0 3px 16px rgba(44,40,92,.22);
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
@@ -2017,8 +2145,14 @@
      under the panes; a fixed one covers the whole viewport, tracklist included.
      A background is painted against the element's own box and stays put in both
      cases. The tint that a filter used to give is the first layer instead. */
-  html.basic[data-theme="creme"] #basic-section,
-  html.basic[data-theme="bulletin"] #basic-section {
+  /* :not(bulletin2) rather than an override in the skin's own block: that override
+     existed and lost. This selector carries an id, a class and an attribute, and the
+     skin's could only match the id and its own attribute — so the section went on
+     painting a second, differently-cropped copy of the picture inside the first, and
+     the seam ran right across the middle of the screen. Excluding the skin here is
+     also the honest reading: under it, the picture belongs to the body. */
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-section,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-section {
     background-image: linear-gradient(var(--basic-bg-veil), var(--basic-bg-veil)),
                       var(--basic-bg);
     background-size: cover, cover;
@@ -2033,9 +2167,23 @@
   html.basic[data-theme="creme"] #basic-status,
   html.basic[data-theme="bulletin"] #basic-status {
     background: var(--tile-off);
-    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     border: 1px solid var(--border-soft);
     transition: background .25s, color .2s, border-color .2s;
+  }
+  /* The blur is a rule of its own so the skin can drop it without losing the pane.
+     In Bulletin the picture lives inside this section and blurring it costs nothing;
+     under bulletin2 it spans the page, and blurring it here alone left the middle
+     band sharp against blurred surroundings — a second seam, on top of the crop. */
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) .basic-toggle,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) .basic-toggle,
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-dials,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-dials,
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-status,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-status,
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-all,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-all {
+    -webkit-backdrop-filter: blur(var(--bg-blur, 12px));
+    backdrop-filter: blur(var(--bg-blur, 12px));
   }
   /* No hairline on the actuators. Their shape comes from the pane itself — a filled
      rectangle over a picture — and an outline on top of that reads as fussy. Only
@@ -2334,11 +2482,6 @@
       <div class="dial-sub">focused ↔ adventurous</div>
     </div>
   </div>
-  <div id="genres-section">
-    <div id="genres-label">Genres</div>
-
-    <div id="genres-wrap"></div>
-  </div>
   </div><!-- /panel-body -->
   </div><!-- /left-panel -->
 
@@ -2400,6 +2543,7 @@
       <!-- The key stays "creme": that is what existing users have persisted in
            o2m2-theme (the design system keeps it as an alias). -->
       <button class="theme-chip" data-theme-set="creme">Bulletin</button>
+      <button class="theme-chip" data-theme-set="bulletin2">Bulletin2</button>
       <button class="theme-chip" data-theme-set="mono">Mono</button>
       <button class="theme-chip" data-theme-set="overprint">Overprint</button>
       <button class="theme-chip" data-theme-set="invert">Invert</button>
@@ -2748,10 +2892,26 @@ async function refreshBasicToggles() {
       const boxes = basicCats[btn.dataset.cat] || [];
       btn.classList.toggle('on', boxes.some(b => b.active));
     });
-    const allBtn = document.getElementById('basic-all');
-    if (allBtn) allBtn.classList.toggle('on',
-      ['music', 'podcast', 'info', 'radio'].every(c => (basicCats[c] || []).some(b => b.active)));
+    syncAllButton();
   } catch(e) {}
+}
+
+/* ALL is a pure function of what the four tiles SHOW, never of the server state.
+   It used to be recomputed straight from basicCats while the tiles showed the state
+   the user had just asked for — optimistic, queued, or mid-fill — so the two
+   disagreed for as long as a fill took: turning the last category on left ALL dark
+   until the next poll caught up, and turning one off left it lit. Deriving it from
+   the tiles makes disagreeing impossible by construction.
+   Categories with no box at all are left out of the count. They can never turn on,
+   and counting them would keep ALL dark forever on an install that has no radio box
+   (or no podcast box, …) — which is also why it stayed dark after ALL had switched
+   on everything there was to switch on. */
+function syncAllButton() {
+  const allBtn = document.getElementById('basic-all');
+  if (!allBtn) return;
+  const tiles = [...document.querySelectorAll('#basic-toggles .basic-toggle')]
+    .filter(t => ((basicCats && basicCats[t.dataset.cat]) || []).length);
+  allBtn.classList.toggle('on', tiles.length > 0 && tiles.every(t => t.classList.contains('on')));
 }
 
 // ALL meta-button: any category active → everything off; nothing active → everything on.
@@ -2770,7 +2930,9 @@ let _allRunning = false;
 async function toggleBasicAll(btn) {
   if (!basicCats || mixBusy || _catDraining) return;
   const cats = shuffledCats();
-  const anyActive = cats.some(c => (basicCats[c] || []).some(b => b.active));
+  const tileOn = c => !!document.querySelector(`.basic-toggle[data-cat="${c}"]`)?.classList.contains('on');
+  // Read from the tiles, like everything else: the user is acting on what is shown.
+  const anyActive = cats.some(tileOn);
   // ALL is a sequence over the four tiles, so it and the tiles are mutually
   // exclusive: the tiles are parked for the run (a tap meanwhile would race it).
   const tiles = [...document.querySelectorAll('#basic-toggles .basic-toggle')];
@@ -2781,9 +2943,11 @@ async function toggleBasicAll(btn) {
   try {
     for (const c of cats) {
       const cbtn = document.querySelector(`.basic-toggle[data-cat="${c}"]`);
-      const isOn = (basicCats[c] || []).some(b => b.active);
-      // OFF pass: only categories currently on; ON pass: only those off.
-      if (anyActive === isOn && cbtn) await toggleBasicCat(cbtn);
+      // OFF pass: only categories currently on; ON pass: only those off. The target
+      // is stated rather than toggled, so a category that changed under us is a
+      // no-op instead of a flip in the wrong direction.
+      if (cbtn && anyActive === tileOn(c)) await toggleBasicCat(cbtn, !anyActive);
+      syncAllButton();   // the disc fills in as the sequence advances
     }
   } finally {
     _allRunning = false;
@@ -2818,11 +2982,13 @@ function requestBasicCat(btn) {
     _catQueue.splice(qi, 1);
     btn.classList.remove('pending');
     btn.classList.toggle('on', boxes.some(b => b.active));   // back to the server's truth
+    syncAllButton();
     setFeedback(_capCat(cat) + ' cancelled');
     return;
   }
   const wantOn = !btn.classList.contains('on');    // relative to what the user sees
   btn.classList.toggle('on', wantOn);              // instant feedback; confirmed later
+  syncAllButton();
   _catQueue.push({ cat, wantOn });
   if (_catDraining || mixBusy) {                   // something is filling: this one waits its turn
     btn.classList.add('pending');
@@ -2918,6 +3084,42 @@ function basicBgUrl() {
   if (c === 'custom') return _lsGet(BASIC_BG_DATA);
   return c;
 }
+/* ── The mark's palette ──────────────────────────────────────────────────────
+   The header logo is cut from --ring-a-* / --ring-b-*, which on Bulletin are the
+   design system's navy and amber. Against the violet-and-lime picture behind the
+   Basic dashboard the two read as unrelated brands. The choice below re-cuts the
+   ramps from one of the pictures' own pairs (the CSS blocks near the top).
+     o2m-mark  '' → follow the background · 'original' · a palette key
+   Following the background is the default: the picture itself is drawn at random,
+   so a fixed mark would clash again on the next load. A picture you uploaded has
+   no known pair, so 'follow' falls back to the original rather than guessing one
+   from its pixels — the same reason the palette is not extracted from the image. */
+const MARK_KEY = 'o2m-mark';
+const MARK_PALETTES = ['violet-lime', 'orange-violet', 'lime-pink', 'orange-lime'];
+/* Swatch colours only — the ramps themselves live in the CSS blocks. 'original' is
+   spelled out because reading --ring-a-1 back would return whatever override is
+   active, not the design system's value. */
+const MARK_SWATCH = {
+  original:        ['#28285B', '#F8B132'],
+  'violet-lime':   ['#584F9D', '#B9CE06'],
+  'orange-violet': ['#393366', '#EA5634'],
+  'lime-pink':     ['#B03F72', '#B9CE06'],
+  'orange-lime':   ['#B04027', '#B9CE06'],
+};
+function markChoice() { return _lsGet(MARK_KEY); }
+function resolvedMark() {
+  const c = markChoice();
+  if (c) return c;
+  const m = /wave-([a-z-]+)\.jpg$/.exec(_basicBgUrl || '');   // the files are named after their pair
+  return (m && MARK_PALETTES.includes(m[1])) ? m[1] : 'original';
+}
+function applyMark() {
+  const k = resolvedMark();
+  const root = document.documentElement;
+  if (k === 'original') root.removeAttribute('data-mark');
+  else root.setAttribute('data-mark', k);
+}
+
 let _basicBgUrl = '';
 function initBasicBackground() {
   let url = basicBgUrl();
@@ -2927,6 +3129,122 @@ function initBasicBackground() {
   // URL is restricted to A-Za-z0-9+/= — neither can close the url() early.
   document.documentElement.style.setProperty('--basic-bg', 'url("' + url + '")');
   tuneBasicBackdrop(url);
+  applyMark();   // the default choice follows whichever picture was just drawn
+  applySkinPalette();
+}
+
+/* ── Bulletin2: three interface colours taken from the picture ───────────────
+   Done at your request, and the reservation stands: a colour lifted from an
+   arbitrary image carries no contrast guarantee, so this cannot be a general
+   mechanism — it is a trial confined to one skin. Two things keep the trial
+   readable enough to judge:
+     · greys, near-black and near-white are skipped. They are most of a photograph
+       and none of its identity, and picking one would hand the interface a colour
+       that says nothing;
+     · every pick is darkened until it clears the ground. Without that floor a pale
+       pick lands around 1.5:1 and the control it drives is simply not on screen —
+       you would be reading a bug, not a palette.
+   What each colour drives: the darkest becomes the mark's ink half, DISCOVERY and
+   energy; the lightest becomes the accent half, MOOD and valence; the middle one
+   (when the picture has three) becomes the accent. With two, the accent is the
+   darkest. Inline custom properties, so they also outrank the Mark picker's CSS —
+   in this skin the picture decides, and the picker has no effect.
+   Every other theme, and Bulletin itself, is untouched: the properties are removed
+   the moment the skin is not bulletin2. */
+const SKIN2_GROUND = [248, 247, 253];   // the light every pane lifts toward
+const SKIN2_RAMP = [0, .105, .21, .315, .42];   // the design system's own five steps
+const SKIN2_VARS = ['--accent', '--accent-press', '--accent-soft', '--c-dl',
+  '--c-opening', '--c-energy', '--c-mood', '--c-valence']
+  .concat([1, 2, 3, 4, 5].map(i => '--ring-a-' + i))
+  .concat([1, 2, 3, 4, 5].map(i => '--ring-b-' + i));
+
+function _hex(c) {
+  return '#' + c.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16)
+    .padStart(2, '0')).join('').toUpperCase();
+}
+function _deepen(c, t) { return c.map(v => v * (1 - t)); }
+function _rampOf(c) { return SKIN2_RAMP.map(t => _hex(c.map(v => v + (255 - v) * t))); }
+/* Darken until it clears `min` on the ground. Returns the original when it already
+   does, so a picture whose colours are strong keeps them exactly. */
+function _readable(c, min) {
+  let out = c;
+  for (let t = 0.05; t <= 0.75 && _contrast(out, SKIN2_GROUND) < min; t += 0.05) out = _deepen(c, t);
+  return out;
+}
+function _dominantColours(data, n) {
+  const buckets = new Map();
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx < 26 || mn > 236) continue;                 // near-black, near-white
+    if (mx === 0 || (mx - mn) / mx < 0.22) continue;    // greys: no identity
+    const k = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);   // 4 bits per channel
+    const e = buckets.get(k) || [0, 0, 0, 0];
+    e[0] += r; e[1] += g; e[2] += b; e[3]++; buckets.set(k, e);
+  }
+  const ranked = [...buckets.values()].sort((a, b) => b[3] - a[3]);
+  if (!ranked.length) return [];   // a fully grey or blown-out picture
+  /* A bucket has to carry real weight to count. On a flat two-colour graphic the
+     third-ranked colour is the ANTI-ALIASING SEAM between the two flats — a blend
+     of lime and pink is a brown — and taking it handed the accent a muddy colour
+     that is nowhere in the picture. Measured on the shipped set: the two real
+     colours hold 100% and 73-98% of the top bucket, the seam 2-6%. Anything under
+     a sixth of the leader is an edge, not a colour. */
+  const floor = ranked[0][3] / 6;
+  // Keep the picks apart too: a picture built on one colour would otherwise hand
+  // back five shades of it, and the roles would be indistinguishable.
+  const out = [];
+  const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) > 60;
+  for (const e of ranked) {
+    if (e[3] < floor) break;
+    const c = [e[0] / e[3], e[1] / e[3], e[2] / e[3]];
+    if (out.every(o => far(o, c))) out.push(c);
+    if (out.length === n) break;
+  }
+  return out;
+}
+
+function applySkinPalette() {
+  const root = document.documentElement;
+  const clear = () => SKIN2_VARS.forEach(v => root.style.removeProperty(v));
+  if (root.getAttribute('data-skin') !== 'bulletin2' || !_basicBgUrl) { clear(); return; }
+  const img = new Image();
+  img.onerror = clear;
+  img.onload = () => {
+    if (root.getAttribute('data-skin') !== 'bulletin2') return;   // switched away mid-load
+    const N = 40, cv = document.createElement('canvas');
+    cv.width = N; cv.height = N;
+    let d;
+    try {
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, N, N);
+      d = ctx.getImageData(0, 0, N, N).data;
+    } catch (e) { clear(); return; }              // tainted canvas → keep the theme's
+    const picks = _dominantColours(d, 3);
+    if (picks.length < 2) { clear(); return; }    // too little colour to say anything
+    const dark = [...picks].sort((a, b) => _lum(a) - _lum(b));
+    let ink = _readable(dark[0], 4.5);                       // ink half: it carries text
+    const comp = _readable(dark[dark.length - 1], 3.0);      // accent half: a graphic
+    // With two colours the accent is the ink itself. That is the design system's own
+    // reasoning for this theme — the accent reads as the ink raised in intensity,
+    // not as a guest colour — and it is what a two-colour picture actually offers.
+    const acc = _readable(dark.length > 2 ? dark[1] : dark[0], 4.5);
+    // The mark is two halves parted by a ground-coloured gap; below 3:1 between them
+    // it reads as one flat disc, so the ink half keeps going down until they part.
+    for (let t = 0.05; t <= 0.6 && _contrast(ink, comp) < 3.0; t += 0.05) ink = _deepen(dark[0], t);
+    const ra = _rampOf(ink), rb = _rampOf(comp);
+    const set = (k, v) => root.style.setProperty(k, v);
+    ra.forEach((v, i) => set('--ring-a-' + (i + 1), v));
+    rb.forEach((v, i) => set('--ring-b-' + (i + 1), v));
+    set('--accent', _hex(acc));
+    set('--accent-press', _hex(_deepen(acc, .18)));
+    set('--accent-soft', `rgba(${acc.map(Math.round).join(',')},.12)`);
+    set('--c-dl', _hex(acc));
+    set('--c-opening', _hex(ink));  set('--c-energy', _hex(ink));
+    set('--c-mood', _hex(comp));    set('--c-valence', _hex(comp));
+    readThemeColors();   // the matrix reads its colours from the tokens, not the DOM
+  };
+  img.src = _basicBgUrl;
 }
 
 /* ── The picture tunes the VEIL, not the palette ─────────────────────────────
@@ -2951,6 +3269,19 @@ const BASIC_DARK_PCT = 0.15; // protect all but the darkest 15% of the picture
    ink bar with no veil at all, and left to the measurement alone they would come
    back fully saturated. So the search starts at this floor and only ever goes up. */
 const BASIC_VEIL_FLOOR = 0.14;
+/* Blur radius, measured rather than picked. The blur is here to soften the detail
+   sitting under the text and to push the picture back, and detail is measurable:
+   the mean luminance step between neighbouring pixels. A flat two-colour graphic
+   has almost none, a photograph has a great deal, so the radius follows the picture
+   instead of being a number chosen for whichever image happened to be on screen —
+   26px was right for a photograph and far too much for these waves.
+   Calibrated on what there is to calibrate on: the four shipped graphics measure
+   0.012 to 0.030 and land near the floor. The knee is the honest weak point — with
+   no photograph in the set I could not measure where real content sits, and white
+   noise is no help because downsampling averages it away and UNDER-reports it. If
+   an uploaded photograph comes out too soft or too sharp, this constant is the one
+   to move, and nothing else. */
+const BASIC_BLUR_MIN = 6, BASIC_BLUR_MAX = 22, BASIC_DETAIL_KNEE = 0.10;
 
 function _cssRGBA(v) {
   v = (v || '').trim();
@@ -2988,7 +3319,9 @@ function tuneBasicBackdrop(url) {
   const img = new Image();
   img.onerror = () => {};
   img.onload = () => {
-    const N = 24, cv = document.createElement('canvas');
+    // 48, not 24: the detail metric below needs neighbouring pixels to still be
+    // neighbours. The veil's dark percentile is unchanged by the finer grid.
+    const N = 48, cv = document.createElement('canvas');
     cv.width = N; cv.height = N;
     let d;
     try {
@@ -2996,6 +3329,20 @@ function tuneBasicBackdrop(url) {
       ctx.drawImage(img, 0, 0, N, N);
       d = ctx.getImageData(0, 0, N, N).data;
     } catch (e) { return; }             // tainted canvas → keep the declared veil
+    // Detail → blur radius. Rec. 601 weights, which is what the calibration above
+    // was measured with. Read before the sort: it needs the pixels in place.
+    const lumAt = (x, y) => { const i = (y * N + x) * 4;
+      return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; };
+    let steps = 0, pairs = 0;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (x + 1 < N) { steps += Math.abs(lumAt(x, y) - lumAt(x + 1, y)); pairs++; }
+      if (y + 1 < N) { steps += Math.abs(lumAt(x, y) - lumAt(x, y + 1)); pairs++; }
+    }
+    const detail = pairs ? (steps / pairs) / 255 : 0;
+    const blur = BASIC_BLUR_MIN + (BASIC_BLUR_MAX - BASIC_BLUR_MIN)
+               * Math.min(1, detail / BASIC_DETAIL_KNEE);
+    root.style.setProperty('--bg-blur', blur.toFixed(1) + 'px');
+
     const px = [];
     for (let i = 0; i < d.length; i += 4) px.push([d[i], d[i + 1], d[i + 2]]);
     px.sort((a, b) => _lum(a) - _lum(b));
@@ -3027,6 +3374,10 @@ function renderSettings() {
     `<button class="set-bg${cur === val ? ' sel' : ''}" data-bg="${objEsc(val)}" style="${css}" title="${objEsc(label)}">
        <span class="set-bg-tag">${objEsc(label)}</span></button>`;
   const pretty = n => n.replace(/^wave-/, '').replace(/\.jpg$/, '').replace(/-/g, ' ');
+  const mk = markChoice();
+  const markTile = (val, label, [a, b]) =>
+    `<button class="set-mark${mk === val ? ' sel' : ''}" data-mark-set="${objEsc(val)}"
+       style="--ma:${a};--mb:${b}" title="${objEsc(label)}"><i></i><span>${objEsc(label)}</span></button>`;
   body.innerHTML = `
     ${sheetHead('Settings')}
     <div class="set-sec">
@@ -3044,6 +3395,17 @@ function renderSettings() {
         <label class="wc-btn" for="set-bg-file">Upload a picture…</label>
         <input id="set-bg-file" type="file" accept="image/*" hidden>
         ${custom ? '<button class="wc-skip" id="set-bg-clear" style="margin:0">Remove mine</button>' : ''}
+      </div>
+    </div>
+    <div class="set-sec">
+      <div class="set-sec-h">Mark</div>
+      <div class="set-note">The O2M logo is two ramps, an ink half and an accent half.
+        These re-cut them from a background's own pair so the logo and the picture stop
+        reading as two brands. Bulletin only; every other theme keeps its own.</div>
+      <div class="set-marks" id="set-marks">
+        ${markTile('', 'Follow', MARK_SWATCH[resolvedMark()])}
+        ${markTile('original', 'Original', MARK_SWATCH.original)}
+        ${MARK_PALETTES.map(k => markTile(k, k.replace('-', ' '), MARK_SWATCH[k])).join('')}
       </div>
     </div>
     <div class="set-sec">
@@ -3083,6 +3445,10 @@ function renderSettings() {
     try { localStorage.removeItem(BASIC_BG_DATA); localStorage.setItem(BASIC_BG_KEY, ''); } catch (e) {}
     initBasicBackground(); renderSettings(); setFeedback('Background reset');
   });
+  body.querySelectorAll('.set-mark').forEach(b => b.addEventListener('click', () => {
+    try { localStorage.setItem(MARK_KEY, b.dataset.markSet); } catch (e) {}
+    applyMark(); renderSettings();
+  }));
   document.getElementById('set-warm-moods')?.addEventListener('click', () => triggerWarmup('moods'));
   document.getElementById('set-warm-genres')?.addEventListener('click', () => triggerWarmup('genres'));
   document.getElementById('set-warm-retry')?.addEventListener('click', () => triggerWarmup('retry_sentinels'));
@@ -4459,7 +4825,15 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       const uri = getUri();
       if (uri && uri.startsWith('spotify:track:')) {
         fetch(API + '/track_saved?uri=' + encodeURIComponent(uri)).then(r => r.json())
-          .then(d => { p.favSpotify = d.saved; renderFav(p); }).catch(() => {});
+          .then(d => {
+            // The answer is about `uri`, not about whatever the panel shows when it
+            // lands. Spotify's round-trip outlives a short track or a skip, so
+            // without this the previous track's heart was painted onto the new one —
+            // a filled heart on a track that had never been a favourite, with the
+            // DB and the live check both saying otherwise.
+            if (getUri() !== uri) return;
+            p.favSpotify = d.saved; renderFav(p);
+          }).catch(() => {});
       }
       renderPlaylistEditor(editUnlocked ? uri : null, playlistsId);
     },
@@ -4785,26 +5159,6 @@ function startEditAuth() {
       if (!editUnlocked) setFeedback('Auth not completed');
     }
   }, 1000);
-}
-
-/* ── Genres ── */
-async function loadGenres() {
-  try {
-    const genres = await fetch(API + '/genres').then(r => r.json());
-    const wrap = document.getElementById('genres-wrap');
-    genres.slice(0, 20).forEach(g => {
-      const chip = document.createElement('button');
-      chip.className = 'genre-chip';
-      chip.textContent = g.name;
-      chip.dataset.name = g.name;
-      chip.addEventListener('click', () => {
-        chip.classList.toggle('active');
-        appState.genres = [...wrap.querySelectorAll('.genre-chip.active')].map(c => c.dataset.name);
-        scheduleApply();
-      });
-      wrap.appendChild(chip);
-    });
-  } catch(e) {}
 }
 
 /* ── Volume slider ── */
@@ -6849,6 +7203,29 @@ async function searchLoadMore() {
   } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Load more'; } }
 }
 
+/* A tag chip opens everything carrying that tag. It reuses the search view's
+   renderer — same rows, same sections — but its kind is 'Tag', not 'Search': the
+   header's editable query field belongs to a text search, and a tag is not one.
+   The answer is capped per type rather than paged (has_more false server-side), so
+   no "Load more" appears. */
+async function openTagSearch(tag) {
+  if (!tag) return;
+  objNavTo();
+  objSetHead('Tag', tag, 'tracks · albums · artists');
+  objSetActionUris([]);
+  openObjPanel();
+  objLoading('Loading…');
+  let d;
+  try { d = await fetch(API + '/tag_search?tag=' + encodeURIComponent(tag) + '&limit=25').then(r => r.json()); }
+  catch (e) { objBody().innerHTML = '<div class="obj-empty">Tag search failed.</div>'; return; }
+  if (!d || d.error) {
+    objBody().innerHTML = `<div class="obj-empty">${objEsc((d && d.error) || 'Tag search failed')}</div>`;
+    return;
+  }
+  _searchState = { q: tag, limit: 25, offset: 0, data: d };
+  _searchRender();
+}
+
 async function openSearch(q, opts) {
   const inPlace = !!(opts && opts.inPlace);   // live-edit from the header field: no nav push, no spinner
   if (!inPlace) objNavTo();
@@ -7026,9 +7403,14 @@ async function fetchAndRenderTrackTags(uri) {
   try {
     const tags = await fetch(API + '/track_tags?uri=' + encodeURIComponent(uri)).then(r => r.json());
     tags.slice(0, 12).forEach(({name}) => {
-      const chip = document.createElement('span');
+      // A button, not a span: it is an action, so it gets keyboard focus and a role
+      // for free rather than a click handler bolted onto inert text.
+      const chip = document.createElement('button');
+      chip.type = 'button';
       chip.className = 'tag-chip';
       chip.textContent = name;
+      chip.title = 'Show everything tagged ' + name;
+      chip.addEventListener('click', () => openTagSearch(name));
       bar.insertBefore(chip, evEl);
     });
   } catch(e) {}
@@ -7447,10 +7829,15 @@ function fitHeroTitle() {
 /* ── Init ── */
 /* ── Thèmes ── */
 function applyTheme(name) {
-  document.documentElement.setAttribute('data-theme', name);
-  localStorage.setItem('o2m2-theme', name);   // clé séparée : mood2 n'écrase pas mood
+  // See the pre-paint script: bulletin2 is Bulletin plus a skin.
+  const base = name === 'bulletin2' ? 'creme' : name;
+  document.documentElement.setAttribute('data-theme', base);
+  if (name === base) document.documentElement.removeAttribute('data-skin');
+  else document.documentElement.setAttribute('data-skin', name);
+  localStorage.setItem('o2m2-theme', name);   // separate key: mood2 never overwrites mood
   document.querySelectorAll('.theme-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.themeSet === name));
+  applySkinPalette();   // bulletin2 takes three colours from the picture; others clear them
   if (name === 'invert') updateHeroAccent(matrixCurUri);
   else document.documentElement.style.removeProperty('--hero-accent');
   document.getElementById('top-zone')?.classList.remove('cover-lit');  // reset overprint recolor toggle
@@ -7475,7 +7862,6 @@ function resetMood() {
   setDial('energy', appState.energy);
   setDial('valence', appState.valence);
   setDial('dl', appState.dl / 10);
-  document.querySelectorAll('#genres-wrap .genre-chip.active').forEach(c => c.classList.remove('active'));
   scheduleApply();
   setFeedback('Mood reset');
 }
@@ -7857,6 +8243,21 @@ async function init() {
   document.getElementById('obj-next')?.addEventListener('click', objFwdNav);
   document.getElementById('obj-actions')?.addEventListener('click', (e) => { e.stopPropagation(); openObjActions(e.currentTarget); });
   document.getElementById('obj-backdrop')?.addEventListener('click', closeObjPanel);
+  /* Clicking outside the object panel dismisses it, the same affordance as every
+     sheet. The backdrop alone could not carry this: from 700px up the panel is an
+     in-place overlay of the content area (absolute, inset 0) and the backdrop is
+     switched off entirely, so there was nothing outside it to click — searching or
+     opening an album simply would not close.
+     pointerdown, not click, so an opener that lives outside the panel still works:
+     we dismiss on the press, its own click then opens the new object, and the two
+     history entries cancel out. */
+  document.addEventListener('pointerdown', (e) => {
+    if (!document.body.classList.contains('obj-open')) return;
+    const panel = document.getElementById('obj-panel');
+    if (!panel || panel.contains(e.target)) return;
+    if (e.target.closest?.('#obj-backdrop')) return;   // its own handler covers it
+    closeObjPanel();
+  });
   // The three dismiss gestures, wired once from the registry.
   document.getElementById('wc-backdrop')?.addEventListener('click', closeTopSheet);
   SHEETS.forEach(sh => document.getElementById(sh.id)?.addEventListener('click', (e) => {
@@ -7928,7 +8329,6 @@ async function init() {
   });
   checkEditStatus();
   initOnboarding();
-  await loadGenres();
   await loadBoxes();
   // Laisse au WS le temps de s'ouvrir (≤300ms) → préfère WS sur HTTP mais ne bloque plus longtemps
   await Promise.race([wsReady, new Promise(r => setTimeout(r, 300))]);
