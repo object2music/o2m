@@ -25,12 +25,13 @@ in — so they can be reasoned about and tested on their own.
    'mood:' line sitting after 'auto:library' would otherwise have no effect on it
    and the order inside the box would silently change the result.
 
-Windows are evaluated against LOCAL time. The containers set TZ, so
-datetime.now() is local — see the note in the compose file: a listener writing
-"08:00" means their morning, not UTC.
+Windows are evaluated against LOCAL time — a listener writing "08:00" means their
+morning, not UTC. See local_now() for how that is obtained without depending on
+the deployment.
 """
 
 import datetime
+import os
 import re
 
 # Same five names, and the same pairs, as the BASIC view's mood detents — one
@@ -42,6 +43,32 @@ MOOD_NAMES = {
     'happy':     (0.55, 0.90),
     'energetic': (0.90, 0.75),
 }
+
+# Where a window's hours are read. The compose files set TZ, but each instance has
+# its own and it sits outside the sparse checkout, so it cannot be relied on to
+# carry this: a box written on one instance must mean the same hours on another.
+DEFAULT_TZ = 'Europe/Paris'
+
+
+def local_now():
+    """Wall-clock time as a listener reads it, tz-naive for easy comparison.
+
+    The process timezone wins when the deployment sets one (TZ in compose, or
+    O2M_TIMEZONE to override just this); otherwise DEFAULT_TZ is applied
+    explicitly, so a window still means local hours on an instance whose compose
+    was never updated instead of silently drifting to UTC.
+    """
+    name = os.environ.get('O2M_TIMEZONE')
+    if not name:
+        if os.environ.get('TZ'):
+            return datetime.datetime.now()
+        name = DEFAULT_TZ
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo(name)).replace(tzinfo=None)
+    except Exception:
+        return datetime.datetime.now()
+
 
 _COND_RE = re.compile(r'^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*>\s*(.*)$')
 _DL_RE = re.compile(r'^dl\s*:\s*(\d{1,2})\s*$', re.I)
@@ -72,7 +99,7 @@ def window_matches(window, now=None):
     if not window:
         return True
     start, end = window
-    now = now or datetime.datetime.now()
+    now = now or local_now()
     cur = now.hour * 60 + now.minute
     if start <= end:
         return start <= cur < end

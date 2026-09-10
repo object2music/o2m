@@ -1721,8 +1721,11 @@ class O2mToMopidy:
         return tracklist_uris  
 
     def lastinfos(self,box,max_results):
-        hour = datetime.datetime.now().hour
-        minute = datetime.datetime.now().minute
+        # The French broadcast grid below is in local time, so ask for it that way
+        # rather than trusting the container's clock (see bdir.local_now).
+        _now = bdir.local_now()
+        hour = _now.hour
+        minute = _now.minute
         day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
         info_url = ""
         print (f"infos:library {day} {hour} {minute}")

@@ -1,4 +1,5 @@
 import datetime
+import os
 import unittest
 
 from o2m_core import boxdirectives as bd
@@ -102,3 +103,34 @@ class TestIsDirective(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestLocalNow(unittest.TestCase):
+    """The feature must mean local hours even where the deployment sets no TZ."""
+
+    def setUp(self):
+        self._saved = {k: os.environ.get(k) for k in ('TZ', 'O2M_TIMEZONE')}
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_falls_back_to_a_real_timezone_when_the_container_sets_none(self):
+        os.environ.pop('TZ', None)
+        os.environ.pop('O2M_TIMEZONE', None)
+        local = bd.local_now()
+        utc = datetime.datetime.utcnow()
+        # Paris is one or two hours ahead of UTC; the point is that it is NOT UTC.
+        delta = round((local - utc).total_seconds() / 3600)
+        self.assertIn(delta, (1, 2))
+
+    def test_o2m_timezone_overrides(self):
+        os.environ['O2M_TIMEZONE'] = 'UTC'
+        delta = round((bd.local_now() - datetime.datetime.utcnow()).total_seconds() / 3600)
+        self.assertEqual(delta, 0)
+
+    def test_result_is_naive_so_it_compares_with_plain_datetimes(self):
+        self.assertIsNone(bd.local_now().tzinfo)
