@@ -5,14 +5,16 @@ everything it uses (`ext.Extension`, `config.read`, `config.String`, the
 registry, the `http:app` factory contract) is unchanged between the two.
 
 What it does today:
+  - a **backend** exposing the `o2m:` scheme, browse-only: O2M's catalogue
+    (playlists, podcast channels, genres) and a search over it, returning
+    references into other backends. No playback provider — see `backend.py`.
   - a **frontend** that pushes playback events to the O2M API in-process,
     replacing the websocket transport (see `frontend.py` for why)
   - an **HTTP app** under `/o2m/` — a status probe and the package's own assets
 
-It registers no backend yet: it provides no music source and no URI scheme of
-its own. It is an adapter, never the seat of the logic — everything else stays
-in the o2m service so a second facade can be a client of the same API rather
-than a client of Mopidy.
+It is an adapter, never the seat of the logic — box semantics, discover level
+and popularity stay in the o2m service, so a second facade can be a client of
+the same API rather than a client of Mopidy.
 
 It must never depend on Mopidy-Iris. The Mopidy 4 image does not install Iris at
 all; the legacy `o2m.js` / `o2m.css` copies into `mopidy_iris/static/` stay in
@@ -52,8 +54,12 @@ class Extension(ext.Extension):
         return schema
 
     def setup(self, registry):
+        from .backend import O2mBackend  # noqa: PLC0415
         from .frontend import O2mFrontend  # noqa: PLC0415 — deferred like Mopidy-MPD's
 
+        # Browse-only: the `o2m` scheme resolves to references into other
+        # backends, so this registers no playback provider. See backend.py.
+        registry.add("backend", O2mBackend)
         registry.add("frontend", O2mFrontend)
         # Mounted by Mopidy at /o2m/.
         registry.add("http:app", {"name": self.ext_name, "factory": self.webapp})

@@ -1,7 +1,7 @@
 # Mopidy-O2M
 
-O2M's own Mopidy extension. It registers itself with Mopidy, exposes an `[o2m]` config
-section and serves its own HTTP app under `/o2m/`. It registers no backend yet.
+O2M's own Mopidy extension. It exposes the `o2m:` uri scheme (browse-only), pushes
+playback events to the O2M API in-process, and serves its own HTTP app under `/o2m/`.
 
 ## Why it lives in this repo
 
@@ -76,6 +76,44 @@ then silently builds and installs a package named `UNKNOWN-0.0.0` and Mopidy fin
 extension at all, with no error anywhere. `pip install --upgrade setuptools` (>= 61)
 first. The trixie base of `Dockerfile4` is new enough not to need this.
 
+## The `o2m:` backend — browse and search O2M's catalogue
+
+O2M knows things no Mopidy backend does: a 76k-track catalogue with playback history,
+popularity and mood, the podcast channels its boxes reference, the radio stations buried in
+box data. All of that used to be reachable only from O2M's own web UI. The backend exposes
+it through Mopidy's library API, so **an MPD app on a phone, a car head unit or any web
+client** can browse and search it.
+
+```
+O2M                     (appears in Mopidy's root, next to Spotify / TuneIn / YouTube)
+├── Playlists           -> spotify:playlist:…   (39)
+├── Podcast channels    -> podcast+…            (49)
+└── Genres              -> o2m:genre:<name>     (100, with track counts)
+        └── <genre>     -> spotify:track:…
+```
+
+`library.search()` answers from `/api/search`, which covers tracks, artists and albums out
+of O2M's own cache — so a search in any Mopidy client reaches O2M's catalogue and not just
+what the other backends can see.
+
+**Browse-only, by design.** Every reference points into *another* backend — `spotify:`,
+`podcast+`, an http stream — because those are what actually decode audio. There is no
+playback provider, so Mopidy never asks this extension to play anything. Same shape as
+mopidy-podcast-itunes. No playlists provider either: O2M's playlists are Spotify's, and
+mopidy-spotify already owns them.
+
+### Boxes are deliberately not exposed
+
+Listing a box's tracks would be the most O2M-specific thing here, and it is missing on
+purpose. `/api/box` *activates* a box — it is an action, not a read — and `/api/box_info`
+returns only its definition. There is no read-only endpoint that resolves a box into uris,
+because `tracklistfill_auto` adds to the tracklist as it goes rather than returning a list:
+resolve and mutate are entangled.
+
+Exposing boxes needs that separated **in the service**, where box semantics belong. Doing
+it in the extension would mean reimplementing discover level, popularity weighting and
+cooldown here — exactly what this extension must not become.
+
 ## The HTTP app
 
 Mopidy mounts the extension's own app at **`/o2m/`** — `registry.add("http:app", ...)`,
@@ -100,7 +138,7 @@ build time.
 ## Verify
 
 ```bash
-mopidy deps                              # lists mopidy-o2m 0.2.0
+mopidy deps                              # lists mopidy-o2m 0.3.0
 mopidy config                            # shows the [o2m] section
 curl http://<host>:<PORT_MOPIDY>/o2m/status
 ```
