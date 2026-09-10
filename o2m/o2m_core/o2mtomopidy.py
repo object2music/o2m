@@ -383,10 +383,7 @@ class O2mToMopidy:
                 # delta, so it accounts for these exactly as before.
                 plan = []
                 tracklist_uris = self.tracklistappend_box(box, max_results, plan_out=plan)
-                for entry in plan:
-                    self.add_tracks(box, entry['uris'], entry['max_results'],
-                                    library_link=entry['library_link'],
-                                    bypass_remove_filter=entry['bypass_remove_filter'])
+                self.apply_fill_plan(box, plan)
                 #Flatten
                 tracklist_uris = list(util.flatten_list(tracklist_uris))
                 #Remove '' items
@@ -705,6 +702,24 @@ class O2mToMopidy:
     # which a fill enters. Swapping add_tracks for a recorder therefore makes a
     # whole fill read-only, whatever pattern it takes.
 
+    def apply_fill_plan(self, tag_box, plan):
+        """Add what a plan_out fill described, each entry with its own flags.
+
+        The counterpart of tracklistappend_box(plan_out=...). Kept in one place
+        because the classification is the whole point: a per-source
+        library_link, and bypass_remove_filter for the branches whose uris are
+        pre-filtered in the DB and which add_tracks' REMOVE logic would
+        otherwise drop entirely.
+        """
+        added = 0
+        for entry in plan or []:
+            added += self.add_tracks(
+                tag_box, entry['uris'], entry['max_results'],
+                library_link=entry['library_link'],
+                bypass_remove_filter=entry['bypass_remove_filter'],
+            ) or 0
+        return added
+
     @contextlib.contextmanager
     def capture_fill(self, timeout=None):
         """Run a fill without touching the tracklist; collect what it would add.
@@ -768,8 +783,15 @@ class O2mToMopidy:
         if max_results is None:
             max_results = getattr(box, 'option_max_results', None) or self.max_results
         try:
+            # Both mechanisms, side by side: plan_out is what the apply paths use,
+            # capture_fill catches anything still adding inline (tracklistfill_auto
+            # reached through auto:library). Comparing them is how the plan_out
+            # migration was checked — they must describe the same adds.
+            plan = []
             with self.capture_fill() as captured:
-                returned = self.tracklistappend_box(box, max_results, attribute_to=box)
+                returned = self.tracklistappend_box(box, max_results,
+                                                    attribute_to=box, plan_out=plan)
+            captured = list(plan) + list(captured)
         except Exception as e:
             print(f"resolve_box_plan({getattr(box, 'uid', '?')}): {e}")
             return [], []
@@ -785,6 +807,12 @@ class O2mToMopidy:
 
         Returns [] rather than raising if the fill fails: a caller browsing a box
         wants an empty listing, not a traceback.
+
+        Note it OVER-reports compared to what a real fill would add. Resolution
+        runs against InertPlayer, whose tracklist always reads empty, so the
+        per-source budget never gets consumed: two sources sharing a budget of
+        30 will each offer 30 here, where a real fill gives the second one
+        nothing left. This is a listing, not a prediction of the tracklist.
         """
         if box is None:
             return []
@@ -947,7 +975,9 @@ class O2mToMopidy:
                 print(f"\nAUTO : Incoming {base_counts['incoming']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('incoming')
                 library_link = self.get_spotify_playlist_from_box(box1)
-                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']),attribute_to=active_box)
+                _plan = []
+                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']),attribute_to=active_box,plan_out=_plan)
+                self.apply_fill_plan(active_box, _plan)
                 incoming = self._mood_pick(incoming, base_counts['incoming'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, incoming, base_counts['incoming'], "incoming",library_link)
 
@@ -963,7 +993,9 @@ class O2mToMopidy:
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #Using specific playlist (normaly elif)
                 if box1 != None:
-                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']),attribute_to=active_box)
+                    _plan = []
+                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']),attribute_to=active_box,plan_out=_plan)
+                    self.apply_fill_plan(active_box, _plan)
                     fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius, discover_level)
                     library_link = self.get_spotify_playlist_from_box(box1)
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
@@ -974,7 +1006,10 @@ class O2mToMopidy:
                 box1 = self.dbHandler.get_box_by_option_type('podcast')
                 if box1:
                     print(f"\nAUTO : Podcasts {base_counts['podcasts']} tracks\n")                
-                    self.add_tracks(active_box, self.tracklistappend_box(box1,base_counts['podcasts'],attribute_to=active_box), base_counts['podcasts'], "podcast","o2m:podcast")
+                    _plan = []
+                    _pods = self.tracklistappend_box(box1,base_counts['podcasts'],attribute_to=active_box,plan_out=_plan)
+                    self.apply_fill_plan(active_box, _plan)
+                    self.add_tracks(active_box, _pods, base_counts['podcasts'], "podcast","o2m:podcast")
             
             #Albums/Artists
             if base_counts.get('albums_artists', 0) > 0:
@@ -1003,7 +1038,9 @@ class O2mToMopidy:
             if base_counts.get('news', 0) > 0:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('new')
-                news = self.tracklistappend_box(box1,_pool(base_counts['news']),attribute_to=active_box)
+                _plan = []
+                news = self.tracklistappend_box(box1,_pool(base_counts['news']),attribute_to=active_box,plan_out=_plan)
+                self.apply_fill_plan(active_box, _plan)
                 news = self._mood_pick(news, base_counts['news'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, news, base_counts['news'], "new","o2m:new")
     
