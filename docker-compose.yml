@@ -7,7 +7,8 @@ services:
     build:
       context: ./mopidy
       # Dockerfile4 = Mopidy 4 on Debian trixie, no Iris. The Mopidy 3
-      # Dockerfile is kept next to it but nothing uses it any more.
+      # Dockerfile was deleted once every instance ran Mopidy 4; the built
+      # image pvincent4/mopidy:latest is the rollback, not a rebuild.
       dockerfile: Dockerfile4
     ports:
       - ${PORT_MOPIDY}:6680 #Mopidy

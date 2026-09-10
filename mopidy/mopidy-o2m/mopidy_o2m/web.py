@@ -1,9 +1,10 @@
 """HTTP app served by the extension itself, mounted by Mopidy under `/o2m/`.
 
-This is the deliberate alternative to the legacy Iris integration: rather than
-copying `o2m.js` / `o2m.css` over `mopidy_iris/static/` at image build time, the
-extension carries its own assets inside the package and serves them. Nothing
-here may import or assume Mopidy-Iris — the Mopidy 4 image does not install it.
+This is what replaced the Iris integration: rather than copying `o2m.js` /
+`o2m.css` over `mopidy_iris/static/` at image build time, the extension carries
+its own assets inside the package and serves them. Those files, and the Mopidy 3
+image that patched them in, are deleted. Nothing here may import or assume
+Mopidy-Iris — the Mopidy 4 image does not install it.
 
 Mopidy 4 note: `mopidy.http` is gone (the HTTP frontend moved to
 `mopidy._exts.http`), but the extension-facing contract is unchanged — a factory

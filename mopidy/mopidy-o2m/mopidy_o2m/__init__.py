@@ -17,8 +17,8 @@ and popularity stay in the o2m service, so a second facade can be a client of
 the same API rather than a client of Mopidy.
 
 It must never depend on Mopidy-Iris. The Mopidy 4 image does not install Iris at
-all; the legacy `o2m.js` / `o2m.css` copies into `mopidy_iris/static/` stay in
-the non-plugin code and are not to be reproduced here.
+all, and the legacy `o2m.js` / `o2m.css` that were copied into
+`mopidy_iris/static/` have been deleted along with the Mopidy 3 image.
 """
 
 import logging

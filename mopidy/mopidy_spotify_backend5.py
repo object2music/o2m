@@ -12,9 +12,9 @@ o2m-specific behaviours that upstream does not have:
    permanently logged out — library lookups silently returned 0 (music empty
    while podcasts kept working) until someone restarted mopidy by hand.
 
-The Mopidy 3 / 5.0.0a3 version of this file lives next to it as
-`mopidy_spotify_backend.py` and is still what the un-migrated stack mounts. Keep
-both until every instance runs Mopidy 4 — an older image must keep working.
+This is now the only version. The Mopidy 3 / 5.0.0a3 one that lived beside it
+was deleted once every instance ran Mopidy 4; git history has it if the older
+stack ever needs rebuilding.
 
 Ported against 5.0.0: `SpotifyBackend.__init__` and `SpotifyOAuthClient.__init__`
 are keyword-only, `uri_schemes` is a ClassVar instead of an instance attribute,

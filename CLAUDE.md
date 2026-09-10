@@ -248,9 +248,24 @@ SvelteKit + TypeScript + Tailwind CSS app. Source in `frontend/src/`:
 - Models in `src/lib/models/` (Box, Flow, Track, Tracklist, etc.)
 - Snapcast stream control in `src/lib/utils/snapstream.ts` and `snapcontrol.js`
 
-## Mopidy UI Extension (`mopidy/`)
+## Mopidy image and extension (`mopidy/`)
 
-`mopidy/o2m.js` and `mopidy/o2m.css` are injected into the Mopidy-Iris web UI. `o2m.js` adds O2M sidebar buttons (box toggles, backoffice link, Spotify auth) and displays per-track status badges by calling the O2M API at `base_url` (auto-detected as `<origin-host>:6681/api/`). `mopidy/app.js` is a large webpack bundle for the Iris extension — do not edit directly.
+The image is built from **`mopidy/Dockerfile4`** — Mopidy 4 on Debian trixie, Python 3.13,
+and **no Iris**. Every instance runs it, and it is the default in `docker-compose.yml`, so
+no `-f` overlay is needed.
+
+O2M's own Mopidy extension lives in **`mopidy/mopidy-o2m/`** (distribution `Mopidy-O2M`,
+module `mopidy_o2m`). It registers a browse-only `o2m:` backend, a frontend that pushes
+playback events to the O2M API in-process, and its own HTTP app under `/o2m/`. See its
+README.
+
+`mopidy/mopidy_spotify_backend5.py` is bind-mounted over `mopidy_spotify/backend.py` to
+carry O2M's streaming identity and a resilient login.
+
+**The Iris integration is gone.** `o2m.js` / `o2m.css` used to be copied into
+`mopidy_iris/static/` at image build time, alongside a 7.5 MB `app.js`; Iris was never
+ported to Mopidy 4, the UI is now O2M's own, and all of it — with the Mopidy 3 image that
+copied it — was deleted. Git history has it if ever needed.
 
 ## Mood / Energy / Valence Pipeline
 
