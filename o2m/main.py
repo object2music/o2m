@@ -894,6 +894,42 @@ if __name__ == "__main__":
             box.image_url = (data['image_url'] or '').strip() or None; changed['image_url'] = box.image_url
         return changed
 
+    @api.route('/api/box_tracks')
+    def api_box_tracks():
+        """What a box WOULD play, without activating it.
+
+        The read-only counterpart of /api/box, which is an action: it activates
+        the box and fills the tracklist. This resolves the same content through
+        the same dispatcher and throws the mutation away, so a client — the
+        Mopidy extension's browse, chiefly — can list a box without playing it.
+
+        Resolution runs under the box lock, so it cannot interleave with a real
+        fill. It is not free: an auto box hits Spotify and the DB exactly as a
+        real fill would.
+        """
+        from flask import jsonify
+        uid = request.args.get('uid')
+        if not uid:
+            return jsonify({'error': 'uid required'}), 400
+        box = o2mHandler.dbHandler.get_box_by_uid(uid)
+        if box is None:
+            return jsonify({'error': 'box not found'}), 404
+        try:
+            limit = max(1, min(int(request.args.get('limit') or 0) or o2mHandler.max_results, 100))
+        except Exception:
+            limit = o2mHandler.max_results
+        try:
+            uris = o2mHandler.resolve_box_uris(box, max_results=limit)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'uid': box.uid,
+            'description': box.description,
+            'option_type': box.option_type,
+            'count': len(uris),
+            'uris': uris,
+        })
+
     @api.route('/api/box_edit', methods=['POST'])
     @require_edit_auth
     def api_box_edit():
@@ -996,6 +1032,9 @@ if __name__ == "__main__":
         if box != None:
             if box in o2mHandler.activeboxs: return("1")
             else: return("0")
+        # No uid, or an unknown one: fall through used to return None, which
+        # Flask turns into a 500. "not activated" is the honest answer.
+        return("0")
 
     #API Opening Level
     #Get the value

@@ -163,3 +163,71 @@ def check_conformance(player: Any) -> list[str]:
             f"{namespace}.{m}" for m in sorted(methods) if not callable(getattr(ns, m, None))
         )
     return missing
+
+
+class InertPlayer:
+    """A player that accepts everything and does nothing, for read-only resolution.
+
+    Resolving a box (`O2mToMopidy.resolve_box_uris`) runs the real fill logic
+    with the mutation captured. But the fill also *reads* the player —
+    `tracklist.get_length()` as a budget check, `library.get_distinct()` — and
+    those reads are what made the Mopidy extension deadlock: its backend actor
+    asked o2m to resolve, o2m called back into Mopidy's core, and core was
+    already blocked waiting for that same backend to return from `browse()`.
+
+    Swapping the player for this during resolution removes the re-entry
+    entirely. It is also arguably more correct: what a box *would* play should
+    not depend on what happens to be queued right now.
+
+    It satisfies PlayerPort — `check_conformance(InertPlayer())` returns [] —
+    which is precisely what the port was declared for.
+    """
+
+    http_url = ""
+
+    class _Tracklist:
+        def add(self, tracks=None, *, at_position=None, uris=None): return []
+        def clear(self): return None
+        def filter(self, criteria): return []
+        def get_length(self): return 0
+        def get_tl_tracks(self): return []
+        def get_tracks(self): return []
+        def index(self, tl_track=None, tlid=None): return None
+        def move(self, start, end, to_position): return None
+        def remove(self, criteria): return []
+        def set_random(self, value): return None
+        def shuffle(self, start=None, end=None): return None
+        def slice(self, start, end): return []
+
+    class _Playback:
+        def get_current_tl_track(self): return None
+        def get_current_tlid(self): return None
+        def get_current_track(self): return None
+        def get_state(self): return "stopped"
+        def get_stream_title(self): return None
+        def get_time_position(self): return 0
+        def next(self): return None
+        def pause(self): return None
+        def play(self, tlid=None): return None
+        def resume(self): return None
+        def seek(self, time_position): return False
+        def stop(self): return None
+
+    class _Mixer:
+        def get_volume(self): return None
+        def set_mute(self, mute): return False
+        def set_volume(self, volume): return False
+
+    class _Playlists:
+        def lookup(self, uri): return None
+
+    class _Library:
+        def get_distinct(self, field, query=None): return set()
+        def search(self, query, uris=None, exact=False): return []
+
+    def __init__(self) -> None:
+        self.tracklist = self._Tracklist()
+        self.playback = self._Playback()
+        self.mixer = self._Mixer()
+        self.playlists = self._Playlists()
+        self.library = self._Library()

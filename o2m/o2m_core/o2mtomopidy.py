@@ -679,6 +679,98 @@ class O2mToMopidy:
                     #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
 
+    # ── Read-only resolution ──────────────────────────────────────────────────
+    # Everything above mutates the tracklist as it resolves: tracklistappend_box
+    # dispatches every box pattern and calls add_tracks inline rather than
+    # returning uris, and tracklistfill_auto does the same across its seven
+    # sources. So there was no way to ask "what would this box play?" without
+    # playing it — which is why the Mopidy extension cannot browse a box.
+    #
+    # Rather than restructure 331 + 138 lines of the most load-bearing logic in
+    # the product, this exploits an invariant that actually holds: on the fill
+    # path every tracklist mutation funnels through add_tracks. The only
+    # tracklist.add/remove calls a fill can reach are inside it — the others
+    # belong to deactivation, startup and the reco-after-track path, none of
+    # which a fill enters. Swapping add_tracks for a recorder therefore makes a
+    # whole fill read-only, whatever pattern it takes.
+
+    @contextlib.contextmanager
+    def capture_fill(self, timeout=None):
+        """Run a fill without touching the tracklist; collect what it would add.
+
+        Yields the list of captured entries, each a dict with the uris and the
+        classification add_tracks was given.
+
+        Takes the box lock STRICTLY, unlike _box_ops_lock which proceeds without
+        it on timeout. That is right for a fill (better late than never) and
+        wrong here: the recorder is installed on the instance, so a real fill
+        running concurrently would be captured instead of applied and its tracks
+        silently dropped. If the lock cannot be had, this refuses.
+        """
+        captured = []
+        wait = self._box_lock_timeout if timeout is None else timeout
+        if not self._box_lock.acquire(timeout=wait):
+            raise RuntimeError(f"capture_fill: box lock not acquired within {wait}s")
+        real_add_tracks = self.add_tracks
+        # Also swap the player out. The fill *reads* it (tracklist.get_length as
+        # a budget check, library.get_distinct), and those reads deadlocked the
+        # Mopidy extension: its backend actor asked o2m to resolve, o2m called
+        # back into Mopidy's core, and core was already blocked waiting for that
+        # backend to return from browse(). An inert player removes the re-entry.
+        from o2m_core.player import InertPlayer
+        real_player = self.mopidyHandler
+
+        def _recorder(active_box, uris=None, max_results=15, force_option_type=None,
+                      library_link='', bypass_remove_filter=False):
+            items = [u for u in (uris or []) if u]
+            captured.append({
+                'uris': items,
+                'max_results': max_results,
+                'option_type': force_option_type or getattr(active_box, 'option_type', None),
+                'library_link': library_link,
+            })
+            # add_tracks returns how many it added; callers that read it use it
+            # as a budget. Approximate rather than lie with 0, which would make
+            # a caller think nothing landed and over-fetch.
+            return min(len(items), max_results or len(items))
+
+        self.add_tracks = _recorder
+        self.mopidyHandler = InertPlayer()
+        try:
+            yield captured
+        finally:
+            self.add_tracks = real_add_tracks
+            self.mopidyHandler = real_player
+            self._box_lock.release()
+
+    def resolve_box_uris(self, box, max_results=None, discover_level=None):
+        """The uris this box WOULD add, in order, without adding them.
+
+        Goes through tracklistappend_box, which is the single dispatcher for box
+        data patterns (auto:library, meta_*, playlists, feeds, rf:show:, tags…),
+        so this covers every kind of box rather than a hand-picked subset.
+
+        Returns [] rather than raising if the fill fails: a caller browsing a box
+        wants an empty listing, not a traceback.
+        """
+        if box is None:
+            return []
+        if max_results is None:
+            max_results = getattr(box, 'option_max_results', None) or self.max_results
+        try:
+            with self.capture_fill() as captured:
+                self.tracklistappend_box(box, max_results, attribute_to=box)
+        except Exception as e:
+            print(f"resolve_box_uris({getattr(box, 'uid', '?')}): {e}")
+            return []
+        seen, out = set(), []
+        for entry in captured:
+            for uri in entry['uris']:
+                if uri not in seen:
+                    seen.add(uri)
+                    out.append(uri)
+        return out[:max_results]
+
     def _enrich_track_features_sync(self, track, uri, stat=None):
         """Enrich (mood/energy/valence) one track via Last.fm if it lacks them.
         Blocking — call from a background thread. Skips already-enriched, non-music,

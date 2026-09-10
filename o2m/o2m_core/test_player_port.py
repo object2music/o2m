@@ -17,6 +17,7 @@ import unittest
 from o2m_core.player import (
     PORT_ATTRIBUTES,
     PORT_SURFACE,
+    InertPlayer,
     LibraryPort,
     MixerPort,
     PlaybackPort,
@@ -113,6 +114,20 @@ class ConformanceTest(unittest.TestCase):
         player = _Complete()
         del player.mixer
         self.assertIn("mixer", check_conformance(player))
+
+    def test_inert_player_conforms(self):
+        """capture_fill() swaps the real player for this one — if it drifts from
+        the port, read-only resolution breaks with an AttributeError deep inside
+        a fill rather than here."""
+        self.assertEqual(check_conformance(InertPlayer()), [])
+
+    def test_inert_player_reads_as_empty(self):
+        """A dry run must not inherit the live tracklist's state."""
+        p = InertPlayer()
+        self.assertEqual(p.tracklist.get_length(), 0)
+        self.assertEqual(p.tracklist.get_tl_tracks(), [])
+        self.assertEqual(p.library.get_distinct("artist"), set())
+        self.assertIsNone(p.playback.get_current_track())
 
     def test_missing_attribute_is_reported(self):
         player = _Complete()
