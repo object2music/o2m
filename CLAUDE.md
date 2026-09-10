@@ -148,12 +148,34 @@ Variant = `expand_pick_mode`: **`hybrid` (P0, default)** | `temp` (P1) | `band` 
   popularity target (p90 at DL0 → p10 at DL10).
 
 ### Anti-repeat cooldown (`_cooldown_factor`, shared by both)
-Down-weight in (0,1], multiplicative:
-- **Played (multi-day, graduated)**: a just-played track sits at `cooldown_mult=0.05` and
-  eases **linearly back to 1.0 over `cooldown_days=2`**, stretched up to ~2× for
-  heavy-rotation tracks (`read_count → cooldown_rc_ref=20`) so comfort favourites don't
-  recur every session. (Replaced the old hard 8h step — `cooldown_hours` kept for reference.)
-- **Served (intra-session)**: just-selected tracks ×`served_mult=0.1` for `served_cooldown_min=30`min.
+Down-weight in (0,1]. **Two clocks measure "recently", and the stricter one wins** —
+`min()`, not a product: each is a full-strength constraint, and multiplying would demote a
+track twice for one offence.
+
+- **Elapsed time**, graduated: a just-played track sits at `cooldown_mult=0.05` and eases
+  linearly back to 1.0 over `cooldown_days=2`, stretched up to ~2× for heavy-rotation
+  tracks (`read_count → cooldown_rc_ref=20`). (Replaced the old hard 8h step —
+  `cooldown_hours` kept for reference.)
+- **Rotation depth**: how much OTHER music has played since, over `cooldown_plays=40`,
+  stretched the same way. `Track.last_play_seq` records the `stats_raw.id` of a track's
+  last play; `recent_music_play_seq` reads the last `cooldown_seq_window=200` music-play
+  ids once per fill, and a bisect per candidate gives the count.
+- **Served (intra-session)**: just-selected tracks ×`served_mult=0.1` for
+  `served_cooldown_min=30`min. This one multiplies — it answers a different question.
+
+**Why depth and not time alone.** Measured on this install: **80% of the intervals between
+two plays of the same track exceed four days**, i.e. past every time window, so a popular
+track could be picked again and again as long as the calendar moved, however little music
+had actually gone by. Depth is what a listener perceives as repetition; time is only a
+proxy, and a poor one when listening is sporadic. (The observed rotation is nonetheless
+healthy — median gap 288 plays / 11.8 days — so this hardens the mechanism rather than
+fixing a fire.)
+
+Depth counts **music only**: 55% of `stats_raw` rows are podcasts, radios and box
+activations, and an evening of podcasts is not other music having gone by — counting them
+would inflate the depth and lift the cooldown early, which is the failure it exists to
+prevent. A track with no `last_play_seq` yet falls back to time alone, so the rule fills in
+as tracks play rather than needing a backfill.
 
 ### Known bias & mitigations
 - **Comfort-track over-recurrence**: a high-popularity favourite that's been played a lot

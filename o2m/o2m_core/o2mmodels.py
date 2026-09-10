@@ -131,6 +131,9 @@ class Track(BaseModel):
     published_at = CharField(null=True)  # episode publication date 'YYYY-MM-DD' (spoken content; feed/API formats vary)
     channel_id = CharField(null=True, index=True)  # → PodcastChannel.id (spoken content; one episode has exactly one channel)
     episode_key = CharField(null=True, index=True)  # Radio France episode-page id: the SAME episode reaches us as an RSS item and as an API episode, under different audio files
+    # stats_raw.id of this track's last play — a monotonic sequence, so the number of
+    # OTHER tracks played since is a rotation depth, which a mere elapsed time is not.
+    last_play_seq = IntegerField(null=True)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -552,6 +555,10 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v22(migrator):
+    _add_column_safe(migrator, 'track', 'last_play_seq', IntegerField(null=True))
+
+
 def _migration_v21(migrator):
     # One channel table. PodcastChannel already held the sources in use (RSS and
     # RF); it now also carries the searchable RF catalogue that RfShow held, so
@@ -590,7 +597,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -614,6 +621,7 @@ _MIGRATIONS = [
     (19, "track_episode_key_column", _migration_v19),
     (20, "podcastchannel_feed_url_column", _migration_v20),
     (21, "podcastchannel_rf_id_column", _migration_v21),
+    (22, "track_last_play_seq_column", _migration_v22),
 ]
 
 

@@ -37,6 +37,8 @@ class O2mToMopidy:
     cooldown_mult = 0.05         # weight floor: multiplier at age 0 (just played), ramps back to 1 over the window
     cooldown_days = 2.0          # base played-cooldown window (days); a just-played track eases back to full over this
     cooldown_rc_ref = 20         # read_count giving the max window stretch (heavy-rotation tracks rest ~2× longer)
+    cooldown_plays = 40          # rotation depth: OTHER music plays a track must wait out, stretched like cooldown_days
+    cooldown_seq_window = 200    # how far back the play sequence is read (caps the depth question)
     exploit_sharpness = 1.3      # P0 exploit weight exponent (affinity**this); 2 was too repetitive
     served_cooldown_min = 30.0   # minutes; tracks just SERVED (selected) are down-weighted
     served_mult = 0.1            # weight multiplier applied within the served-cooldown window
@@ -2953,10 +2955,13 @@ class O2mToMopidy:
 
         # Single query for energy/valence + popularity; drop hidden/trash from the pool
         # so explicitly rejected tracks never resurface.
-        feat, pop, last_read, rc, excluded = {}, {}, {}, {}, set()
+        feat, pop, last_read, rc, seq, excluded = {}, {}, {}, {}, {}, set()
+        # The rotation ruler, read once for the whole pool (see recent_music_play_seq).
+        seq_tail = self.dbHandler.recent_music_play_seq(self.cooldown_seq_window)
         try:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
-                                   Track.option_type, Track.last_read_date, Track.read_count)
+                                   Track.option_type, Track.last_read_date, Track.read_count,
+                                   Track.last_play_seq)
                           .where(Track.uri << list(uris)).namedtuples()):
                 if t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
@@ -2969,6 +2974,8 @@ class O2mToMopidy:
                     last_read[t.uri] = t.last_read_date
                 if t.read_count is not None:
                     rc[t.uri] = t.read_count
+                if t.last_play_seq is not None:
+                    seq[t.uri] = t.last_play_seq
         except Exception as e:
             print(f"_mood_pick lookup error: {e}")
             return uris[:min(n, len(uris))]
@@ -3008,7 +3015,8 @@ class O2mToMopidy:
         # Weight = popularity**k × concentric-mood × anti-repeat cooldown (played + served).
         def _w(u):
             return (max(pop.get(u, 0.5), 1e-6) ** k) * _mood_w(u) \
-                   * self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
+                   * self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0),
+                                             seq.get(u), seq_tail)
         weights = {u: _w(u) for u in uris}
         result = self._sample_by_weight(uris, weights, n)
         for u in result:
@@ -3040,10 +3048,13 @@ class O2mToMopidy:
         """
         if not uris:
             return []
-        feat, pop, last_read, rc, excluded = {}, {}, {}, {}, set()
+        feat, pop, last_read, rc, seq, excluded = {}, {}, {}, {}, {}, set()
+        # The rotation ruler, read once for the whole pool (see recent_music_play_seq).
+        seq_tail = self.dbHandler.recent_music_play_seq(self.cooldown_seq_window)
         try:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
-                                   Track.option_type, Track.last_read_date, Track.read_count)
+                                   Track.option_type, Track.last_read_date, Track.read_count,
+                                   Track.last_play_seq)
                           .where(Track.uri << list(uris)).namedtuples()):
                 if exclude_hidden and t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
@@ -3056,6 +3067,8 @@ class O2mToMopidy:
                     last_read[t.uri] = t.last_read_date
                 if t.read_count is not None:
                     rc[t.uri] = t.read_count
+                if t.last_play_seq is not None:
+                    seq[t.uri] = t.last_play_seq
         except Exception as e:
             print(f"_expand_pick lookup error: {e}")
             return list(uris[:min(n, len(uris))])
@@ -3084,7 +3097,8 @@ class O2mToMopidy:
             return math.exp(-d2 / (2.0 * sigma * sigma))
 
         def cd(u):
-            return self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
+            return self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0),
+                                             seq.get(u), seq_tail)
 
         def aff(u):  # affinity = popularity + soft, distance-graded mood bonus
             return pop.get(u, 0.5) + MOOD_BONUS * mood_g(u)
@@ -3138,17 +3152,35 @@ class O2mToMopidy:
         keyed.sort(reverse=True)
         return [u for _, u in keyed[:n]]
 
-    def _cooldown_factor(self, uri, last_read_at, now, now_ts, served, read_count=0):
+    def _cooldown_factor(self, uri, last_read_at, now, now_ts, served, read_count=0,
+                         last_seq=None, seq_tail=None):
         """Combined anti-repeat down-weight in (0,1]: a track recently PLAYED and/or
         recently SERVED is demoted, so successive selections rotate. Shared by
         _expand_pick and _mood_pick.
 
-        Played cooldown is MULTI-DAY and graduated (not a hard step): a track played
-        just now sits at cooldown_mult and eases linearly back to 1.0 over the window.
-        The window is cooldown_days, stretched up to ~2× for heavy-rotation tracks
-        (read_count → cooldown_rc_ref) so comfort favourites don't recur every session.
-        Served cooldown (intra-session, minutes) is unchanged."""
+        TWO clocks measure "recently", and the stricter one wins:
+
+        - ELAPSED TIME, graduated over cooldown_days, stretched up to ~2x for
+          heavy-rotation tracks (read_count -> cooldown_rc_ref).
+        - ROTATION DEPTH: how much OTHER music has played since, over cooldown_plays,
+          stretched the same way.
+
+        Time alone was not enough. Measured on this install, 80% of the intervals
+        between two plays of the same track exceed four days — past every time window,
+        so the same popular track could be picked again and again as long as the
+        calendar moved, however little music had actually gone by. Depth is what a
+        listener perceives as repetition; time is only a proxy for it, and a poor one
+        when listening is sporadic.
+
+        min(), not a product: each is a full-strength constraint, and multiplying two
+        of them would demote a track twice for one offence.
+
+        A track with no last_seq (never played since the column was added) falls back
+        to time alone, so the rule fills in as tracks play rather than needing a
+        backfill."""
         f = 1.0
+        stretch = 1.0 + min(read_count or 0, self.cooldown_rc_ref) / float(self.cooldown_rc_ref)
+
         if last_read_at is not None:
             try:
                 lr = last_read_at
@@ -3157,11 +3189,23 @@ class O2mToMopidy:
                 if getattr(lr, 'tzinfo', None) is not None:
                     lr = lr.replace(tzinfo=None)
                 age_days = (now - lr).total_seconds() / 86400.0
-                cd_days = self.cooldown_days * (1.0 + min(read_count or 0, self.cooldown_rc_ref) / float(self.cooldown_rc_ref))
+                cd_days = self.cooldown_days * stretch
                 if 0.0 <= age_days < cd_days:
-                    f *= self.cooldown_mult + (1.0 - self.cooldown_mult) * (age_days / cd_days)
+                    f = min(f, self.cooldown_mult + (1.0 - self.cooldown_mult) * (age_days / cd_days))
             except Exception:
                 pass
+
+        if last_seq and seq_tail:
+            try:
+                import bisect
+                # Music plays recorded after this track's own last play.
+                since = len(seq_tail) - bisect.bisect_right(seq_tail, int(last_seq))
+                cd_plays = self.cooldown_plays * stretch
+                if 0 <= since < cd_plays:
+                    f = min(f, self.cooldown_mult + (1.0 - self.cooldown_mult) * (since / cd_plays))
+            except Exception:
+                pass
+
         sa = served.get(uri)
         if sa is not None and (now_ts - sa) < self.served_cooldown_min * 60.0:
             f *= self.served_mult

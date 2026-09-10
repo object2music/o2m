@@ -619,6 +619,12 @@ class DatabaseHandler():
         # `read_time` field — the old kwarg was silently dropped, so read_date fell
         # back to the field default). Passing it explicitly records the event time.
         stat_raw = Stats_Raw.create(uri=uri, read_date=read_time, read_hour=read_hour, username=username)
+        # Remember WHERE in the play sequence this happened, so the selector can ask
+        # "how much other music has gone by since?" and not only "how long ago?".
+        try:
+            Track.update(last_play_seq=stat_raw.id).where(Track.uri == uri).execute()
+        except Exception as e:
+            print(f"create_stat_raw(last_play_seq): {e}")
         return stat_raw
 
     def create_playlist_log(self, track_uri, playlist_uri, action, from_option_type=None, to_option_type=None, username=None, track_name=None, playlist_name=None):
@@ -633,6 +639,25 @@ class DatabaseHandler():
             to_option_type=to_option_type,
             username=username,
         )
+
+    def recent_music_play_seq(self, limit=200):
+        """Ids of the last `limit` MUSIC plays, ascending — the rotation ruler.
+
+        Music only: 55% of stats_raw is podcasts, radios and box activations, and an
+        evening of podcasts is not other music having gone by. Counting them would
+        inflate the depth and lift the anti-repeat cooldown early, which is exactly
+        the failure it exists to prevent.
+
+        One query per fill, then bisect per candidate — cheaper than asking "how many
+        plays since" once per track, which is the same question asked N times."""
+        try:
+            rows = db.execute_sql(
+                "SELECT id FROM stats_raw WHERE uri LIKE 'spotify:track:%%' "
+                "ORDER BY id DESC LIMIT %s", (int(limit),)).fetchall()
+            return sorted(r[0] for r in rows)
+        except Exception as e:
+            print(f"recent_music_play_seq: {e}")
+            return []
 
     def get_stat_raw_by_hour(self, read_hour, window=0, limit=1, uri_pattern='track:'):
         print (f"Get stat raw by hour {read_hour} {window} {limit} {uri_pattern}")
