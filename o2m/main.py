@@ -918,6 +918,14 @@ if __name__ == "__main__":
             limit = max(1, min(int(request.args.get('limit') or 0) or o2mHandler.max_results, 100))
         except Exception:
             limit = o2mHandler.max_results
+        if request.args.get('detail'):
+            # Diagnostic view: what each uri would be attributed to. Used to
+            # compare attribution across a refactor, which a uri list cannot show.
+            try:
+                entries, flat = o2mHandler.resolve_box_plan(box, max_results=limit)
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+            return jsonify({'uid': box.uid, 'inline': entries, 'returned': flat})
         try:
             uris = o2mHandler.resolve_box_uris(box, max_results=limit)
         except Exception as e:
