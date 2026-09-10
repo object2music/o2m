@@ -10,6 +10,13 @@ from flask import Flask, request, session, redirect
 from flask_session import Session
 from flask_cors import CORS
 
+# Which transport carries Mopidy's playback events. Read before anything else
+# because it decides whether a websocket is opened at all.
+#   'websocket'  the mopidyapi client below (historic)
+#   'http'       pushed in-process by the Mopidy-O2M extension, to /api/event
+_EVENT_SOURCE = (os.environ.get("O2M_EVENT_SOURCE") or "websocket").strip().lower()
+_USE_WEBSOCKET = _EVENT_SOURCE == "websocket"
+
 """
     TODO :
         * Logs : séparer les logs par ensemble de fonctionnalités (database, websockets, spotify etc...)
@@ -70,7 +77,11 @@ def _install_resilient_ws_listener():
     MopidyWSClient._websocket_runner = _resilient_websocket_runner
 
 
-_install_resilient_ws_listener()
+# Only worth installing when a websocket is actually opened. Kept rather than
+# deleted so O2M_EVENT_SOURCE=websocket stays a working rollback: without them
+# that path is fragile on Mopidy 4 (see each function's docstring).
+if _USE_WEBSOCKET:
+    _install_resilient_ws_listener()
 
 
 def _install_mopidy4_model_compat():
@@ -120,7 +131,8 @@ def _install_mopidy4_model_compat():
     wsclient.deserialize_mopidy = deserialize
 
 
-_install_mopidy4_model_compat()
+if _USE_WEBSOCKET:
+    _install_mopidy4_model_compat()
 
 
 # --- Playback event transport -------------------------------------------------
@@ -134,8 +146,6 @@ _install_mopidy4_model_compat()
 #
 # Set with O2M_EVENT_SOURCE. Changing it needs only an o2m restart — no image
 # rebuild — so the switch and the rollback are both cheap.
-_EVENT_SOURCE = (os.environ.get("O2M_EVENT_SOURCE") or "websocket").strip().lower()
-
 # Filled in where the handlers are defined, which sits inside the Spotify-config
 # block: with no Spotify config there are no handlers at all, and /api/event
 # reports that rather than pretending it dispatched. That gate is pre-existing
@@ -188,7 +198,15 @@ if __name__ == "__main__":
         strer = 1
         try:
             if mopidy is None:
-                mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
+                # use_websocket=False drops the listener thread AND the client's
+                # on_event/add_callback attributes — hence the guarded
+                # registration further down. With the extension pushing events
+                # over HTTP there is nothing left for that socket to carry.
+                mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"],
+                                   port=o2mConf["o2m"]["port_mopidy"],
+                                   use_websocket=_USE_WEBSOCKET)
+                print(f"Mopidy event transport: {_EVENT_SOURCE}"
+                      f" (websocket {'open' if _USE_WEBSOCKET else 'not opened'})")
                 # Fail loudly on an incomplete player rather than at the first
                 # call on a code path nobody exercised. MopidyAPI satisfies the
                 # port today; this is the guard for whatever replaces it.
@@ -2407,13 +2425,7 @@ with the house Premium account.</li>
 
     #MOPIDY LISTENERS
         # Fonction called when track started
-        @mopidy.on_event("track_playback_started")
         #@mopidy.audio.AudioListener.state_changed("PAUSED","PLAYING",None)
-        def on_ws_track_started(event):
-            if _EVENT_SOURCE != "websocket":
-                return  # the extension pushes this over HTTP instead
-            track_started_event(event)
-
         def track_started_event(event):
             track = event.tl_track.track
             print (event)
@@ -2565,17 +2577,13 @@ with the house Premium account.</li>
                 if tracks_left_count < 1:
                     o2mHandler.update_tracks()  # si besoin on ajoute des chansons à la tracklist avec de la reco
 
-        @mopidy.on_event("track_playback_ended")
-        def event_track_playback_ended(event):
-            if _EVENT_SOURCE != "websocket":
-                return  # the extension pushes this over HTTP instead
-            track_ended_event(event)
-
-        @mopidy.on_event("track_playback_paused")
-        def event_track_playback_paused(event):
-            if _EVENT_SOURCE != "websocket":
-                return  # the extension pushes this over HTTP instead
-            track_ended_event(event)
+        # Attach to the websocket only when one exists: use_websocket=False
+        # leaves the client with no on_event at all, so this cannot be a
+        # decorator any more. Same three functions either way.
+        if _USE_WEBSOCKET:
+            mopidy.on_event("track_playback_started")(track_started_event)
+            mopidy.on_event("track_playback_ended")(track_ended_event)
+            mopidy.on_event("track_playback_paused")(track_ended_event)
 
         # Publish the handlers for the HTTP transport. Same functions, same
         # closure over o2mHandler/mopidy — only the transport differs, so the
