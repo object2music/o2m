@@ -3,10 +3,12 @@ services:
     profiles:
       - dev
       - prod
-    image: pvincent4/mopidy:latest
+    image: o2m/mopidy:4
     build:
       context: ./mopidy
-      dockerfile: Dockerfile
+      # Dockerfile4 = Mopidy 4 on Debian trixie, no Iris. The Mopidy 3
+      # Dockerfile is kept next to it but nothing uses it any more.
+      dockerfile: Dockerfile4
     ports:
       - ${PORT_MOPIDY}:6680 #Mopidy
       - ${PORT_MPD}:6600 #MPD server and control
@@ -17,7 +19,9 @@ services:
       - ./tmp/snapserver:/tmp
       # Spotify OAuth unifié : token user fetché via http://o2m:6681/api/spotify_stream_token
       # → librespot mint le blob (auth_type 1), persisté sur ./data/spotify.
-      - ./mopidy/mopidy_spotify_backend.py:/usr/local/lib/python3.10/dist-packages/mopidy_spotify/backend.py:ro
+      # o2m's Spotify patch, ported to mopidy-spotify 5.0.0 — python3.13 in this
+      # image, not 3.10. Mounting the 3.10 path silently shadows nothing.
+      - ./mopidy/mopidy_spotify_backend5.py:/usr/local/lib/python3.13/dist-packages/mopidy_spotify/backend.py:ro
       - ./data/spotify:/root/.local/share/mopidy/spotify
     restart: always
     healthcheck:
@@ -27,7 +31,10 @@ services:
       retries: 1
       start_period: 40s
     environment:
-      - PYTHONUNBUFFERED= 1
+      - PYTHONUNBUFFERED=1
+      # The OPML browse root the config points at exists in no image; left
+      # empty so startup stays warning-free.
+      - PODCAST_BROWSE_ROOT=
 
 
   o2m:
@@ -49,6 +56,9 @@ services:
     restart: always
     environment:
       - PYTHONUNBUFFERED=1
+      # Take playback events from the Mopidy-O2M extension's frontend in-process
+      # instead of the websocket listener. Set to 'websocket' to roll back.
+      - O2M_EVENT_SOURCE=http
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6681/health')"]
       interval: 120s
