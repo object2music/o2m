@@ -119,9 +119,6 @@
     --tile-on:  rgba(255,255,255,.82);
     --tile-off: rgba(242,246,216,.45);
     --tile-on-ink: var(--text);
-    /* ALL is opaque (see its rule): a lime-cast disc when off, white when on, so it
-       speaks the tiles' language without going translucent over them. */
-    --tile-all-off: #CFDD97;
 
     --mx-bg: #FFFFFF;
   }
@@ -159,34 +156,47 @@
     --tile-off:  rgba(242,246,216,.38);
     --tile-on:   rgba(255,255,255,.80);
   }
-  /* The picture goes on the body, fixed, so it stays put while anything above it
-     scrolls and every pane samples the same image rather than its own crop.
-     background-color sits BEHIND background-image, so the translucent --bg above
-     costs nothing here. */
-  [data-skin="bulletin2"] body {
+  /* One picture, blurred ONCE at the source.
+     backdrop-filter was the wrong tool and it took two tries to see why: it blurs
+     what is behind ONE element, so each panel softened its own patch and the image
+     broke at every panel edge. Dropping it removed the seams but left the picture
+     sharp and saturated, sitting level with the interface instead of behind it.
+     A single fixed layer, blurred and desaturated as a whole, gives the depth cue
+     with no seam anywhere: there is one image and one blur for the entire page.
+     Geometry notes, both load-bearing:
+     · position: fixed keeps it still while anything above it scrolls, so every pane
+       shows the same region of the same image;
+     · inset is negative so the blur's soft edge falls outside the viewport rather
+       than showing as a pale frame around the screen;
+     · z-index -1 inside the stacking context body opens paints it above body's own
+       background and below every piece of content — which is exactly a backdrop. */
+  [data-skin="bulletin2"] body { position: relative; z-index: 0; }
+  [data-skin="bulletin2"] body::before {
+    content: ''; position: fixed; inset: -60px; z-index: -1; pointer-events: none;
     background-image: linear-gradient(var(--basic-bg-veil), var(--basic-bg-veil)),
                       var(--basic-bg);
-    background-size: cover; background-position: center; background-repeat: no-repeat;
-    background-attachment: fixed;
+    background-size: cover, cover;
+    background-position: center, center;
+    background-repeat: no-repeat, no-repeat;
+    /* saturate is what makes it recede as much as the blur does: at full strength
+       these greens and violets shout louder than anything the interface draws. */
+    filter: blur(var(--bg-blur, 12px)) saturate(.5) brightness(1.06);
   }
   /* Bulletin paints the same picture on the Basic section. Left in place it would
      be a second, differently-cropped copy of the same image inside the first —
      a visible seam right across the dashboard. */
   [data-skin="bulletin2"] #basic-section { background-image: none; }
-  /* Frosting. Only the large containers carry the blur, not every pane: the cost
-     of backdrop-filter scales with the area it samples, and these already cover
-     the whole screen between them. */
-  [data-skin="bulletin2"] #top-zone,
-  [data-skin="bulletin2"] .col,
-  [data-skin="bulletin2"] #track-details,
-  [data-skin="bulletin2"] #footer-links,
-  [data-skin="bulletin2"] #welcome,
-  [data-skin="bulletin2"] #pairing,
-  [data-skin="bulletin2"] #settings,
-  [data-skin="bulletin2"] #obj-panel {
-    -webkit-backdrop-filter: blur(14px) saturate(1.1);
-    backdrop-filter: blur(14px) saturate(1.1);
-  }
+  /* NO blur anywhere in this skin, deliberately. The point of putting the picture
+     under the whole interface is that it reads as ONE picture, and a blur is a
+     discontinuity as visible as a crop: every panel that carried one showed its own
+     softened version of the image while the panels between them showed it sharp.
+     The panes are flat veils instead, and their opacity alone carries the text —
+     the contrast figures above are composites, they never counted on the blur.
+     The trade-off, worth watching with a photograph rather than these flat waves:
+     fine detail now sits directly under the text. The veil tuner already raises the
+     veil for a busy or dark picture, which is the lever if it turns out not to be
+     enough. Dropping the blur also removes what was by far this skin's rendering
+     cost, since it sampled the full screen. */
   /* The columns carry the blur but declare no background of their own, so the
      tracklist would sit straight on the blurred picture: --text over the picture's
      dark violet is nowhere near readable. They get the ground as a pane, which is
@@ -2006,16 +2016,22 @@
   [data-theme="creme"] .basic-toggle.on,   [data-theme="bulletin"] .basic-toggle.on {
     background: var(--tile-on); border-color: transparent; color: var(--tile-on-ink);
   }
-  /* ALL is a small disc sitting ON TOP of the tiles, so it cannot go translucent —
-     it would show their edges through it. It stays opaque and says its state with
-     the fill instead, in the tiles' own language: lime-cast when off, white when on.
-     Its OFF state used to be --bg, which is all but white on this theme: with only
-     Music active the disc still read as switched on. */
+  /* ALL takes the tiles' own two panes: the lime veil when off, the white card when
+     on. It was the one opaque control left in a view built entirely of veils, and
+     that is what made it look foreign.
+     It was kept opaque on purpose, and the reason was real: it is a disc sitting ON
+     TOP of the four tiles, so a translucent one shows their edges and the cross of
+     gaps between them. That is now accepted rather than avoided — in a design where
+     every surface is a veil over one picture, layers showing through each other is
+     the language, not a defect. What keeps the disc reading as a disc is the drop
+     shadow it already carries from its base rule, not a fill nothing else has.
+     Its OFF state before all this was --bg, which is all but white on this theme:
+     with only Music active the disc still read as switched on. */
   [data-theme="creme"] #basic-all, [data-theme="bulletin"] #basic-all {
-    background: var(--tile-all-off); border: none; color: var(--text);
+    background: var(--tile-off); border: none; color: var(--text);
   }
   [data-theme="creme"] #basic-all.on, [data-theme="bulletin"] #basic-all.on {
-    background: var(--card); color: var(--accent);
+    background: var(--tile-on); color: var(--accent);
     box-shadow: 0 3px 16px rgba(44,40,92,.22);
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
@@ -2129,8 +2145,14 @@
      under the panes; a fixed one covers the whole viewport, tracklist included.
      A background is painted against the element's own box and stays put in both
      cases. The tint that a filter used to give is the first layer instead. */
-  html.basic[data-theme="creme"] #basic-section,
-  html.basic[data-theme="bulletin"] #basic-section {
+  /* :not(bulletin2) rather than an override in the skin's own block: that override
+     existed and lost. This selector carries an id, a class and an attribute, and the
+     skin's could only match the id and its own attribute — so the section went on
+     painting a second, differently-cropped copy of the picture inside the first, and
+     the seam ran right across the middle of the screen. Excluding the skin here is
+     also the honest reading: under it, the picture belongs to the body. */
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-section,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-section {
     background-image: linear-gradient(var(--basic-bg-veil), var(--basic-bg-veil)),
                       var(--basic-bg);
     background-size: cover, cover;
@@ -2145,9 +2167,23 @@
   html.basic[data-theme="creme"] #basic-status,
   html.basic[data-theme="bulletin"] #basic-status {
     background: var(--tile-off);
-    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     border: 1px solid var(--border-soft);
     transition: background .25s, color .2s, border-color .2s;
+  }
+  /* The blur is a rule of its own so the skin can drop it without losing the pane.
+     In Bulletin the picture lives inside this section and blurring it costs nothing;
+     under bulletin2 it spans the page, and blurring it here alone left the middle
+     band sharp against blurred surroundings — a second seam, on top of the crop. */
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) .basic-toggle,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) .basic-toggle,
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-dials,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-dials,
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-status,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-status,
+  html.basic[data-theme="creme"]:not([data-skin="bulletin2"]) #basic-all,
+  html.basic[data-theme="bulletin"]:not([data-skin="bulletin2"]) #basic-all {
+    -webkit-backdrop-filter: blur(var(--bg-blur, 12px));
+    backdrop-filter: blur(var(--bg-blur, 12px));
   }
   /* No hairline on the actuators. Their shape comes from the pane itself — a filled
      rectangle over a picture — and an outline on top of that reads as fussy. Only
@@ -3233,6 +3269,19 @@ const BASIC_DARK_PCT = 0.15; // protect all but the darkest 15% of the picture
    ink bar with no veil at all, and left to the measurement alone they would come
    back fully saturated. So the search starts at this floor and only ever goes up. */
 const BASIC_VEIL_FLOOR = 0.14;
+/* Blur radius, measured rather than picked. The blur is here to soften the detail
+   sitting under the text and to push the picture back, and detail is measurable:
+   the mean luminance step between neighbouring pixels. A flat two-colour graphic
+   has almost none, a photograph has a great deal, so the radius follows the picture
+   instead of being a number chosen for whichever image happened to be on screen —
+   26px was right for a photograph and far too much for these waves.
+   Calibrated on what there is to calibrate on: the four shipped graphics measure
+   0.012 to 0.030 and land near the floor. The knee is the honest weak point — with
+   no photograph in the set I could not measure where real content sits, and white
+   noise is no help because downsampling averages it away and UNDER-reports it. If
+   an uploaded photograph comes out too soft or too sharp, this constant is the one
+   to move, and nothing else. */
+const BASIC_BLUR_MIN = 6, BASIC_BLUR_MAX = 22, BASIC_DETAIL_KNEE = 0.10;
 
 function _cssRGBA(v) {
   v = (v || '').trim();
@@ -3270,7 +3319,9 @@ function tuneBasicBackdrop(url) {
   const img = new Image();
   img.onerror = () => {};
   img.onload = () => {
-    const N = 24, cv = document.createElement('canvas');
+    // 48, not 24: the detail metric below needs neighbouring pixels to still be
+    // neighbours. The veil's dark percentile is unchanged by the finer grid.
+    const N = 48, cv = document.createElement('canvas');
     cv.width = N; cv.height = N;
     let d;
     try {
@@ -3278,6 +3329,20 @@ function tuneBasicBackdrop(url) {
       ctx.drawImage(img, 0, 0, N, N);
       d = ctx.getImageData(0, 0, N, N).data;
     } catch (e) { return; }             // tainted canvas → keep the declared veil
+    // Detail → blur radius. Rec. 601 weights, which is what the calibration above
+    // was measured with. Read before the sort: it needs the pixels in place.
+    const lumAt = (x, y) => { const i = (y * N + x) * 4;
+      return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; };
+    let steps = 0, pairs = 0;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      if (x + 1 < N) { steps += Math.abs(lumAt(x, y) - lumAt(x + 1, y)); pairs++; }
+      if (y + 1 < N) { steps += Math.abs(lumAt(x, y) - lumAt(x, y + 1)); pairs++; }
+    }
+    const detail = pairs ? (steps / pairs) / 255 : 0;
+    const blur = BASIC_BLUR_MIN + (BASIC_BLUR_MAX - BASIC_BLUR_MIN)
+               * Math.min(1, detail / BASIC_DETAIL_KNEE);
+    root.style.setProperty('--bg-blur', blur.toFixed(1) + 'px');
+
     const px = [];
     for (let i = 0; i < d.length; i += 4) px.push([d[i], d[i + 1], d[i + 2]]);
     px.sort((a, b) => _lum(a) - _lum(b));
