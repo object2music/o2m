@@ -101,6 +101,13 @@ class O2mToMopidy:
         # say "the dials have spoken, forever".
         self._ui_touched_at = {'dl': None, 'mood': None}
         self._box_activated_at = None
+        # Who included whom: child uid -> parent uid. An included box is part of the
+        # object you put down, so it plays under that object's mood and discover level
+        # unless it states its own. A durable map rather than a stack around the fill:
+        # the question is asked again long after — when the dials refresh, and when the
+        # end-of-track recommendations pick what to add next to a track belonging to
+        # the child. A stack was empty by then and the inheritance silently vanished.
+        self._box_parent = {}
 
         # ── Radio now-playing + auto-save to library ─────────────────────────
         self._radio_np = None          # last known {title,artist,album,key,is_music,source} for the UI
@@ -255,6 +262,37 @@ class O2mToMopidy:
         """Record a dial gesture ('dl' or 'mood') as the newest intent."""
         self._ui_touched_at[what] = datetime.datetime.now()
 
+    def note_box_include(self, parent, child):
+        """Record that `child` is part of `parent`'s cascade, for as long as it is
+        active. What the child inherits is resolved on demand, not frozen here: the
+        parent's own mood may itself be under a time window that has since turned."""
+        try:
+            if parent is not None and child is not None and parent.uid != child.uid:
+                self._box_parent[child.uid] = parent.uid
+        except Exception:
+            pass
+
+    def _parent_box(self, box, _seen=None):
+        """The active box that included this one, if any. Guards against a cycle:
+        two boxes can perfectly well include each other."""
+        try:
+            uid = getattr(box, 'uid', None)
+            if not uid:
+                return None
+            _seen = _seen or set()
+            if uid in _seen:
+                return None
+            _seen.add(uid)
+            puid = self._box_parent.get(uid)
+            if not puid or puid in _seen:
+                return None
+            for b in (self.activeboxs or []):
+                if b.uid == puid:
+                    return b
+        except Exception:
+            pass
+        return None
+
     def note_box_activation(self):
         """Record that an object was PUT DOWN — a fresh intent that outranks the
         dials again.
@@ -286,6 +324,14 @@ class O2mToMopidy:
             energy = getattr(box, 'option_energy', None)
         if valence is None:
             valence = getattr(box, 'option_valence', None)
+        if energy is None or valence is None:
+            parent = self._parent_box(box)
+            if parent is not None:
+                pe, pv = self.effective_mood(parent)
+                if energy is None:
+                    energy = pe
+                if valence is None:
+                    valence = pv
         if energy is None:
             energy = self.mood_energy
         if valence is None:
@@ -299,6 +345,10 @@ class O2mToMopidy:
         dl = bdir.read_directives(getattr(box, 'data', '') or '')['dl']
         if dl is None:
             dl = getattr(box, 'option_discover_level', None)
+        if dl is None:
+            parent = self._parent_box(box)
+            if parent is not None:
+                dl = self.effective_dl(parent)
         if dl is None:
             dl = self.discover_level
         return int(dl)
@@ -336,6 +386,16 @@ class O2mToMopidy:
                 self._box_lock.release()
 
     def box_action_remove(self,box,removedBox):
+        # A box that is no longer active can neither inherit nor be inherited from.
+        try:
+            uid = getattr(removedBox, 'uid', None)
+            if uid:
+                self._box_parent.pop(uid, None)
+                for k, v in list(self._box_parent.items()):
+                    if v == uid:
+                        self._box_parent.pop(k, None)
+        except Exception:
+            pass
         with self._box_ops_lock():
             if len(self.activeboxs) == 0:
                     self.starting_mode(clear=True)
@@ -1497,6 +1557,7 @@ class O2mToMopidy:
                             continue
                         seen.add(sub_box.uid)
                     print(f"added box {sub_box}")
+                    self.note_box_include(box, sub_box)
                     self.box_action(sub_box)
                 
                 # Recommandation
@@ -2741,17 +2802,36 @@ class O2mToMopidy:
 
             #self.play_or_resume()
 
+    def ambient_settings(self, track_uri='', tlid=None):
+        """(energy, valence, dl) for what is added AROUND the track being played.
+
+        Several boxes can be active at once with different settings, so there is no
+        single ambient mood: the one that applies is the one belonging to the track
+        you are actually hearing. Everything added on its heels — the end-of-track
+        recommendations — is chosen under those, through the same ladder as the fill
+        (see effective_mood / effective_dl), not under a different one.
+
+        Before this, the two disagreed: the recommendation took the owning box's DL
+        COLUMN but the SESSION mood, so a box forcing 'calm' filled calm and then had
+        neutral tracks appended to it."""
+        box = None
+        try:
+            box = self.get_active_box_for_playback(track_uri or None, tlid)
+        except Exception:
+            box = None
+        if box is None:
+            box = self.activeboxs[0] if self.activeboxs else None
+        if box is None:
+            return self.mood_energy, self.mood_valence, int(self.discover_level)
+        e, v = self.effective_mood(box)
+        return e, v, self.effective_dl(box)
+
     def calculate_discover_level(self,track_uri='',push_discover_level=None):
-        # Calculate the discover_level : box associated or updated discover_level via api
-        discover_level = self.discover_level
-        if not self.discover_level_on :
-            if push_discover_level != None and push_discover_level:
-                discover_level = push_discover_level
-            if track_uri != '':
-                dl = self.get_option_for_box_uri(track_uri,"option_discover_level")
-                if dl and dl != None: discover_level = dl
-        print (int(discover_level))
-        return int(discover_level)
+        # Discover level for what is added around a played track. push_discover_level
+        # is an explicit caller override; otherwise the ambient settings decide.
+        if push_discover_level and not self.discover_level_on:
+            return int(push_discover_level)
+        return self.ambient_settings(track_uri)[2]
 
     def get_track_recommandation(self,track_uri, discover_level=5, limit=1, data=''):
         # Get tracks recommandations
@@ -2785,7 +2865,10 @@ class O2mToMopidy:
         if not candidates:
             return []
 
-        uris = self._expand_pick(candidates, limit, self.mood_energy, self.mood_valence, discover_level)
+        # Mood of the box the played track belongs to, not the session's — see
+        # ambient_settings for why those two used to disagree.
+        _e, _v, _ = self.ambient_settings(track_uri)
+        uris = self._expand_pick(candidates, limit, _e, _v, discover_level)
 
         return uris
 

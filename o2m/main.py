@@ -1400,12 +1400,24 @@ if __name__ == "__main__":
         # discover level outranks them until a dial is touched. Without this the
         # matrix showed 0.5/0.5/5 while the mix ran on the box's "calm", which is
         # the control lying about what it controls.
+        # Several boxes can be active with different settings, so "what is in effect"
+        # is only well defined relative to a track: the one being played. That is the
+        # same box ambient_settings uses for the end-of-track recommendations, so the
+        # dials show what the next additions will follow. Falls back to the first
+        # active box when nothing is playing.
         eff_e, eff_v, eff_dl, forced = (o2mHandler.mood_energy, o2mHandler.mood_valence,
                                         o2mHandler.discover_level, None)
         try:
-            active = [b for b in (o2mHandler.activeboxs or [])]
-            if active:
-                box = active[0]
+            cur = None
+            try:
+                t = o2mHandler.mopidyHandler.playback.get_current_track()
+                cur = getattr(t, 'uri', None)
+            except Exception:
+                cur = None
+            box = o2mHandler.get_active_box_for_playback(cur, None) if cur else None
+            if box is None and o2mHandler.activeboxs:
+                box = o2mHandler.activeboxs[0]
+            if box is not None:
                 eff_e, eff_v = o2mHandler.effective_mood(box)
                 eff_dl = o2mHandler.effective_dl(box)
                 if (eff_e, eff_v, eff_dl) != (o2mHandler.mood_energy, o2mHandler.mood_valence,
@@ -2199,6 +2211,7 @@ if __name__ == "__main__":
         deactivates boxes it renders; this is the reliable empty-everything.)"""
         from flask import jsonify
         o2mHandler.activeboxs = []
+        o2mHandler._box_parent = {}   # nothing left to inherit from
         try:
             o2mHandler.starting_mode(clear=True)
         except Exception as e:

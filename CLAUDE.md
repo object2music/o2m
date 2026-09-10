@@ -325,9 +325,25 @@ itself a fresh intent and hands precedence back to the box, which is why the act
 stamped at the API entry point and **not** in `box_action` — eight internal paths go through
 that one (cascade includes, every reload, applying a mood).
 
-`GET /api/mood` exposes `effective_energy` / `effective_valence` / `effective_dl` /
-`forced_by` alongside the session values, so the dials can show what is actually driving
-the mix rather than what they were last set to.
+**Cascades inherit.** An included box (`box:<uid>`) is part of the object you put down, so
+it plays under that object's mood and discover level unless it states its own — the child's
+directive or column still wins, inheritance only fills what it leaves unsaid. The lineage
+is a durable map (`_box_parent`, child uid → parent uid), not a stack around the fill: the
+question is asked again long after, when the dials refresh and when the end-of-track
+recommendations pick what to add next to a track belonging to the child. It is resolved on
+demand, so a parent whose mood sits under a time window that has since turned hands down
+the new value; and it is forgotten when either box is deactivated.
+
+**With several boxes active, "in effect" is only defined relative to a track** — the one
+being played. `ambient_settings(track_uri, tlid)` resolves the box that owns it and returns
+its effective `(energy, valence, dl)`; `GET /api/mood` reports the same box in
+`effective_energy` / `effective_valence` / `effective_dl` / `forced_by`, falling back to the
+first active box when nothing plays. So the dials show what the next additions will follow,
+not an average of boxes that would describe none of them.
+
+**End-of-track recommendations use that same ladder.** They used to disagree with the fill:
+the DL came from the owning box's *column* while the mood came from the *session*, so a box
+forcing `calm` filled calm and then had neutral tracks appended to it.
 
 ### 4. Labels and disabling
 A `#` line immediately before a directive is its **human label**; a `#` in front of a
