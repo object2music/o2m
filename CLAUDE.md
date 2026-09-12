@@ -351,12 +351,37 @@ directive **disables** it. Anything unrecognised is kept verbatim as a raw line 
 `parseBoxData` / `serializeBoxData` round-trip losslessly, verified.
 
 ### Time windows — any line can be gated
+Inline, one line at a time:
+
     08:00-10:00 > infos:library
     18:00-23:00 > meta_radios
     22:00-02:00 > dl:2
 
+Or as a **block**, when the header carries the window and nothing else — every indented
+line below belongs to it, until a line back at the left margin:
+
+    08:00-10:00 >
+      infos:library
+      mood:calm
+    auto:library          <- outside the block again
+
+Repeating the same window on six lines is where a typo lives, and the lines of a morning
+belong together. An inline window on a line *inside* a block wins for that line; blank
+lines and comments do not close a block, since a label above a gated line is exactly the
+case that would otherwise break.
+
+`iter_lines` resolves both shapes once, at the top of `tracklistappend_box`, so the
+prefetch pools and the dispatch both work on plain stripped payloads — no prefix and no
+block indentation left to trip a `startswith()`.
+
 Start inclusive, end exclusive; a window whose end is not after its start **wraps midnight**.
 The prefix is generic on purpose: gating the morning news is as useful as gating a mood.
+
+**A cascade multiplies content, and that is not a bug.** Each included box fills with its
+own `max_results`, added to the parent's: measured 11 → 17 → 21 tracks for one, two and
+three sources. A box gating two includes to the morning therefore serves noticeably more
+before 9am than after. Checked for accumulation across a mood change (remove-then-refill
+could have doubled a cascade): it does not — 17 → 17 → 17 over two successive changes.
 
 **Two clocks, and they must not be confused.** Windows and the `infos:library` bulletin
 grid are read in LOCAL time (`boxdirectives.local_now`: the process timezone when the

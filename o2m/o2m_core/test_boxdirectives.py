@@ -134,3 +134,54 @@ class TestLocalNow(unittest.TestCase):
 
     def test_result_is_naive_so_it_compares_with_plain_datetimes(self):
         self.assertIsNone(bd.local_now().tzinfo)
+
+
+BLOCK_BOX = """\
+#Matin
+08:00-10:00 >
+  infos:library
+  mood:calm
+auto:library
+18:00-23:00 > meta_radios
+"""
+
+
+class TestBlocks(unittest.TestCase):
+    def _payloads(self, data, now):
+        return [p for ok, p in bd.iter_lines(data, now) if ok and p]
+
+    def test_inside_the_block_window(self):
+        got = self._payloads(BLOCK_BOX, at(9))
+        self.assertIn('infos:library', got)
+        self.assertIn('mood:calm', got)
+        self.assertIn('auto:library', got)          # outside the block, always on
+        self.assertNotIn('meta_radios', got)        # its own window, not matching
+
+    def test_outside_the_block_window(self):
+        got = self._payloads(BLOCK_BOX, at(12))
+        self.assertNotIn('infos:library', got)
+        self.assertNotIn('mood:calm', got)
+        self.assertIn('auto:library', got)          # the block must not swallow it
+
+    def test_a_block_directive_is_read_only_in_its_window(self):
+        self.assertEqual(bd.read_directives(BLOCK_BOX, now=at(9))['energy'],
+                         bd.MOOD_NAMES['calm'][0])
+        self.assertIsNone(bd.read_directives(BLOCK_BOX, now=at(12))['energy'])
+
+    def test_an_inline_window_inside_a_block_wins_for_that_line(self):
+        data = "08:00-10:00 >\n  20:00-22:00 > meta_radios\n  infos:library\n"
+        at9 = self._payloads(data, at(9))
+        self.assertIn('infos:library', at9)
+        self.assertNotIn('meta_radios', at9)        # its own window says no
+        self.assertIn('meta_radios', self._payloads(data, at(21)))
+
+    def test_a_label_does_not_close_a_block(self):
+        data = "08:00-10:00 >\n  #Bulletin\n  infos:library\nauto:library\n"
+        self.assertIn('infos:library', self._payloads(data, at(9)))
+        self.assertNotIn('infos:library', self._payloads(data, at(15)))
+
+    def test_the_per_line_form_still_works(self):
+        self.assertIn('infos:library',
+                      self._payloads('08:00-10:00 > infos:library\n', at(9)))
+        self.assertNotIn('infos:library',
+                         self._payloads('08:00-10:00 > infos:library\n', at(15)))

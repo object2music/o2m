@@ -1483,9 +1483,13 @@ class O2mToMopidy:
             content = 0
 
             # Looping on hybrid playlist (delimited by \n)
-            data = box.data.split("\n")
-            data = [x for x in data if not x.startswith('#')]
-            data = [x for x in data if not x.startswith('\r')]
+            # Resolve time windows once, here: iter_lines handles both the inline
+            # form and blocks, and hands back plain stripped payloads. Everything
+            # below — the prefetch pools as well as the dispatch — then works on
+            # lines that apply right now, with no prefix and no block indentation
+            # left to trip a startswith().
+            data = [p for ok, p in bdir.iter_lines(box.data)
+                    if ok and p and not p.startswith('#')]
             data = [x.replace('\r', '') for x in data]
 
             # Podcast feeds share the box's budget instead of each taking all of it.
@@ -1528,14 +1532,10 @@ class O2mToMopidy:
                     print(f"rf:sujet prefetch pool: {e}")
 
             for content in data:
-                # A time window may prefix ANY line. Outside its window the line is
-                # as if absent; inside it, the prefix is stripped and the rest is
-                # dispatched normally — so gating the news to the morning costs the
-                # branches below nothing. Directives (dl:/mood:) were already read
-                # by the pre-pass in effective_dl / effective_mood, so they must not
-                # fall through to the branches and be mistaken for content.
-                _applies, content = bdir.line_applies(content)
-                if not _applies or bdir.is_directive(content):
+                # Windows were already resolved above. Directives (dl:/mood:) were
+                # read by the pre-pass in effective_dl / effective_mood, so they must
+                # not fall through to the branches and be mistaken for content.
+                if bdir.is_directive(content):
                     continue
 
                 #Other box called (cascade include)

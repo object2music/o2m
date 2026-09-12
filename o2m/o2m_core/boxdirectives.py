@@ -107,9 +107,57 @@ def window_matches(window, now=None):
 
 
 def line_applies(line, now=None):
-    """(applies_now, payload) for one raw line."""
+    """(applies_now, payload) for one raw line, inline window only.
+
+    Blocks need the lines around them, so use iter_lines for a whole box."""
     window, payload = split_condition(line)
     return window_matches(window, now), payload
+
+
+def iter_lines(data, now=None):
+    """Yield (applies_now, payload) for every content line of a box.
+
+    Resolves both shapes of window. Inline, one line at a time:
+
+        08:00-10:00 > infos:library
+
+    Or as a BLOCK, when the header carries the window and nothing else — every
+    indented line below belongs to it, until a line that is not indented:
+
+        08:00-10:00 >
+          infos:library
+          mood:calm
+        auto:library            <- outside the block again
+
+    The block exists because repeating the same window on six lines is where a
+    typo lives, and because the lines of a morning belong together. An inline
+    window on a line inside a block wins for that line: the more specific
+    statement should be the one that counts.
+
+    Blank lines and comments do not close a block — a label above a gated line is
+    exactly the case that would otherwise break.
+    """
+    block = None
+    for raw in (data or '').splitlines():
+        line = (raw or '').rstrip()
+        if not line.strip():
+            yield window_matches(block, now), ''
+            continue
+        indented = line[:1] in (' ', '\t')
+        stripped = line.strip()
+
+        m = _COND_RE.match(stripped)
+        if m and not m.group(5).strip():          # header: a window and nothing else
+            window, _ = split_condition(stripped + 'x')   # reuse the same validation
+            block = window
+            continue
+        if block is not None and not indented and not stripped.startswith('#'):
+            block = None                          # back to the left margin: block over
+
+        window, payload = split_condition(stripped)
+        if window is None:
+            window = block if indented or stripped.startswith('#') else None
+        yield window_matches(window, now), payload
 
 
 def parse_mood(value):
@@ -128,6 +176,30 @@ def parse_mood(value):
     return None
 
 
+def _is_gated(data, payload, now=None):
+    """Was this payload under a window (inline or block)? A gated statement beats an
+    ungated one, so the pre-pass has to tell them apart."""
+    for raw in (data or '').splitlines():
+        w, p = split_condition(raw.strip())
+        if p == payload and w is not None:
+            return True
+    block = None
+    for raw in (data or '').splitlines():
+        line = (raw or '').rstrip()
+        if not line.strip():
+            continue
+        m = _COND_RE.match(line.strip())
+        if m and not m.group(5).strip():
+            block = True
+            continue
+        indented = line[:1] in (' ', '\t')
+        if block and not indented and not line.strip().startswith('#'):
+            block = None
+        if line.strip() == payload and block and indented:
+            return True
+    return False
+
+
 def read_directives(data, now=None):
     """Pre-pass over a box's data: the mood and discover level it forces.
 
@@ -138,14 +210,14 @@ def read_directives(data, now=None):
     """
     out = {'energy': None, 'valence': None, 'dl': None}
     conditional = {'mood': False, 'dl': False}
-    for raw in (data or '').splitlines():
-        line = (raw or '').strip()
-        if not line or line.startswith('#'):
+    # Same expansion as the dispatcher, so a directive inside a block is gated like
+    # any other line rather than being read unconditionally.
+    for applies, payload in iter_lines(data, now):
+        if not payload or payload.startswith('#'):
             continue
-        window, payload = split_condition(line)
-        if not window_matches(window, now):
+        if not applies:
             continue
-        is_cond = window is not None
+        is_cond = _is_gated(data, payload, now)
 
         m = _DL_RE.match(payload)
         if m:
