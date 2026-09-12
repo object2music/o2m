@@ -153,15 +153,31 @@ Down-weight in (0,1]. **Two clocks measure "recently", and the stricter one wins
 track twice for one offence.
 
 - **Elapsed time**, graduated: a just-played track sits at `cooldown_mult=0.05` and eases
-  linearly back to 1.0 over `cooldown_days=2`, stretched up to ~2× for heavy-rotation
-  tracks (`read_count → cooldown_rc_ref=20`). (Replaced the old hard 8h step —
-  `cooldown_hours` kept for reference.)
-- **Rotation depth**: how much OTHER music has played since, over `cooldown_plays=40`,
-  stretched the same way. `Track.last_play_seq` records the `stats_raw.id` of a track's
-  last play; `recent_music_play_seq` reads the last `cooldown_seq_window=200` music-play
-  ids once per fill, and a bisect per candidate gives the count.
+  linearly back to 1.0 over `cooldown_days=3`, stretched up to ~2× for heavy-rotation
+  tracks (`read_count → cooldown_rc_ref=20`) — so up to 6 days. (Replaced the old hard 8h
+  step — `cooldown_hours` kept for reference.)
+- **Rotation depth**: how much OTHER music has played since, over `cooldown_plays=80`
+  (up to 160 stretched). `Track.last_play_seq` records the `stats_raw.id` of a track's last
+  play; `recent_music_play_seq` reads the last `cooldown_seq_window` music-play ids once
+  per fill, and a bisect per candidate gives the count. That window is **derived**, not
+  set: `max(200, cooldown_plays × 2 × 1.25)`. A ruler shorter than the widest depth window
+  would silently cap the rule — every track older than the tail looks infinitely far away
+  and goes free.
+
+Both were doubled from `cooldown_days=2` / `cooldown_plays=40` after a 24-play favourite
+came back at 4.6 days and 115 intervening plays, i.e. just past both windows. Simulated
+before applying: that track goes from factor 1.000 to 0.733, and the braked population of
+the sequence window from 98 to 159 tracks (29 → 45 strongly). A fill still returns 59
+distinct tracks with no empty-pool warning, so the pool is not starved.
 - **Served (intra-session)**: just-selected tracks ×`served_mult=0.1` for
   `served_cooldown_min=30`min. This one multiplies — it answers a different question.
+
+**What a `stats_raw` row means.** A play is only logged when `position / length > 0.9` —
+a skipped or interrupted track never enters. Measured: 47,343 rows against 79,688 starts
+(0.59) but 55,360 completions (0.86). So rotation depth counts music actually LISTENED to,
+not served. Weighting partial plays by their completion was considered and rejected: it
+would advance the depth ~32% faster, i.e. free tracks *sooner*, the opposite of the intent
+— and the same rows feed the hourly habits, which must not learn from what was skipped.
 
 **Why depth and not time alone.** Measured on this install: **80% of the intervals between
 two plays of the same track exceed four days**, i.e. past every time window, so a popular
