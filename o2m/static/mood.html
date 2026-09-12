@@ -6355,9 +6355,16 @@ function serializeBoxData(items) {
 }
 
 // Display metadata for one item: kind glyph + main text (label > resolved name > raw).
+const BX_BLOCK_OPEN_RE = /^\s*(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})\s*>\s*\{\s*$/;
 function _bxItemMeta(it) {
   if (it.kind === 'comment') return { icon: ICON.hash, tag: 'comment', name: it.text.replace(/^#+\s*/, ''), sub: '' };
-  if (it.kind === 'raw')     return { icon: ICON.hash, tag: 'raw', name: it.text, sub: '' };
+  if (it.kind === 'raw') {
+    // Block delimiters read as structure, not as an unknown line.
+    const om = BX_BLOCK_OPEN_RE.exec(it.text || '');
+    if (om) return { icon: ICON.clock || ICON.zap, tag: 'window', name: om[1] + ' — from here', sub: '' };
+    if ((it.text || '').trim() === '}') return { icon: ICON.clock || ICON.zap, tag: 'window', name: 'end of window', sub: '' };
+    return { icon: ICON.hash, tag: 'raw', name: it.text, sub: '' };
+  }
   // Settings come first and cover BOTH classifications: the picker seeds exact
   // strings ('mood:calm', 'dl:5') which land as keywords, while anything the user
   // types ('mood:happy', 'dl:7') lands as a pair. Reading them here keeps the two

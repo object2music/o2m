@@ -138,9 +138,10 @@ class TestLocalNow(unittest.TestCase):
 
 BLOCK_BOX = """\
 #Matin
-08:00-10:00 >
+08:00-10:00 > {
   infos:library
   mood:calm
+}
 auto:library
 18:00-23:00 > meta_radios
 """
@@ -169,16 +170,32 @@ class TestBlocks(unittest.TestCase):
         self.assertIsNone(bd.read_directives(BLOCK_BOX, now=at(12))['energy'])
 
     def test_an_inline_window_inside_a_block_wins_for_that_line(self):
-        data = "08:00-10:00 >\n  20:00-22:00 > meta_radios\n  infos:library\n"
+        data = "08:00-10:00 > {\n  20:00-22:00 > meta_radios\n  infos:library\n}\n"
         at9 = self._payloads(data, at(9))
         self.assertIn('infos:library', at9)
         self.assertNotIn('meta_radios', at9)        # its own window says no
         self.assertIn('meta_radios', self._payloads(data, at(21)))
 
     def test_a_label_does_not_close_a_block(self):
-        data = "08:00-10:00 >\n  #Bulletin\n  infos:library\nauto:library\n"
+        data = "08:00-10:00 > {\n  #Bulletin\n  infos:library\n}\nauto:library\n"
         self.assertIn('infos:library', self._payloads(data, at(9)))
         self.assertNotIn('infos:library', self._payloads(data, at(15)))
+
+    def test_indentation_is_decoration_only(self):
+        """The box editor trims every line; a block must survive that."""
+        flat = "08:00-10:00 > {\ninfos:library\nmood:calm\n}\nauto:library\n"
+        got = self._payloads(flat, at(9))
+        self.assertIn('infos:library', got)
+        self.assertNotIn('infos:library', self._payloads(flat, at(15)))
+
+    def test_an_unclosed_block_runs_to_the_end(self):
+        data = "08:00-10:00 > {\n  infos:library\n  meta_radios\n"
+        self.assertEqual(self._payloads(data, at(9)), ['infos:library', 'meta_radios'])
+        self.assertEqual(self._payloads(data, at(15)), [])
+
+    def test_lines_after_the_closing_brace_are_free_again(self):
+        data = "08:00-10:00 > {\n  infos:library\n}\nauto:library\nmeta_radios\n"
+        self.assertEqual(self._payloads(data, at(15)), ['auto:library', 'meta_radios'])
 
     def test_the_per_line_form_still_works(self):
         self.assertIn('infos:library',

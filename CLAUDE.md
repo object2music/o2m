@@ -357,18 +357,23 @@ Inline, one line at a time:
     18:00-23:00 > meta_radios
     22:00-02:00 > dl:2
 
-Or as a **block**, when the header carries the window and nothing else — every indented
-line below belongs to it, until a line back at the left margin:
+Or as a **block**, opened by a window followed by a brace and closed by one:
 
-    08:00-10:00 >
+    08:00-10:00 > {
       infos:library
       mood:calm
+    }
     auto:library          <- outside the block again
 
 Repeating the same window on six lines is where a typo lives, and the lines of a morning
-belong together. An inline window on a line *inside* a block wins for that line; blank
-lines and comments do not close a block, since a label above a gated line is exactly the
-case that would otherwise break.
+belong together. An inline window on a line *inside* a block wins for that line, and an
+unclosed block runs to the end of the data — the forgiving reading.
+
+**The delimiters are explicit, and that is the whole point.** A first version used
+indentation and it was wrong: `parseBoxData` trims every line, so opening a box in the
+editor and saving it flattened the block and turned its gated lines into permanent ones —
+worse than not working. Indentation is now decoration; braces survive a trim. Neither
+character starts a line anywhere in the 150 existing boxes, so nothing can collide.
 
 `iter_lines` resolves both shapes once, at the top of `tracklistappend_box`, so the
 prefetch pools and the dispatch both work on plain stripped payloads — no prefix and no

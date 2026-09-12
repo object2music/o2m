@@ -70,6 +70,7 @@ def local_now():
         return datetime.datetime.now()
 
 
+_BLOCK_RE = re.compile(r'^\s*(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})\s*>\s*\{\s*$')
 _COND_RE = re.compile(r'^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*>\s*(.*)$')
 _DL_RE = re.compile(r'^dl\s*:\s*(\d{1,2})\s*$', re.I)
 _MOOD_RE = re.compile(r'^mood\s*:\s*(.+?)\s*$', re.I)
@@ -121,42 +122,45 @@ def iter_lines(data, now=None):
 
         08:00-10:00 > infos:library
 
-    Or as a BLOCK, when the header carries the window and nothing else — every
-    indented line below belongs to it, until a line that is not indented:
+    Or as a BLOCK, opened by a window followed by a brace and closed by one:
 
-        08:00-10:00 >
+        08:00-10:00 > {
           infos:library
           mood:calm
-        auto:library            <- outside the block again
+        }
+        auto:library            <- outside the block
 
     The block exists because repeating the same window on six lines is where a
-    typo lives, and because the lines of a morning belong together. An inline
-    window on a line inside a block wins for that line: the more specific
-    statement should be the one that counts.
+    typo lives, and because the lines of a morning belong together.
 
-    Blank lines and comments do not close a block — a label above a gated line is
-    exactly the case that would otherwise break.
+    The delimiters are explicit, and that is the whole point: an earlier version
+    used indentation, which the box editor destroys — parseBoxData trims every
+    line, so opening a box and saving it flattened the block and turned its gated
+    lines into permanent ones. Indentation here is decoration; braces survive a
+    trim. Neither character starts a line anywhere in the existing boxes.
+
+    An inline window on a line inside a block wins for that line: the more specific
+    statement should be the one that counts. An unclosed block simply runs to the
+    end of the data, which is the forgiving reading.
     """
     block = None
     for raw in (data or '').splitlines():
-        line = (raw or '').rstrip()
-        if not line.strip():
-            yield window_matches(block, now), ''
+        line = (raw or '').strip()
+        if not line:
             continue
-        indented = line[:1] in (' ', '\t')
-        stripped = line.strip()
+        if line == '}':
+            block = None
+            continue
 
-        m = _COND_RE.match(stripped)
-        if m and not m.group(5).strip():          # header: a window and nothing else
-            window, _ = split_condition(stripped + 'x')   # reuse the same validation
+        m = _BLOCK_RE.match(line)
+        if m:
+            window, _ = split_condition(m.group(1) + ' > x')
             block = window
             continue
-        if block is not None and not indented and not stripped.startswith('#'):
-            block = None                          # back to the left margin: block over
 
-        window, payload = split_condition(stripped)
+        window, payload = split_condition(line)
         if window is None:
-            window = block if indented or stripped.startswith('#') else None
+            window = block
         yield window_matches(window, now), payload
 
 
@@ -177,26 +181,22 @@ def parse_mood(value):
 
 
 def _is_gated(data, payload, now=None):
-    """Was this payload under a window (inline or block)? A gated statement beats an
-    ungated one, so the pre-pass has to tell them apart."""
+    """Was this payload under a window, inline or by block? A gated statement beats
+    an ungated one, so the pre-pass has to tell them apart."""
+    block = False
     for raw in (data or '').splitlines():
-        w, p = split_condition(raw.strip())
-        if p == payload and w is not None:
-            return True
-    block = None
-    for raw in (data or '').splitlines():
-        line = (raw or '').rstrip()
-        if not line.strip():
+        line = (raw or '').strip()
+        if not line:
             continue
-        m = _COND_RE.match(line.strip())
-        if m and not m.group(5).strip():
+        if line == '}':
+            block = False
+            continue
+        if _BLOCK_RE.match(line):
             block = True
             continue
-        indented = line[:1] in (' ', '\t')
-        if block and not indented and not line.strip().startswith('#'):
-            block = None
-        if line.strip() == payload and block and indented:
-            return True
+        w, p = split_condition(line)
+        if p == payload:
+            return w is not None or block
     return False
 
 
