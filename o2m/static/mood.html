@@ -2294,6 +2294,13 @@
     display: inline-flex; padding: 3px 6px; }
   #search-box #btn-search:hover, #search-box.open #btn-search { color: var(--accent); }
   #search-box #btn-search svg { width: 15px; height: 15px; }
+  /* Browse sits beside Search and is the same kind of thing — a way in, not a
+     destination — so it gets the same icon-only treatment rather than a labelled
+     button competing with the nav links. */
+  #footer-links #btn-browse { background: none; border: none; color: var(--muted);
+    cursor: pointer; display: inline-flex; padding: 3px 6px; order: 1; }
+  #footer-links #btn-browse:hover { color: var(--accent); }
+  #footer-links #btn-browse svg { width: 15px; height: 15px; }
   #search-input { width: 0; padding: 0; border: none; opacity: 0; background: var(--fill-1);
     color: var(--text); font: inherit; font-size: 12px; outline: none;
     transition: width .2s var(--ease, ease), opacity .2s, padding .2s; }
@@ -2573,7 +2580,7 @@
       <button id="btn-search" title="Search content" aria-label="Search content"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
       <input id="search-input" type="search" placeholder="Search…" autocomplete="off" spellcheck="false">
     </div>
-    <button class="footer-link" id="btn-browse" title="Browse your library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Browse</button>
+    <button id="btn-browse" class="icon-only" title="Browse your library" aria-label="Browse your library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
       <!-- The key stays "creme": that is what existing users have persisted in
@@ -3722,6 +3729,7 @@ const CHEVRON_SVG = '<svg class="obj-chevron" viewBox="0 0 24 24" fill="none" st
 const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>';
 const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 const ICON_REMOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+const ICON_SHUFFLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -4484,9 +4492,10 @@ async function objPlayObject(uri, mode) {
   try {
     const r = await rpc('core.library.lookup', { uris: [uri] });
     let uris = (r?.result?.[uri] || []).map(t => t.uri).filter(Boolean);
-    if (!uris.length) {   // directory-like uri (podcast feed) → browse to its episode tracks
-      const b = await rpc('core.library.browse', { uri });
-      uris = (b?.result || []).filter(x => x.type === 'track').map(x => x.uri).filter(Boolean);
+    if (!uris.length && String(uri).startsWith('podcast+')) {
+      // A feed is a directory, not a track: ask O2M for its episodes (mopidy's
+      // browse is disabled without a configured podcast root — see podcastEpisodes).
+      uris = (await podcastEpisodes(uri, 0, 50)).rows.map(r => r.uri).filter(Boolean);
     }
     if (!uris.length) { setFeedback('No tracks'); return; }
     if (uris.length > 40) uris = uris.slice(0, 40);
@@ -4494,9 +4503,19 @@ async function objPlayObject(uri, mode) {
   } catch (e) { setFeedback('Play error'); }
 }
 
-// Podcast channel detail: browse the mopidy-podcast feed into its episodes and
-// render them as a track list (same rows as an album). Reached from search (a
-// podcast row) — See episodes / row click.
+/* Episodes of a channel, from O2M rather than mopidy's browse.
+
+   mopidy only registers a backend as browsable when its library has a ROOT
+   directory, and mopidy-podcast's is None unless `browse_root` is configured —
+   it is not here, so core._browse returned an empty list before ever reaching
+   the provider, and every channel looked empty. O2M parses feeds itself and has
+   the episodes of every box-referenced feed in its catalogue, so it answers
+   instantly and does not depend on a per-instance mopidy setting. */
+async function podcastEpisodes(uri, offset, limit) {
+  const d = await _wcJson('/podcast_episodes?uri=' + encodeURIComponent(uri)
+                          + '&limit=' + (limit || 50) + '&offset=' + (offset || 0));
+  return { rows: (d && d.items) || [], hasMore: !!(d && d.has_more) };
+}
 async function openPodcast(uri, seed) {
   if (!uri) return;
   objNavTo();
@@ -4505,8 +4524,8 @@ async function openPodcast(uri, seed) {
   openObjPanel();
   objLoading();
   try {
-    const [browseR, cover] = await Promise.all([ rpc('core.library.browse', { uri }), objCover(uri) ]);
-    const eps = (browseR?.result || []).filter(r => r.type === 'track');
+    const [ep, cover] = await Promise.all([ podcastEpisodes(uri, 0, 50), objCover(uri) ]);
+    const eps = ep.rows.map(r => ({ uri: r.uri, name: r.name, length: null, sub: r.sub }));
     objSetActionUris(eps.map(e => e.uri).filter(Boolean), uri);
     const coverHtml = objCoverHTML(cover, uri);
     let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Podcast')}</b>`
@@ -4551,8 +4570,19 @@ function objSetActionUris(list, uri) {
 }
 async function openObjActions(btn) {
   const items = [];
-  if (objCurrentPlayUris.length)
-    items.push({ label: 'Play next', icon: ICON_PLAYNEXT, action: () => playNext(objCurrentPlayUris) });
+  // Three ways to start what this object holds — an album, an artist, a channel, a
+  // playlist all answer the same three questions: now, after, or just one of them.
+  // "One at random" is what a channel of 400 episodes is usually for.
+  if (objCurrentPlayUris.length) {
+    items.push({ label: 'Play now', icon: ICON_PLAYNOW,
+                 action: () => playNow(objCurrentPlayUris) });
+    items.push({ label: 'Play next', icon: ICON_PLAYNEXT,
+                 action: () => playNext(objCurrentPlayUris) });
+    if (objCurrentPlayUris.length > 1)
+      items.push({ label: 'Play one at random', icon: ICON_SHUFFLE,
+                   action: () => playNow([objCurrentPlayUris[
+                     Math.floor(Math.random() * objCurrentPlayUris.length)]]) });
+  }
   if (objCurrentUri)
     items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(objCurrentUri) });
   // Library toggle for the whole object (album saved / artist followed), live state.

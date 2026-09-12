@@ -817,6 +817,53 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/podcast_episodes')
+    def api_podcast_episodes():
+        """Episodes of one feed, for the podcast view.
+
+        Not mopidy's browse: a backend is only registered as browsable when it has a
+        root directory, and mopidy-podcast's is None unless `browse_root` is set —
+        which it is not here, so core._browse returned [] before ever reaching the
+        provider. O2M parses feeds itself anyway (get_podcast_from_url), and the
+        catalogue already holds the episodes of every box-referenced feed, so this
+        answers from the DB first and only falls back to the network.
+        """
+        from flask import jsonify
+        uri = (request.args.get('uri') or '').strip()
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        try:
+            limit = max(1, min(int(request.args.get('limit') or 50), 200))
+        except Exception:
+            limit = 50
+        try:
+            offset = max(0, int(request.args.get('offset') or 0))
+        except Exception:
+            offset = 0
+        db = o2mHandler.dbHandler
+        feed = db.podcast_uri_remove_max_results(uri)
+        channel = feed.split('+', 1)[1] if feed.startswith('podcast+') else feed
+        try:
+            uris = db.get_episodes_by_channel(channel, limit=limit + offset + 1)
+            if not uris:
+                # Never catalogued (a feed reached from the directory rather than a
+                # box): read it live, the way a fill would.
+                shows = o2mHandler.get_podcast_from_url(channel) or []
+                uris = [getattr(r, 'uri', None) for r in shows]
+                uris = [u for u in uris if u]
+            more = len(uris) > offset + limit
+            rows = []
+            for u in uris[offset:offset + limit]:
+                t = db.get_stat_by_uri(u)
+                rows.append({'uri': u,
+                             'name': (getattr(t, 'name', None) or u.split('#')[-1])[:200],
+                             'sub': (getattr(t, 'published_at', None) or ''),
+                             'image': ''})
+            return jsonify({'items': rows, 'has_more': more,
+                            'limit': limit, 'offset': offset})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/directory_genres')
     def api_directory_genres():
         """Localized podcast genre list (iTunes), for browsing the directory."""
