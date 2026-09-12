@@ -174,8 +174,14 @@ fixing a fire.)
 Depth counts **music only**: 55% of `stats_raw` rows are podcasts, radios and box
 activations, and an evening of podcasts is not other music having gone by — counting them
 would inflate the depth and lift the cooldown early, which is the failure it exists to
-prevent. A track with no `last_play_seq` yet falls back to time alone, so the rule fills in
-as tracks play rather than needing a backfill.
+prevent. A track with no `last_play_seq` falls back to time alone.
+
+**`backfill_last_play_seq` runs once at startup**, and it has to. `last_play_seq` is only
+written when a track ENDS, so on the day the column was added the depth rule protected
+**25 tracks out of 22,733 already played — 0.1%**, while `stats_raw` held the position of
+the last play for 15,138 of them. Letting it "fill in as tracks play" would have left the
+rule meaningless for weeks, on exactly the popular tracks it exists to slow down. One
+statement, guarded by a CacheMeta flag: 158ms the first time, 0.7ms after.
 
 ### Known bias & mitigations
 - **Comfort-track over-recurrence**: a high-popularity favourite that's been played a lot

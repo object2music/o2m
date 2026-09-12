@@ -640,6 +640,38 @@ class DatabaseHandler():
             username=username,
         )
 
+    def backfill_last_play_seq(self):
+        """Give every already-played track the sequence position of its last play.
+
+        Without this the rotation-depth cooldown is inert on an existing install:
+        last_play_seq is only written when a track ENDS, so on the day the column
+        was added it protected 25 tracks out of 22,733 already played — 0.1%. The
+        whole history is right there in stats_raw, which is why "no backfill needed"
+        was the wrong call: the rule would have taken weeks of listening to mean
+        anything, and would have silently let exactly the popular tracks it exists
+        to slow down through.
+
+        One statement, only touching rows that have no value yet, so it is safe to
+        call again; a CacheMeta flag keeps it from re-scanning at every startup."""
+        done, _ = self.get_cache_meta('backfill_last_play_seq')
+        if done:
+            return 0
+        try:
+            db.execute_sql("""
+              UPDATE track t
+                JOIN (SELECT uri, MAX(id) AS m FROM stats_raw
+                      WHERE uri LIKE 'spotify:track:%%' GROUP BY uri) s ON s.uri = t.uri
+                 SET t.last_play_seq = s.m
+               WHERE t.last_play_seq IS NULL
+            """)
+            n = Track.select().where(Track.last_play_seq.is_null(False)).count()
+            self.set_cache_meta('backfill_last_play_seq', 1)
+            print(f"backfill_last_play_seq: {n} tracks now carry a play position")
+            return n
+        except Exception as e:
+            print(f"backfill_last_play_seq: {e}")
+            return 0
+
     def recent_music_play_seq(self, limit=200):
         """Ids of the last `limit` MUSIC plays, ascending — the rotation ruler.
 
