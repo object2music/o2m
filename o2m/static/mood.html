@@ -155,6 +155,9 @@
     --mx-bg:     rgba(255,255,255,.72);
     --tile-off:  rgba(242,246,216,.38);
     --tile-on:   rgba(255,255,255,.80);
+    /* The surface colour at full strength, for what floats above the interface
+       rather than belonging to it. Same value as --surface, minus the alpha. */
+    --sheet-bg:  #EEEBF8;
   }
   /* One picture, blurred ONCE at the source.
      backdrop-filter was the wrong tool and it took two tries to see why: it blurs
@@ -202,6 +205,27 @@
      dark violet is nowhere near readable. They get the ground as a pane, which is
      what the blur is there to support. */
   [data-skin="bulletin2"] .col { background: var(--bg); }
+  /* An overlay is another PLANE, not a window. Turning the ground tokens
+     translucent caught the sheets and menus with everything else, and a modal you
+     can see the interface and the picture through does not read as having opened:
+     it has no edge, and its own text competes with whatever it covers.
+     They get the surface colour back at full strength — the same value the theme
+     declares, only opaque — so the scrim behind them does its job and the sheet
+     reads as a layer above. Everything that stays part of the interface keeps its
+     veil; only what floats over it is solid. */
+  [data-skin="bulletin2"] #welcome,
+  [data-skin="bulletin2"] #pairing,
+  [data-skin="bulletin2"] #settings,
+  [data-skin="bulletin2"] #obj-panel,
+  [data-skin="bulletin2"] #feedback,
+  [data-skin="bulletin2"] .track-menu-dropdown,
+  [data-skin="bulletin2"] .pl-dropdown { background: var(--sheet-bg); }
+  /* The details panel is BOTH: a column of the interface on desktop, a sheet over
+     it on a phone. Only the sheet turns solid, hence the breakpoint — outside it,
+     making the panel opaque would punch a hole in the header. */
+  @media (max-width: 699px) {
+    [data-skin="bulletin2"] #track-details { background: var(--sheet-bg); }
+  }
   /* --bg is a translucent pane here, so anything that used it as INK has to be
      given a real colour back. */
   [data-skin="bulletin2"] #btn-auto.active { color: var(--on-accent); }
@@ -2549,6 +2573,7 @@
       <button id="btn-search" title="Search content" aria-label="Search content"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
       <input id="search-input" type="search" placeholder="Search…" autocomplete="off" spellcheck="false">
     </div>
+    <button class="footer-link" id="btn-browse" title="Browse your library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Browse</button>
     <div id="theme-switcher">
       <button class="theme-chip" data-theme-set="dark">Dark</button>
       <!-- The key stays "creme": that is what existing users have persisted in
@@ -2559,11 +2584,10 @@
       <button class="theme-chip" data-theme-set="overprint">Overprint</button>
       <button class="theme-chip" data-theme-set="invert">Invert</button>
     </div>
-    <a class="footer-link" href="/iris/" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>Iris</a>
+    <button class="footer-link" id="footer-settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Settings</button>
     <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
     <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
     <a class="footer-link" id="footer-backoffice" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>Backoffice</a>
-    <button class="footer-link" id="footer-settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>Settings</button>
     <a class="footer-link" id="link-basic" href="/basic" onclick="try{localStorage.setItem('o2m-view','basic')}catch(e){}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Basic</a>
     <a class="footer-link" id="link-full" href="/mood?full=1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>Full</a>
     <button class="footer-link" id="btn-fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Fullscreen</button>
@@ -6423,6 +6447,8 @@ let _bxSearchQ = '';
 let _wcSearchTimer = null;
 
 const WC_BROWSE_NODES = {
+  favorites:   { label: 'Favourite tracks',       icon: ICON.heart(true) },
+  podfavorites:{ label: 'Favourite episodes',     icon: ICON.heart(true) },
   playlists:   { label: 'Your playlists',         icon: ICON.list },
   artists:     { label: 'Your artists',           icon: ICON.user },
   albums:      { label: 'Your albums',            icon: ICON.disc },
@@ -6866,19 +6892,60 @@ async function _wcRunSearch(q) {
   _wcResults(html || '<div class="obj-empty">No results.</div>');
 }
 
+/* Where a browse node gets its rows. Shared by the box editor's Add panel and the
+   Browse modal: both ask the same question — "what is in here?" — and differ only
+   in what a click then does, add a line or open the object.
+
+   Returns null for the two INTERACTIVE nodes (podcast genres, Radio France
+   subjects): those are a tree to walk and a filter to type, not a list, and the
+   editor renders them itself. A Radio France subject is not an object you can play
+   either — it is a pattern that refills — so the Browse modal has no use for it. */
+async function browseFetch(node, opts) {
+  const off = (opts && opts.offset) || 0;
+  const lim = (opts && opts.limit) || 50;
+  if (node === 'playlists' || node === 'albums' || node === 'artists') {
+    const d = await _wcJson('/library_browse?kind=' + node);
+    return { rows: _wcDirRows((d && d.items) || []),
+             kind: node === 'playlists' ? 'playlist' : (node === 'albums' ? 'album' : 'artist'),
+             empty: 'Nothing cached yet — use Search instead.' };
+  }
+  if (node === 'favorites' || node === 'podfavorites') {
+    const d = await _wcJson('/library_browse?kind=' + node + '&limit=' + lim + '&offset=' + off);
+    return { rows: _wcDirRows((d && d.items) || []),
+             kind: node === 'favorites' ? 'track' : 'podcast',
+             hasMore: !!(d && d.has_more),
+             empty: node === 'favorites'
+               ? 'No favourite tracks yet.'
+               : 'No favourite episodes yet — tap the heart on one while it plays.' };
+  }
+  if (node === 'podchannels') {
+    const d = await _wcJson('/podcast_channels');
+    return { rows: _wcDirRows(Array.isArray(d) ? d : []), kind: 'podcast',
+             empty: 'No channels referenced in your boxes yet.' };
+  }
+  if (node === 'radiotop') {
+    const d = await _wcJson('/directory?kind=radio');
+    return { rows: _wcDirRows((d && d.items) || []), kind: 'radio',
+             empty: 'Radio directory unavailable.' };
+  }
+  if (node === 'podtop' || node === 'podnews') {
+    const d = await _wcJson('/directory?kind=podcast' + (node === 'podnews' ? '&genre=1489' : ''));
+    return { rows: _wcDirRows((d && d.items) || []), kind: 'podcast',
+             empty: 'Podcast directory unavailable.' };
+  }
+  return null;
+}
+
 async function _wcLoadBrowse(node) {
   _wcResults('<div class="obj-loading">Loading…</div>');
   const done = (html) => { if (_bxBrowseNode === node) _wcResults(html); };   // ignore a stale response
   const rowsOr = (rows, kindTag, empty) => rows.length
     ? _searchObjRows(rows, kindTag) : `<div class="obj-empty">${empty}</div>`;
 
-  if (node === 'playlists' || node === 'albums' || node === 'artists') {
-    const d = await _wcJson('/library_browse?kind=' + node);
-    const rows = _wcDirRows((d && d.items) || []);
-    const tag = node === 'playlists' ? 'playlist' : (node === 'albums' ? 'album' : 'artist');
-    done(rowsOr(rows, tag, 'Nothing cached yet — use Search instead.'));
-    return;
-  }
+  // Everything that is just a list comes from the shared fetcher; only the two
+  // interactive nodes below are the editor's own.
+  const got = await browseFetch(node);
+  if (got) { done(rowsOr(got.rows, got.kind, got.empty)); return; }
   if (node === 'rfsubjects') {
     // Picking a subject writes 'rf:sujet:<title>', a DYNAMIC line that refills
     // with whatever was published on it. Browsing walks the THEME tree (12 roots
@@ -6927,16 +6994,6 @@ async function _wcLoadBrowse(node) {
     _wcWireSubjectInput();
     return;
   }
-  if (node === 'podchannels') {
-    const d = await _wcJson('/podcast_channels');
-    done(rowsOr(_wcDirRows(Array.isArray(d) ? d : []), 'podcast', 'No channels referenced in your boxes yet.'));
-    return;
-  }
-  if (node === 'radiotop') {
-    const d = await _wcJson('/directory?kind=radio');
-    done(rowsOr(_wcDirRows((d && d.items) || []), 'radio', 'Radio directory unavailable.'));
-    return;
-  }
   if (node === 'podgenres') {
     const d = await _wcJson('/directory_genres');
     const genres = (d && d.genres) || [];
@@ -6948,11 +7005,10 @@ async function _wcLoadBrowse(node) {
       : '<div class="obj-empty">Genres unavailable.</div>');
     return;
   }
-  // Top podcasts — whole store, the News genre (info boxes), or a picked genre.
-  let url = '/directory?kind=podcast';
-  if (node === 'podnews') url += '&genre=1489';
-  else if (String(node).startsWith('podgenre:')) url += '&genre=' + encodeURIComponent(String(node).slice(9));
-  const d = await _wcJson(url);
+  // Only a genre picked from the list above reaches here; the fixed podcast nodes
+  // come from browseFetch at the top.
+  const d = await _wcJson('/directory?kind=podcast&genre='
+                          + encodeURIComponent(String(node).slice(9)));
   done(rowsOr(_wcDirRows((d && d.items) || []), 'podcast', 'Podcast directory unavailable.'));
 }
 
@@ -7272,6 +7328,67 @@ async function searchLoadMore() {
    header's editable query field belongs to a text search, and a tag is not one.
    The answer is capped per type rather than paged (has_more false server-side), so
    no "Load more" appears. */
+/* ── Browse: walk the library and open what you find ──────────────────────
+   The box editor's Add panel answers the same question — "what is in here?" — so
+   the node catalogue (WC_BROWSE_NODES) and the row fetcher (browseFetch) are
+   shared. Only the verb differs: there a row is added to a box, here it opens the
+   object, where it can be played. Rendering goes through _searchObjRows, so those
+   rows already carry the click behaviour the search results have.
+
+   The two interactive nodes are left out on purpose: a podcast-genre tree is a
+   detour rather than a destination, and a Radio France subject is not an object
+   you can open at all — it is a pattern that refills a box. */
+const BROWSE_NODES = ['favorites', 'podfavorites', 'playlists', 'albums', 'artists',
+                      'podchannels', 'podtop', 'podnews', 'radiotop'];
+let _browseState = null;   // { node, offset, rows } for the paged nodes
+
+function openBrowse() {
+  objNavTo();
+  objSetHead('Browse', 'Your library', '');
+  objSetActionUris([]);
+  openObjPanel();
+  objBody().innerHTML = '<div class="obj-tracks">' + BROWSE_NODES.map(n => {
+    const c = WC_BROWSE_NODES[n];
+    return `<div class="obj-row obj-clickable" data-browse-node="${n}">`
+         + `<span class="bx-kind">${c.icon}</span>`
+         + `<span class="ot-name">${objEsc(c.label)}</span>${CHEVRON_SVG}</div>`;
+  }).join('') + '</div>';
+}
+
+async function openBrowseNode(node, opts) {
+  const more = !!(opts && opts.more);
+  const c = WC_BROWSE_NODES[node];
+  if (!more) {
+    objNavTo();
+    objSetHead('Browse', (c && c.label) || 'Browse', '');
+    objSetActionUris([]);
+    openObjPanel();
+    objLoading('Loading…');
+    _browseState = { node, offset: 0, rows: [] };
+  }
+  const got = await browseFetch(node, { offset: _browseState ? _browseState.offset : 0 });
+  if (!got) { objBody().innerHTML = '<div class="obj-empty">Nothing to browse here.</div>'; return; }
+  _browseState.rows = _browseState.rows.concat(got.rows);
+  _browseState.offset += got.rows.length;
+  _browseState.hasMore = !!got.hasMore;
+  _browseRender(got);
+}
+
+function _browseRender(got) {
+  const st = _browseState || { rows: [] };
+  let html = st.rows.length ? _searchObjRows(st.rows, got.kind)
+                            : `<div class="obj-empty">${objEsc(got.empty || 'Nothing here.')}</div>`;
+  if (st.hasMore)
+    html += '<div class="search-more"><button type="button" class="wc-seg" data-browse-more>Load more</button></div>';
+  objBody().innerHTML = html;
+}
+
+async function browseLoadMore() {
+  const btn = document.querySelector('[data-browse-more]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  if (_browseState) await openBrowseNode(_browseState.node, { more: true });
+}
+
 async function openTagSearch(tag) {
   if (!tag) return;
   objNavTo();
@@ -8366,6 +8483,9 @@ async function init() {
     if (e.target.closest('#bx-editor-host')) return;
     // "Load more" at the bottom of a search: append the next page in place.
     if (e.target.closest('[data-search-more]')) { e.preventDefault(); return searchLoadMore(); }
+    if (e.target.closest('[data-browse-more]')) { e.preventDefault(); return browseLoadMore(); }
+    const bn = e.target.closest('[data-browse-node]');
+    if (bn) { e.preventDefault(); return openBrowseNode(bn.dataset.browseNode); }
     const ib = e.target.closest('.tl-info');
     if (ib) {
       // data-kind (search results) → kind-aware menu (artist/album get Play +
@@ -8393,6 +8513,7 @@ async function init() {
   const searchBox = document.getElementById('search-box');
   const searchInput = document.getElementById('search-input');
   let _searchTimer = null;
+  document.getElementById('btn-browse')?.addEventListener('click', openBrowse);
   document.getElementById('btn-search')?.addEventListener('click', () => {
     const open = searchBox.classList.toggle('open');
     if (open) searchInput.focus();

@@ -640,6 +640,43 @@ class DatabaseHandler():
             username=username,
         )
 
+    def get_favorite_rows(self, spoken=False, limit=50, offset=0):
+        """Favourites in the browser's row shape, music or spoken.
+
+        Two notions of "favourite" coexist and the heart already merges them, so
+        this does too: `liked` is what the heart sets (and what Spotify saved-tracks
+        sync writes), `option_type='favorites'` is the lifecycle state the
+        `o2m:favorites` pattern plays. Showing only one would hide rows the interface
+        calls favourite.
+
+        Spoken favourites are near-zero today — the heart writes `liked` for any uri,
+        including an episode, so the row fills in as they are marked rather than
+        needing a separate mechanism."""
+        try:
+            cond = ((Track.liked == 1) | (Track.option_type == 'favorites'))
+            cond = cond & (Track.uri.startswith('podcast+') if spoken
+                           else Track.uri.startswith('spotify:track:'))
+            q = (Track.select(Track.uri, Track.name, Track.album_id, Track.channel_id)
+                 .where(cond)
+                 .order_by(Track.last_read_date.desc(), Track.uri)
+                 .limit(limit + 1).offset(offset))
+            rows = list(q)
+            more = len(rows) > limit
+            out = []
+            for t in rows[:limit]:
+                sub = ''
+                if spoken and t.channel_id:
+                    ch = PodcastChannel.get_or_none(PodcastChannel.id == t.channel_id)
+                    sub = (ch.title or '') if ch else ''
+                elif not spoken and t.album_id:
+                    al = Album.get_or_none(Album.id == t.album_id)
+                    sub = (al.artist_name or '') if al else ''
+                out.append({'uri': t.uri, 'name': t.name or t.uri, 'sub': sub, 'image': ''})
+            return out, more
+        except Exception as e:
+            print(f"get_favorite_rows: {e}")
+            return [], False
+
     def backfill_last_play_seq(self):
         """Give every already-played track the sequence position of its last play.
 

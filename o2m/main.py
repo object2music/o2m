@@ -781,13 +781,29 @@ if __name__ == "__main__":
 
     @api.route('/api/library_browse')
     def api_library_browse():
-        """Cached library listings for the box-content browser:
-        kind=playlists|albums|artists. Rows are ready-to-pick (uri/name/sub/image).
-        Empty when the Spotify cache hasn't been warmed up yet."""
+        """Cached library listings, for the box-content browser and the Browse modal:
+        kind=playlists|albums|artists|favorites|podfavorites. Rows are ready to use
+        (uri/name/sub/image). Empty when the Spotify cache hasn't been warmed up yet.
+
+        The favourites kinds page (limit/offset + has_more): there are ~1,100 of them,
+        which is past what one list should hand over at once."""
         from flask import jsonify
         kind = (request.args.get('kind') or '').strip()
         db = o2mHandler.dbHandler
         try:
+            limit = max(1, min(int(request.args.get('limit') or 50), 200))
+        except Exception:
+            limit = 50
+        try:
+            offset = max(0, int(request.args.get('offset') or 0))
+        except Exception:
+            offset = 0
+        try:
+            if kind in ('favorites', 'podfavorites'):
+                rows, more = db.get_favorite_rows(spoken=(kind == 'podfavorites'),
+                                                  limit=limit, offset=offset)
+                return jsonify({'items': rows, 'has_more': more,
+                                'limit': limit, 'offset': offset})
             if kind == 'playlists':
                 rows = [{'uri': p['uri'], 'name': p['name'], 'sub': '', 'image': ''}
                         for p in db.get_playlists_for_select(owner_id=getattr(o2mHandler, 'username', None))]
