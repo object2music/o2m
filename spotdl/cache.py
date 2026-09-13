@@ -27,6 +27,17 @@ BOX_UIDS = [u.strip() for u in os.environ.get('SPOTDL_BOX_UIDS', '').split(',') 
 QUEUE_POLL = int(os.environ.get('SPOTDL_QUEUE_POLL', '30'))
 QUEUE_BATCH = int(os.environ.get('SPOTDL_QUEUE_BATCH', '5'))
 ONDEMAND_DIRNAME = 'ondemand'
+# Hard ceiling on the cache, in gigabytes. Override in .env (the service reads
+# it through env_file); 0 or less disables the cap. A date-based expiry alone
+# is not a limit: the day the downloader started working the cache went from
+# 99 MB to 7.1 GB in a single nightly run, and nothing in CACHE_DAYS would have
+# stopped it before the disk did.
+CACHE_MAX_GB = float(os.environ.get('SPOTDL_CACHE_MAX_GB', '10'))
+CACHE_MAX_BYTES = int(CACHE_MAX_GB * 1024 ** 3) if CACHE_MAX_GB > 0 else 0
+AUDIO_EXT = ('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav')
+# run_cache (main thread) and the queue worker both delete. One lock over every
+# deletion, so neither can pull a file out from under the other's stat().
+_prune_lock = threading.Lock()
 
 
 def wait_for_o2m(timeout=300):
@@ -201,18 +212,84 @@ def touch_files(directory):
         os.utime(f, (now, now))
 
 
+def human_size(n):
+    for unit, step in (('GB', 1024 ** 3), ('MB', 1024 ** 2), ('kB', 1024)):
+        if n >= step:
+            return f"{n / step:.2f} {unit}"
+    return f"{n} B"
+
+
+def cache_entries():
+    """(path, size, mtime) for every audio file in the cache.
+
+    mtime is not "when it was downloaded" but "when a cache run last wanted
+    it" — touch_files stamps a whole box at the start of its pass. So ordering
+    by it is ordering by relevance, which is what both the expiry and the cap
+    below want.
+    """
+    out = []
+    for f in CACHE_DIR.rglob('*'):
+        if f.is_file() and f.suffix.lower() in AUDIO_EXT:
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            out.append((f, st.st_size, st.st_mtime))
+    return out
+
+
+def drop_file(path):
+    """Delete one cached file and unregister it.
+
+    Unregistering is not tidiness. `local_uri` is substituted into the Mopidy
+    tracklist by `_resolve_uri`, so a row left pointing at a deleted file makes
+    the SERVER fail to play a track it would otherwise have streamed — and
+    makes /api/audio 404 for a device that asked for it.
+    """
+    try:
+        clear_local_track(file_to_mopidy_uri(path))
+        path.unlink()
+        return True
+    except OSError:
+        return False
+
+
 def clean_old_files():
-    """Delete mp3 files not touched in CACHE_DAYS days and unregister from o2m."""
+    """Delete audio files not touched in CACHE_DAYS days and unregister them."""
     cutoff = time.time() - CACHE_DAYS * 86400
     removed = 0
-    for f in CACHE_DIR.rglob('*.mp3'):
-        if f.stat().st_mtime < cutoff:
-            local_uri = file_to_mopidy_uri(f)
-            clear_local_track(local_uri)
-            f.unlink()
-            removed += 1
+    with _prune_lock:
+        for f, _size, mtime in cache_entries():
+            if mtime < cutoff and drop_file(f):
+                removed += 1
     if removed:
         print(f"Removed {removed} stale file(s) (>{CACHE_DAYS}d old)")
+
+
+def enforce_cache_cap():
+    """Delete the least recently wanted files until the cache fits the cap.
+
+    Called after every box and every on-demand batch, not only at the end of a
+    run: a nightly pass can add gigabytes, and a ceiling checked once at the
+    end is a ceiling you go through first.
+    """
+    if not CACHE_MAX_BYTES:
+        return 0
+    with _prune_lock:
+        entries = cache_entries()
+        total = sum(e[1] for e in entries)
+        if total <= CACHE_MAX_BYTES:
+            return 0
+        freed, removed = 0, 0
+        for f, size, _mtime in sorted(entries, key=lambda e: e[2]):   # oldest first
+            if total - freed <= CACHE_MAX_BYTES:
+                break
+            if drop_file(f):
+                freed += size
+                removed += 1
+    print(f"Cache over {CACHE_MAX_GB:g} GB: removed {removed} file(s), "
+          f"freed {human_size(freed)} (now {human_size(total - freed)})")
+    return freed
 
 
 def run_cache():
@@ -252,8 +329,10 @@ def run_cache():
 
         # Register all mp3 files in this box directory with the o2m API
         sync_downloaded_files(box_dir)
+        enforce_cache_cap()
 
     clean_old_files()
+    enforce_cache_cap()
     print(f"=== Done {datetime.now().strftime('%H:%M')} ===\n")
 
 
@@ -336,6 +415,7 @@ def run_queue():
         # showing the track as "on its way" when spotdl simply cannot find it.
         queue_done(uri, ok=ok, note=None if ok else 'not found or not registered')
         print(f"  {uri}: {'ok' if ok else 'FAILED'}")
+    enforce_cache_cap()
     return len(items)
 
 
@@ -372,6 +452,8 @@ if __name__ == '__main__':
 
     threading.Thread(target=queue_worker, daemon=True, name='offline-queue').start()
     print(f"On-demand queue worker started (every {QUEUE_POLL}s)")
+    print(f"Cache cap: {CACHE_MAX_GB:g} GB"
+          if CACHE_MAX_BYTES else "Cache cap: disabled (SPOTDL_CACHE_MAX_GB<=0)")
 
     run_cache()
 

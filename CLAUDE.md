@@ -477,6 +477,19 @@ the wrong song on the SERVER, not merely offline. The guard that makes this safe
 the one that actually landed, so a mis-resolved download fails honestly instead of being
 served as the track someone wanted.
 
+**The cache has a ceiling, and it needs one.** `SPOTDL_CACHE_MAX_GB` (default **10**,
+settable in `.env`, `0` disables) is enforced by `enforce_cache_cap()` after every box and
+every on-demand batch — not only at the end of a run, because a nightly pass adds
+gigabytes and a ceiling checked once at the end is a ceiling you go through first. It
+deletes least-recently-wanted first (`mtime`, which `touch_files` stamps per box, so it
+orders by relevance rather than by download date) and **unregisters every file it
+removes**: `local_uri` is substituted into the Mopidy tracklist by `_resolve_uri`, so a row
+left pointing at a deleted file makes the SERVER fail to play a track it would otherwise
+have streamed. `CACHE_DAYS` is an expiry, not a limit — the day the downloader started
+working the cache went from 99 MB to **7.1 GB in a single nightly run**, and nothing in the
+date rule would have stopped it before the disk did. Both the main thread and the queue
+worker delete, so every deletion is under one lock.
+
 **Giving up has to be reachable.** The first version re-queued every `failed` row on each
 `plan` call — and a client polls `plan` while it waits, so the same unfetchable tracks
 were re-downloaded every 30s for ever, the tries counter climbing and the UI reporting
@@ -730,6 +743,8 @@ All service configuration is via `.env` file (not committed). Key variables:
 - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET`, `SPOTIPY_REDIRECT_URI`
 - `SPOTIFY_USERNAME`, `SPOTIFY_PASSWORD`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
 - `HOST_MOPIDY`, `O2M_DISCOVER_LEVEL`, `O2M_DEFAULT_VOLUME`, etc.
+- `SPOTDL_CACHE_MAX_GB` — ceiling on the server-side download cache (default 10, `0` = no
+  cap). See the offline section: the 30-day `SPOTDL_CACHE_DAYS` expiry is not a limit.
 - `LASTFM_API_KEY` — required for mood/genre enrichment via Last.fm
 - `RADIOFRANCE_API_KEY` — Radio France OpenAPI token (show catalogue, episodes, subjects).
   Without it the RF features degrade silently: livemeta (now-playing on live streams) and

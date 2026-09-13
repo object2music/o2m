@@ -8421,11 +8421,14 @@ async function offFillStorage() {
   if (srv) {
     try {
       const d = await fetch(API + '/offline/storage').then(r => r.json());
+      const cap = d.cap_bytes
+        ? ' of ' + offSizeText(d.cap_bytes) + ' (' + d.cap_env_var + ')'
+        : ' · no cap set';
       srv.textContent = d.host_path + ' on the O2M machine'
         + '\n' + d.cache_dir + ' inside the container'
-        + '\n' + d.files + ' files, ' + offSizeText(d.bytes || 0)
+        + '\n' + d.files + ' files, ' + offSizeText(d.bytes || 0) + cap
         + (d.registered != null ? ' · ' + d.registered + ' tracks registered' : '')
-        + '\nchange with ' + d.env_var;
+        + '\nkept ' + d.retention_days + ' days · change the folder with ' + d.env_var;
     } catch (e) { srv.textContent = 'unreachable'; }
   }
 }

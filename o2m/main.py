@@ -2480,6 +2480,12 @@ if __name__ == "__main__":
             registered = o2mHandler.dbHandler.count_local_tracks()
         except Exception:
             registered = None
+        # The cap belongs to the spotdl service, which this container cannot
+        # ask — it reads the same environment, so report what it would read.
+        try:
+            cap_gb = float(os.environ.get('SPOTDL_CACHE_MAX_GB', '10'))
+        except ValueError:
+            cap_gb = 10.0
         return jsonify({
             'mount': root,                       # as THIS container sees it
             'media_dir': offline.media_dir(o2mConf),   # as mopidy/local_uri sees it
@@ -2488,6 +2494,9 @@ if __name__ == "__main__":
             'env_var': 'SPOTDL_CACHE_DIR',       # where to change it
             'files': files,
             'bytes': total,
+            'cap_bytes': int(cap_gb * 1024 ** 3) if cap_gb > 0 else 0,
+            'cap_env_var': 'SPOTDL_CACHE_MAX_GB',
+            'retention_days': int(os.environ.get('SPOTDL_CACHE_DAYS', '30') or 30),
             'registered': registered,
             'writable': os.access(root, os.W_OK),
         })
