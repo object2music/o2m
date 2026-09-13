@@ -2268,6 +2268,22 @@
   html[data-net="red"]    .net-dot { background: #e0245e; }
   html.basic #net-dot { display: none; }   /* basic shows it in the status line instead */
 
+  /* Offline storage readout: a key/value list, not a table — two rows do not
+     earn a grid, and it has to wrap on a phone. */
+  .set-sub-h {
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    opacity: .55; margin: 14px 0 6px;
+  }
+  .set-store { display: flex; flex-direction: column; gap: 6px; }
+  .set-store-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  .set-store-k { flex: 0 0 auto; min-width: 96px; opacity: .6; font-size: 12px; }
+  .set-store-v {
+    flex: 1 1 220px; font-size: 12px; line-height: 1.45;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-word;
+    white-space: pre-line;   /* the values are written as several short lines */
+  }
+
   /* Offline toggle — a state next to the network state, because that is the
      question it answers: not "is there a network" but "do I still need one". */
   .off-btn {
@@ -3512,6 +3528,24 @@ function renderSettings() {
         <button class="wc-btn" id="off-dl-now">Download the tracklist</button>
         <button class="wc-btn" id="off-clear">Clear downloads</button>
       </div>
+      <div class="set-sub-h">Where it is stored</div>
+      <div class="set-store" id="off-store">
+        <div class="set-store-row">
+          <span class="set-store-k">On this device</span>
+          <span class="set-store-v" id="off-store-device">…</span>
+        </div>
+        <div class="set-store-row">
+          <span class="set-store-k">On the server</span>
+          <span class="set-store-v" id="off-store-server">…</span>
+        </div>
+      </div>
+      <div class="set-note" id="off-store-note">The browser chooses where its own database
+        lives and a page cannot move it — the allowance above is the control you have over
+        it. The server folder is set by the spotdl service and needs a container restart to
+        change.</div>
+      <div class="set-row set-actions">
+        <button class="wc-btn" id="off-persist">Keep when storage runs low</button>
+      </div>
     </div>
     <div class="set-sec">
       <div class="set-sec-h">Selection</div>
@@ -3555,6 +3589,19 @@ function renderSettings() {
     setFeedback('Offline downloads cleared');
     renderSettings();
   });
+  body.querySelector('#off-persist')?.addEventListener('click', async () => {
+    // The one real lever over the device store: ask the browser not to evict it
+    // when the disk gets tight. It cannot be forced — Chrome grants it on
+    // engagement, Firefox prompts — so report what actually happened.
+    try {
+      if (await navigator.storage.persisted()) { setFeedback('Already kept under pressure'); return; }
+      const ok = await navigator.storage.persist();
+      setFeedback(ok ? 'The browser will keep these downloads'
+                     : 'The browser declined — it may evict them if storage runs low');
+    } catch (e) { setFeedback('This browser cannot pin storage'); }
+    offFillStorage();
+  });
+  offFillStorage();
   document.getElementById('set-warm-moods')?.addEventListener('click', () => triggerWarmup('moods'));
   document.getElementById('set-warm-genres')?.addEventListener('click', () => triggerWarmup('genres'));
   document.getElementById('set-warm-retry')?.addEventListener('click', () => triggerWarmup('retry_sentinels'));
@@ -8180,6 +8227,39 @@ function offRenderBadges() {
   document.querySelectorAll('#tracklist-wrap .tl-item').forEach(it => {
     it.classList.toggle('has-offline', !!inv[it.dataset.uri || '']);
   });
+}
+
+/* Fills the "Where it is stored" rows. Both halves are asynchronous and one of
+   them can be unreachable, so the sheet renders with placeholders and this
+   replaces them as answers arrive — a Settings panel must not wait on the
+   network to open. */
+async function offFillStorage() {
+  const dev = document.getElementById('off-store-device');
+  const srv = document.getElementById('off-store-server');
+  if (dev) {
+    const n = Object.keys(offInv()).length;
+    let line = 'IndexedDB “' + OFF_DB + '” · store “' + OFF_STORE + '” — '
+             + n + ' track' + (n === 1 ? '' : 's') + ', ' + offSizeText(offUsed());
+    try {
+      const est = await navigator.storage.estimate();
+      if (est && est.quota) {
+        line += '\nBrowser allows ' + offSizeText(est.quota)
+             +  ' for this site, ' + offSizeText(est.usage || 0) + ' in use';
+      }
+      if (await navigator.storage.persisted()) line += ' · kept under pressure';
+    } catch (e) { /* no Storage API: the first line still says what matters */ }
+    dev.textContent = line;
+  }
+  if (srv) {
+    try {
+      const d = await fetch(API + '/offline/storage').then(r => r.json());
+      srv.textContent = d.host_path + ' on the O2M machine'
+        + '\n' + d.cache_dir + ' inside the container'
+        + '\n' + d.files + ' files, ' + offSizeText(d.bytes || 0)
+        + (d.registered != null ? ' · ' + d.registered + ' tracks registered' : '')
+        + '\nchange with ' + d.env_var;
+    } catch (e) { srv.textContent = 'unreachable'; }
+  }
 }
 
 function offPaintToggle() {

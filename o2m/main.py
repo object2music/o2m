@@ -2419,6 +2419,49 @@ if __name__ == "__main__":
             written += 1
         return jsonify({'ok': True, 'written': written, 'skipped': skipped})
 
+    @api.route('/api/offline/storage')
+    def api_offline_storage():
+        """Where the server keeps the audio a device can download.
+
+        The device's own copies are NOT described here — a page cannot be told
+        where its browser put an IndexedDB, and the UI says so rather than
+        inventing a path.
+
+        Three paths for one directory, and conflating them is the classic way
+        to break this: the host bind-mounts `./data/music`, mopidy sees it as
+        `media_dir` (what `local_uri` records), and this container mounts it at
+        MUSIC_MOUNT. All three are reported so a reader can match what they see
+        in a shell to what they see in the database.
+        """
+        from flask import jsonify
+        from o2m_core import offline
+        root = offline.MUSIC_MOUNT
+        cache_dir = os.path.join(root, 'cache')
+        files, total = 0, 0
+        for base, _dirs, names in os.walk(cache_dir):
+            for n in names:
+                if n.lower().endswith(('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav')):
+                    try:
+                        total += os.path.getsize(os.path.join(base, n))
+                        files += 1
+                    except OSError:
+                        pass
+        try:
+            registered = o2mHandler.dbHandler.count_local_tracks()
+        except Exception:
+            registered = None
+        return jsonify({
+            'mount': root,                       # as THIS container sees it
+            'media_dir': offline.media_dir(o2mConf),   # as mopidy/local_uri sees it
+            'cache_dir': cache_dir,
+            'host_path': './data/music/cache',   # as the compose file bind-mounts it
+            'env_var': 'SPOTDL_CACHE_DIR',       # where to change it
+            'files': files,
+            'bytes': total,
+            'registered': registered,
+            'writable': os.access(root, os.W_OK),
+        })
+
     @api.route('/api/offline/queue')
     def api_offline_queue():
         """What spotdl should fetch next. Polled by the spotdl service."""

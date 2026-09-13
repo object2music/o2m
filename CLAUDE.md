@@ -519,6 +519,16 @@ by hand on every instance that wants the feature.**
 - **Blobs in IndexedDB, not the Cache API**: Cache needs a secure context and the dev
   instances are served over plain HTTP, so the feature would have been untestable exactly
   where it is developed. Metadata (the inventory) sits in `localStorage`.
+- **Where the bytes actually are**, shown in Settings → Offline → *Where it is stored*
+  (`offFillStorage`, `GET /api/offline/storage`). On the device: IndexedDB `o2m-offline`,
+  store `audio`, plus the browser's own `storage.estimate()`. A page **cannot choose or
+  move** that location, so the UI says so instead of offering a path picker; the two real
+  levers are the quota above and `storage.persist()` ("Keep when storage runs low"), which
+  asks the browser not to evict the store and reports whether it agreed. On the server:
+  `./data/music/cache` on the host, `/music/cache` in the o2m container, `/app/Music/cache`
+  in mopidy's paths — all three reported, because matching a shell listing to a `local_uri`
+  otherwise means guessing which of the three a number refers to. The o2m mount is
+  read-only by design, and the endpoint reports that too.
 - **The queue rule**: the local subset of the current tracklist; if that is empty, or the
   tracklist is, everything on the device, newest first. Downloads that land mid-session
   are appended live. "Full" here is about the tracklist, never about the quota.

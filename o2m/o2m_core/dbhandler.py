@@ -2016,6 +2016,12 @@ class DatabaseHandler():
             note=(note or None),
         ).where(OfflineRequest.uri == uri).execute()
 
+    def count_local_tracks(self):
+        """How many tracks the server holds as a file — the offline pool's size."""
+        return (Track.select()
+                .where(Track.local_uri.is_null(False), Track.local_uri != '')
+                .count())
+
     def offline_request_states(self, uris):
         """`uri -> state` for the subset that is queued at all."""
         if not uris:
