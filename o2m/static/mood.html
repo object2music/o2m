@@ -4237,19 +4237,44 @@ async function refreshNowPlaying() {
 }
 
 /* ── Media Session API (Bluetooth / notification controls) ── */
+/* Headset and notification controls. Each one asks the same question the
+   on-screen transport does — which player has the hand — because a Bluetooth
+   "next" while offline was going to Mopidy: unreachable with no network, and
+   worse when there IS one, since it skipped a track in a room nobody was
+   listening to while the phone carried on. The <audio> element gives us the
+   media session for free; routing it was the missing half. */
 function initMediaSession() {
   if (!('mediaSession' in navigator)) return;
   const setH = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch(e) {} };
-  setH('play',          async () => { await rpc('core.playback.resume');   setTimeout(refreshNowPlaying, 300); });
-  setH('pause',         async () => { await rpc('core.playback.pause');    setTimeout(refreshNowPlaying, 300); });
-  setH('previoustrack', async () => { resetProgress(); await rpc('core.playback.previous'); setTimeout(refreshNowPlaying, 300); });
-  setH('nexttrack',     async () => { resetProgress(); await rpc('core.playback.next');     setTimeout(refreshNowPlaying, 300); });
+  setH('play',          async () => {
+    if (OFF.on) { offTogglePlay(); return; }
+    await rpc('core.playback.resume');   setTimeout(refreshNowPlaying, 300); });
+  setH('pause',         async () => {
+    if (OFF.on) { offTogglePlay(); return; }
+    await rpc('core.playback.pause');    setTimeout(refreshNowPlaying, 300); });
+  setH('previoustrack', async () => {
+    if (OFF.on) { offSkip(-1); return; }
+    resetProgress(); await rpc('core.playback.previous'); setTimeout(refreshNowPlaying, 300); });
+  setH('nexttrack',     async () => {
+    if (OFF.on) { offSkip(1); return; }
+    resetProgress(); await rpc('core.playback.next');     setTimeout(refreshNowPlaying, 300); });
   setH('seekto', async (d) => {
-    if (d && d.seekTime != null) {
-      await rpc('core.playback.seek', { time_position: Math.round(d.seekTime * 1000) });
-      setTimeout(refreshNowPlaying, 300);
+    if (!d || d.seekTime == null) return;
+    if (OFF.on) {
+      const t = OFF.queue[OFF.i];
+      if (t && t.length) offSeekFraction((d.seekTime * 1000) / t.length);
+      return;
     }
+    await rpc('core.playback.seek', { time_position: Math.round(d.seekTime * 1000) });
+    setTimeout(refreshNowPlaying, 300);
   });
+  // Headsets that send a relative jump rather than a track change. Only wired
+  // for the local player: the server transport has never exposed them.
+  setH('seekbackward',  (d) => { if (OFF.on && OFF.el)
+    offSeekAbsolute(OFF.el.currentTime * 1000 - ((d && d.seekOffset) || 10) * 1000); });
+  setH('seekforward',   (d) => { if (OFF.on && OFF.el)
+    offSeekAbsolute(OFF.el.currentTime * 1000 + ((d && d.seekOffset) || 10) * 1000); });
+  setH('stop',          () => { if (OFF.on && OFF.el) { try { OFF.el.pause(); } catch (e) {} } });
 }
 
 function updateMediaSession(track, isPlaying, coverUrl) {
@@ -7883,6 +7908,7 @@ async function clearTodayHistory() {
 const OFF_QUOTA_KEY = 'o2m-offline-quota-mb';
 const OFF_INV_KEY   = 'o2m-offline-inv';
 const OFF_PLAYS_KEY = 'o2m-offline-plays';
+const OFF_POS_KEY   = 'o2m-offline-pos';
 const OFF_DEFAULT_QUOTA_MB = 1024;
 const OFF_DB = 'o2m-offline', OFF_STORE = 'audio';
 
@@ -7896,6 +7922,7 @@ const OFF = {
   pending: new Map(),   // uri -> meta, waiting on spotdl
   downloading: false,
   loggedAt: -1,         // queue index whose play has already been recorded
+  posAt: 0,             // last bookmark write, ms — throttles the checkpoint
   pass: new Set(),      // downloaded during the pass in progress — never evicted by it
 };
 
@@ -8006,10 +8033,20 @@ async function offStore(meta) {
   try { await offBlobPut(uri, blob); } catch (e) { return 'quota'; }   // QuotaExceededError
   offInv()[uri] = {
     name: meta.name || '', artist: meta.artist || '', album: meta.album || '',
-    length: meta.length || 0, kind: meta.kind || 'music',
+    length: meta.length || meta.srvLength || 0, kind: meta.kind || 'music',
+    adSkip: meta.adSkip || 0,
     bytes: blob.size, at: Date.now(),
   };
   offInvSave();
+  // Seed the bookmark from the server, once, at download time: a half-heard
+  // episode must not restart from zero just because the network went away.
+  // Spoken only (music does not resume), never over a local bookmark — that
+  // one is by definition the newer of the two — and marked as already synced,
+  // since it came FROM the server and sending it straight back would count a
+  // read for a track nobody has played here.
+  if (meta.kind === 'spoken' && meta.position > 0 && !offPos()[uri]) {
+    offPosSet(uri, meta.position, meta.length || meta.srvLength || 0, true);
+  }
   OFF.pass.add(uri);
   return 'ok';
 }
@@ -8045,7 +8082,8 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       if (p.state === 'pending') { OFF.pending.set(t.uri, t); wait++; continue; }
       OFF.pending.delete(t.uri);
       if (p.state !== 'ready') { lost++; continue; }
-      const res = await offStore({ ...t, kind: p.kind });
+      const res = await offStore({ ...t, kind: p.kind, position: p.position || 0,
+                                  srvLength: p.length || 0, adSkip: p.ad_skip || 0 });
       if (res === 'quota') { full = true; break; }
       if (res !== 'ok') continue;
       got++;
@@ -8083,6 +8121,42 @@ function offPlays() {
 function offPlaysSave(v) {
   try { localStorage.setItem(OFF_PLAYS_KEY, JSON.stringify(v.slice(-300))); } catch (e) {}
 }
+/* Bookmarks — "where I am in this track", one per uri, overwritten.
+   Distinct from the play log on purpose. A completed play is an EVENT and
+   appends; a position is a STATE and replaces. Keeping them in one list would
+   have inflated read_count by one per checkpoint, since the server counts a
+   read on every record it receives. */
+function offPos() {
+  if (OFF._pos) return OFF._pos;
+  try { OFF._pos = JSON.parse(_lsGet(OFF_POS_KEY) || '{}') || {}; } catch (e) { OFF._pos = {}; }
+  return OFF._pos;
+}
+function offPosSave() {
+  try { localStorage.setItem(OFF_POS_KEY, JSON.stringify(OFF._pos || {})); } catch (e) {}
+}
+function offPosSet(uri, position, length, synced) {
+  if (!uri) return;
+  const at = new Date().toISOString();
+  offPos()[uri] = { position: Math.max(0, Math.round(position || 0)),
+                    length: Math.round(length || 0), at,
+                    syncedAt: synced ? at : null };
+  offPosSave();
+}
+function offPosClear(uri) { delete offPos()[uri]; offPosSave(); }
+
+/* Write the bookmark for whatever is playing. Called on pause, on the way out
+   of a track, when the page is hidden, and on a throttled tick — because the
+   position that matters most is the one from the session nobody ended
+   cleanly: a phone put in a pocket, a tab killed by the OS. */
+function offCheckpoint(force) {
+  const t = OFF.queue[OFF.i], el = OFF.el;
+  if (!t || !el || !OFF.on) return;
+  const now = Date.now();
+  if (!force && now - OFF.posAt < 10000) return;
+  OFF.posAt = now;
+  offPosSet(t.uri, el.currentTime * 1000, t.length || el.duration * 1000 || 0);
+}
+
 function offLogPlay(finished) {
   const t = OFF.queue[OFF.i], el = OFF.el;
   if (!t || !el || !t.length) return;
@@ -8096,18 +8170,37 @@ function offLogPlay(finished) {
   plays.push({ uri: t.uri, name: t.name, length: t.length, position,
                at: new Date().toISOString() });
   offPlaysSave(plays);
+  // Finished: the bookmark has done its job and must go, or the episode would
+  // resume ten seconds before its own end for ever.
+  if (finished) offPosClear(t.uri); else offPosSet(t.uri, position, t.length);
   const m = offInv()[t.uri];
   if (m) { m.used = Date.now(); offInvSave(); }
 }
 async function offFlushPlays() {
   const plays = offPlays();
-  if (!plays.length) return;
+  const pos = offPos();
+  // Only bookmarks that MOVED since the last successful flush. The server
+  // counts a read on every record it receives, so re-sending an unchanged
+  // position on each reconnection would quietly inflate read_count — and
+  // read_count feeds popularity and the cooldown.
+  const fresh = Object.keys(pos).filter(u => pos[u].at !== pos[u].syncedAt);
+  const positions = fresh.map(u => ({ uri: u, name: (offInv()[u] || {}).name,
+                                      length: pos[u].length,
+                                      position: pos[u].position, at: pos[u].at }));
+  if (!plays.length && !positions.length) return;
   try {
     const r = await fetch(API + '/offline/plays', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plays }),
+      body: JSON.stringify({ plays, positions }),
     });
-    if (r.ok) { offPlaysSave([]); console.log('[offline] ' + plays.length + ' plays synced'); }
+    if (!r.ok) return;
+    offPlaysSave([]);
+    // Bookmarks are NOT cleared — they are state, and the device keeps needing
+    // them to resume offline. They are marked as sent instead.
+    fresh.forEach(u => { if (pos[u]) pos[u].syncedAt = pos[u].at; });
+    offPosSave();
+    console.log('[offline] ' + plays.length + ' plays and '
+                + positions.length + ' positions synced');
   } catch (e) { /* still offline — they keep */ }
 }
 
@@ -8148,8 +8241,11 @@ function offAudio() {
   // OS position state, and doing that 4×/s makes the Android media controls
   // flicker (same reason pushPositionState is kept out of tickProgress).
   el.addEventListener('play',   () => { paintPlayState(true);  setClock(el.currentTime * 1000, true); });
-  el.addEventListener('pause',  () => { paintPlayState(false); setClock(el.currentTime * 1000, false); });
-  el.addEventListener('seeked', () => setClock(el.currentTime * 1000, !el.paused));
+  el.addEventListener('pause',  () => { paintPlayState(false); setClock(el.currentTime * 1000, false);
+                                        offCheckpoint(true); });
+  el.addEventListener('seeked', () => { setClock(el.currentTime * 1000, !el.paused);
+                                        offCheckpoint(true); });
+  el.addEventListener('timeupdate', () => offCheckpoint(false));   // throttled to 10s
   el.addEventListener('ended',  () => { offLogPlay(true); offSkip(1); });
   el.addEventListener('error',  () => { setFeedback('This file will not play'); offSkip(1); });
   document.body.appendChild(el);
@@ -8177,17 +8273,50 @@ async function offPlayAt(i) {
   if (OFF.url) { try { URL.revokeObjectURL(OFF.url); } catch (e) {} }
   OFF.url = URL.createObjectURL(blob);
   el.src = OFF.url;
+  offSeekOnStart(el, t);
   currentDurationMs = t.length || 0;
   document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
   offPaintNow(t);
   try { await el.play(); } catch (e) { setFeedback('Tap play to start'); }
 }
+/* The same two rules `track_started_event` applies on the server, so a track
+   behaves identically whichever player has it: resume ten seconds before the
+   saved position, or — on a genuinely fresh start — skip the pre-roll ad.
+   Never both: a saved position already sits past the ad.
+   `currentTime` cannot be set before the element knows its duration, hence
+   loadedmetadata rather than an immediate assignment. */
+function offSeekOnStart(el, t) {
+  const inv = offInv()[t.uri] || {};
+  // Spoken only, like `_is_spoken_uri` guards it on the server. A music track
+  // played to the end carries read_position == its own duration — measured on
+  // a real row — so honouring it for music would restart every favourite ten
+  // seconds before its last note.
+  const spoken = inv.kind === 'spoken';
+  const bm = spoken ? offPos()[t.uri] : null;
+  const saved = bm ? bm.position : 0;
+  const len = t.length || bm?.length || 0;
+  let target = 0;
+  if (saved > 10000 && (!len || saved <= len)) target = Math.max(saved - 10000, 0);
+  else if (saved > 10000 && len && saved > len) target = Math.max(len - 10000, 0);
+  else if (inv.adSkip && (!len || inv.adSkip < len)) target = inv.adSkip;
+  if (!target) return;
+  const seek = () => { try { el.currentTime = target / 1000; } catch (e) {} };
+  el.addEventListener('loadedmetadata', seek, { once: true });
+}
+
 function offSkip(d) { if (OFF.queue.length) { resetProgress(); offPlayAt(OFF.i + d); } }
 function offTogglePlay() {
   const el = offAudio();
   if (!OFF.queue.length) { setFeedback('Nothing downloaded on this device'); return; }
   if (!el.src) return offPlayAt(Math.max(0, OFF.i));
   if (el.paused) el.play().catch(() => {}); else el.pause();
+}
+function offSeekAbsolute(ms) {
+  const el = OFF.el, t = OFF.queue[OFF.i];
+  if (!el || !t) return;
+  const len = t.length || (el.duration * 1000) || 0;
+  const clamped = Math.max(0, len ? Math.min(ms, len - 500) : ms);
+  try { el.currentTime = clamped / 1000; } catch (e) {}
 }
 function offSeekFraction(p) {
   const el = OFF.el, t = OFF.queue[OFF.i];
@@ -8327,6 +8456,13 @@ function offInit() {
   offPaintToggle();
   offFlushPlays();                                   // a previous session's plays
   window.addEventListener('online', () => { offFlushPlays(); offSchedulePendingCheck(); });
+  // pagehide fires where unload does not (bfcache, iOS); visibilitychange
+  // catches a phone going into a pocket, which is when a position is most
+  // likely to be lost and most annoying to lose.
+  window.addEventListener('pagehide', () => offCheckpoint(true));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') offCheckpoint(true);
+  });
 }
 
 /* ── Snapcast — wrapper autour de SnapStream (bundle Iris/snapstream.ts) ── */

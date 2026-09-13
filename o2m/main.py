@@ -2263,6 +2263,24 @@ if __name__ == "__main__":
             except Exception as e:
                 items.append({'uri': uri, 'kind': 'other', 'state': 'unavailable',
                               'bytes': 0, 'reason': str(e)})
+        # Where the server left off, and the pre-roll to skip on a fresh start.
+        # Without these the device would restart every half-heard episode from
+        # zero the moment it went offline — the two sides would hold the same
+        # audio and disagree about where the listener is in it.
+        for i in items:
+            try:
+                stat = (o2mHandler.dbHandler.get_stat_by_uri(i['uri'])
+                        if o2mHandler.dbHandler.stat_exists(i['uri']) else None)
+                i['position'] = int(getattr(stat, 'read_position', 0) or 0) if stat else 0
+                i['length'] = int(getattr(stat, 'duration_ms', 0) or 0) if stat else 0
+            except Exception:
+                i['position'], i['length'] = 0, 0
+            try:
+                i['ad_skip'] = int(o2mHandler.ad_skip_ms(i['uri']) or 0) \
+                    if i['kind'] == 'spoken' else 0
+            except Exception:
+                i['ad_skip'] = 0
+
         missing = [i['uri'] for i in items if i['state'] == 'pending']
 
         # Read the queue BEFORE touching it. Queueing first destroyed the very
@@ -2371,8 +2389,14 @@ if __name__ == "__main__":
         from types import SimpleNamespace
         import datetime as _dt
         data = request.get_json(silent=True) or {}
-        plays = data.get('plays') or []
-        written, skipped = 0, 0
+        # Two kinds of record, and the server already treats them the same way:
+        # online, `track_playback_paused` is wired to the SAME handler as
+        # `ended`, so a pause is simply a play reported at its position. A
+        # bookmark is therefore a play with `finished` false — it updates
+        # read_position (what resume reads) without entering the raw log.
+        plays = list(data.get('plays') or []) + [
+            dict(b, partial=True) for b in (data.get('positions') or [])]
+        written, skipped, logged = 0, 0, 0
         for p in plays[:200]:
             uri = (p.get('uri') or '').strip()
             if not uri:
@@ -2398,7 +2422,8 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"api_offline_plays({uri}): {e}")
                 continue
-            finished = bool(length) and (position / length) > 0.9
+            finished = (bool(length) and (position / length) > 0.9
+                        and not p.get('partial'))
             if finished and option_type not in ('hidden', 'trash'):
                 when = None
                 try:
@@ -2414,10 +2439,15 @@ if __name__ == "__main__":
                     o2mHandler.dbHandler.create_stat_raw(
                         uri, when, when.astimezone(_dt.timezone.utc).hour,
                         o2mHandler.username)
+                    logged += 1
                 except Exception as e:
                     print(f"api_offline_plays(raw {uri}): {e}")
             written += 1
-        return jsonify({'ok': True, 'written': written, 'skipped': skipped})
+        # `logged` is the count that entered the raw play log — the rotation
+        # clock. A bookmark must never be in it: it says where someone is, not
+        # that they got to the end.
+        return jsonify({'ok': True, 'written': written, 'skipped': skipped,
+                        'logged': logged})
 
     @api.route('/api/offline/storage')
     def api_offline_storage():

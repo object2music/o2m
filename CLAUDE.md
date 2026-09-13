@@ -539,6 +539,39 @@ by hand on every instance that wants the feature.**
 - Plays are logged locally (same `> 0.05` artefact rule as the server) and flushed on
   reconnection. `'ended'` records the play and then skips, so the skip must not record the
   same index a second time — one index, one record (`OFF.loggedAt`).
+
+**Stats travel both ways, and the two kinds of record are not the same thing.** Online,
+`track_playback_paused` is wired to the *same* handler as `ended`: a pause is a play
+reported at its position, and that is what writes `read_position`, which
+`track_started_event` then reads to resume a spoken item ten seconds earlier (or, on a
+genuinely fresh start, to skip the pre-roll). Offline mirrors all of it:
+
+- **A completed play is an event and appends**; **a position is state and replaces**.
+  They live in two stores (`o2m-offline-plays`, `o2m-offline-pos`) precisely because
+  merging them would have inflated `read_count` by one per checkpoint — the server counts
+  a read on every record it receives, and `read_count` feeds popularity and the cooldown.
+- **The bookmark is written on pause, on seek, on leaving a track, on `pagehide` and
+  `visibilitychange`, and on a 10s-throttled tick.** The position that matters most is the
+  one from the session nobody ended cleanly — a phone in a pocket, a tab killed by the OS.
+- **Finishing retires the bookmark**, or the episode would resume ten seconds before its
+  own end for ever.
+- **Server → device**: `plan` returns each uri's `position`, `length` and `ad_skip`, and a
+  download seeds the bookmark from them — marked as already synced, so it is not echoed
+  straight back as a fresh read. A local bookmark is never overwritten: it is the newer one.
+- **Device → server**: only bookmarks that MOVED since the last successful flush are sent
+  (`at !== syncedAt`). Re-sending an unchanged position on every reconnection would quietly
+  inflate `read_count`.
+- **Resume is spoken-only**, like `_is_spoken_uri` guards it on the server. Measured on a
+  real row: a music track played to the end carries `read_position == its own duration`, so
+  honouring it for music would restart every favourite ten seconds before its last note.
+
+**Headset and notification controls route to whichever player has the hand.** The Media
+Session handlers called `rpc('core.playback.next')` unconditionally, so a Bluetooth "next"
+while offline reached Mopidy — unreachable with no network, and worse with one, since it
+skipped a track in a room nobody was listening to while the phone carried on. `play`,
+`pause`, `previoustrack`, `nexttrack` and `seekto` all check `OFF.on` first; `seekbackward`,
+`seekforward` and `stop` are wired for the local player only, the server transport having
+never exposed them.
 - The transport, the seek bar, the tracklist rows and the Mopidy event stream all check
   `OFF.on` and route to the local player; `refreshNowPlaying` returns early, since the
   server's state then describes a room nobody is listening to.
