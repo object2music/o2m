@@ -539,6 +539,9 @@ by hand on every instance that wants the feature.**
 - Plays are logged locally (same `> 0.05` artefact rule as the server) and flushed on
   reconnection. `'ended'` records the play and then skips, so the skip must not record the
   same index a second time — one index, one record (`OFF.loggedAt`).
+- The transport, the seek bar, the tracklist rows and the Mopidy event stream all check
+  `OFF.on` and route to the local player; `refreshNowPlaying` returns early, since the
+  server's state then describes a room nobody is listening to.
 
 **Stats travel both ways, and the two kinds of record are not the same thing.** Online,
 `track_playback_paused` is wired to the *same* handler as `ended`: a pause is a play
@@ -572,9 +575,6 @@ skipped a track in a room nobody was listening to while the phone carried on. `p
 `pause`, `previoustrack`, `nexttrack` and `seekto` all check `OFF.on` first; `seekbackward`,
 `seekforward` and `stop` are wired for the local player only, the server transport having
 never exposed them.
-- The transport, the seek bar, the tracklist rows and the Mopidy event stream all check
-  `OFF.on` and route to the local player; `refreshNowPlaying` returns early, since the
-  server's state then describes a room nobody is listening to.
 
 **Known limits.** Reloading the page while offline needs the service worker, which only
 registers over HTTPS — in prod (Caddy) the shell is cached on first visit and it works;
