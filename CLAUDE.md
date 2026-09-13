@@ -432,6 +432,16 @@ own copies and plays them through a plain `<audio>` element, server out of the l
 The toggle sits next to the network dot, because that is the question it answers — not
 "is there a network" but "do I still need one".
 
+**One control, three states.** Where the audio comes out is a single question with three
+answers, so it is one button (`#btn-snapcast`, `cyclePlaybackTarget`) cycling through
+them: **remote** (the server plays, this device is only a remote) → **snapcast** (the
+server plays and this device is a speaker) → **offline** (this device plays its own
+files) → remote. They are mutually exclusive in fact — `offStart` stops the Snapcast
+stream — and two separate toggles made that exclusivity something the user had to know
+rather than something the control expressed. Where Snapcast is not configured the cycle
+has two stops rather than a dead button: offline must stay reachable, which is why the
+button is no longer removed when `snap_ws_url` is absent.
+
 **The switch is manual** (`offStart` / `offStop` in `mood.html`). Two players exist and
 you always know which one has the hand; losing the network is not a reason for the page
 to start playing something else behind your back. Turning it on pauses the server, stops
@@ -518,12 +528,37 @@ retry stops at `OFFLINE_MAX_TRIES = 3`.
   `stats_raw.read_hour` and crediting the flush would teach the selector that you listen
   on the commute home rather than on the train.
 
-The o2m service mounts `./data/music:/music:ro` — at `/music` like spotdl, **not** under
+The o2m service mounts the music volume at `/music:ro` — like spotdl, **not** under
 `/app`, which is itself a bind mount of `./o2m` and would grow an `o2m/Music` directory on
 the host. `local_uri` holds Mopidy's path (`/app/Music/…`), so every path is rebased from
 `[local] media_dir` onto that mount — the same translation spotdl does in reverse.
 **`docker-compose.yml` is skip-worktree (one per instance), so this line has to be added
 by hand on every instance that wants the feature.**
+
+### One cache for every instance
+`MUSIC_DIR` (`.env`, default `./data/music`) is the HOST directory behind the three
+mounts; the numbered instances all point it at **`/home/o2m/music`** so one download
+serves them all. `o2m_claire` is deliberately left out — it runs on its own Spotify
+account, and sharing would mix two libraries.
+
+**No database migration was needed, and that is structural rather than lucky.**
+`local_uri` records the path as MOPIDY sees it (`/app/Music/…`), and every instance
+already mounted its volume at that same container path. Swapping the host directory
+behind it therefore leaves every row valid. Verified on o2m_1 across the move: same
+track, same 5,725,908 bytes, before and after; 1282 files relocated.
+
+Two consequences to keep in mind:
+- **Exactly one instance may prune a shared cache.** The expiry and the size cap delete
+  files and unregister them through the *local* API, so a pruner removes files other
+  instances still hold `local_uri` rows for. `SPOTDL_PRUNE` (default `1`) is set to `0`
+  everywhere but the owner.
+- **A dangling `local_uri` is survivable anyway.** `_resolve_uri` checks the file is
+  really there before substituting it, whenever the volume is visible to this container
+  (`_local_file_present`; with no mount it trusts the database, so an instance without
+  the `:ro` line keeps its old behaviour). Without that check a row outliving its file
+  turns a track that would have streamed from Spotify into a playback failure — and rows
+  could already outlive their files before any of this, since `clear_local_track`
+  swallows its own errors.
 
 ### Device side (`o2m/static/mood.html`)
 - **Quota** in Settings, per device (`localStorage`), default 1 GB. Eviction is LRU and
@@ -743,8 +778,12 @@ All service configuration is via `.env` file (not committed). Key variables:
 - `SPOTIPY_CLIENT_ID`, `SPOTIPY_CLIENT_SECRET`, `SPOTIPY_REDIRECT_URI`
 - `SPOTIFY_USERNAME`, `SPOTIFY_PASSWORD`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
 - `HOST_MOPIDY`, `O2M_DISCOVER_LEVEL`, `O2M_DEFAULT_VOLUME`, etc.
+- `MUSIC_DIR` — host directory behind the music volume (default `./data/music`). The
+  numbered instances share `/home/o2m/music`; see the offline section.
 - `SPOTDL_CACHE_MAX_GB` — ceiling on the server-side download cache (default 10, `0` = no
   cap). See the offline section: the 30-day `SPOTDL_CACHE_DAYS` expiry is not a limit.
+- `SPOTDL_PRUNE` — may this instance delete from the cache (default `1`). Set `0` on every
+  instance but one when the cache is shared.
 - `LASTFM_API_KEY` — required for mood/genre enrichment via Last.fm
 - `RADIOFRANCE_API_KEY` — Radio France OpenAPI token (show catalogue, episodes, subjects).
   Without it the RF features degrade silently: livemeta (now-playing on live streams) and
