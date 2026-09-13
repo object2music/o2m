@@ -2236,6 +2236,199 @@ if __name__ == "__main__":
         except Exception:
             return '', 404
 
+    # ─── Offline: bytes for a listening device ────────────────────────────────
+    # See o2m_core/offline.py for why this exists at all and what it can and
+    # cannot serve. The short version: a phone can only hold a track the server
+    # holds as a FILE, so music goes through spotdl's cache and spoken content
+    # is streamed back from its feed.
+
+    @api.route('/api/offline/plan', methods=['POST'])
+    def api_offline_plan():
+        """Per-uri availability for the device's download pass.
+
+        Also the moment the queue is fed: a music track with no file is queued
+        for spotdl here rather than through a separate call, because "tell me
+        what you have" and "then go and get the rest" are one intent and
+        splitting them let a client ask and never queue."""
+        from flask import jsonify
+        from o2m_core import offline
+        data = request.get_json(silent=True) or {}
+        uris = [u for u in (data.get('uris') or []) if isinstance(u, str) and u]
+        if not uris:
+            return jsonify({'items': [], 'queued': []})
+        items = []
+        for uri in uris[:500]:
+            try:
+                items.append(offline.describe(uri, db=o2mHandler.dbHandler, config=o2mConf))
+            except Exception as e:
+                items.append({'uri': uri, 'kind': 'other', 'state': 'unavailable',
+                              'bytes': 0, 'reason': str(e)})
+        queued = []
+        if data.get('fetch_missing', True):
+            try:
+                queued = o2mHandler.dbHandler.request_offline(
+                    [i['uri'] for i in items if i['state'] == 'pending'])
+            except Exception as e:
+                print(f"api_offline_plan(queue): {e}")
+        # A pending uri spotdl has already given up on must stop being awaited.
+        try:
+            states = o2mHandler.dbHandler.offline_request_states(
+                [i['uri'] for i in items if i['state'] == 'pending'])
+            for i in items:
+                if states.get(i['uri']) == 'failed':
+                    i['state'] = 'unavailable'
+                    i['reason'] = 'spotdl could not fetch it'
+        except Exception:
+            pass
+        return jsonify({'items': items, 'queued': queued})
+
+    @api.route('/api/audio')
+    def api_audio():
+        """The audio bytes behind one uri: a file we hold, or an episode we fetch.
+
+        Range is honoured for files (`send_file(conditional=True)`) because a
+        media element asks for one before it will accept a stream at all. The
+        remote case is a straight passthrough of the CDN's own response,
+        Range header included, so a resumed download stays a resumed download.
+        """
+        from flask import send_file, Response, stream_with_context
+        from o2m_core import offline
+        from urllib.parse import urlparse
+        import urllib.request as _u
+        uri = (request.args.get('uri') or '').strip()
+        if not uri:
+            return '', 400
+
+        path = offline.local_file_for(uri, db=o2mHandler.dbHandler, config=o2mConf)
+        if path and os.path.isfile(path):
+            resp = send_file(path, mimetype=offline.mime_for(path), conditional=True)
+            resp.headers['Cache-Control'] = 'private, max-age=86400'
+            return resp
+
+        url, _size = offline.episode_media_url(uri)
+        if not url:
+            return '', 404
+        headers = {'User-Agent': 'o2m/1.0'}
+        rng = request.headers.get('Range')
+        if rng:
+            headers['Range'] = rng
+        try:
+            up = _u.urlopen(_u.Request(url, headers=headers), timeout=20)
+        except Exception as e:
+            print(f"api_audio({uri}): {e}")
+            return '', 502
+        status = getattr(up, 'status', 200) or 200
+        out = {'Content-Type': up.headers.get('Content-Type')
+                               or offline.mime_for(urlparse(url).path),
+               'Accept-Ranges': 'bytes'}
+        for h in ('Content-Length', 'Content-Range'):
+            if up.headers.get(h):
+                out[h] = up.headers[h]
+
+        def _pump():
+            try:
+                while True:
+                    chunk = up.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                try:
+                    up.close()
+                except Exception:
+                    pass
+        return Response(stream_with_context(_pump()), status=status, headers=out)
+
+    @api.route('/api/offline/plays', methods=['POST'])
+    def api_offline_plays():
+        """Plays that happened on a device while it had no network.
+
+        Deliberately NOT /api/event. That path also runs
+        `add_reco_after_track_read`, which appends a recommendation to the
+        SERVER tracklist for every finished track — replaying an evening of
+        offline listening through it would push a dozen tracks into whatever is
+        playing now. Stats are the only thing an offline play can honestly
+        report, so stats are the only thing this writes.
+
+        Each play carries its own timestamp: the hourly habits are read from
+        `stats_raw.read_hour`, so crediting a flush at reconnection time would
+        teach the selector that the listener listens on the commute home rather
+        than on the train.
+        """
+        from flask import jsonify
+        from types import SimpleNamespace
+        import datetime as _dt
+        data = request.get_json(silent=True) or {}
+        plays = data.get('plays') or []
+        written, skipped = 0, 0
+        for p in plays[:200]:
+            uri = (p.get('uri') or '').strip()
+            if not uri:
+                continue
+            length = int(p.get('length') or 0)
+            position = int(p.get('position') or 0)
+            if length and position / length < 0.05:
+                skipped += 1
+                continue
+            # Pass the track's CURRENT lifecycle state back in: update_stat_track
+            # writes option_type from its argument, so an empty one would erase
+            # the classification of every track played offline.
+            option_type = ''
+            try:
+                if o2mHandler.dbHandler.stat_exists(uri):
+                    option_type = o2mHandler.dbHandler.get_stat_by_uri(uri).option_type or ''
+            except Exception:
+                pass
+            track = SimpleNamespace(uri=uri, name=p.get('name'), length=length or None,
+                                    track_no=None)
+            try:
+                o2mHandler.update_stat_track(track, position, option_type, '')
+            except Exception as e:
+                print(f"api_offline_plays({uri}): {e}")
+                continue
+            finished = bool(length) and (position / length) > 0.9
+            if finished and option_type not in ('hidden', 'trash'):
+                when = None
+                try:
+                    when = _dt.datetime.fromisoformat(
+                        (p.get('at') or '').replace('Z', '+00:00'))
+                except Exception:
+                    when = _dt.datetime.now(_dt.timezone.utc)
+                try:
+                    # last_play_seq follows the INSERT order, not `when` — a
+                    # backdated play therefore reads as recent to the rotation
+                    # cooldown. That errs towards protecting the track from
+                    # coming straight back, which is the direction to err in.
+                    o2mHandler.dbHandler.create_stat_raw(
+                        uri, when, when.astimezone(_dt.timezone.utc).hour,
+                        o2mHandler.username)
+                except Exception as e:
+                    print(f"api_offline_plays(raw {uri}): {e}")
+            written += 1
+        return jsonify({'ok': True, 'written': written, 'skipped': skipped})
+
+    @api.route('/api/offline/queue')
+    def api_offline_queue():
+        """What spotdl should fetch next. Polled by the spotdl service."""
+        from flask import jsonify
+        try:
+            limit = max(1, min(100, int(request.args.get('limit', 25))))
+        except Exception:
+            limit = 25
+        return jsonify(o2mHandler.dbHandler.offline_queue(limit))
+
+    @api.route('/api/offline/queue_done', methods=['POST'])
+    def api_offline_queue_done():
+        """spotdl reporting one request finished (or given up on)."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uri = (data.get('uri') or '').strip()
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        o2mHandler.dbHandler.offline_request_done(
+            uri, ok=bool(data.get('ok', True)), note=(data.get('note') or None))
+        return jsonify({'ok': True})
+
     #RESTART
     @api.route('/health')
     def health_check():

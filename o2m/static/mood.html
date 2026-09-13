@@ -2268,6 +2268,22 @@
   html[data-net="red"]    .net-dot { background: #e0245e; }
   html.basic #net-dot { display: none; }   /* basic shows it in the status line instead */
 
+  /* Offline toggle — a state next to the network state, because that is the
+     question it answers: not "is there a network" but "do I still need one". */
+  .off-btn {
+    background: none; border: 0; padding: 0; margin: 0;
+    color: inherit; opacity: .45; cursor: pointer;
+    display: inline-flex; align-items: center; line-height: 0;
+  }
+  .off-btn svg { width: 14px; height: 14px; display: block; }
+  .off-btn:hover { opacity: .8; }
+  .off-btn.on { opacity: 1; color: var(--accent); }
+  .off-btn.busy { animation: off-pulse 1.2s ease-in-out infinite; }
+  @keyframes off-pulse { 50% { opacity: .25; } }
+  #status-line .off-btn { margin-top: 4px; }
+  /* A held row reads from its number, so nothing shifts when the badge appears. */
+  .tl-item.has-offline .tl-num { color: var(--accent); }
+
   /* Detent labels around a basic-view dial (Mood, Discovery) — the active
      one lights up. Shared by both dials for a consistent appearance. */
   .bmood-lbl, .bdl-lbl {
@@ -2335,6 +2351,7 @@
         <div id="status-line">
           <div id="track-status-badge"></div>
           <span id="net-dot" class="net-dot" title="Network quality"></span>
+          <button class="off-btn" type="button" aria-pressed="false" aria-label="Offline"></button>
         </div>
         <div id="track-name" class="o2m-hero-title">—</div>
         <div id="artist-album" class="o2m-np-meta">
@@ -2402,6 +2419,7 @@
       <span id="bs-boxes">0 boxes</span>
       <span class="bs-sep">·</span>
       <span class="net-dot" title="Network"></span>
+      <button class="off-btn" type="button" aria-pressed="false" aria-label="Offline"></button>
       <span class="mood-forced-hint" data-mood-forced hidden></span>
     </div>
     <div class="basic-toggles" id="basic-toggles">
@@ -3478,6 +3496,24 @@ function renderSettings() {
       </div>
     </div>
     <div class="set-sec">
+      <div class="set-sec-h">Offline</div>
+      <div class="set-note">How much audio this device may keep so it can play without
+        the server. Stored in this browser, so each device has its own allowance.
+        Podcasts and news are always downloadable; a Spotify track only once the server
+        has fetched a file for it — asking for one queues that, and it lands minutes later.</div>
+      <div class="set-row">
+        <select id="off-quota" class="set-select">
+          ${[256, 512, 1024, 2048, 4096, 8192].map(v =>
+            `<option value="${v}"${offQuotaMB() === v ? ' selected' : ''}>${v >= 1024 ? (v / 1024) + ' GB' : v + ' MB'}</option>`).join('')}
+        </select>
+        <span class="set-note" id="off-usage" style="margin:0">${offSizeText(offUsed())} used · ${Object.keys(offInv()).length} tracks</span>
+      </div>
+      <div class="set-row set-actions">
+        <button class="wc-btn" id="off-dl-now">Download the tracklist</button>
+        <button class="wc-btn" id="off-clear">Clear downloads</button>
+      </div>
+    </div>
+    <div class="set-sec">
       <div class="set-sec-h">Selection</div>
       <div class="set-note">Which sampler picks tracks when a box is tapped (A/B test).
         Hybrid is the default.</div>
@@ -3507,6 +3543,18 @@ function renderSettings() {
     try { localStorage.setItem(MARK_KEY, b.dataset.markSet); } catch (e) {}
     applyMark(); renderSettings();
   }));
+  body.querySelector('#off-quota')?.addEventListener('change', (e) => {
+    try { localStorage.setItem(OFF_QUOTA_KEY, String(parseInt(e.target.value, 10) || OFF_DEFAULT_QUOTA_MB)); } catch (_) {}
+    offPaintToggle(); renderSettings();
+  });
+  body.querySelector('#off-dl-now')?.addEventListener('click', () => {
+    offSync((matrixTlItems || []).slice()).then(renderSettings);
+  });
+  body.querySelector('#off-clear')?.addEventListener('click', async () => {
+    await offClearAll();
+    setFeedback('Offline downloads cleared');
+    renderSettings();
+  });
   document.getElementById('set-warm-moods')?.addEventListener('click', () => triggerWarmup('moods'));
   document.getElementById('set-warm-genres')?.addEventListener('click', () => triggerWarmup('genres'));
   document.getElementById('set-warm-retry')?.addEventListener('click', () => triggerWarmup('retry_sentinels'));
@@ -3672,6 +3720,7 @@ let currentDurationMs = 0;
 let _lastUserActionAt = 0;
 
 document.getElementById('btn-play').addEventListener('click', async () => {
+  if (OFF.on) { offTogglePlay(); return; }
   const isPlaying = document.getElementById('btn-play').dataset.state === 'playing';
   _lastUserActionAt = Date.now();
   paintPlayState(!isPlaying);            // the icon flips at once…
@@ -3702,12 +3751,14 @@ function optimisticSkip(delta) {
   switchNowPlayingTo(dest.uri, dest);
 }
 document.getElementById('btn-next').addEventListener('click', async () => {
+  if (OFF.on) { offSkip(1); return; }
   resetProgress();
   optimisticSkip(1);
   await rpc('core.playback.next');
   refreshNowPlaying();
 });
 document.getElementById('btn-prev').addEventListener('click', async () => {
+  if (OFF.on) { offSkip(-1); return; }
   resetProgress();
   optimisticSkip(-1);
   await rpc('core.playback.previous');
@@ -3813,6 +3864,7 @@ function renderTracklist(tracks, activeTlid) {
     const item = document.createElement('div');
     item.className = 'tl-item' + (tlid === activeTlid ? ' current' : '');
     item.dataset.tlid = tlid;
+    item.dataset.uri = track.uri || '';   // read by the offline badge pass
     const cached = getCachedStatus(track.uri);
     const statusCls = cached ? (STATUS_CLASS[(cached.split(' - ')[0]||'').trim().toLowerCase()] || '') : '';
     const statusHtml = `<div class="tl-status ${statusCls}" data-uri="${(track.uri||'').replace(/"/g,'&quot;')}">${cached ? formatStatus(cached) : ''}</div>`;
@@ -3834,6 +3886,7 @@ function renderTracklist(tracks, activeTlid) {
       const al = e.target.closest('.tl-artist[data-artist-uri]');
       if (al) { e.stopPropagation(); openArtist(al.dataset.artistUri, al.textContent.trim()); return; }
       resetProgress();
+      if (OFF.on) { offPlayAt(tlid); return; }   // tlid is the local queue index
       rpc('core.playback.play', {tlid}).then(() => setTimeout(refreshNowPlaying, 200));
     });
     wrap.appendChild(item);
@@ -3844,7 +3897,8 @@ function renderTracklist(tracks, activeTlid) {
     lastScrolledTlid = activeTlid;
     requestAnimationFrame(() => scrollTracklistToCurrent(scrollTarget));
   }
-  fetchTracklistStatuses(tracks);
+  offRenderBadges();
+  if (!OFF.on) fetchTracklistStatuses(tracks);   // a server read, pointless offline
 }
 
 /* Remonte jusqu'au premier ancêtre réellement scrollable (desktop = .col,
@@ -4068,6 +4122,10 @@ function clearNowPlayingHeader(playing) {
 }
 
 async function refreshNowPlaying() {
+  // While the device plays its own files, the server's state describes a room
+  // nobody is listening to. Painting it here would fight the local player for
+  // the header, the clock and the tracklist.
+  if (OFF.on) return;
   const gen = ++_npGen, startedAt = Date.now();
   // All four reads go out together: the position used to wait for the other
   // three — one more round trip before anything was painted.
@@ -7752,6 +7810,441 @@ async function clearTodayHistory() {
   } catch(e) { setFeedback('Error clearing history'); }
 }
 
+/* ══ Offline — the device holds the audio and plays it itself ═══════════════
+   Everywhere else on this page the browser is a remote control: Mopidy plays,
+   Snapcast streams the result here, and every button is an RPC. Offline turns
+   that around. The device keeps its own copies of what it could download and,
+   while the toggle is on, plays them through a plain <audio> element with the
+   server out of the loop entirely — which is the only arrangement that still
+   works in a tunnel.
+
+   What can be held is narrow, and saying so is not a caveat but the design:
+   Spotify cannot be downloaded (librespot decrypts into GStreamer, never into
+   a file), so a music track is only available once spotdl has fetched a file
+   for it on the server. `/api/offline/plan` queues exactly that and reports the
+   track as `pending` until it lands. Spoken content is always available — an
+   episode is an mp3 behind a feed. See o2m_core/offline.py.
+
+   The switch is MANUAL on purpose. Two players exist; you always know which one
+   has the hand, and losing the network is not a reason for the page to start
+   playing something else behind your back.
+
+   Blobs live in IndexedDB rather than the Cache API: Cache needs a secure
+   context, and the dev instances are served over plain HTTP, so the feature
+   would have been untestable exactly where it is developed. */
+
+const OFF_QUOTA_KEY = 'o2m-offline-quota-mb';
+const OFF_INV_KEY   = 'o2m-offline-inv';
+const OFF_PLAYS_KEY = 'o2m-offline-plays';
+const OFF_DEFAULT_QUOTA_MB = 1024;
+const OFF_DB = 'o2m-offline', OFF_STORE = 'audio';
+
+const OFF = {
+  on: false,            // the local player has the hand
+  queue: [],            // [{uri, name, artist, album, length}]
+  i: -1,                // index in queue
+  el: null,             // the <audio> element
+  url: null,            // current object URL (revoked on every change)
+  inv: null,            // uri -> metadata, lazily read from localStorage
+  pending: new Map(),   // uri -> meta, waiting on spotdl
+  downloading: false,
+  loggedAt: -1,         // queue index whose play has already been recorded
+  pass: new Set(),      // downloaded during the pass in progress — never evicted by it
+};
+
+const OFF_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 14.9A7 7 0 0 0 16 4a5 5 0 0 0-4.5-3A6 6 0 0 0 6 9"/><path d="M6 9a5 5 0 0 0 0 10h12"/><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`;
+
+/* ── Blob store (IndexedDB) ───────────────────────────────────────────────── */
+let _offDbP = null;
+function offDb() {
+  if (_offDbP) return _offDbP;
+  _offDbP = new Promise((res, rej) => {
+    let r;
+    try { r = indexedDB.open(OFF_DB, 1); } catch (e) { rej(e); return; }
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains(OFF_STORE)) d.createObjectStore(OFF_STORE);
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror   = () => rej(r.error);
+  });
+  return _offDbP;
+}
+function offTx(mode, fn) {
+  return offDb().then(d => new Promise((res, rej) => {
+    const tx = d.transaction(OFF_STORE, mode);
+    let req;
+    try { req = fn(tx.objectStore(OFF_STORE)); } catch (e) { rej(e); return; }
+    tx.oncomplete = () => res(req ? req.result : undefined);
+    tx.onerror    = () => rej(tx.error);
+    tx.onabort    = () => rej(tx.error);
+  }));
+}
+const offBlobPut = (uri, blob) => offTx('readwrite', st => st.put(blob, uri));
+const offBlobGet = (uri)       => offTx('readonly',  st => st.get(uri));
+const offBlobDel = (uri)       => offTx('readwrite', st => st.delete(uri));
+
+/* ── Inventory and quota ──────────────────────────────────────────────────── */
+function offInv() {
+  if (OFF.inv) return OFF.inv;
+  try { OFF.inv = JSON.parse(_lsGet(OFF_INV_KEY) || '{}') || {}; } catch (e) { OFF.inv = {}; }
+  return OFF.inv;
+}
+function offInvSave() {
+  try { localStorage.setItem(OFF_INV_KEY, JSON.stringify(OFF.inv || {})); } catch (e) {}
+}
+function offQuotaMB() {
+  const v = parseInt(_lsGet(OFF_QUOTA_KEY), 10);
+  return Number.isFinite(v) && v > 0 ? v : OFF_DEFAULT_QUOTA_MB;
+}
+function offQuota() { return offQuotaMB() * 1024 * 1024; }
+function offUsed() {
+  return Object.values(offInv()).reduce((s, m) => s + (m.bytes || 0), 0);
+}
+function offHas(uri) { return !!offInv()[uri]; }
+function offSizeText(b) {
+  if (b >= 1024 * 1024 * 1024) return (b / 1073741824).toFixed(1) + ' GB';
+  if (b >= 1024 * 1024) return Math.round(b / 1048576) + ' MB';
+  return Math.round(b / 1024) + ' kB';
+}
+
+async function offForget(uri) {
+  try { await offBlobDel(uri); } catch (e) {}
+  delete offInv()[uri];
+  offInvSave();
+}
+async function offClearAll() {
+  for (const u of Object.keys(offInv())) { try { await offBlobDel(u); } catch (e) {} }
+  OFF.inv = {}; offInvSave();
+  offRenderBadges(); offPaintToggle();
+}
+
+/* Evict least-recently-used until `bytes` fit, never touching what is queued to
+   play — freeing space by deleting the next track is not freeing space. */
+async function offMakeRoom(bytes) {
+  const inv = offInv();
+  let free = offQuota() - offUsed();
+  if (free >= bytes) return true;
+  // Protected: what is queued to play, and what this very pass downloaded —
+  // freeing space by deleting the track we fetched a second ago is not freeing
+  // space, it is a loop.
+  const keep = new Set([...OFF.queue.map(t => t.uri), ...OFF.pass]);
+  const victims = Object.keys(inv)
+    .filter(u => !keep.has(u))
+    .sort((a, b) => (inv[a].used || inv[a].at || 0) - (inv[b].used || inv[b].at || 0));
+  for (const u of victims) {
+    if (free >= bytes) break;
+    free += inv[u].bytes || 0;
+    await offForget(u);
+  }
+  return free >= bytes;
+}
+
+/* ── Downloading ──────────────────────────────────────────────────────────── */
+/* Returns 'ok' | 'quota' | 'fail' rather than a boolean: a full allowance is
+   not a failed download, and the two call for different reactions — one stops
+   the pass and asks the person a question, the other just moves on. */
+async function offStore(meta) {
+  const uri = meta.uri;
+  if (!uri || offHas(uri)) return 'ok';
+  let blob;
+  try {
+    const r = await fetch(API + '/audio?uri=' + encodeURIComponent(uri));
+    if (!r.ok) return 'fail';
+    blob = await r.blob();
+  } catch (e) { return 'fail'; }
+  if (!blob || !blob.size) return 'fail';
+  if (blob.size > offQuota()) return 'quota';
+  if (!(await offMakeRoom(blob.size))) return 'quota';
+  try { await offBlobPut(uri, blob); } catch (e) { return 'quota'; }   // QuotaExceededError
+  offInv()[uri] = {
+    name: meta.name || '', artist: meta.artist || '', album: meta.album || '',
+    length: meta.length || 0, kind: meta.kind || 'music',
+    bytes: blob.size, at: Date.now(),
+  };
+  offInvSave();
+  OFF.pass.add(uri);
+  return 'ok';
+}
+
+/* One download pass over a list of tracklist rows. Tracks the server does not
+   hold yet are left in OFF.pending and re-checked on a timer — spotdl needs
+   minutes, and the person should not have to press the button again. */
+async function offSync(items, { quiet = false } = {}) {
+  if (OFF.downloading) return;
+  const list = (items || []).filter(t => t && t.uri && !offHas(t.uri));
+  if (!list.length) {
+    if (!quiet) setFeedback('Everything in the tracklist is already on this device');
+    return;
+  }
+  OFF.downloading = true; offPaintToggle();
+  OFF.pass = new Set();
+  let got = 0, wait = 0, lost = 0, full = false;
+  try {
+    const r = await fetch(API + '/offline/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris: list.map(t => t.uri) }),
+    });
+    const plan = await r.json();
+    const by = {};
+    (plan.items || []).forEach(i => { by[i.uri] = i; });
+    for (const t of list) {
+      const p = by[t.uri];
+      if (!p) continue;
+      if (p.state === 'pending') { OFF.pending.set(t.uri, t); wait++; continue; }
+      OFF.pending.delete(t.uri);
+      if (p.state !== 'ready') { lost++; continue; }
+      const res = await offStore({ ...t, kind: p.kind });
+      if (res === 'quota') { full = true; break; }
+      if (res !== 'ok') continue;
+      got++;
+      if (OFF.on) offQueueAdd(t);          // what is playing grows as files land
+      offRenderBadges(); offPaintToggle();
+    }
+  } catch (e) {
+    // No network, or the server is gone. Nothing to sync and nothing to report:
+    // being unreachable is the situation this whole feature is for.
+  }
+  OFF.downloading = false;
+  offPaintToggle(); offRenderBadges();
+  if (!quiet) {
+    setFeedback(got + ' downloaded'
+      + (wait ? ' · ' + wait + ' being fetched by the server' : '')
+      + (lost ? ' · ' + lost + ' cannot be downloaded' : '')
+      + (full ? ' · quota full (' + offQuotaMB() + ' MB), raise it in Settings' : ''));
+  }
+  offSchedulePendingCheck();
+}
+
+let _offPendTimer = null;
+function offSchedulePendingCheck() {
+  clearTimeout(_offPendTimer);
+  if (!OFF.pending.size) return;
+  _offPendTimer = setTimeout(() => {
+    offSync([...OFF.pending.values()], { quiet: true });
+  }, 60000);
+}
+
+/* ── Play log, replayed when the server is back ───────────────────────────── */
+function offPlays() {
+  try { return JSON.parse(_lsGet(OFF_PLAYS_KEY) || '[]') || []; } catch (e) { return []; }
+}
+function offPlaysSave(v) {
+  try { localStorage.setItem(OFF_PLAYS_KEY, JSON.stringify(v.slice(-300))); } catch (e) {}
+}
+function offLogPlay(finished) {
+  const t = OFF.queue[OFF.i], el = OFF.el;
+  if (!t || !el || !t.length) return;
+  // 'ended' logs the play, then skips — and the skip would log the very same
+  // track a second time, at the same position. One index, one record.
+  if (OFF.loggedAt === OFF.i) return;
+  OFF.loggedAt = OFF.i;
+  const position = Math.round(finished ? t.length : el.currentTime * 1000);
+  if (position / t.length < 0.05) return;        // an artefact, same rule as the server's
+  const plays = offPlays();
+  plays.push({ uri: t.uri, name: t.name, length: t.length, position,
+               at: new Date().toISOString() });
+  offPlaysSave(plays);
+  const m = offInv()[t.uri];
+  if (m) { m.used = Date.now(); offInvSave(); }
+}
+async function offFlushPlays() {
+  const plays = offPlays();
+  if (!plays.length) return;
+  try {
+    const r = await fetch(API + '/offline/plays', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plays }),
+    });
+    if (r.ok) { offPlaysSave([]); console.log('[offline] ' + plays.length + ' plays synced'); }
+  } catch (e) { /* still offline — they keep */ }
+}
+
+/* ── The queue: rule is the tracklist first, the whole device second ──────── */
+function offBuildQueue() {
+  const inv = offInv();
+  const fromTl = (matrixTlItems || [])
+    .filter(t => t.uri && inv[t.uri])
+    .map(t => ({ uri: t.uri, name: t.name || inv[t.uri].name, album: t.album || '',
+                 artist: t.artist || inv[t.uri].artist,
+                 length: t.length || inv[t.uri].length || 0 }));
+  if (fromTl.length) return fromTl;
+  // The tracklist holds nothing we have (or holds nothing at all): fall back to
+  // everything on the device, newest first. "Full" here is about the tracklist,
+  // never about the quota.
+  return Object.keys(inv)
+    .sort((a, b) => (inv[b].at || 0) - (inv[a].at || 0))
+    .map(u => ({ uri: u, name: inv[u].name, artist: inv[u].artist,
+                 album: inv[u].album, length: inv[u].length || 0 }));
+}
+function offQueueAdd(t) {
+  if (!t || !t.uri || OFF.queue.some(x => x.uri === t.uri)) return;
+  OFF.queue.push({ uri: t.uri, name: t.name || '', artist: t.artist || '',
+                   album: t.album || '', length: t.length || 0 });
+  offRenderQueue();
+  if (OFF.i < 0 && OFF.queue.length === 1) offPlayAt(0);   // first arrival starts it
+}
+
+/* ── The local player ─────────────────────────────────────────────────────── */
+function offAudio() {
+  if (OFF.el) return OFF.el;
+  const el = document.createElement('audio');
+  el.id = 'offline-audio';
+  el.preload = 'auto';
+  el.setAttribute('aria-hidden', 'true');
+  el.style.display = 'none';
+  // The clock is set at events only, never on timeupdate: setClock pushes the
+  // OS position state, and doing that 4×/s makes the Android media controls
+  // flicker (same reason pushPositionState is kept out of tickProgress).
+  el.addEventListener('play',   () => { paintPlayState(true);  setClock(el.currentTime * 1000, true); });
+  el.addEventListener('pause',  () => { paintPlayState(false); setClock(el.currentTime * 1000, false); });
+  el.addEventListener('seeked', () => setClock(el.currentTime * 1000, !el.paused));
+  el.addEventListener('ended',  () => { offLogPlay(true); offSkip(1); });
+  el.addEventListener('error',  () => { setFeedback('This file will not play'); offSkip(1); });
+  document.body.appendChild(el);
+  OFF.el = el;
+  return el;
+}
+
+async function offPlayAt(i) {
+  if (!OFF.queue.length) return;
+  const t = OFF.queue[((i % OFF.queue.length) + OFF.queue.length) % OFF.queue.length];
+  if (!t) return;
+  if (OFF.i >= 0) offLogPlay(false);          // what was playing ends here
+  OFF.i = OFF.queue.indexOf(t);
+  OFF.loggedAt = -1;
+  const blob = await offBlobGet(t.uri).catch(() => null);
+  if (!blob) {
+    // The inventory and the store disagreed — the row is a ghost. Drop it and
+    // move on rather than stalling on a track that does not exist.
+    await offForget(t.uri);
+    OFF.queue = OFF.queue.filter(x => x.uri !== t.uri);
+    offRenderQueue();
+    return OFF.queue.length ? offPlayAt(OFF.i) : setFeedback('Nothing left on this device');
+  }
+  const el = offAudio();
+  if (OFF.url) { try { URL.revokeObjectURL(OFF.url); } catch (e) {} }
+  OFF.url = URL.createObjectURL(blob);
+  el.src = OFF.url;
+  currentDurationMs = t.length || 0;
+  document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
+  offPaintNow(t);
+  try { await el.play(); } catch (e) { setFeedback('Tap play to start'); }
+}
+function offSkip(d) { if (OFF.queue.length) { resetProgress(); offPlayAt(OFF.i + d); } }
+function offTogglePlay() {
+  const el = offAudio();
+  if (!OFF.queue.length) { setFeedback('Nothing downloaded on this device'); return; }
+  if (!el.src) return offPlayAt(Math.max(0, OFF.i));
+  if (el.paused) el.play().catch(() => {}); else el.pause();
+}
+function offSeekFraction(p) {
+  const el = OFF.el, t = OFF.queue[OFF.i];
+  if (!el || !t || !t.length) return;
+  try { el.currentTime = (p * t.length) / 1000; } catch (e) {}
+}
+
+function offPaintNow(t) {
+  paintTrackText(t.name || '', t.artist || 'O2M', t.album || '', '');
+  setCoverGenerated(t.uri);      // no cover is cached: the generated one is local
+  clearTrackTags();
+  renderTrackDetails(null);      // the details panel is a server read; blank it
+  setClock(0, true);
+  offRenderQueue();
+  updateMediaSession({ uri: t.uri, name: t.name,
+                       artists: t.artist ? [{ name: t.artist }] : [],
+                       album: t.album ? { name: t.album } : null }, true, '');
+}
+
+function offRenderQueue() {
+  const tracks = OFF.queue.map((t, i) => ({
+    tlid: i,
+    track: { uri: t.uri, name: t.name, length: t.length,
+             artists: t.artist ? [{ name: t.artist }] : [],
+             album: t.album ? { uri: 'offline:album', name: t.album } : null },
+  }));
+  // No signature reset: the sig is tlid:uri, so handing over in either
+  // direction repaints by itself, while a mere track change inside the queue
+  // takes renderTracklist's cheap path and only moves the current row.
+  renderTracklist(tracks, OFF.i);
+}
+
+/* Which rows this device is holding — shown online too, so you can see what an
+   offline switch would actually give you before pressing it. */
+function offRenderBadges() {
+  const inv = offInv();
+  document.querySelectorAll('#tracklist-wrap .tl-item').forEach(it => {
+    it.classList.toggle('has-offline', !!inv[it.dataset.uri || '']);
+  });
+}
+
+function offPaintToggle() {
+  const used = offUsed();
+  const title = OFF.on
+    ? 'Offline: this device is playing its own files (' + offSizeText(used) + ')'
+    : 'Offline: ' + Object.keys(offInv()).length + ' tracks held, '
+      + offSizeText(used) + ' of ' + offQuotaMB() + ' MB';
+  document.querySelectorAll('.off-btn').forEach(b => {
+    b.classList.toggle('on', OFF.on);
+    b.classList.toggle('busy', OFF.downloading);
+    b.title = title;
+    b.setAttribute('aria-pressed', OFF.on ? 'true' : 'false');
+  });
+}
+
+/* ── The switch ───────────────────────────────────────────────────────────── */
+async function offStart() {
+  const snapshot = (matrixTlItems || []).slice();   // before anything stops
+  try { await rpc('core.playback.pause'); } catch (e) {}
+  if (snapPlayer) {
+    try { snapPlayer.stop(); } catch (e) {}
+    snapPlayer = null; _releaseWakeLock(); _snapBtnOff();
+  }
+  // The silent anchor exists to give WebAudio an OS media session; a real
+  // <audio> has its own, and two of them fight over the notification.
+  stopMediaAnchor();
+
+  OFF.on = true;
+  document.documentElement.classList.add('offline-mode');
+  offPaintToggle();
+
+  OFF.queue = offBuildQueue();
+  offRenderQueue();
+  if (OFF.queue.length) offPlayAt(0);
+  else setFeedback('Nothing downloaded yet — fetching what the tracklist allows');
+  offSync(snapshot);
+}
+
+function offStop() {
+  OFF.on = false;
+  document.documentElement.classList.remove('offline-mode');
+  if (OFF.el) {
+    offLogPlay(false);
+    try { OFF.el.pause(); } catch (e) {}
+    OFF.el.removeAttribute('src');
+    try { OFF.el.load(); } catch (e) {}
+  }
+  if (OFF.url) { try { URL.revokeObjectURL(OFF.url); } catch (e) {} OFF.url = null; }
+  OFF.i = -1;
+  offPaintToggle();
+  offFlushPlays();
+  lastTracklistSig = null;
+  setFeedback('Back to the server');
+  refreshNowPlaying();
+}
+
+function offToggle() { return OFF.on ? offStop() : offStart(); }
+
+function offInit() {
+  document.querySelectorAll('.off-btn').forEach(b => {
+    b.innerHTML = OFF_SVG;
+    b.addEventListener('click', offToggle);
+  });
+  offPaintToggle();
+  offFlushPlays();                                   // a previous session's plays
+  window.addEventListener('online', () => { offFlushPlays(); offSchedulePendingCheck(); });
+}
+
 /* ── Snapcast — wrapper autour de SnapStream (bundle Iris/snapstream.ts) ── */
 const SNAP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>`;
 
@@ -8464,6 +8957,7 @@ async function init() {
   setInterval(netProbe, 8000);
 
   initMediaSession();
+  offInit();
   document.getElementById('btn-edit-lock')?.addEventListener('click', (e) => { e.stopPropagation(); startEditAuth(); });
   document.getElementById('btn-track-menu')?.addEventListener('click', (e) => { e.stopPropagation(); openActionMenu(e.currentTarget, trackMenuItems(matrixCurUri, currentTlid)); });
   document.querySelector('#track-details .td-head')?.addEventListener('click', () => {
@@ -8639,6 +9133,7 @@ function setupProgressSeek() {
     seekDragging = false;
     bar.classList.remove('seeking');
     const p = pctFromEvent(e);
+    if (OFF.on) { offSeekFraction(p); return; }
     if (currentDurationMs) {
       await rpc('core.playback.seek', { time_position: Math.round(p * currentDurationMs) });
       setTimeout(updateProgress, 300);
@@ -8712,6 +9207,7 @@ function scheduleTracklistRefresh() {
 }
 
 function onMopidyEvent(m) {
+  if (OFF.on) return;          // the server may still be talking; we are not listening
   switch (m.event) {
     case 'tracklist_changed':
       scheduleTracklistRefresh(); break;   // debounced (bursty during refill)

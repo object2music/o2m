@@ -55,8 +55,9 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Core**: `Box` (an NFC object: content + settings), `Track` (one row per uri — stats AND cached metadata, the central table), `Stats_Raw` (one row per play: the raw log behind hourly habits), `PlaylistLog`.
   - **Catalogue**: `Album`, `Artist`, `Genre`, `Playlist`, `TagFeature`, `CacheMeta`, and the N:N links `TrackArtist`, `AlbumArtist`, `ArtistGenre`, `TrackGenre`, `AlbumGenre`, `PlaylistTrack`, `AlbumTrack`.
   - **Spoken content**: `PodcastChannel` (one row per show or feed — see the spoken-content section), `RfTaxonomy` (Radio France subject vocabulary), `EpisodeTaxonomy` (episode ↔ subject pivot).
+  - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **21**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **23**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
 - **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, and auth.
 
@@ -422,6 +423,93 @@ habit query by two hours.
 Window-aware scanning matters elsewhere too: a window says WHEN a line plays, not whether
 the box refers to it, so the catalogue warmup and the directory listings strip the prefix
 before matching — otherwise a gated feed would stop being pre-cached.
+
+## Offline: the device holds the audio and plays it itself
+
+Everywhere else the browser is a remote control — Mopidy plays, Snapcast streams the
+result to the phone, every button is an RPC. Offline inverts that: the device keeps its
+own copies and plays them through a plain `<audio>` element, server out of the loop.
+The toggle sits next to the network dot, because that is the question it answers — not
+"is there a network" but "do I still need one".
+
+**The switch is manual** (`offStart` / `offStop` in `mood.html`). Two players exist and
+you always know which one has the hand; losing the network is not a reason for the page
+to start playing something else behind your back. Turning it on pauses the server, stops
+the Snapcast stream, stops the silent media anchor (a real `<audio>` has its own OS media
+session, and two of them fight over the notification), then builds a queue and starts.
+
+### What can be held, which is the whole constraint
+**Spotify cannot be downloaded** — librespot decrypts into GStreamer, never into a file.
+A device can therefore only hold what the server holds as an actual *file*:
+
+| Kind | Available | How |
+|---|---|---|
+| Podcast / news episode | always | the enclosure url in the feed, streamed back through `/api/audio` (a CDN sends no CORS header, so the browser cannot fetch it itself) |
+| Local file (`local:` / `file:`) | always | served from the music volume |
+| Spotify track | only once spotdl has fetched it | `Track.local_uri`, else queued (`pending`) |
+| Radio, YouTube | never | a live stream has no end, and there is no file |
+
+This is why **the pre-existing server-side cache is the foundation, not a parallel
+feature**: `spotdl/cache.py` already downloaded the pinned boxes into `data/music` and
+registered `Track.local_uri`, which `_resolve_uri` substitutes at fill time. That cache
+only ever fed Mopidy. Offline lets a browser take a copy of it — and extends it: a track
+the device wants and the server lacks is queued in `OfflineRequest`, spotdl polls that
+queue between (and during) its nightly runs, and `local_uri` is what says the bytes
+landed. One downloader, one registration path; only the trigger and the urgency differ.
+
+### Server side
+- **`o2m_core/offline.py`** — `describe(uri)` → `ready` | `pending` | `unavailable`;
+  `local_file_for(uri)` resolves the file and is the security boundary (`realpath` +
+  prefix check, so `..` in a query string escapes nothing); `feed_enclosures(feed)` parses
+  `<enclosure>` with the same regex reading as `_feed_index` (15 min memo).
+- **`GET /api/audio?uri=…`** — one shape for the client whatever is behind it. Files go
+  through `send_file(conditional=True)` because a media element asks for a Range before it
+  will accept a stream at all; remote episodes are a passthrough of the CDN's own response,
+  Range header included.
+- **`POST /api/offline/plan`** — per-uri availability, **and** the moment the queue is fed:
+  "tell me what you have" and "then go and get the rest" are one intent, and splitting
+  them let a client ask and never queue.
+- **`GET /api/offline/queue`** / **`POST /api/offline/queue_done`** — what spotdl polls.
+- **`POST /api/offline/plays`** — deliberately **not** `/api/event`: that path also runs
+  `add_reco_after_track_read`, so replaying an evening of offline listening through it
+  would push a dozen recommendations into whatever is playing now. Stats are the only
+  thing an offline play can honestly report, so stats are the only thing this writes —
+  each play carrying **its own timestamp**, because the hourly habits read
+  `stats_raw.read_hour` and crediting the flush would teach the selector that you listen
+  on the commute home rather than on the train.
+
+The o2m service mounts `./data/music:/music:ro` — at `/music` like spotdl, **not** under
+`/app`, which is itself a bind mount of `./o2m` and would grow an `o2m/Music` directory on
+the host. `local_uri` holds Mopidy's path (`/app/Music/…`), so every path is rebased from
+`[local] media_dir` onto that mount — the same translation spotdl does in reverse.
+**`docker-compose.yml` is skip-worktree (one per instance), so this line has to be added
+by hand on every instance that wants the feature.**
+
+### Device side (`o2m/static/mood.html`)
+- **Quota** in Settings, per device (`localStorage`), default 1 GB. Eviction is LRU and
+  protects both what is queued to play and what the pass in progress just downloaded —
+  freeing space by deleting the track fetched a second ago is a loop, not a saving.
+- **Blobs in IndexedDB, not the Cache API**: Cache needs a secure context and the dev
+  instances are served over plain HTTP, so the feature would have been untestable exactly
+  where it is developed. Metadata (the inventory) sits in `localStorage`.
+- **The queue rule**: the local subset of the current tracklist; if that is empty, or the
+  tracklist is, everything on the device, newest first. Downloads that land mid-session
+  are appended live. "Full" here is about the tracklist, never about the quota.
+- **Where "local" is shown**: on the device, as a badge on the tracklist row (the row's
+  number takes the accent colour) — *not* in `Track.local_uri`. That column means "the
+  SERVER has this file" and is what the fill substitutes; writing a phone's copy into it
+  would make the server believe it can play something it does not have.
+- Plays are logged locally (same `> 0.05` artefact rule as the server) and flushed on
+  reconnection. `'ended'` records the play and then skips, so the skip must not record the
+  same index a second time — one index, one record (`OFF.loggedAt`).
+- The transport, the seek bar, the tracklist rows and the Mopidy event stream all check
+  `OFF.on` and route to the local player; `refreshNowPlaying` returns early, since the
+  server's state then describes a room nobody is listening to.
+
+**Known limits.** Reloading the page while offline needs the service worker, which only
+registers over HTTPS — in prod (Caddy) the shell is cached on first visit and it works;
+on an HTTP dev instance offline lives only as long as the tab stays open. Covers are not
+cached: the generated (local) cover is used instead.
 
 ## Frontend (`frontend/`)
 

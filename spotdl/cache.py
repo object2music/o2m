@@ -21,6 +21,11 @@ MOPIDY_MUSIC_DIR = os.environ.get('MOPIDY_MUSIC_DIR', '/app/Music')
 SPOTDL_MUSIC_MOUNT = os.environ.get('SPOTDL_MUSIC_MOUNT', '/music')
 # Comma-separated box UIDs to cache; empty = all pinned boxes
 BOX_UIDS = [u.strip() for u in os.environ.get('SPOTDL_BOX_UIDS', '').split(',') if u.strip()]
+# On-demand queue: a listening device asked for a track offline and o2m has no
+# file for it. Polled between the nightly runs, because the person is waiting.
+QUEUE_POLL = int(os.environ.get('SPOTDL_QUEUE_POLL', '30'))
+QUEUE_BATCH = int(os.environ.get('SPOTDL_QUEUE_BATCH', '5'))
+ONDEMAND_DIRNAME = 'ondemand'
 
 
 def wait_for_o2m(timeout=300):
@@ -210,8 +215,98 @@ def run_cache():
         # Register all mp3 files in this box directory with the o2m API
         sync_downloaded_files(box_dir)
 
+        # Serve the on-demand queue between boxes, not only after the whole
+        # pass: the nightly run can last an hour, and someone who just armed
+        # offline on their phone must not wait behind a cache refresh they
+        # never asked for.
+        try:
+            run_queue()
+        except Exception as e:
+            print(f"queue run error: {e}")
+
     clean_old_files()
     print(f"=== Done {datetime.now().strftime('%H:%M')} ===\n")
+
+
+# ── On-demand queue (a device is waiting) ─────────────────────────────────────
+# The nightly pass caches the pinned boxes, which is a guess about what will be
+# wanted. This queue is the opposite: someone has armed offline on their phone
+# and named the tracks. Same downloader, same registration path — only the
+# trigger and the urgency differ.
+
+def fetch_queue(limit=QUEUE_BATCH):
+    try:
+        r = requests.get(f"{O2M_URL}/api/offline/queue", params={'limit': limit}, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        print(f"queue fetch error: {e}")
+        return []
+
+
+def queue_done(uri, ok=True, note=None):
+    try:
+        requests.post(f"{O2M_URL}/api/offline/queue_done",
+                      json={'uri': uri, 'ok': ok, 'note': note}, timeout=10)
+    except Exception as e:
+        print(f"queue_done error: {e}")
+
+
+def is_registered(uri):
+    """Ask o2m whether the track now resolves to a file.
+
+    Asking the server beats inspecting our own output directory: registration
+    goes through ID3 tags and spotdl names files from metadata, so the only
+    reliable answer to "did THIS uri land" is the one the database gives.
+    `fetch_missing=False` so a status check never re-queues what it is checking.
+    """
+    try:
+        r = requests.post(f"{O2M_URL}/api/offline/plan",
+                          json={'uris': [uri], 'fetch_missing': False}, timeout=15)
+        r.raise_for_status()
+        items = (r.json() or {}).get('items') or []
+        return bool(items) and items[0].get('state') == 'ready'
+    except Exception as e:
+        print(f"  plan check error: {e}")
+        return False
+
+
+def run_queue():
+    """Download one batch of on-demand requests. Returns how many were handled."""
+    items = fetch_queue()
+    if not items:
+        return 0
+    out_dir = CACHE_DIR / ONDEMAND_DIRNAME
+    print(f"On-demand queue: {len(items)} request(s)")
+    for it in items:
+        uri = it.get('uri')
+        if not uri:
+            continue
+        try:
+            run_spotdl(uri, out_dir)
+        except Exception as e:
+            print(f"  spotdl error for {uri}: {e}")
+            queue_done(uri, ok=False, note=str(e)[:200])
+            continue
+        sync_downloaded_files(out_dir)
+        ok = is_registered(uri)
+        # A failure is recorded, not retried forever: the UI reads it to stop
+        # showing the track as "on its way" when spotdl simply cannot find it.
+        queue_done(uri, ok=ok, note=None if ok else 'not found or not registered')
+        print(f"  {uri}: {'ok' if ok else 'FAILED'}")
+    return len(items)
+
+
+def wait_with_queue(seconds):
+    """Sleep until the next nightly run, serving the on-demand queue meanwhile."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            run_queue()
+        except Exception as e:
+            print(f"queue run error: {e}")
+        time.sleep(min(QUEUE_POLL, max(1, deadline - time.time())))
 
 
 def seconds_until_next_run():
@@ -232,6 +327,7 @@ if __name__ == '__main__':
         secs = seconds_until_next_run()
         h = int(secs) // 3600
         m = (int(secs) % 3600) // 60
-        print(f"Next run in {h}h {m}m (at {CACHE_HOUR:02d}:00)")
-        time.sleep(secs)
+        print(f"Next run in {h}h {m}m (at {CACHE_HOUR:02d}:00) — "
+              f"serving the on-demand queue every {QUEUE_POLL}s meanwhile")
+        wait_with_queue(secs)
         run_cache()

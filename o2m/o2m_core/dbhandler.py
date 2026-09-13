@@ -12,7 +12,7 @@ from o2m_core.o2mmodels import (
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
-    RfTaxonomy, PodcastChannel, EpisodeTaxonomy,
+    RfTaxonomy, PodcastChannel, EpisodeTaxonomy, OfflineRequest,
     setup_database,
 )
 
@@ -1947,6 +1947,64 @@ class DatabaseHandler():
     def clear_local_uri_by_file(self, local_uri):
         """Set local_uri=NULL for all tracks with this local file URI."""
         Track.update(local_uri=None).where(Track.local_uri == local_uri).execute()
+
+    # ─── Offline: the queue between a device and spotdl ───────────────────────
+    # A device can only hold a track the server holds as a file. These four
+    # methods are the whole hand-off: the UI asks, spotdl serves, `local_uri`
+    # says it landed. Nothing here decides WHAT to download — that is the UI's
+    # tracklist — and nothing here downloads; spotdl remains the only thing that
+    # runs spotdl.
+
+    def request_offline(self, uris):
+        """Queue the Spotify tracks we have no file for. Returns those queued.
+
+        Already-downloaded uris are skipped rather than re-queued, and a uri
+        already in the queue is left at its current state — re-asking must not
+        restart a download that is halfway through."""
+        wanted = []
+        for uri in uris or []:
+            if not uri or not uri.startswith('spotify:track:'):
+                continue
+            if self.get_local_uri(uri):
+                continue
+            wanted.append(uri)
+        if not wanted:
+            return []
+        known = {r.uri for r in OfflineRequest.select(OfflineRequest.uri).where(
+            OfflineRequest.uri.in_(wanted), OfflineRequest.state != 'failed')}
+        now = datetime.datetime.utcnow()
+        rows = [{'uri': u, 'requested_at': now, 'state': 'pending', 'tries': 0}
+                for u in wanted if u not in known]
+        # A 'failed' row is retried: the failure may have been a bad network day.
+        OfflineRequest.update(state='pending', requested_at=now).where(
+            OfflineRequest.uri.in_(wanted), OfflineRequest.state == 'failed').execute()
+        if rows:
+            OfflineRequest.insert_many(rows).on_conflict_ignore().execute()
+        return wanted
+
+    def offline_queue(self, limit=25):
+        """Pending requests, oldest first — what spotdl polls for."""
+        rows = (OfflineRequest.select()
+                .where(OfflineRequest.state == 'pending')
+                .order_by(OfflineRequest.requested_at.asc())
+                .limit(limit))
+        return [{'uri': r.uri, 'tries': r.tries or 0} for r in rows]
+
+    def offline_request_done(self, uri, ok=True, note=None):
+        """Close one request. A failure keeps the row: it is the only trace of
+        a track spotdl cannot find, and the UI reads it to stop waiting."""
+        OfflineRequest.update(
+            state='done' if ok else 'failed',
+            tries=OfflineRequest.tries + 1,
+            note=(note or None),
+        ).where(OfflineRequest.uri == uri).execute()
+
+    def offline_request_states(self, uris):
+        """`uri -> state` for the subset that is queued at all."""
+        if not uris:
+            return {}
+        return {r.uri: r.state for r in OfflineRequest.select().where(
+            OfflineRequest.uri.in_(list(uris)))}
 
     def mark_track_liked(self, uri, liked_at=None):
         """Set liked=1 on a track row (create it if needed)."""

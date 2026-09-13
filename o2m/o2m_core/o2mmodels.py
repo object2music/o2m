@@ -324,6 +324,29 @@ class AlbumTrack(BaseModel):
         indexes = ((('album_id', 'track_uri'), True),)
 
 
+class OfflineRequest(BaseModel):
+    """A track a listening device wants offline and the server has no file for.
+
+    O2M already had an offline path and it is the OTHER one: spotdl downloads
+    the pinned boxes into the music volume and writes `Track.local_uri`, which
+    the fill substitutes for the Spotify uri. That cache only ever fed Mopidy.
+    A browser cannot be fed a Spotify uri at all — librespot decrypts into
+    GStreamer, never into a file — so the only music a device can hold is music
+    the server holds as an actual file. This table is the hand-off: the UI posts
+    what it is missing, the spotdl service polls it and downloads, and
+    `local_uri` (written by the existing register endpoint) is what says the
+    bytes arrived.
+
+    Persisted rather than kept in memory: the wait is minutes to hours, and the
+    two processes restart independently of each other and of the phone.
+    """
+    uri = CharField(primary_key=True)                  # the spotify:track: uri asked for
+    requested_at = TimestampField(null=True, utc=True)
+    state = CharField(default='pending', index=True)   # pending | done | failed
+    tries = IntegerField(default=0)
+    note = TextField(null=True)                        # last failure, for diagnosis
+
+
 class CacheMeta(BaseModel):
     """Key/value store for cache health metrics and schema versioning.
     Reserved key: 'schema_version' (value_int = current schema version).
@@ -555,6 +578,10 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v23(migrator):
+    db.create_tables([OfflineRequest], safe=True)
+
+
 def _migration_v22(migrator):
     _add_column_safe(migrator, 'track', 'last_play_seq', IntegerField(null=True))
 
@@ -597,7 +624,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -622,6 +649,7 @@ _MIGRATIONS = [
     (20, "podcastchannel_feed_url_column", _migration_v20),
     (21, "podcastchannel_rf_id_column", _migration_v21),
     (22, "track_last_play_seq_column", _migration_v22),
+    (23, "offline_request_table", _migration_v23),
 ]
 
 
