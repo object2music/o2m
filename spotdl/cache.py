@@ -6,6 +6,7 @@ import sys
 import time
 import json
 import subprocess
+import threading
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -252,15 +253,6 @@ def run_cache():
         # Register all mp3 files in this box directory with the o2m API
         sync_downloaded_files(box_dir)
 
-        # Serve the on-demand queue between boxes, not only after the whole
-        # pass: the nightly run can last an hour, and someone who just armed
-        # offline on their phone must not wait behind a cache refresh they
-        # never asked for.
-        try:
-            run_queue()
-        except Exception as e:
-            print(f"queue run error: {e}")
-
     clean_old_files()
     print(f"=== Done {datetime.now().strftime('%H:%M')} ===\n")
 
@@ -347,15 +339,23 @@ def run_queue():
     return len(items)
 
 
-def wait_with_queue(seconds):
-    """Sleep until the next nightly run, serving the on-demand queue meanwhile."""
-    deadline = time.time() + seconds
-    while time.time() < deadline:
+def queue_worker():
+    """Serve the on-demand queue forever, on its own thread.
+
+    It must not share the nightly run's loop. The two are different jobs with
+    different urgencies: the nightly pass refreshes a guess about what will be
+    wanted and may run for an hour on a single box of eighteen playlists, while
+    a queue entry means a person has armed offline on their phone and is
+    waiting now. Interleaving the two — between boxes, then between sources —
+    was tried and still left the queue behind one playlist download. Concurrent
+    spotdl processes are fine: separate processes, separate output directories.
+    """
+    while True:
         try:
             run_queue()
         except Exception as e:
             print(f"queue run error: {e}")
-        time.sleep(min(QUEUE_POLL, max(1, deadline - time.time())))
+        time.sleep(QUEUE_POLL)
 
 
 def seconds_until_next_run():
@@ -370,13 +370,15 @@ if __name__ == '__main__':
     if not wait_for_o2m():
         sys.exit(1)
 
+    threading.Thread(target=queue_worker, daemon=True, name='offline-queue').start()
+    print(f"On-demand queue worker started (every {QUEUE_POLL}s)")
+
     run_cache()
 
     while True:
         secs = seconds_until_next_run()
         h = int(secs) // 3600
         m = (int(secs) % 3600) // 60
-        print(f"Next run in {h}h {m}m (at {CACHE_HOUR:02d}:00) — "
-              f"serving the on-demand queue every {QUEUE_POLL}s meanwhile")
-        wait_with_queue(secs)
+        print(f"Next run in {h}h {m}m (at {CACHE_HOUR:02d}:00)")
+        time.sleep(secs)
         run_cache()
