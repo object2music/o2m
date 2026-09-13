@@ -2768,16 +2768,28 @@ function setMixBusy(on, lockTiles = false) {
   updateAutoBtn();
 }
 
+/* True from the moment a dial moves until its value has actually been applied.
+   syncMoodDials must not write over it: a change waits 4.5s on the debounce, and a
+   poll landing inside that window put the box's forced value back into appState —
+   so the debounced apply then sent the BOX's value, not the one just dialled. The
+   setting appeared to snap back to the schedule on its own, which is exactly what
+   losing manual control looks like. Declared here, beside the timer it guards. */
+let _moodDirty = false;
+
 function scheduleApply() {
   if (mixBusy) return;
   if (!shouldApplyMood()) return;
+  // Set only once the apply is actually armed: marking it before this guard left
+  // the flag stuck whenever the guard returned, and a stuck flag freezes the dials
+  // against every later refresh — worse than the race it exists to prevent.
+  _moodDirty = true;
   clearTimeout(applyTimer);
   applyTimer = setTimeout(applyMood, 4500);   // débounce : laisse régler plusieurs potards avant d'appliquer
 }
 
 async function applyMood() {
-  if (mixBusy) return;            // a fill is in flight — its result would be half-replaced
-  if (!shouldApplyMood()) return;
+  if (mixBusy) { _moodDirty = false; return; }   // a fill is in flight — its result would be half-replaced
+  if (!shouldApplyMood()) { _moodDirty = false; return; }
   // Basic view: the dials are settings, the actuators are the switches. With no
   // actuator on, just save the values server-side — don't launch anything.
   const basicIdle = isBasic() && basicCats
@@ -2809,6 +2821,9 @@ async function applyMood() {
   } catch(e) { setFeedback('Network error'); }
   finally {
     setMixBusy(false);
+    // Released here rather than on the happy path: a flag left set would freeze the
+    // dials against every later refresh — a worse failure than the race it guards.
+    _moodDirty = false;
     if (isBasic()) refreshBasicToggles();   // tiles were parked (skipped by the sync): catch up now
   }
 }
@@ -7564,6 +7579,8 @@ function updateBoxesCount() {
    controls. Refreshed when a box is toggled, which is exactly when what drives
    the mix changes. */
 async function syncMoodDials() {
+  // Never clobber a pending gesture, and never fight a rebuild in progress.
+  if (_moodDirty || mixBusy) return;
   let s;
   try { s = await fetch(API + '/mood?light=1').then(r => r.json()); } catch (e) { return; }
   const e2  = s.effective_energy  ?? s.energy  ?? 0.5;
