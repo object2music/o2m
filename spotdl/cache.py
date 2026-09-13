@@ -32,6 +32,15 @@ ONDEMAND_DIRNAME = 'ondemand'
 # is not a limit: the day the downloader started working the cache went from
 # 99 MB to 7.1 GB in a single nightly run, and nothing in CACHE_DAYS would have
 # stopped it before the disk did.
+# Whether THIS instance may delete from the cache. Several instances can share
+# one cache directory, and each unregisters only in its OWN database — so a
+# pruner deletes files other instances still have rows for. Exactly one
+# instance should prune a shared tree; the others set SPOTDL_PRUNE=0. (The
+# rows left behind are survivable either way: `_resolve_uri` checks the file
+# exists before substituting it. This keeps the churn down and the ownership
+# clear.) Default 1, which is right for a lone instance.
+PRUNE = (os.environ.get('SPOTDL_PRUNE', '1').strip().lower()
+         not in ('0', 'false', 'no', 'off'))
 CACHE_MAX_GB = float(os.environ.get('SPOTDL_CACHE_MAX_GB', '10'))
 CACHE_MAX_BYTES = int(CACHE_MAX_GB * 1024 ** 3) if CACHE_MAX_GB > 0 else 0
 AUDIO_EXT = ('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav')
@@ -256,6 +265,8 @@ def drop_file(path):
 
 def clean_old_files():
     """Delete audio files not touched in CACHE_DAYS days and unregister them."""
+    if not PRUNE:
+        return
     cutoff = time.time() - CACHE_DAYS * 86400
     removed = 0
     with _prune_lock:
@@ -273,7 +284,7 @@ def enforce_cache_cap():
     run: a nightly pass can add gigabytes, and a ceiling checked once at the
     end is a ceiling you go through first.
     """
-    if not CACHE_MAX_BYTES:
+    if not CACHE_MAX_BYTES or not PRUNE:
         return 0
     with _prune_lock:
         entries = cache_entries()
@@ -452,8 +463,11 @@ if __name__ == '__main__':
 
     threading.Thread(target=queue_worker, daemon=True, name='offline-queue').start()
     print(f"On-demand queue worker started (every {QUEUE_POLL}s)")
-    print(f"Cache cap: {CACHE_MAX_GB:g} GB"
-          if CACHE_MAX_BYTES else "Cache cap: disabled (SPOTDL_CACHE_MAX_GB<=0)")
+    print(f"Cache cap: {CACHE_MAX_GB:g} GB" if CACHE_MAX_BYTES
+          else "Cache cap: disabled (SPOTDL_CACHE_MAX_GB<=0)")
+    if not PRUNE:
+        print("Pruning disabled here (SPOTDL_PRUNE=0) — another instance owns "
+              f"the cleanup of {CACHE_DIR}")
 
     run_cache()
 

@@ -836,6 +836,10 @@
   }
   #btn-snapcast svg { width: 18px; height: 18px; display: block; }
   #btn-snapcast.playing { color: var(--accent); }
+  /* The third stop of the cycle. Same accent — it is still "audio comes out
+     here" — with the pulse while a download pass runs. */
+  #btn-snapcast[data-target="offline"] { color: var(--accent); }
+  #btn-snapcast.busy { animation: off-pulse 1.2s ease-in-out infinite; }
 
   /* ── Progress bar ── */
   #progress-wrap {
@@ -2288,19 +2292,8 @@
     white-space: pre-line;   /* the values are written as several short lines */
   }
 
-  /* Offline toggle — a state next to the network state, because that is the
-     question it answers: not "is there a network" but "do I still need one". */
-  .off-btn {
-    background: none; border: 0; padding: 0; margin: 0;
-    color: inherit; opacity: .45; cursor: pointer;
-    display: inline-flex; align-items: center; line-height: 0;
-  }
-  .off-btn svg { width: 14px; height: 14px; display: block; }
-  .off-btn:hover { opacity: .8; }
-  .off-btn.on { opacity: 1; color: var(--accent); }
-  .off-btn.busy { animation: off-pulse 1.2s ease-in-out infinite; }
+  /* Used by #btn-snapcast while an offline download pass runs. */
   @keyframes off-pulse { 50% { opacity: .25; } }
-  #status-line .off-btn { margin-top: 4px; }
   /* A held row reads from its number, so nothing shifts when the badge appears. */
   .tl-item.has-offline .tl-num { color: var(--accent); }
 
@@ -2371,7 +2364,6 @@
         <div id="status-line">
           <div id="track-status-badge"></div>
           <span id="net-dot" class="net-dot" title="Network quality"></span>
-          <button class="off-btn" type="button" aria-pressed="false" aria-label="Offline"></button>
         </div>
         <div id="track-name" class="o2m-hero-title">—</div>
         <div id="artist-album" class="o2m-np-meta">
@@ -2439,7 +2431,6 @@
       <span id="bs-boxes">0 boxes</span>
       <span class="bs-sep">·</span>
       <span class="net-dot" title="Network"></span>
-      <button class="off-btn" type="button" aria-pressed="false" aria-label="Offline"></button>
       <span class="mood-forced-hint" data-mood-forced hidden></span>
     </div>
     <div class="basic-toggles" id="basic-toggles">
@@ -8433,19 +8424,7 @@ async function offFillStorage() {
   }
 }
 
-function offPaintToggle() {
-  const used = offUsed();
-  const title = OFF.on
-    ? 'Offline: this device is playing its own files (' + offSizeText(used) + ')'
-    : 'Offline: ' + Object.keys(offInv()).length + ' tracks held, '
-      + offSizeText(used) + ' of ' + offQuotaMB() + ' MB';
-  document.querySelectorAll('.off-btn').forEach(b => {
-    b.classList.toggle('on', OFF.on);
-    b.classList.toggle('busy', OFF.downloading);
-    b.title = title;
-    b.setAttribute('aria-pressed', OFF.on ? 'true' : 'false');
-  });
-}
+function offPaintToggle() { paintPlaybackTarget(); }
 
 /* ── The switch ───────────────────────────────────────────────────────────── */
 async function offStart() {
@@ -8491,11 +8470,9 @@ function offStop() {
 function offToggle() { return OFF.on ? offStop() : offStart(); }
 
 function offInit() {
-  document.querySelectorAll('.off-btn').forEach(b => {
-    b.innerHTML = OFF_SVG;
-    b.addEventListener('click', offToggle);
-  });
-  offPaintToggle();
+  // No button of its own: offline is the third stop of the playback-target
+  // cycle on #btn-snapcast (see cyclePlaybackTarget).
+  paintPlaybackTarget();
   offFlushPlays();                                   // a previous session's plays
   window.addEventListener('online', () => { offFlushPlays(); offSchedulePendingCheck(); });
   // pagehide fires where unload does not (bfcache, iOS); visibilitychange
@@ -8510,10 +8487,7 @@ function offInit() {
 /* ── Snapcast — wrapper autour de SnapStream (bundle Iris/snapstream.ts) ── */
 const SNAP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>`;
 
-function _snapBtnOff() {
-  const btn = document.getElementById('btn-snapcast');
-  btn.innerHTML = SNAP_SVG; btn.classList.remove('playing');
-}
+function _snapBtnOff() { paintPlaybackTarget(); }
 
 /* Screen Wake Lock — best-effort. iOS Safari suspends the WebAudio AudioContext
    as soon as the screen locks (and WebAudio can't play in the background at all),
@@ -8551,25 +8525,84 @@ function _snapStart() {
   startMediaAnchor();
   // Pousse les métadonnées une fois la session média devenue active
   setTimeout(refreshNowPlaying, 600);
-  const btn = document.getElementById('btn-snapcast');
-  btn.innerHTML = SNAP_SVG; btn.classList.add('playing');
+  paintPlaybackTarget();
   setFeedback('Connecting…');
 }
 
-function toggleSnapcast() {
-  if (snapPlayer) {
-    snapPlayer.stop(); snapPlayer = null;
-    _releaseWakeLock();
-    stopMediaAnchor();
-    _snapBtnOff(); setFeedback('Snapcast stopped');
-    localStorage.setItem('snap-autoconnect', '0');  // arrêt explicite (≠ « jamais décidé »)
-  } else {
-    if (!snapWsUrl) { setFeedback('Snapcast not configured'); return; }
-    if (!window.SnapStream) { setFeedback('Snapcast module not loaded'); return; }
-    _snapStart();
-    localStorage.setItem('snap-autoconnect', '1');
-  }
+/* ── One control, three states ───────────────────────────────────────────────
+   Where the audio comes out is a single question with three answers, so it is
+   a single button cycling through them rather than two that can contradict
+   each other:
+
+     1. remote   — the server plays, this device is only a remote
+     2. snapcast — the server plays AND this device is a speaker
+     3. offline  — this device plays its own files, server out of the loop
+
+   They are mutually exclusive in fact (offStart already stops the Snapcast
+   stream), and two separate toggles made that exclusivity something the user
+   had to know rather than something the control expressed. Where Snapcast is
+   not configured the cycle is two states, not a dead button: offline has to
+   stay reachable. */
+function playbackTarget() {
+  if (OFF.on) return 'offline';
+  return snapPlayer ? 'snapcast' : 'remote';
 }
+
+const TARGET_SVG = {
+  remote:   SNAP_SVG,
+  snapcast: SNAP_SVG,
+  offline:  OFF_SVG,
+};
+const TARGET_TITLE = {
+  remote:   'Playing on the server — tap to listen here',
+  snapcast: 'This device is a Snapcast speaker — tap to go offline',
+  offline:  'Playing this device\u2019s own files — tap to hand back to the server',
+};
+
+function paintPlaybackTarget() {
+  const btn = document.getElementById('btn-snapcast');
+  if (!btn) return;
+  const st = playbackTarget();
+  btn.innerHTML = TARGET_SVG[st];
+  btn.classList.toggle('playing', st !== 'remote');
+  btn.dataset.target = st;
+  btn.classList.toggle('busy', st === 'offline' && OFF.downloading);
+  let title = TARGET_TITLE[st];
+  if (st !== 'offline') {
+    const n = Object.keys(offInv()).length;
+    if (n) title += ' (' + n + ' track' + (n === 1 ? '' : 's') + ' held here)';
+  }
+  btn.title = title;
+  btn.setAttribute('aria-label', title);
+}
+
+function snapAvailable() { return !!(snapWsUrl && window.SnapStream); }
+
+async function cyclePlaybackTarget() {
+  switch (playbackTarget()) {
+    case 'remote':
+      if (snapAvailable()) {
+        _snapStart();
+        localStorage.setItem('snap-autoconnect', '1');
+      } else {
+        // No Snapcast here: skip the middle state rather than stall the cycle.
+        await offStart();
+      }
+      break;
+    case 'snapcast':
+      // offStart stops the stream itself; doing it here too would double-stop.
+      localStorage.setItem('snap-autoconnect', '0');
+      await offStart();
+      break;
+    default:
+      offStop();
+      break;
+  }
+  paintPlaybackTarget();
+}
+
+// Kept as the name the rest of the page (and habit) uses.
+function toggleSnapcast() { return cyclePlaybackTarget(); }
 
 function autoConnectSnapIfNeeded() {
   const pref = localStorage.getItem('snap-autoconnect');
@@ -9204,8 +9237,10 @@ async function init() {
     mopidyWsUrl = cfg.mopidy_ws_url || null;
     backofficeUrl = cfg.backoffice_url || null;
   } catch(e) {}
-  // Pas de bouton Snapcast si non configuré côté serveur (.env)
-  if (!snapWsUrl) { document.getElementById('btn-snapcast')?.remove(); }
+  // The button stays even with no Snapcast configured: it is the playback
+  // TARGET control, and offline is reachable through it. The cycle drops the
+  // middle state by itself (see cyclePlaybackTarget).
+  paintPlaybackTarget();
   const backofficeLink = document.getElementById('footer-backoffice');
   if (backofficeUrl) { backofficeLink.href = backofficeUrl; }
   else { backofficeLink?.remove(); }

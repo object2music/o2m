@@ -213,17 +213,44 @@ class O2mToMopidy:
 
 #LOCAL CACHE RESOLUTION
     def _resolve_uri(self, uri):
-        """Return the local file URI if this Spotify track was downloaded, else original."""
+        """Return the local file URI if this Spotify track was downloaded, else original.
+
+        The file is checked before it is substituted, whenever this container can
+        see the music volume. A `local_uri` outlives its file more easily than it
+        looks: the cache cleaner swallows the error if its unregister call fails,
+        and once several instances share one cache directory the one that prunes
+        is not always the one holding the row. Handing Mopidy a path to a missing
+        file turns a track that would have streamed from Spotify into a playback
+        failure — so an absent file simply means "not downloaded".
+        """
         if not uri or not uri.startswith('spotify:track:'):
             return uri
         try:
             local = self.dbHandler.get_local_uri(uri)
             if local:
+                if not self._local_file_present(local):
+                    return uri
                 self._local_to_spotify[local] = uri
                 return local
         except Exception:
             pass
         return uri
+
+    def _local_file_present(self, local_uri):
+        """True if the file behind a `local_uri` is really there.
+
+        Returns True when the volume is not mounted here at all: without it we
+        cannot tell a missing file from a missing mount, and refusing to
+        substitute would break every instance that has not added the mount."""
+        import os
+        from o2m_core import offline
+        try:
+            if not os.path.isdir(offline.MUSIC_MOUNT):
+                return True                      # no mount: trust the database
+            path = offline.local_file_for(local_uri)
+            return bool(path) and os.path.isfile(path)
+        except Exception:
+            return True
 
     def _resolve_uris(self, uris):
         """Resolve a list of URIs, substituting local files where available.
