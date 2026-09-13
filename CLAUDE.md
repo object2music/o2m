@@ -457,6 +457,33 @@ the device wants and the server lacks is queued in `OfflineRequest`, spotdl poll
 queue between (and during) its nightly runs, and `local_uri` is what says the bytes
 landed. One downloader, one registration path; only the trigger and the urgency differ.
 
+**Two defects in that cache, found by tracing the chain end to end (2026-09-13), that had
+made it silently useless since it was written** — both fixed, both worth knowing:
+
+- **spotdl takes URLs, not URIs.** Handed `spotify:track:<id>` it falls into
+  `Song.from_search_term` and *searches* Spotify for that literal string, downloading
+  whatever comes back; three different ids returned one identical unrelated track.
+  Handed `https://open.spotify.com/track/<id>` it resolves the id. `spotify_url()` now
+  converts. The nightly box cache had been doing this too, which is why `data/music`
+  held two dozen files matching no box.
+- **The Spotify id lives in the `WOAS` ID3 frame**, not `COMM` — current spotdl puts the
+  YouTube url in `COMM`. Registration read `COMM` only, found nothing, and registered
+  zero tracks for months.
+
+They interact, and the order matters: fixing the tag without fixing the query would have
+started writing *wrong* `local_uri` mappings, and `_resolve_uri` would then have played
+the wrong song on the SERVER, not merely offline. The guard that makes this safe is
+`is_registered`: an on-demand request closes as done only when the uri it asked for is
+the one that actually landed, so a mis-resolved download fails honestly instead of being
+served as the track someone wanted.
+
+**Giving up has to be reachable.** The first version re-queued every `failed` row on each
+`plan` call — and a client polls `plan` while it waits, so the same unfetchable tracks
+were re-downloaded every 30s for ever, the tries counter climbing and the UI reporting
+"being fetched by the server" with no end. `plan` now reads the queue state *before*
+touching it, `request_offline(retry_failed=False)` is the default, and even a deliberate
+retry stops at `OFFLINE_MAX_TRIES = 3`.
+
 ### Server side
 - **`o2m_core/offline.py`** — `describe(uri)` → `ready` | `pending` | `unavailable`;
   `local_file_for(uri)` resolves the file and is the security boundary (`realpath` +

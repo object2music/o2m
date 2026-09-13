@@ -73,20 +73,37 @@ def extract_spotify_uris(box):
     return uris
 
 
+def _spotify_uri_from_text(text):
+    if text and 'open.spotify.com/track/' in text:
+        return 'spotify:track:' + text.split('/track/')[1].split('?')[0].strip()
+    return None
+
+
 def extract_spotify_uri_from_mp3(filepath):
-    """Read the Spotify track URI from ID3 comment tag written by spotdl."""
+    """Read the Spotify track URI spotdl wrote into the file's ID3 tags.
+
+    WOAS (Official Audio Source Webpage) first: current spotdl puts the Spotify
+    track url there and the YOUTUBE url in COMM. Reading COMM alone — which this
+    did — therefore found nothing at all, which is why the cache had been
+    downloading files for months and registering none of them. COMM is kept as a
+    fallback for files written by older versions.
+    """
     try:
         from mutagen.id3 import ID3
         tags = ID3(str(filepath))
+        for frame in tags.getall('WOAS'):
+            uri = _spotify_uri_from_text(getattr(frame, 'url', ''))
+            if uri:
+                return uri
         for key in tags:
             if key.startswith('COMM'):
                 try:
                     text = str(tags[key].text[0]) if tags[key].text else ''
                 except Exception:
                     text = ''
-                if 'open.spotify.com/track/' in text:
-                    track_id = text.split('/track/')[1].split('?')[0].strip()
-                    return f'spotify:track:{track_id}'
+                uri = _spotify_uri_from_text(text)
+                if uri:
+                    return uri
     except Exception as e:
         print(f"  mutagen error ({filepath.name}): {e}")
     return None
@@ -140,12 +157,32 @@ def sync_downloaded_files(output_dir):
     return count
 
 
+def spotify_url(uri):
+    """`spotify:track:<id>` -> `https://open.spotify.com/track/<id>`.
+
+    This is not cosmetic, it is the difference between a lookup and a search.
+    spotdl dispatches on the shape of its argument: given a URI it falls into
+    `Song.from_search_term`, i.e. it SEARCHES Spotify for the literal string
+    "spotify:track:0Brzu8…" and downloads whatever comes back — which is why
+    three different ids all resolved to one unrelated track, and why the
+    nightly box cache had been filling data/music with songs nobody asked for.
+    Given a URL it resolves the id. Verified on both forms, same container,
+    same credentials.
+    """
+    if not uri or not uri.startswith('spotify:'):
+        return uri
+    parts = uri.split(':')
+    if len(parts) < 3:
+        return uri
+    return f"https://open.spotify.com/{parts[1]}/{parts[2]}"
+
+
 def run_spotdl(uri, output_dir):
     """Download a Spotify URI to output_dir. Returns True on success."""
     output_dir.mkdir(parents=True, exist_ok=True)
     template = str(output_dir) + '/{artists} - {title}.{ext}'
     cmd = [
-        'spotdl', 'download', uri,
+        'spotdl', 'download', spotify_url(uri),
         '--output', template,
         '--format', 'mp3',
         '--bitrate', '192k',
@@ -256,9 +293,15 @@ def queue_done(uri, ok=True, note=None):
 def is_registered(uri):
     """Ask o2m whether the track now resolves to a file.
 
-    Asking the server beats inspecting our own output directory: registration
-    goes through ID3 tags and spotdl names files from metadata, so the only
-    reliable answer to "did THIS uri land" is the one the database gives.
+    This is load-bearing, not a formality. Registration maps a file to the
+    Spotify id written in its own tags, so if spotdl resolved the query to a
+    DIFFERENT track (which it currently does — see the note in run_queue) the
+    file lands under its true id and this check still says no. That is what
+    keeps a mis-resolved download from being served to a device as the track it
+    asked for: an honest failure instead of the wrong song.
+
+    Asking the server also beats inspecting our own output directory: spotdl
+    names files from metadata, so the database is the only reliable answer.
     `fetch_missing=False` so a status check never re-queues what it is checking.
     """
     try:
@@ -273,7 +316,13 @@ def is_registered(uri):
 
 
 def run_queue():
-    """Download one batch of on-demand requests. Returns how many were handled."""
+    """Download one batch of on-demand requests. Returns how many were handled.
+
+    A request only closes as done when the track it asked for is actually
+    registered (see is_registered). A download that resolved to some other
+    song therefore fails honestly instead of being served to a device as the
+    track it wanted.
+    """
     items = fetch_queue()
     if not items:
         return 0

@@ -3548,7 +3548,7 @@ function renderSettings() {
     offPaintToggle(); renderSettings();
   });
   body.querySelector('#off-dl-now')?.addEventListener('click', () => {
-    offSync((matrixTlItems || []).slice()).then(renderSettings);
+    offSync((matrixTlItems || []).slice(), { retry: true }).then(renderSettings);
   });
   body.querySelector('#off-clear')?.addEventListener('click', async () => {
     await offClearAll();
@@ -7970,7 +7970,11 @@ async function offStore(meta) {
 /* One download pass over a list of tracklist rows. Tracks the server does not
    hold yet are left in OFF.pending and re-checked on a timer — spotdl needs
    minutes, and the person should not have to press the button again. */
-async function offSync(items, { quiet = false } = {}) {
+/* `retry` asks the server to have another go at tracks spotdl already failed
+   on. Only a deliberate gesture sets it — arming offline, or the Settings
+   button. The 60s pending re-check must NOT, or "give up" never happens and
+   the same unfetchable tracks are re-downloaded for ever. */
+async function offSync(items, { quiet = false, retry = false } = {}) {
   if (OFF.downloading) return;
   const list = (items || []).filter(t => t && t.uri && !offHas(t.uri));
   if (!list.length) {
@@ -7983,7 +7987,7 @@ async function offSync(items, { quiet = false } = {}) {
   try {
     const r = await fetch(API + '/offline/plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uris: list.map(t => t.uri) }),
+      body: JSON.stringify({ uris: list.map(t => t.uri), retry_failed: retry }),
     });
     const plan = await r.json();
     const by = {};
@@ -8212,7 +8216,7 @@ async function offStart() {
   offRenderQueue();
   if (OFF.queue.length) offPlayAt(0);
   else setFeedback('Nothing downloaded yet — fetching what the tracklist allows');
-  offSync(snapshot);
+  offSync(snapshot, { retry: true });
 }
 
 function offStop() {

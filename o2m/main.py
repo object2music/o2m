@@ -2263,23 +2263,35 @@ if __name__ == "__main__":
             except Exception as e:
                 items.append({'uri': uri, 'kind': 'other', 'state': 'unavailable',
                               'bytes': 0, 'reason': str(e)})
+        missing = [i['uri'] for i in items if i['state'] == 'pending']
+
+        # Read the queue BEFORE touching it. Queueing first destroyed the very
+        # answer this needs: request_offline would flip a 'failed' row back to
+        # 'pending', so the give-up was reported as "still coming" and the
+        # client polled it back into the queue for ever.
+        try:
+            states = o2mHandler.dbHandler.offline_request_states(missing)
+        except Exception:
+            states = {}
+        max_tries = o2mHandler.dbHandler.OFFLINE_MAX_TRIES
+        retry = bool(data.get('retry_failed'))
+        for i in items:
+            if states.get(i['uri']) == 'failed' and not retry:
+                i['state'] = 'unavailable'
+                i['reason'] = 'spotdl could not fetch it'
+
         queued = []
         if data.get('fetch_missing', True):
             try:
-                queued = o2mHandler.dbHandler.request_offline(
-                    [i['uri'] for i in items if i['state'] == 'pending'])
+                queued = o2mHandler.dbHandler.request_offline(missing, retry_failed=retry)
             except Exception as e:
                 print(f"api_offline_plan(queue): {e}")
-        # A pending uri spotdl has already given up on must stop being awaited.
-        try:
-            states = o2mHandler.dbHandler.offline_request_states(
-                [i['uri'] for i in items if i['state'] == 'pending'])
-            for i in items:
-                if states.get(i['uri']) == 'failed':
-                    i['state'] = 'unavailable'
-                    i['reason'] = 'spotdl could not fetch it'
-        except Exception:
-            pass
+        # Asked for a retry but the row is spent: say so rather than promising.
+        for i in items:
+            if i['state'] == 'pending' and states.get(i['uri']) == 'failed' \
+                    and i['uri'] not in queued:
+                i['state'] = 'unavailable'
+                i['reason'] = f'spotdl gave up after {max_tries} tries'
         return jsonify({'items': items, 'queued': queued})
 
     @api.route('/api/audio')

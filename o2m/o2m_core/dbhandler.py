@@ -1955,12 +1955,21 @@ class DatabaseHandler():
     # tracklist — and nothing here downloads; spotdl remains the only thing that
     # runs spotdl.
 
-    def request_offline(self, uris):
+    OFFLINE_MAX_TRIES = 3
+
+    def request_offline(self, uris, retry_failed=False):
         """Queue the Spotify tracks we have no file for. Returns those queued.
 
-        Already-downloaded uris are skipped rather than re-queued, and a uri
-        already in the queue is left at its current state — re-asking must not
-        restart a download that is halfway through."""
+        `retry_failed` is off by default, and that default is the whole point.
+        A client polls this endpoint while it waits, so resurrecting every
+        'failed' row on each poll made the give-up decision unreachable: spotdl
+        re-downloaded the same unfetchable tracks every 30s for ever, the tries
+        counter climbing, the UI reporting 'being fetched by the server' with no
+        end. Retrying is a deliberate act (the person presses download again),
+        and even then it stops at OFFLINE_MAX_TRIES.
+
+        A 'done' row whose file has since been swept by the cache cleaner IS
+        re-queued: it reached here, so it has no local_uri any more."""
         wanted = []
         for uri in uris or []:
             if not uri or not uri.startswith('spotify:track:'):
@@ -1970,17 +1979,25 @@ class DatabaseHandler():
             wanted.append(uri)
         if not wanted:
             return []
-        known = {r.uri for r in OfflineRequest.select(OfflineRequest.uri).where(
-            OfflineRequest.uri.in_(wanted), OfflineRequest.state != 'failed')}
+        rows = {r.uri: r for r in OfflineRequest.select().where(OfflineRequest.uri.in_(wanted))}
         now = datetime.datetime.utcnow()
-        rows = [{'uri': u, 'requested_at': now, 'state': 'pending', 'tries': 0}
-                for u in wanted if u not in known]
-        # A 'failed' row is retried: the failure may have been a bad network day.
-        OfflineRequest.update(state='pending', requested_at=now).where(
-            OfflineRequest.uri.in_(wanted), OfflineRequest.state == 'failed').execute()
-        if rows:
-            OfflineRequest.insert_many(rows).on_conflict_ignore().execute()
-        return wanted
+        fresh, revive = [], []
+        for u in wanted:
+            r = rows.get(u)
+            if r is None:
+                fresh.append({'uri': u, 'requested_at': now, 'state': 'pending', 'tries': 0})
+            elif r.state == 'pending':
+                pass                                   # already waiting; leave it alone
+            elif r.state == 'done':
+                revive.append(u)                       # the file went away, fetch it again
+            elif retry_failed and (r.tries or 0) < self.OFFLINE_MAX_TRIES:
+                revive.append(u)
+        if fresh:
+            OfflineRequest.insert_many(fresh).on_conflict_ignore().execute()
+        if revive:
+            OfflineRequest.update(state='pending', requested_at=now).where(
+                OfflineRequest.uri.in_(revive)).execute()
+        return [r['uri'] for r in fresh] + revive
 
     def offline_queue(self, limit=25):
         """Pending requests, oldest first — what spotdl polls for."""
