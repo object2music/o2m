@@ -2275,6 +2275,10 @@
     opacity: .55; margin: 14px 0 6px;
   }
   .set-store { display: flex; flex-direction: column; gap: 6px; }
+  .set-details { margin-top: 8px; font-size: 12px; }
+  .set-details > summary { cursor: pointer; opacity: .6; user-select: none; }
+  .set-details > summary:hover { opacity: 1; }
+  .set-details > div { margin-top: 6px; padding-left: 2px; }
   .set-store-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
   .set-store-k { flex: 0 0 auto; min-width: 96px; opacity: .6; font-size: 12px; }
   .set-store-v {
@@ -3538,7 +3542,15 @@ function renderSettings() {
           <span class="set-store-k">On the server</span>
           <span class="set-store-v" id="off-store-server">…</span>
         </div>
+        <div class="set-store-row">
+          <span class="set-store-k">Pending stats</span>
+          <span class="set-store-v" id="off-store-stats">…</span>
+        </div>
       </div>
+      <details class="set-details" id="off-stats-details">
+        <summary>What is waiting to be sent</summary>
+        <div class="set-store-v" id="off-stats-list"></div>
+      </details>
       <div class="set-note" id="off-store-note">The browser chooses where its own database
         lives and a page cannot move it — the allowance above is the control you have over
         it. The server folder is set by the spotdl service and needs a container restart to
@@ -8378,6 +8390,33 @@ async function offFillStorage() {
       if (await navigator.storage.persisted()) line += ' · kept under pressure';
     } catch (e) { /* no Storage API: the first line still says what matters */ }
     dev.textContent = line;
+  }
+  // The intermediate stats — plays not yet sent, and the bookmarks. They live
+  // in localStorage, which means nowhere a person can look; showing them here
+  // is the difference between "it syncs" and "I can see that it syncs".
+  const st = document.getElementById('off-store-stats');
+  const list = document.getElementById('off-stats-list');
+  if (st) {
+    const plays = offPlays(), pos = offPos();
+    const keys = Object.keys(pos);
+    const unsent = keys.filter(u => pos[u].at !== pos[u].syncedAt).length;
+    st.textContent = plays.length + ' play' + (plays.length === 1 ? '' : 's')
+      + ' waiting · ' + keys.length + ' bookmark' + (keys.length === 1 ? '' : 's')
+      + ' (' + unsent + ' not yet sent)'
+      + '\nlocalStorage “' + OFF_PLAYS_KEY + '” and “' + OFF_POS_KEY + '”';
+    if (list) {
+      const when = v => { try { return new Date(v).toLocaleString(); } catch (e) { return v; } };
+      const nm = u => (offInv()[u] || {}).name || u;
+      const pct = (a, b) => (b ? Math.round((a / b) * 100) + '%' : '—');
+      const rows = [
+        ...plays.map(p => '▸ played  ' + (p.name || nm(p.uri)) + ' — '
+                        + pct(p.position, p.length) + ' · ' + when(p.at)),
+        ...keys.map(u => '▸ at ' + pct(pos[u].position, pos[u].length) + '  ' + nm(u)
+                       + ' — ' + msToMin(pos[u].position) + ' · ' + when(pos[u].at)
+                       + (pos[u].at === pos[u].syncedAt ? ' · sent' : ' · pending')),
+      ];
+      list.textContent = rows.length ? rows.join('\n') : 'Nothing waiting.';
+    }
   }
   if (srv) {
     try {

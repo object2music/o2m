@@ -564,6 +564,10 @@ genuinely fresh start, to skip the pre-roll). Offline mirrors all of it:
 - **Device → server**: only bookmarks that MOVED since the last successful flush are sent
   (`at !== syncedAt`). Re-sending an unchanged position on every reconnection would quietly
   inflate `read_count`.
+- **They are readable.** Both stores are plain `localStorage`, which is nowhere a person
+  can look, so Settings → Offline lists them: how many plays are waiting, how many
+  bookmarks exist and how many are unsent, and — under *What is waiting to be sent* — the
+  records themselves, each with its track, its position as a percentage and its timestamp.
 - **Resume is spoken-only**, like `_is_spoken_uri` guards it on the server. Measured on a
   real row: a music track played to the end carries `read_position == its own duration`, so
   honouring it for music would restart every favourite ten seconds before its last note.
