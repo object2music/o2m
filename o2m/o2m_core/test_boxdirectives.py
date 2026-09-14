@@ -135,6 +135,17 @@ class TestLocalNow(unittest.TestCase):
     def test_result_is_naive_so_it_compares_with_plain_datetimes(self):
         self.assertIsNone(bd.local_now().tzinfo)
 
+    def test_to_local_shifts_a_stored_utc_timestamp_by_the_same_offset(self):
+        os.environ['O2M_TIMEZONE'] = 'UTC'
+        stamp = datetime.datetime(2026, 9, 12, 8, 34)
+        self.assertEqual(bd.to_local(stamp), stamp)          # UTC deployment: unchanged
+        os.environ['O2M_TIMEZONE'] = 'Europe/Paris'
+        shifted = bd.to_local(stamp)
+        self.assertIn(round((shifted - stamp).total_seconds() / 3600), (1, 2))
+
+    def test_to_local_passes_a_missing_timestamp_through(self):
+        self.assertIsNone(bd.to_local(None))
+
 
 BLOCK_BOX = """\
 #Matin

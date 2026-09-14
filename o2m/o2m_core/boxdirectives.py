@@ -70,6 +70,23 @@ def local_now():
         return datetime.datetime.now()
 
 
+def to_local(when_utc):
+    """A stored UTC timestamp as the wall clock `local_now` reads, tz-naive.
+
+    The database keeps UTC (peewee's TimestampField(utc=True)); anything a
+    listener reads is local. Expressed as an offset from `local_now` so the
+    codebase keeps ONE definition of local time rather than growing a second one
+    next to the windows.
+    """
+    if when_utc is None:
+        return None
+    # Two clock reads, so the raw difference carries microseconds of noise. A real
+    # timezone offset is a whole number of minutes, so round to one: without this
+    # a UTC deployment shifts a timestamp by a few microseconds instead of zero.
+    offset = local_now() - datetime.datetime.utcnow()
+    return when_utc + datetime.timedelta(minutes=round(offset.total_seconds() / 60))
+
+
 _BLOCK_RE = re.compile(r'^\s*(\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2})\s*>\s*\{\s*$')
 _COND_RE = re.compile(r'^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*>\s*(.*)$')
 _DL_RE = re.compile(r'^dl\s*:\s*(\d{1,2})\s*$', re.I)

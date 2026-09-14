@@ -418,7 +418,9 @@ file and cannot be relied on). Listening HABITS (`now:library`, `herenow:library
 `common` bucket, `day_time_average`) are read in UTC via `O2mToMopidy.stats_hour`, because
 `read_hour` is written in UTC across 100k+ rows. They agreed only by accident while the
 containers ran on UTC; setting a timezone without splitting them would have offset every
-habit query by two hours.
+habit query by two hours. Anything DISPLAYED from a stored timestamp goes through
+`boxdirectives.to_local` — the database keeps UTC, the reader reads local — rather than
+growing a third definition of local time next to those two.
 
 Window-aware scanning matters elsewhere too: a window says WHEN a line plays, not whether
 the box refers to it, so the catalogue warmup and the directory listings strip the prefix

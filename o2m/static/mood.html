@@ -2676,6 +2676,7 @@ const ICON = {
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
   code:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
   check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  clock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
 };
 
 /* ── State ── */
@@ -6627,6 +6628,7 @@ let _wcSearchTimer = null;
 const WC_BROWSE_NODES = {
   favorites:   { label: 'Favourite tracks',       icon: ICON.heart(true) },
   podfavorites:{ label: 'Favourite episodes',     icon: ICON.heart(true) },
+  podrecent:   { label: 'Episodes you listened to', icon: ICON.clock },
   playlists:   { label: 'Your playlists',         icon: ICON.list },
   artists:     { label: 'Your artists',           icon: ICON.user },
   albums:      { label: 'Your albums',            icon: ICON.disc },
@@ -7096,6 +7098,12 @@ async function browseFetch(node, opts) {
                ? 'No favourite tracks yet.'
                : 'No favourite episodes yet — tap the heart on one while it plays.' };
   }
+  if (node === 'podrecent') {
+    const d = await _wcJson('/library_browse?kind=podrecent&limit=' + lim + '&offset=' + off);
+    return { rows: _wcDirRows((d && d.items) || []), kind: 'podcast',
+             hasMore: !!(d && d.has_more),
+             empty: 'Nothing listened to yet.' };
+  }
   if (node === 'podchannels') {
     const d = await _wcJson('/podcast_channels');
     return { rows: _wcDirRows(Array.isArray(d) ? d : []), kind: 'podcast',
@@ -7516,8 +7524,8 @@ async function searchLoadMore() {
    The two interactive nodes are left out on purpose: a podcast-genre tree is a
    detour rather than a destination, and a Radio France subject is not an object
    you can open at all — it is a pattern that refills a box. */
-const BROWSE_NODES = ['favorites', 'podfavorites', 'playlists', 'albums', 'artists',
-                      'podchannels', 'podtop', 'podnews', 'radiotop'];
+const BROWSE_NODES = ['favorites', 'podfavorites', 'podrecent', 'playlists', 'albums',
+                      'artists', 'podchannels', 'podtop', 'podnews', 'radiotop'];
 let _browseState = null;   // { node, offset, rows } for the paged nodes
 
 function openBrowse() {

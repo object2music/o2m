@@ -677,6 +677,60 @@ class DatabaseHandler():
             print(f"get_favorite_rows: {e}")
             return [], False
 
+    def get_recent_episode_rows(self, limit=50, offset=0):
+        """The episodes actually LISTENED to, most recent first, in the browser's
+        row shape.
+
+        Played is not listened: a fill serves far more spoken items than anyone
+        stays with, so a plain "recently played" list is mostly things that went by.
+        The bar is half the episode — either a logged completion (`read_count_end`,
+        only written past 90%) or a bookmark past the midpoint.
+
+        `read_end` is deliberately NOT a criterion despite being the obvious column:
+        it is a running average across every read, and its column default is 0.5, so
+        it cannot tell a half-listened episode from one nothing ever touched.
+
+        This is the nearest thing to a record of which episodes mattered — likes on
+        episodes were being wiped by the Spotify reconciliation, and listening is the
+        only trace that survived. The subtitle therefore carries what a person needs
+        to recognise one: channel, when, how far in, how long."""
+        from o2m_core import boxdirectives
+        try:
+            substantial = ((Track.read_count_end > 0)
+                           | ((Track.duration_ms > 0)
+                              & (Track.read_position >= Track.duration_ms / 2)))
+            q = (Track.select(Track.uri, Track.name, Track.channel_id,
+                              Track.last_read_date, Track.read_position,
+                              Track.duration_ms, Track.read_count_end)
+                 .where(Track.uri.startswith('podcast+')
+                        & (Track.read_count > 0)
+                        & Track.last_read_date.is_null(False)
+                        & substantial)
+                 .order_by(Track.last_read_date.desc())
+                 .limit(limit + 1).offset(offset))
+            rows = list(q)
+            more = len(rows) > limit
+            chans, out = {}, []
+            for t in rows[:limit]:
+                if t.channel_id not in chans:
+                    ch = PodcastChannel.get_or_none(PodcastChannel.id == t.channel_id)
+                    chans[t.channel_id] = (ch.title or '') if ch else ''
+                dur = t.duration_ms or 0
+                pct = round(100.0 * t.read_position / dur) if (dur and t.read_position) else 0
+                if t.read_count_end and pct < 90:
+                    pct = 100          # a completion was logged; the bookmark lagged
+                when = boxdirectives.to_local(t.last_read_date)
+                bits = [chans[t.channel_id],
+                        when.strftime('%d %b %H:%M') if when else '',
+                        f"{min(pct, 100)}%" if pct else '',
+                        f"{round(dur / 60000)} min" if dur else '']
+                out.append({'uri': t.uri, 'name': t.name or t.uri,
+                            'sub': ' · '.join(b for b in bits if b), 'image': ''})
+            return out, more
+        except Exception as e:
+            print(f"get_recent_episode_rows: {e}")
+            return [], False
+
     def backfill_last_play_seq(self):
         """Give every already-played track the sequence position of its last play.
 
