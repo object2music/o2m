@@ -2046,16 +2046,24 @@ class DatabaseHandler():
         ).execute()
 
     def reconcile_liked(self, liked_uris):
-        """Clear liked=1 on tracks no longer in the Spotify liked set (un-likes
-        done directly on Spotify). `liked_uris` = the COMPLETE set currently
-        liked. Callers MUST pass it only after a complete fetch, and skip the
-        call when the set is empty (guarded here too) so a transient empty API
-        response can never wipe every like."""
+        """Clear liked=1 on SPOTIFY tracks no longer in the Spotify liked set
+        (un-likes done directly on Spotify). `liked_uris` = the COMPLETE set
+        currently liked. Callers MUST pass it only after a complete fetch, and skip
+        the call when the set is empty (guarded here too) so a transient empty API
+        response can never wipe every like.
+
+        Scoped to `spotify:track:` deliberately. The heart writes `liked` for ANY
+        uri — a podcast episode included, which is what makes "Favourite episodes"
+        possible — and an episode can never appear in Spotify's saved set. Without
+        the scope this reconciliation silently un-liked every episode on the next
+        sync: verified, a freshly liked episode came back at liked=0."""
         if not liked_uris:
             return 0
         try:
             return (Track.update(liked=0, liked_at=None)
-                    .where((Track.liked == 1) & (Track.uri.not_in(list(liked_uris))))
+                    .where((Track.liked == 1)
+                           & Track.uri.startswith('spotify:track:')
+                           & (Track.uri.not_in(list(liked_uris))))
                     .execute())
         except Exception as e:
             self.log.error(f"reconcile_liked: {e}")
