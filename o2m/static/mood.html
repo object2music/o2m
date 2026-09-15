@@ -7127,8 +7127,13 @@ async function browseFetch(node, opts) {
   }
   if (node === 'favorites' || node === 'podfavorites') {
     const d = await _wcJson('/library_browse?kind=' + node + '&limit=' + lim + '&offset=' + off);
+    // 'track', not 'podcast': these rows are EPISODES. The kind drives both the row
+    // click (objOpenByKind) and the + menu (objMenuItems), and 'podcast' means a
+    // CHANNEL — a feed to browse and play whole. Tagged that way, a single episode
+    // opened the channel view and offered "play the whole show". Search has spelled
+    // an episode 'track' all along; these two nodes had drifted from it.
     return { rows: _wcDirRows((d && d.items) || []),
-             kind: node === 'favorites' ? 'track' : 'podcast',
+             kind: 'track',
              hasMore: !!(d && d.has_more),
              empty: node === 'favorites'
                ? 'No favourite tracks yet.'
@@ -7136,7 +7141,7 @@ async function browseFetch(node, opts) {
   }
   if (node === 'podrecent') {
     const d = await _wcJson('/library_browse?kind=podrecent&limit=' + lim + '&offset=' + off);
-    return { rows: _wcDirRows((d && d.items) || []), kind: 'podcast',
+    return { rows: _wcDirRows((d && d.items) || []), kind: 'track',   // episodes, see above
              hasMore: !!(d && d.has_more),
              empty: 'Nothing listened to yet.' };
   }
