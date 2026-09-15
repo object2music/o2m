@@ -44,6 +44,7 @@ running a browser), it is an outcome to report: `find_media` returns an `error`
 saying the page refused, rather than an empty list that reads as "nothing here".
 """
 
+import datetime
 import logging
 import re
 import time
@@ -425,8 +426,34 @@ def _extract(url, referer, timeout):
         return ydl.extract_info(url, download=False)
 
 
+def _published_day(info):
+    """When this was published, as the 'YYYY-MM-DD' the rest of the app stores.
+
+    Three sources because extractors disagree about which they fill, measured on
+    the pages this was built against: Dailymotion answers `upload_date` and a
+    `timestamp`, Vimeo's on-demand extractor answers `upload_date`, and Vimeo's
+    embed extractor answers **neither** — for that one there is genuinely no date
+    anywhere, the embedding page carrying none either. It stays empty rather than
+    being invented: a wrong date is worse than a blank one in a panel whose job
+    is to say what is known about a track.
+    """
+    for key in ('upload_date', 'release_date'):
+        raw = str(info.get(key) or '')
+        if len(raw) == 8 and raw.isdigit():
+            return f'{raw[:4]}-{raw[4:6]}-{raw[6:]}'
+    for key in ('release_timestamp', 'timestamp'):
+        ts = info.get(key)
+        if ts:
+            try:
+                return datetime.datetime.fromtimestamp(
+                    int(ts), datetime.timezone.utc).strftime('%Y-%m-%d')
+            except Exception:
+                pass
+    return None
+
+
 def resolve_stream(uri, referer=None, timeout=None):
-    """`xp:<media page>` -> {'url','name','length','expires_at'} or None.
+    """`xp:<media page>` -> {'url','name','length','day','expires_at'} or None.
 
     yt_dlp lives here rather than in the Mopidy image on purpose: this is the
     core deciding what to play, and the adapter is never the seat of that.
@@ -496,6 +523,7 @@ def resolve_stream(uri, referer=None, timeout=None):
     entry = {'url': info['url'],
              'name': (info.get('title') or '').strip()[:512],
              'length': int(length * 1000) if length else None,
+             'day': _published_day(info),
              'expires_at': _expiry_of(info['url'])}
     _cache[key] = (time.time(), entry)
     return entry

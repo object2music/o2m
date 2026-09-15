@@ -528,12 +528,37 @@ every fill, each ask a live round trip on the path filling a tracklist someone i
   resume at their position, are eligible for `podcasts:unfinished`, and stay out of music
   scoring (`popularity` NULL). The page, not the item, is what
   `_spoken_type_for_uri` classifies — as a feed is classified whole.
-* **Names** — the row is opened **without** one. What a page calls a link ("Lire le replay
-  …") is a button label, not a title, and `upsert_episodes` never overwrites a name once
-  set, so writing the provisional one would lock the real title out for good. The
-  extractor supplies it a moment later, at resolution.
+* **Names, duration, date** — the row is opened **without** any of them. What a page calls
+  a link ("Lire le replay …") is a button label, not a title, and `upsert_episodes` never
+  overwrites a value once set, so writing the provisional one would lock the real title
+  out for good. The extractor supplies all three a moment later, at resolution, which is
+  what makes an `xp:` item describe itself in the details panel like a podcast episode
+  rather than as a bare url. `_published_day` reads `upload_date`, then `release_date`,
+  then a `timestamp`, because extractors disagree about which they fill — and returns
+  nothing when none is there (Vimeo's embed extractor, whose page carries no date either).
+  A blank date is the honest answer; an invented one is worse than none in a panel whose
+  job is to say what is known.
 * **Unresolvable items are dropped** in `_resolve_uris` rather than handed to Mopidy, which
   has no backend for `xp:` and would lose them silently.
+
+**The substituted uri reaches the playback listeners, and that broke resume.** Mopidy
+reports playback against the uri it was HANDED — for an `xp:` item, the signed CDN url.
+`track_started_event` was asking `_is_spoken_uri(track.uri)` about that url, which matches
+nothing, so the spoken branch was skipped whole: no resume, no ad-skip. The saving half was
+gone too — the gate deciding whether a PAUSE writes `read_position` re-spelled "is it
+spoken" as its own list of schemes (`podcast+`, `youtube:video:`, `yt:`), a list that had
+already drifted away from `_SPOKEN_URI_RE`. Both now go through `get_spotify_uri` and
+`_is_spoken_uri`. **Music never revealed this**: a downloaded Spotify track's `file://` uri
+is not spoken either way, so the substitution was invisible for years — `xp:` is the first
+spoken content whose uri changes between o2m and Mopidy.
+
+**Re-resolution is not re-downloading — there is no download.** An item played before comes
+back through `_resolve_uri` like any other, gets a *new* signed url (~0.5–1.5 s, or free
+within the 30 min stream cache), and resumes at its stored position. Nothing is ever kept
+on disk: `xp:` has no `local_uri` path and no offline support, so a second listen costs one
+extraction and the stream itself, never a re-fetch of bytes already held. Most items do not
+come back at all — `xp_page_tracks` filters through `_unread_spoken_uris`, so a replay
+watched to the end is gone from the box; a half-listened one returns and resumes.
 
 ### Dependencies, and one that is not obvious
 `yt_dlp` **and `curl_cffi`** in `o2m/requirements.txt`. The second is not a hard dependency

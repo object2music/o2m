@@ -2855,13 +2855,23 @@ with the house Premium account.</li>
             track = event.tl_track.track
             print (event)
 
+            # Mopidy reports the uri it was HANDED, which is not always the uri the
+            # database knows this track by: `_resolve_uri` substitutes a downloaded
+            # Spotify track's file:// path, and an 'xp:' media's signed CDN url,
+            # which changes every few hours. Everything below asks the database
+            # about this track — is it spoken, where was it left — so it has to ask
+            # under the canonical uri. Music never noticed (a file:// track is not
+            # spoken either way); 'xp:' is the first SPOKEN content whose uri gets
+            # substituted, and it silently lost both its resume and its ad-skip.
+            uri = o2mHandler.get_spotify_uri(track.uri)
+
             #Quick and dirty volume Management
             # Podcast : seek previous position
             # Any spoken item resumes where it was left. Testing 'podcast+'/youtube
             # left Radio France episodes out — they are plain mp3 links — so their
             # position was recorded on every pause and then never restored.
-            if o2mHandler._is_spoken_uri(track.uri):
-                stat_uri = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
+            if o2mHandler._is_spoken_uri(uri):
+                stat_uri = o2mHandler.dbHandler.get_stat_by_uri(uri)
                 if (stat_uri):
                     #if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
                     if (stat_uri.read_position > 10) and (stat_uri.read_position <= track.length):
@@ -2871,11 +2881,11 @@ with the house Premium account.</li>
                     elif stat_uri.read_position <= 10:
                         # Fresh start: skip the pre-roll ad. Never when resuming —
                         # the saved position already sits past it.
-                        _ad = o2mHandler.ad_skip_ms(track.uri)
+                        _ad = o2mHandler.ad_skip_ms(uri)
                         if _ad and track.length and _ad < track.length:
                             o2mHandler.mopidyHandler.playback.seek(_ad)
                 else:
-                    _ad = o2mHandler.ad_skip_ms(track.uri)
+                    _ad = o2mHandler.ad_skip_ms(uri)
                     if _ad and track.length and _ad < track.length:
                         o2mHandler.mopidyHandler.playback.seek(_ad)
                     #skip advertising 
@@ -2979,7 +2989,12 @@ with the house Premium account.</li>
                 print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
 
                 # Update stats 
-                if (event.event == "track_playback_ended") or ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+                # A pause is a play reported at its position, and that is what writes
+                # read_position — the value track_started_event reads back to resume.
+                # This used to re-spell "is it spoken" as its own list of schemes, which
+                # had already drifted away from _is_spoken_uri: no 'xp:', no Radio
+                # France host. One definition, asked under the canonical uri.
+                if (event.event == "track_playback_ended") or o2mHandler._is_spoken_uri(effective_uri):
                     
                     try:
                         o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri)

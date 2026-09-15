@@ -306,12 +306,17 @@ class O2mToMopidy:
             print(f"xp: unresolved {uri}")
             return None
         self._played_to_canonical[entry['url']] = uri
-        # The extractor knows the real title and duration; the page rarely does.
+        # The extractor knows the real title, duration and publication date; the
+        # page rarely does. These are the three descriptive columns the details
+        # panel reads for every other spoken item (name, duration_ms,
+        # published_at), so filling them here is what makes an 'xp:' track
+        # describe itself like a podcast episode rather than as a bare url.
         # Written once, never over an existing value (upsert_episodes' rule).
         try:
-            if entry.get('name') or entry.get('length'):
+            if entry.get('name') or entry.get('length') or entry.get('day'):
                 self.dbHandler.upsert_episodes(
-                    [{'uri': uri, 'name': entry.get('name'), 'length': entry.get('length')}],
+                    [{'uri': uri, 'name': entry.get('name'),
+                      'length': entry.get('length'), 'day': entry.get('day')}],
                     option_type=self._spoken_type_for_uri(
                         self._xp_referer(uri) or uri, entry.get('length')))
         except Exception as e:

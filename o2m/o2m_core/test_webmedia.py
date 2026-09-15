@@ -324,3 +324,33 @@ class TestUri(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestPublishedDay(unittest.TestCase):
+    """The date the details panel shows. Extractors disagree about which field
+    they fill, and the three cases below are the three that were measured:
+    Dailymotion answers `upload_date` AND a `timestamp`, Vimeo's on-demand
+    extractor answers `upload_date` alone, and Vimeo's embed extractor answers
+    nothing at all."""
+
+    def test_upload_date_is_reshaped_to_the_stored_form(self):
+        self.assertEqual(wm._published_day({'upload_date': '20260507'}), '2026-05-07')
+
+    def test_a_timestamp_answers_when_no_date_field_does(self):
+        # 1778168916 is the Dailymotion replay's own timestamp.
+        self.assertEqual(wm._published_day({'timestamp': 1778168916}), '2026-05-07')
+
+    def test_a_date_field_wins_over_a_timestamp(self):
+        # Both are present on Dailymotion; the explicit date is the publisher's
+        # own, the timestamp only has to agree with it.
+        self.assertEqual(
+            wm._published_day({'upload_date': '20260507', 'timestamp': 1}), '2026-05-07')
+
+    def test_no_date_stays_empty_rather_than_invented(self):
+        # Vimeo's embed extractor. A wrong date is worse than a blank one in a
+        # panel whose job is to say what is KNOWN about a track.
+        self.assertIsNone(wm._published_day({'title': 'En Quête De Sens'}))
+
+    def test_a_malformed_date_is_refused_not_reshaped(self):
+        for bad in ('2026-05-07', '2026', 'soon', '', None):
+            self.assertIsNone(wm._published_day({'upload_date': bad}), bad)
