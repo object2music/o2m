@@ -8,6 +8,7 @@
 const CACHE = 'o2m-mood-v1';
 const SHELL = [
   '/mood',
+  '/static/mood.css',
   '/static/manifest.json',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
