@@ -178,13 +178,17 @@ class DatabaseHandler():
                     if b:
                         out[uri] = {'name': b.description or b.uid, 'kind': 'box',
                                     'sub': b.option_type}
-                elif uri.startswith('xp:'):
+                elif uri.startswith(('web:', 'xp:')):
                     # Two different things wear this prefix, and the editor shows
                     # both: a box line names a PAGE (registered as a web channel
                     # when it was first read), while a line naming a single media
                     # is a Track like any episode. Ask for the page first — it is
                     # the shape a person types — then fall back to the item.
-                    target = uri[3:]
+                    # Look the row up under the CURRENT spelling: a legacy
+                    # 'xp:' line still plays, so it should still be named, and
+                    # the rows it points at were migrated to 'web:'.
+                    target = uri.split(':', 1)[1]
+                    uri_key = 'web:' + target
                     host = ''
                     try:
                         from urllib.parse import urlparse
@@ -198,7 +202,8 @@ class DatabaseHandler():
                     if ch and (ch.title or '').strip():
                         out[uri] = {'name': ch.title.strip(), 'kind': 'web', 'sub': host}
                     else:
-                        t = Track.get_or_none(Track.uri == uri)
+                        t = (Track.get_or_none(Track.uri == uri_key)
+                             or Track.get_or_none(Track.uri == uri))
                         if t and t.name:
                             out[uri] = {'name': t.name, 'kind': 'web', 'sub': host}
             except Exception as err:

@@ -4234,7 +4234,7 @@ async function refreshNowPlaying() {
   const playing = stateR?.result === 'playing';
   const tracks  = tlR?.result || [];
 
-  // Mopidy reports what it was HANDED. For an 'xp:' media that is a signed CDN
+  // Mopidy reports what it was HANDED. For a 'web:' media that is a signed CDN
   // url with no name at all, so the row would show an address where its title
   // belongs. This is the one place Mopidy's view enters the page, so it is the
   // one place worth translating: everything downstream reads these objects.
@@ -6578,7 +6578,7 @@ const BX_SETTING_RE = /^(dl|mood)\s*:\s*\S/i;
 
 function _bxIsDirective(line) {
   const { rest } = _bxSplitWindow(line);
-  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:|xp:)/.test(rest)
+  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:|web:|xp:)/.test(rest)
       || BX_SETTING_RE.test(rest)
       || _bxIsKeyword(rest);
 }
@@ -6589,12 +6589,12 @@ function _bxNewItem(line, label, disabled) {
   const { window, rest } = _bxSplitWindow(line);
   if (!window && _bxIsKeyword(rest)) return { kind: 'keyword', value: rest, label: label || null, disabled: !!disabled };
   // 'uri' is the classification that gets its display name looked up
-  // (resolveDataItems asks only for these), which is why 'xp:' belongs here: a
+  // (resolveDataItems asks only for these), which is why 'web:' belongs here: a
   // page line would otherwise show its raw address for ever. The !window guard
   // above is what makes this safe — a 'uri' item stores `rest`, i.e. WITHOUT the
   // time prefix, so a gated line must stay a 'pair' or its window is dropped on
   // the next save.
-  if (!window && /^(spotify:(album|artist|track|playlist):|box:|xp:)/.test(rest))
+  if (!window && /^(spotify:(album|artist|track|playlist):|box:|web:|xp:)/.test(rest))
     return { kind: 'uri', uri: rest, label: label || null, disabled: !!disabled };
   return { kind: 'pair', uri: line.trim(), label: label || null, disabled: !!disabled };
 }
@@ -6685,7 +6685,7 @@ function _bxItemMeta(it) {
   else if (u.startsWith('podcast+'))          { icon = ICON.rss;   tag = 'podcast'; }
   else if (u.startsWith('rf:show:'))          { icon = ICON.rss;   tag = 'rf show'; }
   else if (/^rf:(subject|sujet):/.test(u))    { icon = ICON.zap;   tag = 'rf subject'; }
-  else if (u.startsWith('xp:'))               { icon = ICON.globe; tag = 'web page'; }
+  else if (/^(web|xp):/.test(u))              { icon = ICON.globe; tag = 'web page'; }
   else if (/^(https?:|tunein:)/.test(u))      { icon = ICON.radio; tag = 'stream'; }
   else if (/^(local:|m3u:|file:)/.test(u))    { icon = ICON.music; tag = 'local'; }
   if (window) tag += ', timed';

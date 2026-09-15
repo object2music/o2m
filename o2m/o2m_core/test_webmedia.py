@@ -1,4 +1,4 @@
-"""Tests for the 'xp:<url>' page reader.
+"""Tests for the 'web:<url>' page reader.
 
 The fixtures are cut from the three pages the feature was written against, and
 they are three different shapes on purpose — an <iframe> embed, plain <a> links,
@@ -45,7 +45,7 @@ PAGE_MIXED = '''<html><head><title>Une page</title>
 
 
 class TestClassify(unittest.TestCase):
-    """The routing rule: 'xp:' is worn only by media no existing scheme carries."""
+    """The routing rule: 'web:' is worn only by media no existing scheme carries."""
 
     def test_youtube_becomes_a_mopidy_youtube_uri(self):
         for url in ('https://www.youtube.com/watch?v=dQw4w9WgXcQ',
@@ -58,11 +58,11 @@ class TestClassify(unittest.TestCase):
         url = 'https://cdn.example.org/ep/42.mp3'
         self.assertEqual(wm.classify(url), url)
 
-    def test_platform_without_a_backend_wears_xp(self):
+    def test_platform_without_a_backend_wears_web(self):
         for url in ('https://www.dailymotion.com/video/xa8g6ck',
                     'https://player.vimeo.com/video/211902079',
                     'https://soundcloud.com/user/track'):
-            self.assertEqual(wm.classify(url), 'xp:' + url, url)
+            self.assertEqual(wm.classify(url), 'web:' + url, url)
 
     def test_ordinary_links_are_not_media(self):
         for url in ('https://www.linkedin.com/company/whatever',
@@ -71,7 +71,7 @@ class TestClassify(unittest.TestCase):
             self.assertEqual(wm.classify(url), '', url)
 
     def test_a_subdomain_of_a_platform_counts_but_a_lookalike_does_not(self):
-        self.assertTrue(wm.classify('https://player.vimeo.com/video/1').startswith('xp:'))
+        self.assertTrue(wm.classify('https://player.vimeo.com/video/1').startswith('web:'))
         self.assertEqual(wm.classify('https://notvimeo.com/video/1'), '')
 
 
@@ -86,18 +86,18 @@ class TestCanonicalUrl(unittest.TestCase):
         self.assertEqual(
             wm.classify('https://player.vimeo.com/video/1?badge=0&autopause=0'
                         '&player_id=0&app_id=58479&utm_source=news'),
-            'xp:https://player.vimeo.com/video/1')
+            'web:https://player.vimeo.com/video/1')
 
     def test_an_unlisted_hash_survives(self):
         # Vimeo's 'h=' is not decoration: without it the video does not exist.
         self.assertEqual(wm.classify('https://player.vimeo.com/video/1?h=c0b9892ec8&badge=0'),
-                         'xp:https://player.vimeo.com/video/1?h=c0b9892ec8')
+                         'web:https://player.vimeo.com/video/1?h=c0b9892ec8')
 
     def test_an_unknown_parameter_is_kept(self):
         # A denylist, never an allowlist: an unrecognised parameter might be
         # load-bearing, and dropping it would silently change what plays.
         self.assertEqual(wm.classify('https://soundcloud.com/u/t?si=abc&utm_medium=x'),
-                         'xp:https://soundcloud.com/u/t?si=abc')
+                         'web:https://soundcloud.com/u/t?si=abc')
 
     def test_a_uri_too_long_to_store_is_not_offered(self):
         # Rather than let it blow up on insert inside a box fill.
@@ -116,7 +116,7 @@ class TestParse(unittest.TestCase):
         uris = [i['uri'] for i in out['items']]
         # '&badge=0' is player chrome and is normalised away; 'h=' is the
         # unlisted hash and must survive.
-        self.assertIn('xp:https://player.vimeo.com/video/211902079?h=c0b9892ec8', uris)
+        self.assertIn('web:https://player.vimeo.com/video/211902079?h=c0b9892ec8', uris)
         self.assertEqual(out['reason'], '')
         # A channel link is not an episode: there is no video id in it.
         self.assertNotIn('yt:video:', ' '.join(uris))
@@ -134,8 +134,8 @@ class TestParse(unittest.TestCase):
         uris = [i['uri'] for i in out['items']]
         # The page spells the second one with the shortener; both land on the
         # same canonical uri they would have had from the long form.
-        self.assertEqual(uris, ['xp:https://www.dailymotion.com/video/xa8g6ck',
-                                'xp:https://www.dailymotion.com/video/xamdswq'])
+        self.assertEqual(uris, ['web:https://www.dailymotion.com/video/xa8g6ck',
+                                'web:https://www.dailymotion.com/video/xamdswq'])
         self.assertIn('Probl', out['items'][0]['name'])
 
     def test_relative_urls_are_resolved_against_the_page(self):
@@ -148,8 +148,8 @@ class TestParse(unittest.TestCase):
         out = wm._parse('https://example.org/emissions/une', PAGE_MIXED, 12)
         kinds = {i['kind'] for i in out['items']}
         self.assertEqual(kinds, {'yt', 'stream', 'feed'})
-        # Nothing here needs 'xp:' — every item has a home already.
-        self.assertFalse([i for i in out['items'] if i['kind'] == 'xp'])
+        # Nothing here needs 'web:' — every item has a home already.
+        self.assertFalse([i for i in out['items'] if i['kind'] == 'web'])
 
     def test_the_same_media_twice_on_a_page_is_one_item(self):
         doubled = PAGE_LINKS.replace('</ul>',
@@ -205,7 +205,7 @@ class TestStreamCache(unittest.TestCase):
         fake = types.ModuleType('yt_dlp'); fake.YoutubeDL = Boom
         sys.modules['yt_dlp'] = fake
         try:
-            uri = 'xp:https://www.dailymotion.com/video/xa8g6ck'
+            uri = 'web:https://www.dailymotion.com/video/xa8g6ck'
             self.assertIsNone(wm.resolve_stream(uri))
             self.assertIsNone(wm.resolve_stream(uri))
             # Asked once. A platform that is already throttling us must not be
@@ -241,7 +241,7 @@ class TestStreamCache(unittest.TestCase):
         fake = types.ModuleType('yt_dlp'); fake.YoutubeDL = factory
         sys.modules['yt_dlp'] = fake
         try:
-            out = wm.resolve_stream('xp:https://www.dailymotion.com/video/x',
+            out = wm.resolve_stream('web:https://www.dailymotion.com/video/x',
                                     referer='https://example.org/page')
             self.assertIsNotNone(out)
             # Asked plainly, and never needed the page at all.
@@ -267,7 +267,7 @@ class TestStreamCache(unittest.TestCase):
         fake.YoutubeDL = lambda opts: EmbedOnly((opts.get('http_headers') or {}).get('Referer'))
         sys.modules['yt_dlp'] = fake
         try:
-            out = wm.resolve_stream('xp:https://player.vimeo.com/video/1',
+            out = wm.resolve_stream('web:https://player.vimeo.com/video/1',
                                     referer='https://enquetedesens-lefilm.com/index.html')
             self.assertEqual(out['name'], 'Film')
             self.assertEqual(out['length'], 5273000)
@@ -277,8 +277,8 @@ class TestStreamCache(unittest.TestCase):
 
     def test_a_url_near_its_own_expiry_is_not_served(self):
         import time
-        uri = 'xp:https://vimeo.com/1'
-        key = 'xp:stream:https://vimeo.com/1'
+        uri = 'web:https://vimeo.com/1'
+        key = 'web:stream:https://vimeo.com/1'
         entry = {'url': 'https://cdn/x', 'name': 'n', 'length': 1,
                  'expires_at': time.time() + wm._EXPIRY_MARGIN - 60}
         wm._cache[key] = (time.time(), entry)
@@ -305,13 +305,13 @@ class TestUri(unittest.TestCase):
         url = 'https://www.dailymotion.com/video/xa8g6ck'
         self.assertEqual(wm.media_url(wm.as_uri(url)), url)
         self.assertEqual(wm.media_url(url), url)          # idempotent on a bare url
-        self.assertTrue(wm.is_xp(wm.as_uri(url)))
-        self.assertFalse(wm.is_xp(url))
+        self.assertTrue(wm.is_web_uri(wm.as_uri(url)))
+        self.assertFalse(wm.is_web_uri(url))
 
     def test_a_media_url_pasted_directly_needs_no_page_read(self):
         out = wm.find_media('https://www.dailymotion.com/video/xa8g6ck')
         self.assertEqual([i['uri'] for i in out['items']],
-                         ['xp:https://www.dailymotion.com/video/xa8g6ck'])
+                         ['web:https://www.dailymotion.com/video/xa8g6ck'])
 
     def test_expiry_is_read_out_of_a_signed_url(self):
         import time
@@ -354,3 +354,23 @@ class TestPublishedDay(unittest.TestCase):
     def test_a_malformed_date_is_refused_not_reshaped(self):
         for bad in ('2026-05-07', '2026', 'soon', '', None):
             self.assertIsNone(wm._published_day({'upload_date': bad}), bad)
+
+
+class TestLegacyPrefix(unittest.TestCase):
+    """'xp:' was the prefix for a few days before the rename to 'web:'. It is
+    still READ — a Track uri is a primary key and a box line is something a
+    person typed — and never written again."""
+
+    def test_the_old_prefix_is_still_recognised(self):
+        self.assertTrue(wm.is_web_uri('xp:https://vimeo.com/1'))
+        self.assertTrue(wm.is_web_uri('web:https://vimeo.com/1'))
+        self.assertFalse(wm.is_web_uri('https://vimeo.com/1'))
+
+    def test_the_url_is_read_out_of_either_spelling(self):
+        for uri in ('xp:https://vimeo.com/1', 'web:https://vimeo.com/1'):
+            self.assertEqual(wm.media_url(uri), 'https://vimeo.com/1', uri)
+
+    def test_only_the_new_prefix_is_ever_written(self):
+        self.assertTrue(wm.as_uri('https://vimeo.com/1').startswith('web:'))
+        self.assertEqual(wm.classify('https://www.dailymotion.com/video/xa8g6ck'),
+                         'web:https://www.dailymotion.com/video/xa8g6ck')

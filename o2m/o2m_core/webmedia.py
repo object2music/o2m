@@ -1,6 +1,6 @@
-"""xp:<url> — play the media a web page holds. Experimental.
+"""web:<url> — play the media a web page holds. Experimental.
 
-Every other box line names something to play. `xp:` names a PAGE and asks what
+Every other box line names something to play. `web:` names a PAGE and asks what
 is playable inside it, which is a different act: the answer is not in the line,
 it is on the other side of a fetch, and it changes when the page does.
 
@@ -15,17 +15,17 @@ Two steps, cached apart because they age at completely different rates:
    So resolution is late (at `tracklist.add`, through `_resolve_uri`) and its
    cache is minutes, not hours.
 
-**The uri that lasts is not the url that plays.** `xp:<media page>` is stable,
+**The uri that lasts is not the url that plays.** `web:<media page>` is stable,
 dedupes the same video found from two different pages, and is what carries the
 resume position, the cooldown and the stats; the `https://…/sec2(…)` that comes
 out of yt_dlp is valid for an afternoon. Everything durable keys on the former.
 
-**Discovery routes to the existing schemes wherever one exists** — `xp:` is only
+**Discovery routes to the existing schemes wherever one exists** — `web:` is only
 worn by media nothing else in o2m can carry. A YouTube embed comes back as
 `yt:video:<id>` (Mopidy-YouTube plays and caches it), an `<audio>` or a bare mp3
 link as its plain https url (mopidy-stream), an RSS link as `podcast+<feed>`
 (the whole podcast subsystem, with its episodes and its resume). Vimeo,
-Dailymotion and the rest — no Mopidy backend, no file — are what `xp:` is for.
+Dailymotion and the rest — no Mopidy backend, no file — are what `web:` is for.
 
 **The embedding page is part of the extraction, and platforms disagree about
 it.** Vimeo answers "Cannot download embed-only video without embedding URL" to
@@ -56,7 +56,13 @@ import requests
 
 log = logging.getLogger(__name__)
 
-PREFIX = 'xp:'
+PREFIX = 'web:'
+# The prefix this shipped under for a few days. Kept readable, never written:
+# 'xp:' named a PHASE, not a thing, and a phase name in a primary key outlives
+# the phase. Renamed while the footprint was still four rows and one box — the
+# only moment it is free, since Track.uri IS the key and a later rename would be
+# a non-additive migration on a database two instances share.
+LEGACY_PREFIX = 'xp:'
 
 # A browser's UA, deliberately. This is not evasion — a challenge page still
 # wins, as uved.fr shows — but a good many sites serve a stripped page or a 403
@@ -122,14 +128,22 @@ def _cached(key, fn, ttl):
     return value
 
 
-def is_xp(uri):
-    return bool(uri) and str(uri).startswith(PREFIX)
+def is_web_uri(uri):
+    """True for a uri of this module — under either spelling, so rows and box
+    lines written before the rename keep working without being rewritten."""
+    return bool(uri) and str(uri).startswith((PREFIX, LEGACY_PREFIX))
+
+
+is_xp = is_web_uri        # old name, kept so no call site breaks mid-rename
 
 
 def media_url(uri):
-    """The url inside an `xp:` uri. Idempotent on a bare url."""
+    """The url inside a `web:` uri (or a legacy `xp:`). Idempotent on a bare url."""
     u = str(uri or '')
-    return u[len(PREFIX):] if u.startswith(PREFIX) else u
+    for p in (PREFIX, LEGACY_PREFIX):
+        if u.startswith(p):
+            return u[len(p):]
+    return u
 
 
 def as_uri(url):
@@ -235,7 +249,7 @@ def canonical_media_url(url):
 def classify(url, page=None):
     """One url -> the o2m uri that can play it, or '' for "not media".
 
-    The whole routing rule lives here: the existing schemes first, `xp:` only
+    The whole routing rule lives here: the existing schemes first, `web:` only
     for what none of them carries."""
     url = (url or '').strip()
     if not url.startswith(('http://', 'https://')):
@@ -255,7 +269,7 @@ def classify(url, page=None):
         # box fill. Normalisation above already removes the usual reason a media
         # url runs long.
         if len(uri) > MAX_URI:
-            log.warning(f'xp: uri too long to store ({len(uri)} chars): {uri[:80]}…')
+            log.warning(f'web: uri too long to store ({len(uri)} chars): {uri[:80]}…')
             return ''
         remember_origin(uri, page)
         return uri
@@ -297,7 +311,7 @@ def find_media(page_url, limit=12, timeout=None):
                 'items': [{'uri': direct, 'name': '', 'url': page_url,
                            'kind': _kind_of(direct)}]}
 
-    key = 'xp:page:' + page_url
+    key = 'web:page:' + page_url
     hit = _cache.get(key)
     if hit and (time.time() - hit[0]) < _TTL_PAGE:
         return hit[1]
@@ -327,8 +341,8 @@ def find_media(page_url, limit=12, timeout=None):
 
 
 def _kind_of(uri):
-    if uri.startswith(PREFIX):
-        return 'xp'
+    if uri.startswith((PREFIX, LEGACY_PREFIX)):
+        return 'web'
     if uri.startswith(('yt:', 'youtube:')):
         return 'yt'
     if uri.startswith('podcast+'):
@@ -453,7 +467,7 @@ def _published_day(info):
 
 
 def resolve_stream(uri, referer=None, timeout=None):
-    """`xp:<media page>` -> {'url','name','length','day','expires_at'} or None.
+    """`web:<media page>` -> {'url','name','length','day','expires_at'} or None.
 
     yt_dlp lives here rather than in the Mopidy image on purpose: this is the
     core deciding what to play, and the adapter is never the seat of that.
@@ -478,7 +492,7 @@ def resolve_stream(uri, referer=None, timeout=None):
     if not url:
         return None
     referer = referer or origin_of(uri)
-    key = 'xp:stream:' + url
+    key = 'web:stream:' + url
 
     hit = _cache.get(key)
     if hit:

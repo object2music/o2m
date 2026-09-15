@@ -677,7 +677,7 @@ if __name__ == "__main__":
             if first_page and webmedia.is_page_url(q) and not _rfm.is_rf_url(q):
                 found = webmedia.find_media(q, limit=10, timeout=8)
                 if found.get('items'):
-                    page = {'uri': 'xp:' + q, 'name': found.get('title') or q,
+                    page = {'uri': webmedia.as_uri(q), 'name': found.get('title') or q,
                             'sub': f"{len(found['items'])} media on this page",
                             'source': 'web', 'kind': 'web'}
                     results['podcast_channels'] = [page] + (results.get('podcast_channels') or [])
@@ -691,7 +691,7 @@ if __name__ == "__main__":
                     results['web_page'] = {'url': q, 'reason': found['reason'],
                                            'message': found.get('error') or ''}
         except Exception as e:
-            print(f"api_search(xp {q}): {e}")
+            print(f"api_search(web {q}): {e}")
         try:
             results['spotify'] = (o2mHandler.spotifyHandler.search_music(q) if first_page
                                   else {'tracks': [], 'artists': [], 'albums': []})
@@ -1207,9 +1207,9 @@ if __name__ == "__main__":
     def api_track_status():
         # The uri a client holds is the one MOPIDY reports, and that is not always
         # the one the database knows: _resolve_uri substitutes a downloaded
-        # Spotify track's file:// path and an 'xp:' media's signed CDN url. Ask
+        # Spotify track's file:// path and a 'web:' media's signed CDN url. Ask
         # under the canonical uri or every lookup below misses — which is how an
-        # 'xp:' track came to show no status at all.
+        # 'web:' track came to show no status at all.
         uri = o2mHandler.get_spotify_uri(request.args.get('uri'))
         try:
             # _track_info is authoritative for current session: checked first so reco/replaced
@@ -1581,10 +1581,10 @@ if __name__ == "__main__":
         """Names for tracks Mopidy holds under a uri that is not their own.
 
         `_resolve_uri` hands Mopidy something it can actually open — a file:// path
-        for a downloaded Spotify track, a signed CDN url for an 'xp:' media — and
+        for a downloaded Spotify track, a signed CDN url for a 'web:' media — and
         Mopidy then reports THAT as the track's uri, with no name at all for a
         plain stream. The page reads its tracklist straight from Mopidy, so an
-        'xp:' replay showed its CDN address where its title belongs.
+        'web:' replay showed its CDN address where its title belongs.
 
         The database knows the title; only the mapping back was missing. Answers
         under the uri the caller asked with, and says nothing about uris that were
@@ -2910,11 +2910,11 @@ with the house Premium account.</li>
 
             # Mopidy reports the uri it was HANDED, which is not always the uri the
             # database knows this track by: `_resolve_uri` substitutes a downloaded
-            # Spotify track's file:// path, and an 'xp:' media's signed CDN url,
+            # Spotify track's file:// path, and a 'web:' media's signed CDN url,
             # which changes every few hours. Everything below asks the database
             # about this track — is it spoken, where was it left — so it has to ask
             # under the canonical uri. Music never noticed (a file:// track is not
-            # spoken either way); 'xp:' is the first SPOKEN content whose uri gets
+            # spoken either way); 'web:' is the first SPOKEN content whose uri gets
             # substituted, and it silently lost both its resume and its ad-skip.
             uri = o2mHandler.get_spotify_uri(track.uri)
 
@@ -3045,7 +3045,7 @@ with the house Premium account.</li>
                 # A pause is a play reported at its position, and that is what writes
                 # read_position — the value track_started_event reads back to resume.
                 # This used to re-spell "is it spoken" as its own list of schemes, which
-                # had already drifted away from _is_spoken_uri: no 'xp:', no Radio
+                # had already drifted away from _is_spoken_uri: no 'web:', no Radio
                 # France host. One definition, asked under the canonical uri.
                 if (event.event == "track_playback_ended") or o2mHandler._is_spoken_uri(effective_uri):
                     

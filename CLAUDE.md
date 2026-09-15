@@ -33,7 +33,7 @@ docker compose --profile dev up -d
 Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 (popularity scoring), `test_boxdirectives.py` (time windows, mood/dl directives),
 `test_player_port.py` (the player port's anti-drift check) and `test_webmedia.py`
-(the `xp:` page reader). Run from the repo root (package-prefixed, since they import
+(the `web:` page reader). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -63,7 +63,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
 
   **Schema migrations**: `SCHEMA_VERSION` (currently **23**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
-- **`webmedia.py`** — the `xp:<url>` page reader: fetch a web page, find what o2m can
+- **`webmedia.py`** — the `web:<url>` page reader: fetch a web page, find what o2m can
   play in it, and resolve it to a stream (yt_dlp). Experimental; see its own section.
 - **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, and auth.
 
@@ -306,7 +306,7 @@ dispatch branches against the picker).
 | `local:…` · `m3u:…` · `file:…` | local files |
 | `yt:…` · `youtube:…` | YouTube |
 | `box:<uid>` | **another box**, included whole (cascade) |
-| `xp:<page url>` | **whatever media that web page holds** — experimental, see below |
+| `web:<page url>` | **whatever media that web page holds** — experimental, see below |
 
 ### 2. Smart patterns — a rule that resolves to tracks at fill time
 | Pattern | What it draws |
@@ -433,15 +433,36 @@ Window-aware scanning matters elsewhere too: a window says WHEN a line plays, no
 the box refers to it, so the catalogue warmup and the directory listings strip the prefix
 before matching — otherwise a gated feed would stop being pre-cached.
 
-## `xp:<url>` — the media a web page holds (experimental)
+## `web:<url>` — the media a web page holds (experimental)
 
-Every other box line names something to play. `xp:` names a **page** and asks what is
+Every other box line names something to play. `web:` names a **page** and asks what is
 playable inside it, which is a different act: the answer is not in the line, it is on
 the other side of a fetch, and it changes when the page does. It exists because a great
 deal of what one wants to listen to is not published as a podcast — a film on its own
 site, a replay listing from a ministry, a conference buried in a resource page.
 
 All of it lives in **`o2m/o2m_core/webmedia.py`**, with `test_webmedia.py` beside it.
+
+### The prefix was `xp:` for a few days, and that was a naming mistake
+`xp:` named a **phase**, not a thing — and a phase name outlives the phase, especially in
+a `Track.uri`, which is the primary key and something a person also types into a box. It
+was renamed while the whole footprint was four rows, one box and two channels: the only
+moment it was free, because a later rename is a non-additive migration on a key, against a
+database o2m_0 and o2m_1 share.
+
+`web:` rather than `media:`, for two reasons. **Everything** o2m plays is media — a
+Spotify track, an episode, a stream — so `media:` says nothing about what distinguishes
+this line, while every other prefix names a PROVENANCE (`spotify:`, `yt:`, `podcast+`,
+`rf:show:`). And the line wears two hats: a PAGE to read and a MEDIA to play — `media:<a
+film's home page>` would simply be false half the time. `web:` is true of both, and is
+already the word the code uses (`PodcastChannel.kind='web'`, `resolve_uris` → `kind:
+'web'`, the row's globe icon, its "web page" tag).
+
+**`xp:` is still read, and never written again** (`webmedia.LEGACY_PREFIX`): `is_web_uri`
+and `media_url` accept both spellings, `_SPOKEN_URI_RE` matches `^(?:web|xp):`, the
+dispatcher and the editor regexes take either, and `resolve_uris` looks a legacy line up
+under the migrated `web:` row so it is still NAMED. Rows and box data were rewritten in
+place (history carried: a 3-play, 629 653 ms-deep row came through intact).
 
 ### Two steps, cached apart, because they age at completely different rates
 1. **Discovery** (`find_media`) — the page, fetched once and parsed. A page changes over
@@ -458,7 +479,7 @@ within `_EXPIRY_MARGIN` (10 min) of it — guessing too short costs a re-resolut
 guessing too long costs a track that dies mid-play.
 
 ### The uri that lasts is not the url that plays
-`xp:<media page>` is stable and is what carries the resume position, the cooldown and the
+`web:<media page>` is stable and is what carries the resume position, the cooldown and the
 stats; `https://skyfire.vimeocdn.com/1789511813-0x…` is valid for an afternoon.
 `_played_to_canonical` maps one back to the other — the same dict a downloaded Spotify
 track already needed, for the same reason: Mopidy reports playback against the uri it was
@@ -471,13 +492,13 @@ same video, which would have been two histories of half a listener each. Player 
 and campaign parameters are dropped — but by **denylist, never allowlist**: Vimeo's `h=`
 is the unlisted-video hash, and without it the video does not exist.
 
-### Discovery routes to the existing schemes; `xp:` is what nothing else can carry
+### Discovery routes to the existing schemes; `web:` is what nothing else can carry
 | Found on the page | Comes back as | Played by |
 |---|---|---|
 | a YouTube link or embed | `yt:video:<id>` | Mopidy-YouTube (which has its own cache) |
 | an `<audio>`, a bare `.mp3`/`.m4a`/… | its own https url | mopidy-stream |
 | `<link rel=alternate type=rss>` | `podcast+<feed>` | the whole podcast subsystem |
-| Vimeo, Dailymotion, SoundCloud… | `xp:<url>` | o2m, via yt_dlp |
+| Vimeo, Dailymotion, SoundCloud… | `web:<url>` | o2m, via yt_dlp |
 
 `_PLATFORMS` is not a statement about what yt_dlp can do (some 1800 sites) — it is about
 what a page link is allowed to drag into a tracklist. Without it, every share button and
@@ -517,7 +538,7 @@ spare the platform but to spare the box: without it, an unextractable item is re
 every fill, each ask a live round trip on the path filling a tracklist someone is waiting for.
 
 ### Where it plugs in
-* **Box line** — `xp:<url>`, dispatched in `tracklistappend_box`, sharing the box budget
+* **Box line** — `web:<url>`, dispatched in `tracklistappend_box`, sharing the box budget
   between several pages exactly as podcast feeds do (one replay listing holding three
   hour-long conferences must not crowd out the rest of the box). `xp_page_tracks` filters
   through `_unread_spoken_uris`, so a replay watched to the end does not come back.
@@ -526,17 +547,17 @@ every fill, each ask a live round trip on the path filling a tracklist someone i
   back as `results['web_page']`.
 * **The box editor** — the Add panel's Search field accepts a page address (its placeholder
   and hint say so, since nothing else would), and the page then appears as a channel row
-  whose click writes the `xp:` line. A refusal is RENDERED there (`_wcPageNotice`, amber,
+  whose click writes the `web:` line. A refusal is RENDERED there (`_wcPageNotice`, amber,
   not red — the site declined, nothing is broken) rather than folded into "No results.",
-  which would be a different and untrue statement. An `xp:` line is classified `kind:'uri'`
+  which would be a different and untrue statement. An `web:` line is classified `kind:'uri'`
   by `_bxNewItem`, not `pair`: `resolveDataItems` asks for names only for those, so a page
   line would otherwise show its raw address for ever. `resolve_uris` answers it from
   `PodcastChannel` (the page) and falls back to `Track` (a single media), with the host as
   the subtitle. The `!window` guard on that branch is load-bearing — a `uri` item stores the
-  line WITHOUT its time prefix, so a gated `xp:` line must stay a `pair` or its window is
+  line WITHOUT its time prefix, so a gated `web:` line must stay a `pair` or its window is
   dropped on the next save. Round-trip verified over labelled, gated and `#`-disabled
-  `xp:` lines.
-* **Classification** — items are spoken content: `_SPOKEN_URI_RE` matches `^xp:`, so they
+  `web:` lines.
+* **Classification** — items are spoken content: `_SPOKEN_URI_RE` matches `^(?:web|xp):`, so they
   resume at their position, are eligible for `podcasts:unfinished`, and stay out of music
   scoring (`popularity` NULL). The page, not the item, is what
   `_spoken_type_for_uri` classifies — as a feed is classified whole.
@@ -544,14 +565,14 @@ every fill, each ask a live round trip on the path filling a tracklist someone i
   a link ("Lire le replay …") is a button label, not a title, and `upsert_episodes` never
   overwrites a value once set, so writing the provisional one would lock the real title
   out for good. The extractor supplies all three a moment later, at resolution, which is
-  what makes an `xp:` item describe itself in the details panel like a podcast episode
+  what makes a `web:` item describe itself in the details panel like a podcast episode
   rather than as a bare url. `_published_day` reads `upload_date`, then `release_date`,
   then a `timestamp`, because extractors disagree about which they fill — and returns
   nothing when none is there (Vimeo's embed extractor, whose page carries no date either).
   A blank date is the honest answer; an invented one is worse than none in a panel whose
   job is to say what is known.
 * **Unresolvable items are dropped** in `_resolve_uris` rather than handed to Mopidy, which
-  has no backend for `xp:` and would lose them silently.
+  has no backend for `web:` and would lose them silently.
 
 **The substituted uri reaches the whole client side too, and that is where it hurts
 most.** The page reads its tracklist STRAIGHT from Mopidy (`core.tracklist.get_tl_tracks`),
@@ -564,7 +585,7 @@ presented it as a station.
 
 The three endpoints now map through `get_spotify_uri` on entry (`track_features` answers
 under the uri the CLIENT asked with, so it can match the reply to its own rows), and
-`radio_now_playing` asks the canonical uri, where `xp:` is plainly not a stream. For the
+`radio_now_playing` asks the canonical uri, where `web:` is plainly not a stream. For the
 title there is `GET /api/played_meta`: given the uris Mopidy reports, it returns the
 canonical uri, name and length for those that were substituted — and **says nothing about
 those that were not**, so the client can tell "no translation needed" from "unknown" without
@@ -574,7 +595,7 @@ whose items have all been seen makes no call at all. It patches the NAME, never 
 rewriting identity client-side would change what every menu, badge and offline pass keys on.
 
 **Every track-scoped endpoint has to ask the same way**, and the one that mattered most
-is a WRITE: `set_track_liked` INSERTS the row it cannot find, so liking an `xp:` item would
+is a WRITE: `set_track_liked` INSERTS the row it cannot find, so liking a `web:` item would
 have opened a `Track` keyed on a signed CDN url — a like quietly lost, and a row that means
 nothing by morning. `track_tags`, `track_saved`, `track_favorite`, `track_playlists` and the
 mood-editing `POST /api/track_features` all map through `get_spotify_uri` now.
@@ -592,27 +613,27 @@ did not apply to it. Both ask the canonical uri now — while still REMOVING by 
 uri, which is what the tracklist is keyed on.
 
 *The structural answer is elsewhere*: a `translate_uri()` in the Mopidy-O2M backend would
-let Mopidy hold `xp:` itself and none of the above would exist. It was set aside because the
+let Mopidy hold `web:` itself and none of the above would exist. It was set aside because the
 extension lives in the image and every iteration costs a rebuild. Worth revisiting if this
 seam keeps leaking — and note `_played_to_canonical` is in MEMORY, so after an o2m restart
 a track still sitting in Mopidy's tracklist (`restore_state = true`) can no longer be mapped
 back. It cannot be rebuilt either: nothing in a signed CDN url says which page it came from.
 
 **The substituted uri reaches the playback listeners, and that broke resume.** Mopidy
-reports playback against the uri it was HANDED — for an `xp:` item, the signed CDN url.
+reports playback against the uri it was HANDED — for a `web:` item, the signed CDN url.
 `track_started_event` was asking `_is_spoken_uri(track.uri)` about that url, which matches
 nothing, so the spoken branch was skipped whole: no resume, no ad-skip. The saving half was
 gone too — the gate deciding whether a PAUSE writes `read_position` re-spelled "is it
 spoken" as its own list of schemes (`podcast+`, `youtube:video:`, `yt:`), a list that had
 already drifted away from `_SPOKEN_URI_RE`. Both now go through `get_spotify_uri` and
 `_is_spoken_uri`. **Music never revealed this**: a downloaded Spotify track's `file://` uri
-is not spoken either way, so the substitution was invisible for years — `xp:` is the first
+is not spoken either way, so the substitution was invisible for years — `web:` is the first
 spoken content whose uri changes between o2m and Mopidy.
 
 **Re-resolution is not re-downloading — there is no download.** An item played before comes
 back through `_resolve_uri` like any other, gets a *new* signed url (~0.5–1.5 s, or free
 within the 30 min stream cache), and resumes at its stored position. Nothing is ever kept
-on disk: `xp:` has no `local_uri` path and no offline support, so a second listen costs one
+on disk: `web:` has no `local_uri` path and no offline support, so a second listen costs one
 extraction and the stream itself, never a re-fetch of bytes already held. Most items do not
 come back at all — `xp_page_tracks` filters through `_unread_spoken_uris`, so a replay
 watched to the end is gone from the box; a half-listened one returns and resumes.
@@ -627,7 +648,7 @@ works until the day it does not. Wheels exist for musl, so the alpine image need
 toolchain.
 
 ### Known limits
-* **No offline.** `/api/audio` does not serve `xp:` yet — the signed url expires, so a
+* **No offline.** `/api/audio` does not serve `web:` yet — the signed url expires, so a
   download would have to re-resolve at fetch time.
 * **Video bytes.** Vimeo publishes no audio-only format, so `bestaudio/best` falls back to
   a progressive mp4 whose video track GStreamer decodes and drops. Correct, just wasteful.

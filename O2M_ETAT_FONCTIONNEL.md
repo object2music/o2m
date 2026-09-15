@@ -204,6 +204,17 @@ trois termes :
 - **Sujets Radio France** : `rf:show:<émission>` et surtout `rf:sujet:<mot-clé>`, qui
   remplit une box avec les épisodes correspondant à un thème (343 thèmes hiérarchisés,
   1 146 mots-clés) — un abonnement *par sujet* et non par émission.
+- **Pages web** (`web:<adresse>`, expérimental) : au lieu de nommer un contenu, la
+  ligne nomme une **page** et demande ce qui est lisible dedans — le site d'un film,
+  une page de replays, une conférence noyée dans une fiche ressource. La page est lue
+  et analysée (embeds, liens, `<audio>`, JSON-LD, flux RSS) ; ce qui est trouvé repart
+  sous le schéma qui lui convient (`yt:video:` pour YouTube, l'URL nue pour un mp3,
+  `podcast+` pour un flux), et `web:` ne reste que pour ce que rien d'autre ne sait
+  porter — Vimeo, Dailymotion, SoundCloud… — extrait par yt_dlp. Les épisodes trouvés
+  sont du contenu parlé : ils reprennent à leur position et ne reviennent pas une fois
+  terminés. Limite assumée : un site qui oppose un challenge anti-robot (CrowdSec,
+  Cloudflare) ne peut pas être lu, et c'est dit explicitement plutôt que rendu comme
+  une page vide.
 - Cascades : une box peut inclure d'autres box → scénarios (réveil, famille).
 - Édition en ligne (protégée par authentification Spotify OAuth) : nom, type,
   niveau de découverte, tri, quantité, cibles énergie/ambiance, contenu brut.
