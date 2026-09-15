@@ -178,6 +178,29 @@ class DatabaseHandler():
                     if b:
                         out[uri] = {'name': b.description or b.uid, 'kind': 'box',
                                     'sub': b.option_type}
+                elif uri.startswith('xp:'):
+                    # Two different things wear this prefix, and the editor shows
+                    # both: a box line names a PAGE (registered as a web channel
+                    # when it was first read), while a line naming a single media
+                    # is a Track like any episode. Ask for the page first — it is
+                    # the shape a person types — then fall back to the item.
+                    target = uri[3:]
+                    host = ''
+                    try:
+                        from urllib.parse import urlparse
+                        host = (urlparse(target).hostname or '')
+                        if host.startswith('www.'):
+                            host = host[4:]      # not lstrip(): it strips CHARACTERS,
+                                                 # and would turn wired.com into ired.com
+                    except Exception:
+                        pass
+                    ch = PodcastChannel.get_or_none(PodcastChannel.id == target)
+                    if ch and (ch.title or '').strip():
+                        out[uri] = {'name': ch.title.strip(), 'kind': 'web', 'sub': host}
+                    else:
+                        t = Track.get_or_none(Track.uri == uri)
+                        if t and t.name:
+                            out[uri] = {'name': t.name, 'kind': 'web', 'sub': host}
             except Exception as err:
                 self.log.error(f'resolve_uris: {uri}: {err}')
         return out

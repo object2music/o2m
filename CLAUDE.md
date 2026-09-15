@@ -524,6 +524,18 @@ every fill, each ask a live round trip on the path filling a tracklist someone i
 * **Search** — pasting any page url into `/api/search` shows what is in it, the same
   gesture `rf_resolve_url` already offered for radiofrance.fr, generalised. A refusal comes
   back as `results['web_page']`.
+* **The box editor** — the Add panel's Search field accepts a page address (its placeholder
+  and hint say so, since nothing else would), and the page then appears as a channel row
+  whose click writes the `xp:` line. A refusal is RENDERED there (`_wcPageNotice`, amber,
+  not red — the site declined, nothing is broken) rather than folded into "No results.",
+  which would be a different and untrue statement. An `xp:` line is classified `kind:'uri'`
+  by `_bxNewItem`, not `pair`: `resolveDataItems` asks for names only for those, so a page
+  line would otherwise show its raw address for ever. `resolve_uris` answers it from
+  `PodcastChannel` (the page) and falls back to `Track` (a single media), with the host as
+  the subtitle. The `!window` guard on that branch is load-bearing — a `uri` item stores the
+  line WITHOUT its time prefix, so a gated `xp:` line must stay a `pair` or its window is
+  dropped on the next save. Round-trip verified over labelled, gated and `#`-disabled
+  `xp:` lines.
 * **Classification** — items are spoken content: `_SPOKEN_URI_RE` matches `^xp:`, so they
   resume at their position, are eligible for `podcasts:unfinished`, and stay out of music
   scoring (`popularity` NULL). The page, not the item, is what

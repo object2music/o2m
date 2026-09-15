@@ -1929,6 +1929,12 @@
   .wc-back:hover { color: var(--accent); }
   .wc-back svg { width: 13px; height: 13px; display: block; }
   .wc-hint { font-size: var(--t-label); color: var(--muted); padding-bottom: 8px; }
+  /* A page that refused to be read. Amber, not red: nothing is broken — the site
+     declined, which is an outcome to report, not a failure to alarm about. The
+     icon needs its own size here, as every other context in this file does. */
+  .wc-hint-warn { display: flex; gap: 6px; align-items: flex-start; color: #f0a000;
+                  line-height: 1.45; padding: 6px 0 10px; }
+  .wc-hint-warn svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
   #wc-search-input { margin-bottom: 8px; }
   /* Result rows add content on click — no per-row action menu here. */
   #bx-add-panel .tl-item { cursor: copy; }
@@ -6515,7 +6521,13 @@ function _bxNewItem(line, label, disabled) {
   // makes a gated line survive an edit untouched.
   const { window, rest } = _bxSplitWindow(line);
   if (!window && _bxIsKeyword(rest)) return { kind: 'keyword', value: rest, label: label || null, disabled: !!disabled };
-  if (!window && /^(spotify:(album|artist|track|playlist):|box:)/.test(rest))
+  // 'uri' is the classification that gets its display name looked up
+  // (resolveDataItems asks only for these), which is why 'xp:' belongs here: a
+  // page line would otherwise show its raw address for ever. The !window guard
+  // above is what makes this safe — a 'uri' item stores `rest`, i.e. WITHOUT the
+  // time prefix, so a gated line must stay a 'pair' or its window is dropped on
+  // the next save.
+  if (!window && /^(spotify:(album|artist|track|playlist):|box:|xp:)/.test(rest))
     return { kind: 'uri', uri: rest, label: label || null, disabled: !!disabled };
   return { kind: 'pair', uri: line.trim(), label: label || null, disabled: !!disabled };
 }
@@ -6729,7 +6741,8 @@ function _bxDetailHtml() {
   const kind = _bxKind();
   if (_bxTab === 'search') {
     return `<div class="wc-panel"><div class="wc-panel-head">Search</div>`
-      + `<input class="bx-input bx-wide" type="search" id="wc-search-input" placeholder="Search…" autocomplete="off" value="${objEsc(_bxSearchQ)}">`
+      + `<input class="bx-input bx-wide" type="search" id="wc-search-input" placeholder="Search, or paste a page address…" autocomplete="off" value="${objEsc(_bxSearchQ)}">`
+      + `<div class="wc-hint">Paste the address of a web page and O2M reads what is playable inside it — a film's own site, a replay listing, a conference page.</div>`
       + `<div id="wc-results"><div class="obj-empty">Type at least 2 characters.</div></div></div>`;
   }
   if (_bxTab === 'patterns') {
@@ -7033,6 +7046,22 @@ async function resolveDataItems() {
    Everything below returns rows shaped for _searchObjRows / objRenderTracks,
    whose data-uri is already a valid box data line ('spotify:…', 'podcast+<feed>',
    a stream URL or 'box:<uid>'), so a click goes straight through _wcAdd. */
+/* Why a pasted page yielded nothing. The three reasons are not interchangeable:
+   a challenge cannot be worked around (solving it means running a browser), an
+   unreachable page is an accident of the minute and worth retrying, and a page
+   that was read and simply holds no audio is a fact about the page. Saying which
+   is the whole reason find_media returns a code rather than an empty list. */
+const WC_PAGE_REASONS = {
+  'challenge':   'This site refuses automated readers, so its media cannot be listed. Opening the page yourself and pasting the address of the video or audio it holds does work.',
+  'unreachable': 'This page could not be reached just now. Nothing is remembered, so it is worth trying again.',
+  'not-a-url':   'That does not look like a page address.',
+};
+function _wcPageNotice(wp) {
+  const why = WC_PAGE_REASONS[wp.reason] || wp.message || 'This page could not be read.';
+  return `<div class="search-section-label">Web page</div>`
+       + `<div class="wc-hint wc-hint-warn">${ICON.globe} ${objEsc(why)}</div>`;
+}
+
 function _wcResults(html) {
   const el = document.getElementById('wc-results');
   if (el) el.innerHTML = html;
@@ -7072,6 +7101,10 @@ async function _wcRunSearch(q) {
   };
   let html = '';
   want.forEach(sec => { try { if (build[sec]) html += build[sec](); } catch(e) {} });
+  // A pasted page that could not be read is reported, never folded into
+  // "No results." — a refusal and an empty page call for opposite reactions:
+  // one is worth nothing more, the other is worth trying again later.
+  if (d.web_page) html = _wcPageNotice(d.web_page) + html;
   _wcResults(html || '<div class="obj-empty">No results.</div>');
 }
 
