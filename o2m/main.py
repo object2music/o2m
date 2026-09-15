@@ -667,6 +667,31 @@ if __name__ == "__main__":
                     results['podcasts'] = (hit.get('episodes') or []) + (results.get('podcasts') or [])
         except Exception as e:
             pass
+        # Any other pasted page: read it and show what it holds. Same gesture as
+        # the radiofrance.fr block above, generalised — a page announces nothing
+        # about itself, so the only way to answer "what is in there" is to look.
+        # Kept last and guarded by first_page: it is one live http fetch.
+        try:
+            from o2m_core import webmedia
+            from o2m_core import radiofrance as _rfm
+            if first_page and webmedia.is_page_url(q) and not _rfm.is_rf_url(q):
+                found = webmedia.find_media(q, limit=10, timeout=8)
+                if found.get('items'):
+                    page = {'uri': 'xp:' + q, 'name': found.get('title') or q,
+                            'sub': f"{len(found['items'])} media on this page",
+                            'source': 'web', 'kind': 'web'}
+                    results['podcast_channels'] = [page] + (results.get('podcast_channels') or [])
+                    results['podcasts'] = [
+                        {'uri': it['uri'], 'name': it.get('name') or it['uri'], 'source': 'web'}
+                        for it in found['items']] + (results.get('podcasts') or [])
+                elif found.get('reason'):
+                    # Say WHY. 'challenge' means the site refused an automated
+                    # reader — nothing the user types differently will help, and
+                    # silence here reads as "there is nothing on that page".
+                    results['web_page'] = {'url': q, 'reason': found['reason'],
+                                           'message': found.get('error') or ''}
+        except Exception as e:
+            print(f"api_search(xp {q}): {e}")
         try:
             results['spotify'] = (o2mHandler.spotifyHandler.search_music(q) if first_page
                                   else {'tracks': [], 'artists': [], 'albums': []})

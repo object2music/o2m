@@ -2672,6 +2672,7 @@ const ICON = {
   code:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
   check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   clock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  globe:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
 };
 
 /* ── State ── */
@@ -6504,7 +6505,7 @@ const BX_SETTING_RE = /^(dl|mood)\s*:\s*\S/i;
 
 function _bxIsDirective(line) {
   const { rest } = _bxSplitWindow(line);
-  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:)/.test(rest)
+  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:|xp:)/.test(rest)
       || BX_SETTING_RE.test(rest)
       || _bxIsKeyword(rest);
 }
@@ -6605,6 +6606,7 @@ function _bxItemMeta(it) {
   else if (u.startsWith('podcast+'))          { icon = ICON.rss;   tag = 'podcast'; }
   else if (u.startsWith('rf:show:'))          { icon = ICON.rss;   tag = 'rf show'; }
   else if (/^rf:(subject|sujet):/.test(u))    { icon = ICON.zap;   tag = 'rf subject'; }
+  else if (u.startsWith('xp:'))               { icon = ICON.globe; tag = 'web page'; }
   else if (/^(https?:|tunein:)/.test(u))      { icon = ICON.radio; tag = 'stream'; }
   else if (/^(local:|m3u:|file:)/.test(u))    { icon = ICON.music; tag = 'local'; }
   if (window) tag += ', timed';

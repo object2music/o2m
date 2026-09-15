@@ -30,11 +30,15 @@ docker compose --profile dev up -d
 ```
 
 ### Run the o2m Python tests
-Tests live in `o2m/o2m_core/test_popularity.py` (popularity scoring). Run from the repo root
-(package-prefixed, since it imports `o2m_core.popularity`):
+Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
+(popularity scoring), `test_boxdirectives.py` (time windows, mood/dl directives),
+`test_player_port.py` (the player port's anti-drift check) and `test_webmedia.py`
+(the `xp:` page reader). Run from the repo root (package-prefixed, since they import
+`o2m_core.*`):
 ```bash
 cd o2m
-python3 -m unittest o2m_core.test_popularity
+python3 -m unittest discover -s o2m_core -p 'test_*.py' -t .
+python3 -m unittest o2m_core.test_popularity      # or one at a time
 ```
 
 ### Run o2m locally (outside Docker)
@@ -59,6 +63,8 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
 
   **Schema migrations**: `SCHEMA_VERSION` (currently **23**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
+- **`webmedia.py`** — the `xp:<url>` page reader: fetch a web page, find what o2m can
+  play in it, and resolve it to a stream (yt_dlp). Experimental; see its own section.
 - **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, and auth.
 
 ### Configuration
@@ -300,6 +306,7 @@ dispatch branches against the picker).
 | `local:…` · `m3u:…` · `file:…` | local files |
 | `yt:…` · `youtube:…` | YouTube |
 | `box:<uid>` | **another box**, included whole (cascade) |
+| `xp:<page url>` | **whatever media that web page holds** — experimental, see below |
 
 ### 2. Smart patterns — a rule that resolves to tracks at fill time
 | Pattern | What it draws |
@@ -425,6 +432,125 @@ growing a third definition of local time next to those two.
 Window-aware scanning matters elsewhere too: a window says WHEN a line plays, not whether
 the box refers to it, so the catalogue warmup and the directory listings strip the prefix
 before matching — otherwise a gated feed would stop being pre-cached.
+
+## `xp:<url>` — the media a web page holds (experimental)
+
+Every other box line names something to play. `xp:` names a **page** and asks what is
+playable inside it, which is a different act: the answer is not in the line, it is on
+the other side of a fetch, and it changes when the page does. It exists because a great
+deal of what one wants to listen to is not published as a podcast — a film on its own
+site, a replay listing from a ministry, a conference buried in a resource page.
+
+All of it lives in **`o2m/o2m_core/webmedia.py`**, with `test_webmedia.py` beside it.
+
+### Two steps, cached apart, because they age at completely different rates
+1. **Discovery** (`find_media`) — the page, fetched once and parsed. A page changes over
+   days: memoised **6 h**.
+2. **Resolution** (`resolve_stream`, yt_dlp) — one media reference turned into bytes a
+   GStreamer pipeline can open. Memoised **30 min**, and less when the url says so.
+
+That split is not tidiness. The signed url Vimeo hands back carried an expiry **5.8 hours
+out** (measured), and these items run an hour each — a tracklist filled at six o'clock
+would hand a dead url to its fourth track. So resolution is **late**: it happens in
+`_resolve_uri`, at `tracklist.add`, the same choke point that substitutes `local_uri`.
+`_expiry_of` reads the epoch most CDNs park in their signature and refuses to serve a url
+within `_EXPIRY_MARGIN` (10 min) of it — guessing too short costs a re-resolution,
+guessing too long costs a track that dies mid-play.
+
+### The uri that lasts is not the url that plays
+`xp:<media page>` is stable and is what carries the resume position, the cooldown and the
+stats; `https://skyfire.vimeocdn.com/1789511813-0x…` is valid for an afternoon.
+`_played_to_canonical` maps one back to the other — the same dict a downloaded Spotify
+track already needed, for the same reason: Mopidy reports playback against the uri it was
+handed, and stats must land on the stable one. (It was `_local_to_spotify`; the name
+described half of what it now holds.)
+
+**One spelling per media** (`canonical_media_url`), because the uri IS the identity: a
+page was observed carrying `dai.ly/xamdswq` and `dailymotion.com/video/xamdswq` for the
+same video, which would have been two histories of half a listener each. Player chrome
+and campaign parameters are dropped — but by **denylist, never allowlist**: Vimeo's `h=`
+is the unlisted-video hash, and without it the video does not exist.
+
+### Discovery routes to the existing schemes; `xp:` is what nothing else can carry
+| Found on the page | Comes back as | Played by |
+|---|---|---|
+| a YouTube link or embed | `yt:video:<id>` | Mopidy-YouTube (which has its own cache) |
+| an `<audio>`, a bare `.mp3`/`.m4a`/… | its own https url | mopidy-stream |
+| `<link rel=alternate type=rss>` | `podcast+<feed>` | the whole podcast subsystem |
+| Vimeo, Dailymotion, SoundCloud… | `xp:<url>` | o2m, via yt_dlp |
+
+`_PLATFORMS` is not a statement about what yt_dlp can do (some 1800 sites) — it is about
+what a page link is allowed to drag into a tracklist. Without it, every share button and
+footer link becomes a candidate track.
+
+The page is registered as a **`PodcastChannel` with `kind='web'`** and each item points at
+it through `Track.channel_id`. That is not bookkeeping: it is where the Referer lives.
+
+### The Referer is tried SECOND, and both halves of that were measured
+* **Vimeo requires it.** An embed-only video — what a film's own site uses — answers
+  *"Cannot download embed-only video without embedding URL"* to every direct request, and
+  hands over the film when the embedding page arrives as `Referer`.
+* **Dailymotion refuses it.** The identical canonical url resolves plain and answers
+  *"No video formats found!"* the moment one is attached. Reproduced three times running,
+  alternating on the same video.
+
+So neither "always" nor "never" is right, and a per-host table of who wants one would
+simply be wrong about the next platform. `resolve_stream` asks plainly and retries with
+the page: one wasted request on embed-only videos, once, and nothing to keep updated.
+**This cost half a day of misreading it as rate-limiting** — the failures looked like
+throttling because they followed successes.
+
+### A page can simply refuse, and that is an answer, not an absence
+uved.fr answers every client — plain, browser-UA, Googlebot, `facebookexternalhit` alike —
+with a CrowdSec javascript challenge: HTTP 200, 296 KB, no media. Solving that means
+running a browser, so `find_media` reports it instead: `reason` is a code to branch on
+(`challenge` | `unreachable` | `not-a-url`) and `error` the sentence to show. **Both empty
+means the page was read**, and an empty `items` then honestly means it holds nothing
+playable — a different answer from a refusal, which must never be reported as the same
+thing.
+
+The cache follows that distinction: a challenge and a parsed page are stable facts about
+the page and are cached; a timeout or a 502 is an accident of the minute and is **not** —
+remembering it for six hours would turn one bad moment into an afternoon of a box silently
+missing its page. A refused *extraction* is remembered for 5 min (`_TTL_FAILURE`), not to
+spare the platform but to spare the box: without it, an unextractable item is re-asked on
+every fill, each ask a live round trip on the path filling a tracklist someone is waiting for.
+
+### Where it plugs in
+* **Box line** — `xp:<url>`, dispatched in `tracklistappend_box`, sharing the box budget
+  between several pages exactly as podcast feeds do (one replay listing holding three
+  hour-long conferences must not crowd out the rest of the box). `xp_page_tracks` filters
+  through `_unread_spoken_uris`, so a replay watched to the end does not come back.
+* **Search** — pasting any page url into `/api/search` shows what is in it, the same
+  gesture `rf_resolve_url` already offered for radiofrance.fr, generalised. A refusal comes
+  back as `results['web_page']`.
+* **Classification** — items are spoken content: `_SPOKEN_URI_RE` matches `^xp:`, so they
+  resume at their position, are eligible for `podcasts:unfinished`, and stay out of music
+  scoring (`popularity` NULL). The page, not the item, is what
+  `_spoken_type_for_uri` classifies — as a feed is classified whole.
+* **Names** — the row is opened **without** one. What a page calls a link ("Lire le replay
+  …") is a button label, not a title, and `upsert_episodes` never overwrites a name once
+  set, so writing the provisional one would lock the real title out for good. The
+  extractor supplies it a moment later, at resolution.
+* **Unresolvable items are dropped** in `_resolve_uris` rather than handed to Mopidy, which
+  has no backend for `xp:` and would lose them silently.
+
+### Dependencies, and one that is not obvious
+`yt_dlp` **and `curl_cffi`** in `o2m/requirements.txt`. The second is not a hard dependency
+of the first and is not optional here: Dailymotion demands a TLS fingerprint it recognises,
+*intermittently*. It resolved fine in the mopidy container, which has no `curl_cffi`
+either, and then answered *"attempting impersonation, but none of these impersonate
+targets are available: firefox"* in the o2m one. A missing `curl_cffi` is a feature that
+works until the day it does not. Wheels exist for musl, so the alpine image needs no
+toolchain.
+
+### Known limits
+* **No offline.** `/api/audio` does not serve `xp:` yet — the signed url expires, so a
+  download would have to re-resolve at fetch time.
+* **Video bytes.** Vimeo publishes no audio-only format, so `bestaudio/best` falls back to
+  a progressive mp4 whose video track GStreamer decodes and drops. Correct, just wasteful.
+  Dailymotion does answer audio-only HLS (`hls-0_aac_q2`).
+* **Javascript-rendered pages** yield nothing: the parser reads HTML, not a DOM.
 
 ## Offline: the device holds the audio and plays it itself
 

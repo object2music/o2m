@@ -9,6 +9,7 @@ from o2m_core.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
 from o2m_core.spotifyhandler import SpotifyHandler
 from o2m_core import radiofrance as rf
 from o2m_core import boxdirectives as bdir
+from o2m_core import webmedia
 
 '''
 option_type 
@@ -71,7 +72,16 @@ class O2mToMopidy:
         # and the `with` release is exception-safe (a failed load no longer wedges the mutex).
         self._box_lock = threading.RLock()
         self._box_lock_timeout = 30  # seconds; on timeout we proceed rather than hang forever
-        self._local_to_spotify = {}  # file:// URI → spotify:track: URI for stat routing
+        # PLAYED uri → the uri o2m keeps history under. Two things need it, for
+        # the same reason: a downloaded Spotify track is played from file://,
+        # and an 'xp:' media is played from a signed CDN url that is worthless
+        # tomorrow. In both cases Mopidy reports back the uri it was handed,
+        # and stats must land on the stable one.
+        self._played_to_canonical = {}
+        # 'xp:' media uri → the page it was discovered on. The page is the
+        # Referer an embed-only video needs, and it reaches the DB only once
+        # the item is stored, so the fill that just found it answers first.
+        self._xp_pages = {}
         self._rf_published = {}      # RF episode uri → 'YYYY-MM-DD' (rows may not exist yet at fetch time)
 
         if "api_result_limit" in self.configO2M:
@@ -223,14 +233,18 @@ class O2mToMopidy:
         file turns a track that would have streamed from Spotify into a playback
         failure — so an absent file simply means "not downloaded".
         """
-        if not uri or not uri.startswith('spotify:track:'):
+        if not uri:
+            return uri
+        if webmedia.is_xp(uri):
+            return self._resolve_xp(uri)
+        if not uri.startswith('spotify:track:'):
             return uri
         try:
             local = self.dbHandler.get_local_uri(uri)
             if local:
                 if not self._local_file_present(local):
                     return uri
-                self._local_to_spotify[local] = uri
+                self._played_to_canonical[local] = uri
                 return local
         except Exception:
             pass
@@ -252,6 +266,58 @@ class O2mToMopidy:
         except Exception:
             return True
 
+    def _xp_referer(self, uri):
+        """The page an 'xp:' media was found on.
+
+        Not a detail: an embed-only Vimeo — which is what a film's own site uses —
+        answers "Cannot download embed-only video without embedding URL" to every
+        direct request and resolves only when that page is sent as Referer.
+
+        It is read from `Track.channel_id`, the column that already means "the
+        source this episode belongs to", with the in-process map from the fill
+        that just discovered it as the fallback — the row may not be written yet
+        the first time a media is played."""
+        page = self._xp_pages.get(uri)
+        if page:
+            return page
+        try:
+            row = self.dbHandler.get_stat_by_uri(uri)
+            if row and row.channel_id and str(row.channel_id).startswith('http'):
+                return row.channel_id
+        except Exception:
+            pass
+        return None
+
+    def _resolve_xp(self, uri):
+        """An 'xp:' uri → the url Mopidy can open, resolved as late as we can.
+
+        Late on purpose. The signed url carries its own expiry — 5.8 hours for
+        the Vimeo measured while writing this — and a tracklist holding four
+        hour-long conferences reaches its last one well after that. Resolving at
+        fill time and storing the result would be a tracklist that rots while it
+        waits.
+
+        The reverse mapping is the other half: Mopidy reports playback against
+        the uri it was handed, so without it every stat, every resume position
+        and every cooldown would be recorded against a CDN url that means nothing
+        tomorrow."""
+        entry = webmedia.resolve_stream(uri, self._xp_referer(uri))
+        if not entry or not entry.get('url'):
+            print(f"xp: unresolved {uri}")
+            return None
+        self._played_to_canonical[entry['url']] = uri
+        # The extractor knows the real title and duration; the page rarely does.
+        # Written once, never over an existing value (upsert_episodes' rule).
+        try:
+            if entry.get('name') or entry.get('length'):
+                self.dbHandler.upsert_episodes(
+                    [{'uri': uri, 'name': entry.get('name'), 'length': entry.get('length')}],
+                    option_type=self._spoken_type_for_uri(
+                        self._xp_referer(uri) or uri, entry.get('length')))
+        except Exception as e:
+            print(f"xp: metadata {uri}: {e}")
+        return entry['url']
+
     def _resolve_uris(self, uris):
         """Resolve a list of URIs, substituting local files where available.
         Defensive: coerce a bare string to a list and drop non-URI tokens (no ':'
@@ -262,13 +328,17 @@ class O2mToMopidy:
         if isinstance(uris, str):
             uris = [uris]
         uris = [u for u in uris if isinstance(u, str) and ':' in u]
-        return [self._resolve_uri(u) for u in uris]
+        # A None means "this one could not be resolved" (an 'xp:' media whose
+        # platform refused us). Dropping it here is what keeps the rest of the
+        # fill intact — handing Mopidy an 'xp:' uri it has no backend for would
+        # lose the track just as surely, only without a word in the log.
+        return [u for u in (self._resolve_uri(u) for u in uris) if u]
 
     def get_spotify_uri(self, uri):
         """Canonicalize a local file URI back to its Spotify URI for stat recording."""
         if not uri or uri.startswith('spotify:'):
             return uri
-        return self._local_to_spotify.get(uri, uri)
+        return self._played_to_canonical.get(uri, uri)
 
 #TAG MANAGEMENT
     @property
@@ -1540,6 +1610,10 @@ class O2mToMopidy:
             _pod_left = len(_pod_feeds)
             _pod_budget = max_results
 
+            # Same rolling budget for the experimental 'xp:' pages.
+            _xp_left = len([x for x in data if x.strip().startswith('xp:')])
+            _xp_budget = max_results
+
             # Warm the Radio France episode cache for every 'rf:sujet:' line at once.
             # Each line costs one API call per station, and the loop below is
             # sequential, so a box holding a dozen subjects took ~55s to activate —
@@ -1752,6 +1826,17 @@ class O2mToMopidy:
                             tracklist_uris.append(
                                 self.rf_subject_episodes(value.strip(), max_results, picked or None))
 
+                # xp:<url> — experimental: read a web page, play what it holds.
+                # Shares the box budget between several pages exactly as the feeds
+                # above do: one replay listing holding three hour-long conferences
+                # must not crowd out the other lines of the box.
+                elif content.strip().startswith('xp:'):
+                    _share = max(1, round(_xp_budget / _xp_left)) if _xp_left > 0 else max_results
+                    _got = self.xp_page_tracks(box, content.strip()[3:], _share)
+                    _xp_left = max(0, _xp_left - 1)
+                    _xp_budget = max(0, _xp_budget - len(_got or []))
+                    tracklist_uris.append(_got)
+
                 # Podcast channel
                 elif "podcast+" in content and "#" not in content:
                     print(f"Podcast channel : {content}")
@@ -1858,6 +1943,71 @@ class O2mToMopidy:
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
             #return []
+
+    def xp_page_tracks(self, box, page_url, max_results):
+        """`xp:<url>` — whatever a web page holds that o2m can play.
+
+        The experimental line. Every other source announces what it is; a page
+        announces nothing, so this one goes and looks (see `webmedia`). What
+        comes back already wears the right uri: a YouTube video as `yt:video:`,
+        an mp3 as itself, an RSS feed expanded through the normal podcast path,
+        and only what nothing else can carry stays `xp:`.
+
+        The page is registered as a CHANNEL. That is not bookkeeping — it is
+        where the Referer lives, without which an embed-only Vimeo is refused,
+        and it is what lets the panel name the source instead of showing a url.
+        """
+        page_url = (page_url or '').strip()
+        if not page_url:
+            return []
+        found = webmedia.find_media(page_url, limit=max(10, max_results or 10))
+        items = found.get('items') or []
+        if found.get('reason'):
+            # 'challenge' is worth its own sentence: the page was not empty, we
+            # were refused. No header gets past it, so there is nothing to retry.
+            print(f"xp: {page_url} -> {found['reason']}"
+                  + (" (the site refuses automated readers)" if found['reason'] == 'challenge' else ""))
+            return []
+
+        try:
+            self.dbHandler.upsert_podcast_channel(
+                page_url, 'web', title=found.get('title') or page_url, url=page_url)
+        except Exception as e:
+            print(f"xp: channel {page_url}: {e}")
+
+        uris, episodes = [], []
+        for it in items:
+            uri = it['uri']
+            # A feed found on the page is a podcast, not a one-off: hand it to the
+            # subsystem that knows about episodes, resume and unread.
+            if uri.startswith('podcast+'):
+                uris += self.add_podcast_from_channel(box, uri, max_results) or []
+                continue
+            self._xp_pages[uri] = page_url
+            uris.append(uri)
+            # The row is opened WITHOUT a name on purpose. What the page calls a
+            # link ("Lire le replay …") is a button label, not a title, and
+            # upsert_episodes never overwrites a name once set — so writing the
+            # provisional one here would lock the real title out for good. The
+            # extractor knows it ("Les mots des transitions - cycle 8 — Problème
+            # systémique") and fills it at resolution, a moment later.
+            episodes.append({'uri': uri, 'name': '', 'length': None, 'day': None})
+
+        if episodes:
+            try:
+                # Classified from the PAGE, like a feed is classified as a whole:
+                # the box referencing it is what says 'info' or 'podcast'.
+                self.dbHandler.upsert_episodes(
+                    episodes, channel_id=page_url,
+                    option_type=self._spoken_type_for_uri(page_url))
+            except Exception as e:
+                print(f"xp: store {page_url}: {e}")
+
+        # Same unread rule as every other spoken source: a replay already watched
+        # to the end does not come back.
+        uris = self._unread_spoken_uris(uris)
+        print(f"xp: {page_url} -> {len(uris)} playable / {len(items)} found")
+        return uris[:max_results] if max_results else uris
 
     def add_podcast_from_channel(self,box,uri, max_results):
         feedurl = uri.split("+")[1]
@@ -3761,7 +3911,7 @@ class O2mToMopidy:
     # episode. RF episodes are plain https mp3 URLs with no 'podcast+' marker to
     # key on, so every spoken-content test has to know these hosts too.
     _SPOKEN_URI_RE = re.compile(
-        r'podcast\+|youtube:video|(?:^|:)yt:'
+        r'podcast\+|youtube:video|(?:^|:)yt:|^xp:'
         r'|proxycast\.radiofrance\.fr|radiofrance-podcast\.net', re.I)
 
     def _fill_spoken_meta(self, stat, mopidy_track, uri):
@@ -3835,6 +3985,10 @@ class O2mToMopidy:
             # warmup classifies a whole feed at once and passed the bare url, which
             # silently skipped the box heritage below and tagged every info episode
             # as a generic podcast.
+            # 'xp:<media url>' too: a box line may name the media directly rather
+            # than the page that holds it, and the heritage lookup below works on
+            # whatever string the box actually contains.
+            uri = webmedia.media_url(uri) if webmedia.is_xp(uri) else uri
             if 'podcast+' in uri or (uri or '').startswith('http'):
                 raw = uri.split('podcast+', 1)[1] if 'podcast+' in uri else uri
                 feed = re.sub(r'[?&]max_results=\d+', '', raw.split('#')[0]).strip().rstrip('/')
