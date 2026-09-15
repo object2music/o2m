@@ -4512,15 +4512,40 @@ function openActionMenu(triggerBtn, items) {
 /* ── Smart shareable link resolution ──
    Internal URIs aren't directly useful to share/open outside O2M — resolve them
    to something usable: spotify:track:ID → open.spotify.com (works for anyone,
-   no app needed); yt:URL → the plain YouTube URL; a podcast episode → the site
-   page link embedded in mopidy-podcast's `comment` field (falls back to the feed
-   URL); a box → its box:<uid> reference, directly paste-able into another box's
-   raw data to build a cascade. */
+   no app needed); yt:URL → the plain YouTube URL; a podcast episode → its own page
+   on the publisher's site, read from mopidy-podcast's `comment` field; a box → its
+   box:<uid> reference, directly paste-able into another box's raw data to build a
+   cascade. */
 const trackMeta = new Map();   // uri -> track object (populated wherever rows render)
 function registerTrackMeta(t) { if (t && t.uri) trackMeta.set(t.uri, t); }
 function extractHrefFromComment(comment) {
   const m = /<a\s+href="([^"]+)"/i.exec(comment || '');
   return m ? m[1] : null;
+}
+/* The same field also carries plain advertising. Radio France ends every episode
+   description with a link to radiofrance.fr itself — a site ROOT with nothing but
+   campaign parameters — so taking the first href blindly copies a promo url and
+   calls it the episode. A path is what separates the two, and it is enough:
+   sampled over ten feeds, nine carried the episode's own page and one this promo. */
+function episodePageHref(comment) {
+  const href = extractHrefFromComment(comment);
+  if (!href) return null;
+  try {
+    const path = new URL(href, location.href).pathname;
+    return (path && path !== '/') ? href : null;
+  } catch (e) { return href; }
+}
+/* A Browse row never went through mopidy, so nothing registered its comment — which
+   is how "Copy link" ended up handing back the feed for an episode. One lookup fills
+   it in on demand, and only for an episode that has no meta yet. */
+async function episodeMeta(uri) {
+  if (trackMeta.has(uri)) return trackMeta.get(uri);
+  try {
+    const r = await rpc('core.library.lookup', { uris: [uri] });
+    const t = (r?.result?.[uri] || [])[0];
+    if (t) registerTrackMeta(t);
+    return t || null;
+  } catch (e) { return null; }
 }
 function shareableLink(uri) {
   if (!uri) return null;
@@ -4529,13 +4554,18 @@ function shareableLink(uri) {
     return `https://open.spotify.com/${m[1]}/${m[2]}`;
   if (uri.startsWith('yt:')) return uri.slice(3);
   if (uri.startsWith('podcast+')) {
-    const fromComment = extractHrefFromComment(trackMeta.get(uri)?.comment);
+    const fromComment = episodePageHref(trackMeta.get(uri)?.comment);
     if (fromComment) return fromComment;
-    return uri.slice('podcast+'.length).split('#')[0];   // feed URL fallback
+    // An EPISODE falls back to its own uri. Stripping it to the feed used to copy
+    // the CHANNEL — a different object, and one nothing on screen had named: what
+    // was copied then no longer matched what was clicked.
+    if (uri.includes('#')) return uri;
+    return uri.slice('podcast+'.length);                 // a channel: its feed URL
   }
   return uri;   // local file / box / anything else — copy the raw reference
 }
 async function copyLink(uri) {
+  if (uri && uri.startsWith('podcast+') && uri.includes('#')) await episodeMeta(uri);
   const link = shareableLink(uri);
   if (!link) { setFeedback('No link'); return; }
   try { await navigator.clipboard.writeText(link); setFeedback('Link copied'); }
