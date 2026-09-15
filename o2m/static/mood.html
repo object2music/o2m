@@ -4180,6 +4180,37 @@ function clearNowPlayingHeader(playing) {
   _radioLast = { title: null, artist: null, album: null, visual: null };
 }
 
+/* Tracks Mopidy holds under a uri that is not their own — see /api/played_meta.
+   Only uris that look substituted and are not already known are ever asked for,
+   and the answer is kept for the session, so the steady state costs nothing: a
+   tracklist whose items have all been seen makes no call at all. */
+const _playedMeta = new Map();          // played uri -> {uri, name, length} | null
+async function patchSubstitutedNames(tracks, current) {
+  const candidates = [...new Set([current, ...(tracks || []).map(t => t && t.track)]
+    .filter(t => t && t.uri && !t.name && /^https?:/.test(t.uri) && !_playedMeta.has(t.uri))
+    .map(t => t.uri))];
+  if (candidates.length) {
+    try {
+      const qs = candidates.slice(0, 60).map(u => 'uri=' + encodeURIComponent(u)).join('&');
+      const d = await fetch(API + '/played_meta?' + qs).then(r => r.json());
+      // A uri the server did not answer for is not substituted: remember that
+      // too, or every refresh asks again about the same radio stream.
+      candidates.forEach(u => _playedMeta.set(u, (d && d[u]) || null));
+    } catch (e) {
+      candidates.forEach(u => _playedMeta.set(u, null));
+    }
+  }
+  const apply = t => {
+    if (!t || !t.uri) return;
+    const m = _playedMeta.get(t.uri);
+    if (!m) return;
+    if (!t.name && m.name) t.name = m.name;
+    if (!t.length && m.length) t.length = m.length;
+  };
+  (tracks || []).forEach(x => apply(x && x.track));
+  apply(current);
+}
+
 async function refreshNowPlaying() {
   // While the device plays its own files, the server's state describes a room
   // nobody is listening to. Painting it here would fight the local player for
@@ -4202,6 +4233,12 @@ async function refreshNowPlaying() {
   const tlid  = tlt?.tlid ?? null;
   const playing = stateR?.result === 'playing';
   const tracks  = tlR?.result || [];
+
+  // Mopidy reports what it was HANDED. For an 'xp:' media that is a signed CDN
+  // url with no name at all, so the row would show an address where its title
+  // belongs. This is the one place Mopidy's view enters the page, so it is the
+  // one place worth translating: everything downstream reads these objects.
+  await patchSubstitutedNames(tracks, track);
 
   currentTlid      = tlid;
   _optTlid = null; _expectedUri = null;       // the server has spoken; optimistic pointers are done

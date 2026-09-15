@@ -553,6 +553,31 @@ every fill, each ask a live round trip on the path filling a tracklist someone i
 * **Unresolvable items are dropped** in `_resolve_uris` rather than handed to Mopidy, which
   has no backend for `xp:` and would lose them silently.
 
+**The substituted uri reaches the whole client side too, and that is where it hurts
+most.** The page reads its tracklist STRAIGHT from Mopidy (`core.tracklist.get_tl_tracks`),
+so it sees the signed CDN url and, for a plain stream, no name at all. Three symptoms, one
+cause: the row showed an address where its title belongs; every per-track lookup
+(`/api/track_status`, `/api/track_info`, `/api/track_features`) missed, so status, date and
+channel were blank; and `radio_now_playing` — which asks `uri.startswith('http')` — answered
+that a replay from a web page was a **live radio**, went looking for an ICY title and
+presented it as a station.
+
+The three endpoints now map through `get_spotify_uri` on entry (`track_features` answers
+under the uri the CLIENT asked with, so it can match the reply to its own rows), and
+`radio_now_playing` asks the canonical uri, where `xp:` is plainly not a stream. For the
+title there is `GET /api/played_meta`: given the uris Mopidy reports, it returns the
+canonical uri, name and length for those that were substituted — and **says nothing about
+those that were not**, so the client can tell "no translation needed" from "unknown" without
+a second call. `patchSubstitutedNames` applies it in `refreshNowPlaying`, the single point
+where Mopidy's view enters the page, and caches both answers for the session: a tracklist
+whose items have all been seen makes no call at all. It patches the NAME, never the uri —
+rewriting identity client-side would change what every menu, badge and offline pass keys on.
+
+*The structural answer is elsewhere*: a `translate_uri()` in the Mopidy-O2M backend would
+let Mopidy hold `xp:` itself and none of the above would exist. It was set aside because the
+extension lives in the image and every iteration costs a rebuild. Worth revisiting if this
+seam keeps leaking.
+
 **The substituted uri reaches the playback listeners, and that broke resume.** Mopidy
 reports playback against the uri it was HANDED — for an `xp:` item, the signed CDN url.
 `track_started_event` was asking `_is_spoken_uri(track.uri)` about that url, which matches

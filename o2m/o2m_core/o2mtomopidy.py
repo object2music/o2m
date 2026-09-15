@@ -4229,6 +4229,14 @@ class O2mToMopidy:
         except Exception:
             cur = None
         uri = getattr(cur, 'uri', '') if cur else ''
+        # "Is this a radio?" was asked of the uri MOPIDY reports, and an 'xp:'
+        # media reports a signed CDN url — which starts with http, so a replay
+        # from a web page was answered as a live stream: the header looked for an
+        # ICY title and the item was presented as a station. The question belongs
+        # to the canonical uri, where 'xp:' is plainly not a stream.
+        canonical = self.get_spotify_uri(uri)
+        if webmedia.is_xp(canonical):
+            return None
         if not uri or not (uri.startswith('http') or uri.startswith('tunein:')):
             return None
         # Friendly station name (kept visible in the UI even when a song plays).

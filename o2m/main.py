@@ -1205,7 +1205,12 @@ if __name__ == "__main__":
     #Get the value from tlid or uri in list
     @api.route('/api/track_status')
     def api_track_status():
-        uri = request.args.get('uri')
+        # The uri a client holds is the one MOPIDY reports, and that is not always
+        # the one the database knows: _resolve_uri substitutes a downloaded
+        # Spotify track's file:// path and an 'xp:' media's signed CDN url. Ask
+        # under the canonical uri or every lookup below misses — which is how an
+        # 'xp:' track came to show no status at all.
+        uri = o2mHandler.get_spotify_uri(request.args.get('uri'))
         try:
             # _track_info is authoritative for current session: checked first so reco/replaced
             # tracks return the right option_type even before (or without) a DB stat entry.
@@ -1571,21 +1576,61 @@ if __name__ == "__main__":
             return jsonify({'status': 'boxes_active', 'tracks_added': 0})
         return jsonify({'status': 'ok', 'tracks_added': added})
 
+    @api.route('/api/played_meta')
+    def api_played_meta():
+        """Names for tracks Mopidy holds under a uri that is not their own.
+
+        `_resolve_uri` hands Mopidy something it can actually open — a file:// path
+        for a downloaded Spotify track, a signed CDN url for an 'xp:' media — and
+        Mopidy then reports THAT as the track's uri, with no name at all for a
+        plain stream. The page reads its tracklist straight from Mopidy, so an
+        'xp:' replay showed its CDN address where its title belongs.
+
+        The database knows the title; only the mapping back was missing. Answers
+        under the uri the caller asked with, and says nothing about uris that were
+        not substituted — so the client can tell "no translation needed" from "not
+        known here" without a second call.
+        """
+        from flask import jsonify
+        from o2m_core.o2mmodels import Track
+        asked = request.args.getlist('uri')[:60]
+        out = {}
+        for played in asked:
+            canonical = o2mHandler.get_spotify_uri(played)
+            if not canonical or canonical == played:
+                continue
+            try:
+                row = Track.get_or_none(Track.uri == canonical)
+            except Exception:
+                row = None
+            out[played] = {'uri': canonical,
+                           'name': (getattr(row, 'name', None) or '') if row else '',
+                           'length': (getattr(row, 'duration_ms', None) or None) if row else None}
+        return jsonify(out)
+
     @api.route('/api/track_features')
     def api_track_features():
         from flask import jsonify
         from o2m_core.o2mmodels import Track
-        uris = request.args.getlist('uri')[:40]
-        if not uris:
+        asked = request.args.getlist('uri')[:40]
+        if not asked:
             return jsonify({})
         try:
+            # Look up the canonical uri, answer under the one the client asked
+            # with: it matches the reply against its own rows, which carry the
+            # uri Mopidy reported.
+            back = {}
+            for a in asked:
+                back.setdefault(o2mHandler.get_spotify_uri(a), []).append(a)
             result = {}
             for t in Track.select(Track.uri, Track.energy, Track.valence, Track.popularity).where(
-                Track.uri.in_(uris) & Track.energy.is_null(False)
+                Track.uri.in_(list(back)) & Track.energy.is_null(False)
             ):
-                result[t.uri] = {'energy': float(t.energy), 'valence': float(t.valence)}
+                row = {'energy': float(t.energy), 'valence': float(t.valence)}
                 if t.popularity is not None:
-                    result[t.uri]['popularity'] = float(t.popularity)
+                    row['popularity'] = float(t.popularity)
+                for a in back.get(t.uri, [t.uri]):
+                    result[a] = dict(row)
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -1811,7 +1856,8 @@ if __name__ == "__main__":
     @api.route('/api/track_info')
     def api_track_info():
         from flask import jsonify
-        uri = request.args.get('uri')
+        # Canonical uri, for the same reason as /api/track_status above.
+        uri = o2mHandler.get_spotify_uri(request.args.get('uri'))
         if not uri:
             return jsonify({})
         try:
