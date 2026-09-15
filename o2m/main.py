@@ -1424,7 +1424,7 @@ if __name__ == "__main__":
     @api.route('/api/track_tags')
     def api_track_tags():
         from flask import jsonify
-        uri = request.args.get('uri', '')
+        uri = o2mHandler.get_spotify_uri(request.args.get('uri', ''))
         if not uri:
             return jsonify([])
         tags = o2mHandler.dbHandler.get_track_genres(uri)  # [(name, weight)]
@@ -1641,7 +1641,10 @@ if __name__ == "__main__":
     def api_track_features_set():
         from flask import jsonify
         data = request.get_json(silent=True) or {}
-        uri = (data.get('uri') or '').strip()
+        # Canonical uri: a mood edit is a WRITE, and update_track_features_manual
+        # also stamps mood_edited_at as a lock. Written against a signed CDN url it
+        # would lock a row nobody will ever look up again.
+        uri = (o2mHandler.get_spotify_uri(data.get('uri')) or '').strip()
         if not uri:
             return jsonify({'error': 'uri required'}), 400
         def _f01(x):
@@ -1673,7 +1676,7 @@ if __name__ == "__main__":
     @api.route('/api/track_saved')
     def api_track_saved():
         from flask import jsonify
-        uri = (request.args.get('uri') or '').strip()
+        uri = (o2mHandler.get_spotify_uri(request.args.get('uri')) or '').strip()
         if not uri or not uri.startswith('spotify:track:'):
             return jsonify({'saved': None})
         try:
@@ -1687,7 +1690,11 @@ if __name__ == "__main__":
     def api_track_favorite():
         from flask import jsonify
         data = request.get_json(silent=True) or {}
-        uri = (data.get('uri') or '').strip()
+        # Canonical uri, and here it is not cosmetic: set_track_liked INSERTS the
+        # row it cannot find, so liking a track Mopidy holds under a substituted
+        # uri would open a Track row keyed on a signed CDN url — a row that means
+        # nothing tomorrow, and a like quietly lost.
+        uri = (o2mHandler.get_spotify_uri(data.get('uri')) or '').strip()
         favorite = bool(data.get('favorite'))
         if not uri:
             return jsonify({'error': 'uri required'}), 400
@@ -1797,7 +1804,7 @@ if __name__ == "__main__":
     @api.route('/api/track_playlists')
     def api_track_playlists():
         from flask import jsonify
-        uri = (request.args.get('uri') or '').strip()
+        uri = (o2mHandler.get_spotify_uri(request.args.get('uri')) or '').strip()
         if not uri:
             return jsonify([])
         try:

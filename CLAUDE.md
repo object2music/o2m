@@ -573,10 +573,30 @@ where Mopidy's view enters the page, and caches both answers for the session: a 
 whose items have all been seen makes no call at all. It patches the NAME, never the uri —
 rewriting identity client-side would change what every menu, badge and offline pass keys on.
 
+**Every track-scoped endpoint has to ask the same way**, and the one that mattered most
+is a WRITE: `set_track_liked` INSERTS the row it cannot find, so liking an `xp:` item would
+have opened a `Track` keyed on a signed CDN url — a like quietly lost, and a row that means
+nothing by morning. `track_tags`, `track_saved`, `track_favorite`, `track_playlists` and the
+mood-editing `POST /api/track_features` all map through `get_spotify_uri` now.
+`mopidy_image` deliberately does NOT: it asks MOPIDY for artwork, so it wants the uri Mopidy
+knows.
+
+**The same slip was already in `add_tracks`, and it was filling the table.** The loop over
+`tltracks_added` reads `t.track.uri` — what Mopidy returned, i.e. the SUBSTITUTED uri — and
+called `update_stat_track` with no `uri_override`, which opens a row when it finds none.
+Measured: **15 `Track` rows on dead `skyfire.vimeocdn.com` / `vod3.cf.dmcdn.net` addresses,
+one per track served**, plus 3 on `file:` and 3 on `local:` from the same path. The `new`-box
+REMOVE filter above it had the mirror bug: it asked `stat_exists(t.track.uri)`, so a
+substituted track never matched its own history and the "already heard" exclusion silently
+did not apply to it. Both ask the canonical uri now — while still REMOVING by the played
+uri, which is what the tracklist is keyed on.
+
 *The structural answer is elsewhere*: a `translate_uri()` in the Mopidy-O2M backend would
 let Mopidy hold `xp:` itself and none of the above would exist. It was set aside because the
 extension lives in the image and every iteration costs a rebuild. Worth revisiting if this
-seam keeps leaking.
+seam keeps leaking — and note `_played_to_canonical` is in MEMORY, so after an o2m restart
+a track still sitting in Mopidy's tracklist (`restore_state = true`) can no longer be mapped
+back. It cannot be rebuilt either: nothing in a signed CDN url says which page it came from.
 
 **The substituted uri reaches the playback listeners, and that broke resume.** Mopidy
 reports playback against the uri it was HANDED — for an `xp:` item, the signed CDN url.

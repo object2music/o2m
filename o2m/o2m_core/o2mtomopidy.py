@@ -769,8 +769,14 @@ class O2mToMopidy:
                     # bypass_remove_filter=True skips this for pre-filtered sources (newrecent, newnotcompleted)
                     if option_type == 'new' and not bypass_remove_filter:
                         for t in tltracks_added:
-                            if self.dbHandler.stat_exists(t.track.uri):
-                                stat = self.dbHandler.get_stat_by_uri(t.track.uri)
+                            # Mopidy hands back the uri it was GIVEN, which _resolve_uris
+                            # may have substituted (a downloaded Spotify file, an 'xp:'
+                            # media's signed url). Ask the database under the canonical
+                            # one — but keep removing by the played uri, since that is
+                            # what the tracklist is keyed on.
+                            _canon = self.get_spotify_uri(t.track.uri)
+                            if self.dbHandler.stat_exists(_canon):
+                                stat = self.dbHandler.get_stat_by_uri(_canon)
                                 # When track skipped or too many counts we remove them
                                 if (stat.skipped_count > 0
                                     or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'library' or stat.option_type == 'incoming')
@@ -785,8 +791,13 @@ class O2mToMopidy:
                         #Removing trash and hidden : too long
                         for t in tltracks_added:
                             #Option_type fixing (to be improved)
-                            if self.fix_stats==True: 
-                                self.update_stat_track(t.track,0,option_type,'',True)
+                            if self.fix_stats==True:
+                                # uri_override, for the same reason: without it this
+                                # OPENS a Track row keyed on the substituted uri —
+                                # measured, 15 rows on signed CDN addresses that stop
+                                # meaning anything within hours, one per track served.
+                                self.update_stat_track(t.track, 0, option_type, '', True,
+                                                       uri_override=self.get_spotify_uri(t.track.uri))
                             
                             '''if self.dbHandler.stat_exists(t.track.uri):
                                 stat = self.dbHandler.get_stat_by_uri(t.track.uri)
