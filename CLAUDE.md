@@ -32,7 +32,8 @@ docker compose --profile dev up -d
 ### Run the o2m Python tests
 Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 (popularity scoring), `test_boxdirectives.py` (time windows, mood/dl directives),
-`test_player_port.py` (the player port's anti-drift check) and `test_webmedia.py`
+`test_player_port.py` (the player port's anti-drift check), `test_selection.py`
+(the samplers and the anti-repeat cooldown) and `test_webmedia.py`
 (the `web:` page reader). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
@@ -115,6 +116,16 @@ top of the module):
 (`popularity = NULL`, `is_scorable` guard) and ignored by selection.
 
 ## Auto-Selection Algorithm (`o2m/o2m_core/o2mtomopidy.py`)
+
+**Where the code is.** `tracklistfill_auto` and the source buckets are in
+`o2mtomopidy.py`; the two samplers and the cooldown are in **`o2m_core/selection.py`**,
+which touches neither the database nor the clock — a caller reads the candidate pool
+once (`Pool`), passes the knobs it is running with (`Tunables`), the time and the
+intra-session `served` map, and gets uris back. `O2mToMopidy._mood_pick` /
+`_expand_pick` are thin adapters that do the query and supply the clock. `rng` is a
+seam for tests, so the samplers are reproducible under a seed — which is what
+`test_selection.py` uses to assert the behaviour described below, rather than the
+ad-hoc simulations the last two cooldown changes leaned on.
 
 `tracklistfill_auto` composes the AUTO mix from sources whose **proportions vary with
 `discover_level` (DL)**. Each source gets a linear weight in DL; the weights are then

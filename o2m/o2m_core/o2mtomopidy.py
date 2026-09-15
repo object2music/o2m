@@ -10,6 +10,7 @@ from o2m_core.spotifyhandler import SpotifyHandler
 from o2m_core import radiofrance as rf
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
+from o2m_core import selection
 
 '''
 option_type 
@@ -348,14 +349,8 @@ class O2mToMopidy:
 #TAG MANAGEMENT
     @property
     def cooldown_seq_window(self):
-        """How far back the play sequence is read, in music plays.
-
-        Derived rather than set: the depth window reaches cooldown_plays x2 for a
-        heavy-rotation track, and a ruler shorter than that silently caps the rule —
-        every track older than the tail looks infinitely far away and goes free. A
-        margin on top so the boundary is never the answer.
-        """
-        return max(200, int(self.cooldown_plays * 2 * 1.25))
+        """How far back the play sequence is read, in music plays."""
+        return self._tunables().seq_window
 
     @staticmethod
     def stats_hour():
@@ -3217,126 +3212,39 @@ class O2mToMopidy:
         if self.local and self.username == None : pattern = "local:local"
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)
 
-    def _mood_pick(self, uris, n, energy, valence, radius, discover_level=5):
-        """Bias a candidate list towards (energy, valence) AND track popularity.
+    def _tunables(self):
+        """The selection knobs this instance is running with.
 
-        Two orthogonal axes, both modulated by discover_level, without ever
-        dropping tracks:
-          - mood: tracks whose energy/valence are known AND within `radius` of the
-            target come first; the rest (NULL or out-of-radius) are fallback.
-          - popularity: within each group, tracks are drawn weighted by their
-            popularity score raised to a temperature k(DL). Low DL sharpens toward
-            popular/comfort tracks; high DL flattens toward uniform discovery.
-
-        Before the first popularity recompute (all scores NULL) the weights are
-        uniform, so behaviour is identical to the previous random shuffle.
+        Rebuilt per call rather than cached: expand_pick_mode is switched at
+        runtime (A/B testing) and a cached copy would ignore the switch.
         """
-        if not uris:
-            return []
-        # Some auto-fill sources hand in nested lists (e.g. News) — flatten to flat
-        # scalar URIs, else the `uri IN (...)` lookup raises "Operand should contain
-        # 1 column(s)" and the whole mood/popularity selection silently falls back.
-        uris = [u for u in util.flatten_list(list(uris)) if isinstance(u, str) and u]
-        if not uris:
-            return []
-        # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1 (proportional), DL=10 → 0 (uniform)
-        k = max(0.0, (10 - discover_level) / 5.0)
+        return selection.Tunables(
+            cooldown_mult=self.cooldown_mult,
+            cooldown_days=self.cooldown_days,
+            cooldown_rc_ref=self.cooldown_rc_ref,
+            cooldown_plays=self.cooldown_plays,
+            exploit_sharpness=self.exploit_sharpness,
+            served_cooldown_min=self.served_cooldown_min,
+            served_mult=self.served_mult,
+            expand_pick_mode=getattr(self, 'expand_pick_mode', 'hybrid'),
+        )
 
-        # Single query for energy/valence + popularity; drop hidden/trash from the pool
-        # so explicitly rejected tracks never resurface.
-        feat, pop, last_read, rc, seq, excluded = {}, {}, {}, {}, {}, set()
-        # The rotation ruler, read once for the whole pool (see recent_music_play_seq).
-        seq_tail = self.dbHandler.recent_music_play_seq(self.cooldown_seq_window)
-        try:
-            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
-                                   Track.option_type, Track.last_read_date, Track.read_count,
-                                   Track.last_play_seq)
-                          .where(Track.uri << list(uris)).namedtuples()):
-                if t.option_type in ('hidden', 'trash'):
-                    excluded.add(t.uri)
-                    continue
-                if t.energy is not None and t.valence is not None:
-                    feat[t.uri] = (t.energy, t.valence)
-                if t.popularity is not None:
-                    pop[t.uri] = t.popularity
-                if t.last_read_date is not None:
-                    last_read[t.uri] = t.last_read_date
-                if t.read_count is not None:
-                    rc[t.uri] = t.read_count
-                if t.last_play_seq is not None:
-                    seq[t.uri] = t.last_play_seq
-        except Exception as e:
-            print(f"_mood_pick lookup error: {e}")
-            return uris[:min(n, len(uris))]
-
-        if excluded:
-            uris = [u for u in uris if u not in excluded]
-        if not uris:
-            return []
-        n = min(n, len(uris))
-
-        now = datetime.datetime.utcnow()
-        now_ts = time.time()
+    def _served_map(self):
+        """The intra-session "just served" stamps, shared across a whole fill."""
         served = getattr(self, '_served_at', None)
         if served is None:
             self._served_at = served = {}
+        return served
 
-        # Concentric mood weighting (replaces the old hard ±radius band): a DL-scaled
-        # Gaussian around the (energy, valence) target. σ = radius (tight at DL0 →
-        # broad at DL10), so the closest tracks are favoured and farther ones fade
-        # smoothly instead of being cut off. `floor` rises with DL so mood stops
-        # mattering at DL10 (discovery); unknown-mood (NULL) tracks sit at the floor
-        # as low-weight fillers, so the pool is never empty even when few tracks carry
-        # energy/valence (the sparse-coverage case). Single weighted draw — no split.
-        mood_on = (energy is not None and valence is not None)
-        sigma = max(radius, 1e-3)
-        floor = 0.05 + 0.95 * (min(max(discover_level, 0), 10) / 10.0)
+    def _selection_pool(self, uris, exclude_hidden, label):
+        """Everything the samplers need about `uris`, in one query.
 
-        def _mood_w(u):
-            if not mood_on:
-                return 1.0
-            f = feat.get(u)
-            if f is None:
-                return floor
-            d2 = (f[0] - energy) ** 2 + (f[1] - valence) ** 2
-            return max(math.exp(-d2 / (2.0 * sigma * sigma)), floor)
-
-        # Weight = popularity**k × concentric-mood × anti-repeat cooldown (played + served).
-        def _w(u):
-            return (max(pop.get(u, 0.5), 1e-6) ** k) * _mood_w(u) \
-                   * self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0),
-                                             seq.get(u), seq_tail)
-        weights = {u: _w(u) for u in uris}
-        result = self._sample_by_weight(uris, weights, n)
-        for u in result:
-            served[u] = now_ts  # served-cooldown for subsequent selections
-        return result
-
-    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True):
-        """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
-        DL-controlled popularity target. Always SAMPLES max_results at random from
-        the pool (no deterministic block) so a large playlist ROTATES around the
-        target each tap instead of replaying the same top tracks. Returns a
-        source-ordered subset (sequencing stays option_sort's job); count drops
-        below n only when the source has fewer tracks. Only invoked when the box's
-        option_sort is 'smart' (shuffle/asc/desc keep the basic legacy path).
-
-        Variant = self.expand_pick_mode:
-          - 'hybrid' (P0): n*(1-DL/10) exploit (sampled ∝ affinity²) + n*DL/10
-                       explore (uniform from the rest) — both stochastic.
-          - 'temp'   (P1): one sample weighted by affinity^k, k=(5-DL)/2.5
-                       (+2 favours the top → 0 uniform → -2 favours the obscure).
-          - 'band'   (P2): one sample weighted by a Gaussian around a target
-                       popularity P*(DL) (≈p90 at DL0 → ≈p10 at DL10).
-        Mood adds a small bonus only when features exist (unknown = neutral).
-        recently-played tracks are down-weighted (cooldown). hidden/trash are
-        excluded ONLY when exclude_hidden=True (recos/discovery): a directly-tapped
-        box whose OWN tracks are hidden/trash (e.g. a box with option_type='hidden')
-        passes exclude_hidden=False so it can still play its own content — otherwise
-        the exclusion would gut it (bug: 60/66 hidden → only 6 playable).
+        Returns None when the lookup fails, so the caller falls back to the raw
+        list rather than selecting from an empty pool. hidden/trash are dropped
+        when `exclude_hidden`, so explicitly rejected tracks never resurface —
+        but a directly-tapped box whose OWN tracks are hidden or trash passes
+        False, or the exclusion would gut it (bug: 60/66 hidden -> 6 playable).
         """
-        if not uris:
-            return []
         feat, pop, last_read, rc, seq, excluded = {}, {}, {}, {}, {}, set()
         # The rotation ruler, read once for the whole pool (see recent_music_play_seq).
         seq_tail = self.dbHandler.recent_music_play_seq(self.cooldown_seq_window)
@@ -3359,146 +3267,52 @@ class O2mToMopidy:
                 if t.last_play_seq is not None:
                     seq[t.uri] = t.last_play_seq
         except Exception as e:
-            print(f"_expand_pick lookup error: {e}")
-            return list(uris[:min(n, len(uris))])
+            print(f"{label} lookup error: {e}")
+            return None
 
         if excluded:
             uris = [u for u in uris if u not in excluded]
+        return selection.Pool(uris=list(uris), feat=feat, pop=pop, last_read=last_read,
+                              read_count=rc, seq=seq, seq_tail=seq_tail)
+
+    def _mood_pick(self, uris, n, energy, valence, radius, discover_level=5):
+        """Bias a candidate list towards (energy, valence) AND track popularity.
+
+        Adapter over o2m_core.selection.mood_pick, which holds the algorithm and
+        is unit-tested there: this reads the pool and supplies the clock.
+        """
         if not uris:
             return []
-        m = min(n, len(uris))
-        mode = getattr(self, 'expand_pick_mode', 'hybrid')
-        now = datetime.datetime.utcnow()
-        now_ts = time.time()
-        served = getattr(self, '_served_at', None)
-        if served is None:
-            self._served_at = served = {}
-        sigma = max(discover_level / 20.0 + 0.05, 1e-3)
-        MOOD_BONUS = 0.15  # soft, features-only; unknown mood = neutral
-
-        def mood_g(u):  # concentric Gaussian proximity to the target in (0,1]; 0 if unknown
-            if energy is None or valence is None:
-                return 0.0
-            f = feat.get(u)
-            if f is None:
-                return 0.0
-            d2 = (f[0] - energy) ** 2 + (f[1] - valence) ** 2
-            return math.exp(-d2 / (2.0 * sigma * sigma))
-
-        def cd(u):
-            return self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0),
-                                             seq.get(u), seq_tail)
-
-        def aff(u):  # affinity = popularity + soft, distance-graded mood bonus
-            return pop.get(u, 0.5) + MOOD_BONUS * mood_g(u)
-
-        if mode == 'temp':
-            k = (5 - discover_level) / 2.5  # +2 (favour top) .. 0 (uniform) .. -2 (favour obscure)
-            weights = {u: (max(aff(u), 1e-6) ** k) * cd(u) for u in uris}
-            sel = self._sample_by_weight(uris, weights, m)
-        elif mode == 'band':
-            vals = sorted(pop.get(u, 0.5) for u in uris)
-            p10 = vals[int(0.10 * (len(vals) - 1))]
-            p90 = vals[int(0.90 * (len(vals) - 1))]
-            target = p90 - (p90 - p10) * (discover_level / 10.0)  # DL0→top, DL10→bottom
-            sigma_pop = 0.15  # popularity-band spread (distinct from the mood sigma above)
-            weights = {u: math.exp(-((pop.get(u, 0.5) - target) ** 2) / (2 * sigma_pop * sigma_pop))
-                          * (1.0 + MOOD_BONUS * mood_g(u)) * cd(u) for u in uris}
-            sel = self._sample_by_weight(uris, weights, m)
-        else:  # 'hybrid' (P0): stochastic exploit + uniform explore
-            n_explore = int(round(m * discover_level / 10.0))
-            ew = {u: (max(aff(u), 1e-6) ** self.exploit_sharpness) * cd(u) for u in uris}
-            exploit = self._sample_by_weight(uris, ew, m - n_explore)
-            ex_set = set(exploit)
-            rest = [u for u in uris if u not in ex_set]
-            xw = {u: cd(u) for u in rest}
-            sel = exploit + self._sample_by_weight(rest, xw, n_explore)
-
-        sel_set = set(sel)
-        for u in sel_set:
-            served[u] = now_ts  # remember what we just served (served-cooldown)
-        try:
-            ps = [pop.get(u, 0.5) for u in sel_set]
-            print(f"_expand_pick[{mode}] DL={discover_level} pool={len(uris)} "
-                  f"-> {len(sel_set)} tracks, avg_pop={round(sum(ps)/len(ps), 3) if ps else 0}")
-        except Exception:
-            pass
-        return [u for u in uris if u in sel_set]  # source order preserved
-
-    def _sample_by_weight(self, uris, weights, n):
-        """Efraimidis-Spirakis weighted sampling without replacement from a
-        precomputed {uri: weight} map (key = rand**(1/w), keep the largest).
-        Returns up to n uris. Missing/≤0 weights fall back to a tiny epsilon."""
-        n = min(n, len(uris))
-        if n <= 0:
+        # Some auto-fill sources hand in nested lists (e.g. News) — flatten to flat
+        # scalar URIs, else the `uri IN (...)` lookup raises "Operand should contain
+        # 1 column(s)" and the whole mood/popularity selection silently falls back.
+        uris = [u for u in util.flatten_list(list(uris)) if isinstance(u, str) and u]
+        if not uris:
             return []
-        keyed = []
-        for u in uris:
-            w = weights.get(u, 1e-9)
-            if w <= 0:
-                w = 1e-9
-            keyed.append((random.random() ** (1.0 / w), u))
-        keyed.sort(reverse=True)
-        return [u for _, u in keyed[:n]]
+        pool = self._selection_pool(uris, exclude_hidden=True, label='_mood_pick')
+        if pool is None:
+            return uris[:min(n, len(uris))]
+        return selection.mood_pick(pool, n, energy, valence, radius, discover_level,
+                                   self._served_map(), datetime.datetime.utcnow(),
+                                   time.time(), self._tunables())
 
-    def _cooldown_factor(self, uri, last_read_at, now, now_ts, served, read_count=0,
-                         last_seq=None, seq_tail=None):
-        """Combined anti-repeat down-weight in (0,1]: a track recently PLAYED and/or
-        recently SERVED is demoted, so successive selections rotate. Shared by
-        _expand_pick and _mood_pick.
+    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True):
+        """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
+        DL-controlled popularity target. Only invoked when the box's option_sort is
+        'smart' (shuffle/asc/desc keep the basic legacy path).
 
-        TWO clocks measure "recently", and the stricter one wins:
+        Adapter over o2m_core.selection.expand_pick, which holds the three
+        variants (hybrid / temp / band) and is unit-tested there.
+        """
+        if not uris:
+            return []
+        pool = self._selection_pool(uris, exclude_hidden=exclude_hidden, label='_expand_pick')
+        if pool is None:
+            return list(uris[:min(n, len(uris))])
+        return selection.expand_pick(pool, n, energy, valence, discover_level,
+                                     self._served_map(), datetime.datetime.utcnow(),
+                                     time.time(), self._tunables(), on_debug=print)
 
-        - ELAPSED TIME, graduated over cooldown_days, stretched up to ~2x for
-          heavy-rotation tracks (read_count -> cooldown_rc_ref).
-        - ROTATION DEPTH: how much OTHER music has played since, over cooldown_plays,
-          stretched the same way.
-
-        Time alone was not enough. Measured on this install, 80% of the intervals
-        between two plays of the same track exceed four days — past every time window,
-        so the same popular track could be picked again and again as long as the
-        calendar moved, however little music had actually gone by. Depth is what a
-        listener perceives as repetition; time is only a proxy for it, and a poor one
-        when listening is sporadic.
-
-        min(), not a product: each is a full-strength constraint, and multiplying two
-        of them would demote a track twice for one offence.
-
-        A track with no last_seq (never played since the column was added) falls back
-        to time alone, so the rule fills in as tracks play rather than needing a
-        backfill."""
-        f = 1.0
-        stretch = 1.0 + min(read_count or 0, self.cooldown_rc_ref) / float(self.cooldown_rc_ref)
-
-        if last_read_at is not None:
-            try:
-                lr = last_read_at
-                if isinstance(lr, (int, float)):
-                    lr = datetime.datetime.utcfromtimestamp(lr)
-                if getattr(lr, 'tzinfo', None) is not None:
-                    lr = lr.replace(tzinfo=None)
-                age_days = (now - lr).total_seconds() / 86400.0
-                cd_days = self.cooldown_days * stretch
-                if 0.0 <= age_days < cd_days:
-                    f = min(f, self.cooldown_mult + (1.0 - self.cooldown_mult) * (age_days / cd_days))
-            except Exception:
-                pass
-
-        if last_seq and seq_tail:
-            try:
-                import bisect
-                # Music plays recorded after this track's own last play.
-                since = len(seq_tail) - bisect.bisect_right(seq_tail, int(last_seq))
-                cd_plays = self.cooldown_plays * stretch
-                if 0 <= since < cd_plays:
-                    f = min(f, self.cooldown_mult + (1.0 - self.cooldown_mult) * (since / cd_plays))
-            except Exception:
-                pass
-
-        sa = served.get(uri)
-        if sa is not None and (now_ts - sa) < self.served_cooldown_min * 60.0:
-            f *= self.served_mult
-        return f
 
 
     def get_new_tracks_notread(self, limit):
