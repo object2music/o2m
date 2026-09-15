@@ -726,10 +726,6 @@
   #artist-name, #album-name { flex: 0 1 auto; }
   #album-name:empty { display: none; }
 
-  /* Status badge + network dot share one row. Both used to be siblings in the
-     inline flow, so a long badge (which wraps on mobile) pushed the dot onto a
-     line of its own. A flex row keeps them together: the badge takes the space it
-     needs, the dot stays pinned beside it and never wraps away. */
   /* Opens the now-playing block, so no top margin — it carries the gap to the
      title instead, and sits on the same line as the details panel's head. */
   #status-line {
@@ -737,7 +733,6 @@
     margin-bottom: 6px; min-width: 0; min-height: 18px;
   }
   #status-line #track-status-badge { margin-top: 0; min-width: 0; }
-  #status-line #net-dot { flex-shrink: 0; }
 
   /* track status badge — texte plat lisible, avec carré de couleur en tête */
   #track-status-badge {
@@ -840,6 +835,22 @@
      here" — with the pulse while a download pass runs. */
   #btn-snapcast[data-target="offline"] { color: var(--accent); }
   #btn-snapcast.busy { animation: off-pulse 1.2s ease-in-out infinite; }
+
+  /* Network health lives in this glyph's colour (html[data-net], one probe), which
+     is why there is no dot beside the status badge any more: the health of the link
+     and where the audio comes out are the same question asked twice, and a separate
+     indicator made the reader correlate two things instead of reading one.
+     Connected is where it matters most — the web stream carries ~1s of buffer, so a
+     red network is about to be audible. Remote stays grey while all is well and
+     only takes a colour when the probe found something worth warning about: grey
+     there means "this device is not a speaker", and painting it green would answer
+     a question nobody asked. Offline is never tinted — it plays this device's own
+     files, so the network is irrelevant by definition, and the accent says so. */
+  html[data-net="green"]  #btn-snapcast[data-target="snapcast"] { color: #3fbf6f; }
+  html[data-net="orange"] #btn-snapcast[data-target="snapcast"] { color: #f0a000; }
+  html[data-net="red"]    #btn-snapcast[data-target="snapcast"] { color: #e0245e; }
+  html[data-net="orange"] #btn-snapcast[data-target="remote"]   { color: #f0a000; }
+  html[data-net="red"]    #btn-snapcast[data-target="remote"]   { color: #e0245e; }
 
   /* ── Progress bar ── */
   #progress-wrap {
@@ -2258,19 +2269,6 @@
     html.basic[data-theme="bulletin"] #basic-status { padding: 10px 22px; }
   }
 
-  /* Network quality dot (green/orange/red) — fed by a periodic latency probe.
-     Sits on the status line of the now-playing header. */
-  /* Network quality dot — colour driven by html[data-net], so several dots
-     (now-playing header + basic status line) stay in sync from one probe. */
-  .net-dot {
-    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
-    background: var(--border-strong); vertical-align: middle; transition: background .3s;
-  }
-  #net-dot { margin-top: 4px; }
-  html[data-net="green"]  .net-dot { background: #3fbf6f; }
-  html[data-net="orange"] .net-dot { background: #f0a000; }
-  html[data-net="red"]    .net-dot { background: #e0245e; }
-  html.basic #net-dot { display: none; }   /* basic shows it in the status line instead */
 
   /* Offline storage readout: a key/value list, not a table — two rows do not
      earn a grid, and it has to wrap on a phone. */
@@ -2363,7 +2361,6 @@
              "DETAILS" head of the panel on the right. -->
         <div id="status-line">
           <div id="track-status-badge"></div>
-          <span id="net-dot" class="net-dot" title="Network quality"></span>
         </div>
         <div id="track-name" class="o2m-hero-title">—</div>
         <div id="artist-album" class="o2m-np-meta">
@@ -2429,8 +2426,6 @@
       <span id="bs-tracks">0 tracks</span>
       <span class="bs-sep">·</span>
       <span id="bs-boxes">0 boxes</span>
-      <span class="bs-sep">·</span>
-      <span class="net-dot" title="Network"></span>
       <span class="mood-forced-hint" data-mood-forced hidden></span>
     </div>
     <div class="basic-toggles" id="basic-toggles">
@@ -2861,10 +2856,16 @@ async function applyMood() {
 /* ── Network quality indicator (green / orange / red) ──────────────────────────
    Periodic latency probe against the o2m API + Network Information API when
    available. Thresholds chosen against the snapcast reality: the web stream has
-   ~1s of buffer, so RTT spikes beyond ~1.2s mean audible dropouts (red). */
+   ~1s of buffer, so RTT spikes beyond ~1.2s mean audible dropouts (red).
+
+   The reading is published as html[data-net] and painted by the playback-target
+   glyph (see its CSS). It used to have a dot of its own, and the early return that
+   guarded it — `if (!el) return;` — meant the probe simply stopped on any view
+   without that dot; now nothing can silence it, so the title below is always the
+   last real measurement. */
+let netTitle = 'Network: probing…';
+
 async function netProbe() {
-  const el = document.getElementById('net-dot');
-  if (!el) return;
   const t0 = performance.now();
   let ms = Infinity;
   try {
@@ -2878,10 +2879,10 @@ async function netProbe() {
   let level = 'green';
   if (ms > 1200 || conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') level = 'red';
   else if (ms > 400 || conn.effectiveType === '3g') level = 'orange';
-  document.documentElement.dataset.net = level;   // drives every .net-dot via CSS
-  const title = 'Network: ' + (ms === Infinity ? 'offline'
+  document.documentElement.dataset.net = level;   // drives the glyph's colour via CSS
+  netTitle = 'Network: ' + (ms === Infinity ? 'unreachable'
     : Math.round(ms) + ' ms' + (conn.effectiveType ? ' · ' + conn.effectiveType : ''));
-  document.querySelectorAll('.net-dot').forEach(d => d.title = title);
+  paintPlaybackTarget();   // the reading is only visible through that glyph now
 }
 
 /* ── Basic view (/basic — default on mobile) ─────────────────────────────────
@@ -8579,6 +8580,10 @@ function paintPlaybackTarget() {
   if (st !== 'offline') {
     const n = Object.keys(offInv()).length;
     if (n) title += ' (' + n + ' track' + (n === 1 ? '' : 's') + ' held here)';
+    // The colour says green/orange/red; the tooltip says how many ms that was.
+    // Without it the reading is a hue with nothing behind it — which is what the
+    // dot's own tooltip used to answer.
+    title += '\n' + netTitle;
   }
   btn.title = title;
   btn.setAttribute('aria-label', title);

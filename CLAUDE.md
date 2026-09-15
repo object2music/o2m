@@ -431,8 +431,8 @@ before matching — otherwise a gated feed would stop being pre-cached.
 Everywhere else the browser is a remote control — Mopidy plays, Snapcast streams the
 result to the phone, every button is an RPC. Offline inverts that: the device keeps its
 own copies and plays them through a plain `<audio>` element, server out of the loop.
-The toggle sits next to the network dot, because that is the question it answers — not
-"is there a network" but "do I still need one".
+The control answers "do I still need a network", not "is there one" — which is why
+the network reading was folded INTO it rather than kept beside it.
 
 **One control, three states.** Where the audio comes out is a single question with three
 answers, so it is one button (`#btn-snapcast`, `cyclePlaybackTarget`) cycling through
@@ -443,6 +443,18 @@ stream — and two separate toggles made that exclusivity something the user had
 rather than something the control expressed. Where Snapcast is not configured the cycle
 has two stops rather than a dead button: offline must stay reachable, which is why the
 button is no longer removed when `snap_ws_url` is absent.
+
+**The glyph also carries network health, and the separate dot is gone.** One latency probe
+still publishes `html[data-net]` (green/orange/red, `netProbe`), but it now paints the
+button instead of a dot beside the status badge. The health of the link and where the audio
+comes out are the same question asked twice, and two indicators made the reader correlate
+them. Connected takes the colour outright — the web stream holds ~1s of buffer, so red is
+about to be audible. **Remote** stays grey while all is well and colours only on orange/red:
+grey there means "this device is not a speaker", and a green tick would answer a question
+nobody asked. **Offline** is never tinted, the network being irrelevant to it by definition.
+The millisecond reading moved to the button's tooltip, under the state line. The probe also
+stopped being silenceable: it used to open with `if (!el) return;` on that dot, so any view
+without one killed the measurement outright.
 
 **The switch is manual** (`offStart` / `offStop` in `mood.html`). Two players exist and
 you always know which one has the hand; losing the network is not a reason for the page
