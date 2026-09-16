@@ -1,0 +1,119 @@
+/* ══ Object mosaic — the Boxes column's two other views ═══════════════════════
+   Its own file rather than another section of mood.css (2 300 lines): one
+   component, one pair of files, and the page keeps loading exactly what it uses.
+   Loaded after mood.css, so it wins on equal specificity.
+   Behaviour and rationale: static/objgrid.js. */
+
+/* ── The switcher, on the Auto row ─────────────────────────────────────────── */
+
+.pm-seg {
+  display: flex; align-items: center; gap: 2px;
+  margin-left: auto;             /* pushes it to the far end of #auto-bar */
+}
+.pm-tab {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 26px; padding: 0;
+  background: none; border: 1px solid transparent; border-radius: var(--r, 0);
+  color: var(--muted); cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.pm-tab svg { width: 15px; height: 15px; }
+.pm-tab:hover { color: var(--text); }
+.pm-tab.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--border-soft);
+}
+
+/* ── The grid ──────────────────────────────────────────────────────────────── */
+
+#obj-grid-wrap { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+/* Both wraps carry an explicit display, which beats [hidden]'s UA rule — without
+   these two the switcher would show the mosaic UNDER the boxes list. */
+#obj-grid-wrap[hidden] { display: none; }
+#boxes-wrap[hidden]    { display: none; }
+
+.og-tools { display: flex; }
+.og-filter {
+  width: 100%; padding: 6px 8px;
+  font: inherit; font-size: 13px;
+  color: var(--text); background: var(--card);
+  border: 1px solid var(--border-soft); border-radius: var(--r, 0);
+}
+.og-filter:focus { outline: none; border-color: var(--accent); }
+
+/* auto-fill, not auto-fit: the column is narrow and a two-tile row must stay
+   two tiles rather than stretch to fill the width. */
+.og-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  align-content: start;
+}
+
+.og-tile {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 0; border: none; background: none; text-align: left;
+  color: var(--muted); cursor: pointer;
+  transition: color .15s, opacity .15s;
+  min-width: 0;
+}
+.og-tile:active { opacity: .6; }
+.og-tile:disabled { cursor: wait; opacity: .5; }
+
+.og-thumb {
+  position: relative; display: block;
+  aspect-ratio: 1 / 1; width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+.og-art, .og-art svg { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* Active state. A cover cannot carry a colour swatch the way a text row does, so
+   it is the frame that answers: an accent border, the image lifted out of its
+   dimmed rest state, and a tick in the corner for anyone who does not read the
+   border as a state. */
+.og-tile .og-art { opacity: .78; transition: opacity .15s; }
+.og-tile:hover .og-art { opacity: 1; }
+.og-tile.active { color: var(--text); }
+.og-tile.active .og-thumb { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.og-tile.active .og-art { opacity: 1; }
+
+.og-mark {
+  position: absolute; inset: auto 0 0 auto;
+  display: none; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  background: var(--accent); color: var(--on-accent, #fff);
+}
+.og-mark svg { width: 13px; height: 13px; }
+.og-tile.active .og-mark { display: flex; }
+
+/* Details. Hidden until the tile is hovered or focused — on a phone there is no
+   hover, so it is simply always there. */
+.og-open {
+  position: absolute; inset: 0 auto auto 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  background: var(--bg); color: var(--muted);
+  opacity: 0; transition: opacity .15s;
+}
+.og-open svg { width: 13px; height: 13px; }
+.og-open:hover { color: var(--text); }
+.og-tile:hover .og-open, .og-tile:focus-within .og-open { opacity: .92; }
+@media (hover: none) { .og-open { opacity: .92; } }
+
+.og-name {
+  font-size: 11px; font-weight: 600; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.og-sub {
+  font-size: 10px; line-height: 1.2; color: var(--muted); opacity: .75;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.og-tile.active .og-name { color: var(--accent); }
+
+.og-empty {
+  grid-column: 1 / -1;
+  padding: 14px 2px; font-size: 13px; color: var(--muted);
+}
+.og-more { padding-top: 4px; font-size: 11px; opacity: .7; }

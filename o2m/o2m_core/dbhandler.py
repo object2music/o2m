@@ -7,6 +7,7 @@ from playhouse.reflection import generate_models, print_model
 from playhouse.shortcuts import model_to_dict, dict_to_model
 
 
+from o2m_core import virtualbox
 from o2m_core.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
@@ -210,16 +211,31 @@ class DatabaseHandler():
                 self.log.error(f'resolve_uris: {uri}: {err}')
         return out
 
+    def find_box_by_uid(self, uid):
+        """The stored box with this uid, or None — WITHOUT creating one.
+
+        `get_box_by_uid` below opens a box for any uid it does not know, which is
+        right where it comes from (an unseen NFC tag IS a new box) and wrong
+        everywhere else. Every read-only path — displaying the name of the box
+        that owns a track, testing existence — asks this one instead."""
+        if not uid:
+            return None
+        results = self.transform_query_to_list(Box.select().where(Box.uid == uid))
+        return results[0] if results else None
+
     def get_box_by_uid(self, uid):
         #self.log.info('searching for box : {} '.format(uid))
-        query = Box.select().where(Box.uid == uid)
-        results = self.transform_query_to_list(query)
-        #print (results)
-        if len(results) > 0:
-            return results[0]
-        else:
-            mopidy_box = self.create_box('mopidy_box','')
-            return mopidy_box
+        # A virtual object's uid (obj:<uri>, see o2m_core/virtualbox.py) is not a
+        # box and must never become one: it reaches here through the uid-keyed
+        # paths — /api/track_info resolving the owner of the playing track, most
+        # quietly — and the auto-create below would open a junk row per tap on a
+        # mosaic tile.
+        if virtualbox.is_virtual(uid):
+            return None
+        box = self.find_box_by_uid(uid)
+        if box is not None:
+            return box
+        return self.create_box('mopidy_box', '')
 
     def get_boxes_pinned(self):
         #results = Box.select().where(Box.favorite == 1).get()
@@ -1576,23 +1592,30 @@ class DatabaseHandler():
         """Return list of album IDs where saved=1."""
         return [a.id for a in Album.select(Album.id).where(Album.saved == 1)]
 
-    def get_saved_albums(self, limit=200):
-        """Saved albums as picker rows (uri/name/sub/image) for the box editor."""
-        rows = (Album.select().where(Album.saved == 1)
-                .order_by(Album.name).limit(limit))
-        return [{'uri': a.uri or f'spotify:album:{a.id}',
-                 'name': a.name or a.id,
-                 'sub': a.artist_name or '',
-                 'image': a.image_url or ''} for a in rows]
+    def get_saved_albums(self, limit=200, offset=0):
+        """Saved albums as picker rows (uri/name/sub/image), paged.
 
-    def get_followed_artists(self, limit=200):
-        """Followed artists as picker rows (uri/name/image) for the box editor."""
-        rows = (Artist.select().where(Artist.followed == 1)
-                .order_by(Artist.name).limit(limit))
-        return [{'uri': a.uri or f'spotify:artist:{a.id}',
-                 'name': a.name or a.id,
-                 'sub': '',
-                 'image': a.image_url or ''} for a in rows]
+        Returns (rows, has_more) — the extra row probed beyond `limit` is what
+        says whether there is a next page, the same shape get_favorite_rows uses.
+        Paged because the mosaic in the Full view lists the lot (248 here), where
+        the box editor only ever showed a capped picker."""
+        rows = list(Album.select().where(Album.saved == 1)
+                    .order_by(Album.name).limit(limit + 1).offset(offset))
+        more = len(rows) > limit
+        return ([{'uri': a.uri or f'spotify:album:{a.id}',
+                  'name': a.name or a.id,
+                  'sub': a.artist_name or '',
+                  'image': a.image_url or ''} for a in rows[:limit]], more)
+
+    def get_followed_artists(self, limit=200, offset=0):
+        """Followed artists as picker rows (uri/name/image), paged like above."""
+        rows = list(Artist.select().where(Artist.followed == 1)
+                    .order_by(Artist.name).limit(limit + 1).offset(offset))
+        more = len(rows) > limit
+        return ([{'uri': a.uri or f'spotify:artist:{a.id}',
+                  'name': a.name or a.id,
+                  'sub': '',
+                  'image': a.image_url or ''} for a in rows[:limit]], more)
 
     def save_album_track(self, album_id, track_uri, position=0):
         """Link a track_uri to an album_id in AlbumTrack cache."""

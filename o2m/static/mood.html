@@ -23,6 +23,9 @@
      init() runs synchronously at the end of the inline script, so window.O2M must
      already exist by then. The library defers its own mount() to DOMContentLoaded. -->
 <script src="/static/ds/o2m-marks.js"></script>
+<!-- Object mosaic (albums / artists in the Boxes column). Head-loaded like the
+     marks library: init() below runs synchronously and calls OBJGRID.init(). -->
+<script src="/static/objgrid.js"></script>
 <script>
   /* Applique le thème avant le rendu pour éviter le flash.
      mood2 utilise une clé de stockage séparée (o2m2-theme) et part en dark
@@ -55,6 +58,9 @@
 <!-- The page's own rules, extracted from an inline <style>. Still loaded AFTER
      ds/o2m.css above, so its rules keep winning on equal specificity. -->
 <link rel="stylesheet" href="/static/mood.css">
+<!-- The Boxes column's two mosaic views. Its own component file rather than a
+     section of mood.css; loaded after it, so it wins on equal specificity. -->
+<link rel="stylesheet" href="/static/objgrid.css">
 </head>
 <body>
 
@@ -5525,7 +5531,16 @@ function updateBoxesCount() {
   if (!bc) return;
   const total  = document.querySelectorAll('#boxes-wrap .box-btn').length;
   const active = document.querySelectorAll('#boxes-wrap .box-btn.active').length;
-  bc.textContent = total ? `${active} ${active === 1 ? 'box' : 'boxes'}` : '';
+  // An activated album is not a box — it fills the tracklist the same way, but
+  // calling it one in the count would be the only place the interface says so.
+  const objs = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
+  const parts = [];
+  if (active || !Object.keys(objs).length)
+    parts.push(`${active} ${active === 1 ? 'box' : 'boxes'}`);
+  ['album', 'artist'].forEach(k => {
+    if (objs[k]) parts.push(`${objs[k]} ${objs[k] === 1 ? k : k + 's'}`);
+  });
+  bc.textContent = total ? parts.join(' · ') : '';
 }
 
 // Resync immédiat de l'état actif de toutes les boxes (ex: la box auto que le
@@ -5563,6 +5578,9 @@ function refreshBoxStates() {
     if (btn.dataset.uid) checkBoxActive(btn.dataset.uid, btn);
   });
   refreshBasicToggles();   // basic view: reflect e.g. the server-activated auto box
+  // Activated objects live in the same activeboxs list and are cleared by the same
+  // trash button, so they resync on exactly the same occasions.
+  if (typeof OBJGRID !== 'undefined') OBJGRID.refreshActive();
 }
 
 async function toggleBox(uid, btn) {
@@ -7201,6 +7219,8 @@ async function init() {
   checkEditStatus();
   initOnboarding();
   await loadBoxes();
+  // Guarded: a failed asset load must not take the rest of init() down with it.
+  if (typeof OBJGRID !== 'undefined') OBJGRID.init();   // static/objgrid.js
   // Laisse au WS le temps de s'ouvrir (≤300ms) → préfère WS sur HTTP mais ne bloque plus longtemps
   await Promise.race([wsReady, new Promise(r => setTimeout(r, 300))]);
   await refreshNowPlaying();

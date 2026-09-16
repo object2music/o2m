@@ -33,8 +33,9 @@ docker compose --profile dev up -d
 Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 (popularity scoring), `test_boxdirectives.py` (time windows, mood/dl directives),
 `test_player_port.py` (the player port's anti-drift check), `test_selection.py`
-(the samplers and the anti-repeat cooldown) and `test_webmedia.py`
-(the `web:` page reader). Run from the repo root (package-prefixed, since they import
+(the samplers and the anti-repeat cooldown), `test_webmedia.py`
+(the `web:` page reader) and `test_virtualbox.py` (activating an album or an artist
+as a box). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -64,6 +65,9 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
 
   **Schema migrations**: `SCHEMA_VERSION` (currently **23**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
+- **`virtualbox.py`** — activating an OBJECT (an album, an artist) the way a box is
+  activated: the unsaved `Box` it builds, the `obj:` uid namespace and the toggle
+  truth table. See its own section below.
 - **`webmedia.py`** — the `web:<url>` page reader: fetch a web page, find what o2m can
   play in it, and resolve it to a stream (yt_dlp). Experimental; see its own section.
 - **`spotifyhandler.py`** — `SpotifyHandler` class wrapping the Spotipy library for recommendations, library lookups, and auth.
@@ -443,6 +447,83 @@ growing a third definition of local time next to those two.
 Window-aware scanning matters elsewhere too: a window says WHEN a line plays, not whether
 the box refers to it, so the catalogue warmup and the directory listings strip the prefix
 before matching — otherwise a gated feed would stop being pre-cached.
+
+## Activating an object: an album or an artist, with no box behind it
+
+A box is a durable thing — an NFC uid and a row in `box`. An album is not; it has
+only its uri. But **nothing that happens after an activation is driven by that row**:
+the fill, the mood and discover-level ladder, the anti-repeat cooldown, the
+ownership tag (`_track_info[tlid]['box_id']`) that lets a deactivation remove
+exactly the tracks it added — all of it is driven by a `Box` OBJECT. So an object
+is activated by building that object and nothing else: **a Box that is never
+saved**, in **`o2m/o2m_core/virtualbox.py`**, with `test_virtualbox.py` beside it.
+
+The pattern predates the feature: `apply_mood_settings` already fills from an
+unsaved `Box(uid='auto_sim', data='auto:library')` when nothing is active. And
+`spotify:album:…` / `spotify:artist:…` were already first-class box lines, handled
+by `_expand_pick` (popularity, mood, cooldown) in `tracklistappend_box`. The whole
+feature is therefore **one module, two endpoints and a mosaic** — the engine is
+untouched.
+
+### The uid namespace is load-bearing, not cosmetic
+`DatabaseHandler.get_box_by_uid` **creates** a box for any uid it does not find,
+which is right where it comes from (an unseen NFC tag IS a new box) and wrong
+everywhere else. A virtual uid reaching a uid-keyed path would open a junk row per
+tap, and there is a quiet one: `/api/track_info` resolves the name of the box that
+owns the playing track. So virtual uids are `obj:<uri>`, `get_box_by_uid` returns
+None for them rather than creating, `find_box_by_uid` is the non-creating lookup
+every read-only path uses, and `O2mToMopidy.box_label` is what a display asks.
+Same class of bug as the 15 `Track` rows on dead CDN urls — measured after: 148
+boxes before and after, 0 `Track` rows on an `obj:`/`box:` uri.
+
+### Album and artist fill differently, and that is the answer, not a shortcut
+An **album** is asked for by name: tapping its cover means "play this record", so
+it takes the basic path (`option_sort='asc'`) — the raw uri, which Mopidy resolves
+whole, in order. An **artist** is a body of work (87 cached tracks on average here,
+up to 314); served whole it would BE the tracklist, so it goes through the smart
+path, exactly like a box line pointing at the same artist.
+
+That order had to be defended once: `add_tracks` re-shuffled whenever more than one
+box was active, ignoring `option_sort` — and `mopidy_box` joins `activeboxs` on its
+own as soon as a track plays, so the second box is always there. An explicit
+`asc`/`desc` is the one statement a box makes about sequence; the shuffle in
+`one_box_changed` already excluded the two and this one had drifted from it. Six
+stored boxes use `asc`/`desc`, and for them this was a latent bug.
+
+### Endpoints
+- **`GET /api/object_toggle?uri=…&name=…&mode=toogle|add|remove`** — deliberately not
+  `/api/box`, which is uid-keyed (see above). `name` is what the mosaic already has on
+  screen, so the fill does not re-look-up what was just displayed.
+- **`GET /api/active_objects`** — every active object in ONE call. The boxes list asks
+  per box, which is fine for a dozen rows and would be hundreds of requests here.
+- `GET /api/library_browse?kind=albums|artists` is now paged (`limit`/`offset`,
+  `has_more`), cap raised to 500: the mosaic asks for the whole library at once
+  because its filter field has to search what is not on screen.
+
+Everything else follows for free, and was verified live: deactivation removes
+exactly the object's tracks (30 → 0), Music OFF in the Basic view sweeps it up
+(`meta_remove` treats an uncategorised box as `'other'`), the details panel reads
+**Source: Album · <name>** from the `library_link` `add_tracks` already derives, and
+end-of-track recommendations lean on the artist because `get_track_recommandation`
+branches on `'album' in data`.
+
+### The mosaic (`o2m/static/objgrid.js` + `objgrid.css`)
+The Boxes column gets a three-way switcher on the Auto row — **boxes · albums ·
+artists** — and the two new views are mosaics, not more rows: these are chosen by
+their cover, and 248 album names in a third of a screen is a directory where 248
+covers are a shelf. Its own pair of files rather than more of `mood.html`'s inline
+script and of `mood.css`'s 2 300 lines; loaded in `<head>` like `ds/o2m-marks.js`,
+and for the same reason (`init()` runs synchronously at the end of the inline
+script). Points worth knowing:
+- **Active state is a frame, not a swatch**: a cover cannot carry the boxes list's
+  coloured square, so it is an accent border plus a corner tick.
+- `#boxes-wrap` and `#obj-grid-wrap` both carry an explicit `display`, which beats
+  `[hidden]`'s UA rule — without the two `[hidden]` rules the mosaic renders *under*
+  the boxes list instead of replacing it.
+- The header count says `2 boxes · 1 album`: an activated album fills the tracklist
+  like a box but is not one, and that line is the only place the interface says so.
+- Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
+  cannot see them — an album called *Autobahn* does not light the live mode.
 
 ## `web:<url>` — the media a web page holds (experimental)
 

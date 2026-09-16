@@ -11,6 +11,7 @@ from o2m_core import radiofrance as rf
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
 from o2m_core import selection
+from o2m_core import virtualbox as vbox
 
 '''
 option_type 
@@ -399,6 +400,23 @@ class O2mToMopidy:
         except Exception:
             pass
         return None
+
+    def box_label(self, uid):
+        """Display name of whatever owns a tracklist entry — WITHOUT creating it.
+
+        `get_box_by_uid` opens a box for any uid it does not know, so a display
+        path must never call it; and the owner may not be a stored box at all —
+        an activated album is a virtual one (see o2m_core/virtualbox.py), and its
+        name lives only on the live instance in `activeboxs`."""
+        if not uid:
+            return ''
+        for b in (self.activeboxs or []):
+            if getattr(b, 'uid', None) == uid:
+                return (getattr(b, 'description', '') or '').strip() or uid
+        b = self.dbHandler.find_box_by_uid(uid)
+        if b is not None:
+            return (getattr(b, 'description', '') or '').strip() or uid
+        return vbox.uri_of(uid) or uid
 
     def note_box_activation(self):
         """Record that an object was PUT DOWN — a fresh intent that outranks the
@@ -928,9 +946,19 @@ class O2mToMopidy:
                     # (one background worker, sequential in play order, rate-limit aware).
                     self._enrich_tracks_preemptive(_enrich_items)
 
-                    # Shuffle complete computed tracklist if more than two boxs
+                    # Shuffle complete computed tracklist if more than two boxs —
+                    # UNLESS this box asked for an order. 'asc'/'desc' is the one
+                    # explicit statement a box makes about sequence, and a second
+                    # active box (mopidy_box joins the list on its own as soon as
+                    # a track plays) silently overrode it. one_box_changed's own
+                    # shuffle already excludes the two; this one had drifted from
+                    # it. It is what makes an activated album play as a record
+                    # rather than as a bag of its tracks.
                     #self.shuffle_tracklist(current_index + 1, new_length)
-                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle" or active_box.option_sort=="smart") and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1)):
+                    _sort = getattr(active_box, 'option_sort', None)
+                    if (_sort not in ("asc", "desc")
+                            and (len(self.activeboxs) > 1 or _sort == "shuffle" or _sort == "smart")
+                            and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1))):
                         if new_length > current_index + 1:
                             print ("shuffling")
                             self.smart_shuffle_tracklist(current_index + 1, new_length)

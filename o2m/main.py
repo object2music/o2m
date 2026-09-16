@@ -2,6 +2,7 @@ import logging, subprocess, os, spotipy, json, threading, requests
 
 from mopidyapi import MopidyAPI
 from o2m_core import util
+from o2m_core import virtualbox
 from o2m_core.o2mtomopidy import O2mToMopidy
 from o2m_core.spotifyhandler import SpotifyHandler
 from time import sleep
@@ -589,6 +590,37 @@ if __name__ == "__main__":
         #boxes = json.dumps(boxes)
         return (boxes)
 
+    # ── Activating an OBJECT (album, artist) the way a box is activated ──
+    # Deliberately NOT /api/box: that route is uid-keyed, and get_box_by_uid opens
+    # a row for any uid it does not know — one tap on a mosaic tile would leave a
+    # junk box behind. The decision and the virtual Box live in
+    # o2m_core/virtualbox.py; these two are the wire.
+
+    @api.route('/api/object_toggle')
+    def api_object_toggle():
+        from flask import jsonify
+        uri  = (request.args.get('uri') or '').strip()
+        mode = (request.args.get('mode') or 'toogle').strip()
+        # The caller passes the name it already has on screen, so the fill does not
+        # have to look up what the mosaic just displayed.
+        name = (request.args.get('name') or '').strip()
+        try:
+            r = virtualbox.toggle(o2mHandler, uri, mode=mode, name=name)
+            return jsonify(r), (200 if r.get('ok') else 400)
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e), 'uri': uri}), 500
+
+    @api.route('/api/active_objects')
+    def api_active_objects():
+        """Every active object, in one call. A mosaic holds hundreds of tiles and
+        each asking for its own state (as the boxes list does, one request per
+        box) would be hundreds of requests per refresh."""
+        from flask import jsonify
+        try:
+            return jsonify({'items': virtualbox.active_objects(o2mHandler)})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     #Return a single box's data without triggering playback (used by spotdl cache service)
     @api.route('/api/newrecent')
     def api_newrecent():
@@ -818,7 +850,10 @@ if __name__ == "__main__":
         kind = (request.args.get('kind') or '').strip()
         db = o2mHandler.dbHandler
         try:
-            limit = max(1, min(int(request.args.get('limit') or 50), 200))
+            # 500, not 200: the Full view's mosaic asks for the whole album or
+            # artist library in one request, because its filter field has to
+            # search what is not on screen to be worth anything.
+            limit = max(1, min(int(request.args.get('limit') or 50), 500))
         except Exception:
             limit = 50
         try:
@@ -835,13 +870,17 @@ if __name__ == "__main__":
                 rows, more = db.get_recent_episode_rows(limit=limit, offset=offset)
                 return jsonify({'items': rows, 'has_more': more,
                                 'limit': limit, 'offset': offset})
+            if kind in ('albums', 'artists'):
+                # Paged like the favourites above: the Full view's mosaic asks for
+                # the whole library at once (248 albums here), which is past what
+                # the 50-row default was sized for.
+                rows, more = (db.get_saved_albums(limit=limit, offset=offset) if kind == 'albums'
+                              else db.get_followed_artists(limit=limit, offset=offset))
+                return jsonify({'items': rows, 'has_more': more,
+                                'limit': limit, 'offset': offset})
             if kind == 'playlists':
                 rows = [{'uri': p['uri'], 'name': p['name'], 'sub': '', 'image': ''}
                         for p in db.get_playlists_for_select(owner_id=getattr(o2mHandler, 'username', None))]
-            elif kind == 'albums':
-                rows = db.get_saved_albums()
-            elif kind == 'artists':
-                rows = db.get_followed_artists()
             else:
                 return jsonify({'error': 'unknown kind'}), 400
             return jsonify({'items': rows})
@@ -1925,8 +1964,7 @@ if __name__ == "__main__":
             # fall back to its name. Still strictly live: nothing persisted.
             if not source and info and info.get('box_id'):
                 try:
-                    _b = o2mHandler.dbHandler.get_box_by_uid(info['box_id'])
-                    source = (getattr(_b, 'description', '') or info['box_id']).strip()
+                    source = o2mHandler.box_label(info['box_id'])
                 except Exception:
                     pass
 
