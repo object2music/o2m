@@ -143,6 +143,24 @@ class Toggle(unittest.TestCase):
         self.assertEqual(rows, [{'uri': 'spotify:album:X', 'kind': 'album',
                                  'name': 'Kind of Blue'}])
 
+    def test_the_two_halves_partition_activeboxs(self):
+        # One call answers for the whole column, so nothing a person put down may
+        # fall between the halves, and nothing may be counted twice.
+        self.h.activeboxs.append(_FakeBox(uid='04A2B3', description='Morning'))
+        vb.toggle(self.h, 'spotify:album:X', name='Kind of Blue')
+        objs = {o['uri'] for o in vb.active_objects(self.h)}
+        uids = set(vb.active_box_uids(self.h))
+        self.assertEqual(uids, {'04A2B3'})
+        self.assertEqual(len(objs) + len(uids), len(self.h.activeboxs))
+
+    def test_internal_boxes_are_not_reported_as_lit(self):
+        # mopidy_box joins activeboxs by itself as soon as a track plays. It is
+        # not pinned and has no tile, so calling it active would be a state the
+        # interface cannot show and the user never chose.
+        self.h.activeboxs.append(_FakeBox(uid='mopidy_box', description='mopidy_box'))
+        self.h.activeboxs.append(_FakeBox(uid='04A2B3', description='Morning'))
+        self.assertEqual(vb.active_box_uids(self.h), ['04A2B3'])
+
 
 if __name__ == '__main__':
     unittest.main()

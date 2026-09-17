@@ -494,8 +494,12 @@ stored boxes use `asc`/`desc`, and for them this was a latent bug.
 - **`GET /api/object_toggle?uri=…&name=…&mode=toogle|add|remove`** — deliberately not
   `/api/box`, which is uid-keyed (see above). `name` is what the mosaic already has on
   screen, so the fill does not re-look-up what was just displayed.
-- **`GET /api/active_objects`** — every active object in ONE call. The boxes list asks
-  per box, which is fine for a dozen rows and would be hundreds of requests here.
+- **`GET /api/active_objects`** — what is lit in the whole column in ONE call: the
+  active objects (`items`) and the uids of the active stored boxes (`boxes`). The
+  boxes LIST asks per box, which is fine for a dozen rows and would be hundreds of
+  requests across three mosaics. Internal boxes are left out: `mopidy_box` joins
+  `activeboxs` by itself as soon as a track plays, is not pinned and has no tile, so
+  reporting it would be an implementation detail dressed as a state.
 - `GET /api/library_browse?kind=albums|artists` is now paged (`limit`/`offset`,
   `has_more`), cap raised to 500: the mosaic asks for the whole library at once
   because its filter field has to search what is not on screen.
@@ -507,19 +511,44 @@ exactly the object's tracks (30 → 0), Music OFF in the Basic view sweeps it up
 end-of-track recommendations lean on the artist because `get_track_recommandation`
 branches on `'album' in data`.
 
-### The mosaic (`o2m/static/objgrid.js` + `objgrid.css`)
-The Boxes column gets a three-way switcher on the Auto row — **boxes · albums ·
-artists** — and the two new views are mosaics, not more rows: these are chosen by
-their cover, and 248 album names in a third of a screen is a directory where 248
-covers are a shelf. Its own pair of files rather than more of `mood.html`'s inline
-script and of `mood.css`'s 2 300 lines; loaded in `<head>` like `ds/o2m-marks.js`,
-and for the same reason (`init()` runs synchronously at the end of the inline
-script). Points worth knowing:
+### The column's four views and its die (`o2m/static/objgrid.js` + `objgrid.css`)
+The Boxes column has **four views**, switched at the left of its toolbar: the boxes
+**list** as it always was, the same boxes as a **mosaic**, then **albums** and
+**artists**. A mosaic rather than more rows because these are chosen by their cover
+— 248 album names in a third of a screen is a directory, 248 covers are a shelf.
+Its own pair of files rather than more of `mood.html`'s inline script and of
+`mood.css`'s 2 300 lines; loaded in `<head>` like `ds/o2m-marks.js`, and for the
+same reason (`init()` runs synchronously at the end of the inline script).
+
+**The AUTO button is gone, and with it the third live-mode flag.** `isAutoMode()`
+now reads `moodSessionActive || autoBoxActive` — both decided by what is actually
+playing. The removed `autoToggle` was a persisted manual switch that only ever
+restated them, and the row it sat on is the toolbar now.
+
+**At the right of that row, one die — "one at random".** It activates one element
+of whatever view is open, drawn only from what is NOT already on: activating
+something already playing is a no-op the user cannot tell from a broken button, and
+turning it off would be the opposite of what a die is for. In the list view it
+*clicks the existing row* rather than re-implementing `toggleBox`; in a mosaic it
+goes through the same toggle as a tap, and then scrolls the winner into view —
+a die that only prints a name leaves you looking for it.
+
+Other points worth knowing:
 - **Active state is a frame, not a swatch**: a cover cannot carry the boxes list's
   coloured square, so it is an accent border plus a corner tick.
+- **A box tile toggles through `/api/box`** like the list row does, then re-reads
+  that row (`checkBoxActive`) — the list and the mosaic are two views of one state,
+  and the header count and the auto-box detection both read the list's DOM.
+- **No box carries an `image_url` today**, so every box tile falls to the generated
+  cover, which is deterministic on the uri: a box keeps the same face.
 - `#boxes-wrap` and `#obj-grid-wrap` both carry an explicit `display`, which beats
   `[hidden]`'s UA rule — without the two `[hidden]` rules the mosaic renders *under*
   the boxes list instead of replacing it.
+- **Tile width is tuned for this column, not for a page.** `minmax(108px, 1fr)` puts
+  about one tile fewer per row than the 84px it started at, across the widths the
+  column actually takes (~280–600px: 4 → 3 at 360, 5 → 4 at 500). No single value
+  holds that exactly at every width — the ratio drifts — so it is fitted to the real
+  range rather than to an abstract one.
 - The header count says `2 boxes · 1 album`: an activated album fills the tracklist
   like a box but is not one, and that line is the only place the interface says so.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label

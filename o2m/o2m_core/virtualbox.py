@@ -126,6 +126,27 @@ def active_objects(handler):
     return out
 
 
+# Boxes o2m activates for its own bookkeeping rather than because anyone asked.
+# `mopidy_box` owns tracks added outside any box (straight through Mopidy) and
+# joins `activeboxs` on its own as soon as one plays.
+INTERNAL_UIDS = frozenset({'mopidy_box'})
+
+
+def active_box_uids(handler):
+    """The uids of the active stored boxes — the other half of the answer above.
+
+    It lives here because the two halves answer one question ("what is lit in the
+    Boxes column?") and the mosaic asks it once. Splitting them would mean two
+    requests for one screen.
+
+    Internal boxes are left out: the question is which boxes are LIT, and
+    `mopidy_box` is never one of them — it is not pinned, has no tile and no row,
+    and reporting it would be an implementation detail dressed as a state."""
+    return [uid for uid in
+            (getattr(b, 'uid', None) for b in (getattr(handler, 'activeboxs', None) or []))
+            if uid and not is_virtual(uid) and uid not in INTERNAL_UIDS]
+
+
 def toggle(handler, uri, mode='toogle', name=''):
     """Activate or deactivate an object, by the same truth table as a box.
 

@@ -4,12 +4,13 @@
    Loaded after mood.css, so it wins on equal specificity.
    Behaviour and rationale: static/objgrid.js. */
 
-/* ── The switcher, on the Auto row ─────────────────────────────────────────── */
+/* ── The column toolbar: switcher left, die right ──────────────────────────── */
 
-.pm-seg {
-  display: flex; align-items: center; gap: 2px;
-  margin-left: auto;             /* pushes it to the far end of #auto-bar */
-}
+/* Wrapping rather than overflowing: this row lives in a third of the screen and
+   the random button carries a word. */
+#auto-bar { flex-wrap: wrap; row-gap: 6px; }
+
+.pm-seg { display: flex; align-items: center; gap: 2px; }
 .pm-tab {
   display: flex; align-items: center; justify-content: center;
   width: 28px; height: 26px; padding: 0;
@@ -24,6 +25,21 @@
   background: var(--accent-soft);
   border-color: var(--border-soft);
 }
+
+/* The die sits at the far end of the row, where the AUTO button used to be. */
+.pm-random {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: auto;
+  padding: 4px 9px; border-radius: var(--r, 0); cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase;
+  border: 1px solid var(--muted); background: transparent; color: var(--muted);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.pm-random svg { width: 14px; height: 14px; display: block; }
+.pm-random:hover { color: var(--text); border-color: var(--text); }
+.pm-random:active { background: var(--accent-soft); }
+.pm-random:disabled { opacity: .5; cursor: wait; }
 
 /* ── The grid ──────────────────────────────────────────────────────────────── */
 
@@ -43,10 +59,14 @@
 .og-filter:focus { outline: none; border-color: var(--accent); }
 
 /* auto-fill, not auto-fit: the column is narrow and a two-tile row must stay
-   two tiles rather than stretch to fill the width. */
+   two tiles rather than stretch to fill the width.
+   108px puts roughly one tile fewer per row than the 84px it started at, across
+   the widths this column actually takes (~280-600px): at 360 it goes 4 → 3, at
+   500 it goes 5 → 4. There is no single value that holds that exactly at every
+   width — the ratio drifts — so it is tuned for the real column, not for 1200px. */
 .og-grid {
   display: grid; gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
   align-content: start;
 }
 
@@ -82,10 +102,10 @@
 .og-mark {
   position: absolute; inset: auto 0 0 auto;
   display: none; align-items: center; justify-content: center;
-  width: 20px; height: 20px;
+  width: 22px; height: 22px;
   background: var(--accent); color: var(--on-accent, #fff);
 }
-.og-mark svg { width: 13px; height: 13px; }
+.og-mark svg { width: 14px; height: 14px; }
 .og-tile.active .og-mark { display: flex; }
 
 /* Details. Hidden until the tile is hovered or focused — on a phone there is no
@@ -93,21 +113,21 @@
 .og-open {
   position: absolute; inset: 0 auto auto 0;
   display: flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px;
+  width: 22px; height: 22px;
   background: var(--bg); color: var(--muted);
   opacity: 0; transition: opacity .15s;
 }
-.og-open svg { width: 13px; height: 13px; }
+.og-open svg { width: 14px; height: 14px; }
 .og-open:hover { color: var(--text); }
 .og-tile:hover .og-open, .og-tile:focus-within .og-open { opacity: .92; }
 @media (hover: none) { .og-open { opacity: .92; } }
 
 .og-name {
-  font-size: 11px; font-weight: 600; line-height: 1.25;
+  font-size: 12px; font-weight: 600; line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .og-sub {
-  font-size: 10px; line-height: 1.2; color: var(--muted); opacity: .75;
+  font-size: 11px; line-height: 1.2; color: var(--muted); opacity: .75;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .og-tile.active .og-name { color: var(--accent); }

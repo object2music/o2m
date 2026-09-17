@@ -612,12 +612,15 @@ if __name__ == "__main__":
 
     @api.route('/api/active_objects')
     def api_active_objects():
-        """Every active object, in one call. A mosaic holds hundreds of tiles and
-        each asking for its own state (as the boxes list does, one request per
-        box) would be hundreds of requests per refresh."""
+        """What is lit in the Boxes column, in ONE call: the active objects
+        (`items`) and the uids of the active stored boxes (`boxes`). A mosaic
+        holds hundreds of tiles and each asking for its own state — as the boxes
+        LIST does, one request per box — would be hundreds of requests per
+        refresh."""
         from flask import jsonify
         try:
-            return jsonify({'items': virtualbox.active_objects(o2mHandler)})
+            return jsonify({'items': virtualbox.active_objects(o2mHandler),
+                            'boxes': virtualbox.active_box_uids(o2mHandler)})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
