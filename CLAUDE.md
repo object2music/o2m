@@ -535,6 +535,21 @@ view it *clicks the existing row* rather than re-implementing `toggleBox`; in a
 mosaic it resolves the tile FIRST — so the pick pulses while it fills, exactly like
 a tap on that tile — scrolls it into view, then goes through the same toggle.
 
+**The toolbar and the filter stay put while the mosaic scrolls.** Picking a view or
+typing a filter is what you reach for AFTER scrolling a shelf of covers, so having
+to scroll back up to reach them is the whole problem. Three things make it work and
+all three are load-bearing: **which element scrolls differs by breakpoint** (phone:
+the accordion's `.panel-body`, with the column header outside it → the toolbar
+sticks at 0; desktop: `#boxes-panel`, with the header sticky INSIDE it → the toolbar
+starts below it); that header's height is **measured** (`--og-label-h`, a
+ResizeObserver in `objgrid.js`) rather than assumed, because it changes with the
+theme's type and a wrong guess shows either a strip of scrolled content or an
+overlap that eats the header; and both bars **bleed to the scroller's edges** with a
+negative margin won back as padding, since a sticky box only paints itself and tiles
+would otherwise scroll visibly through the gutters. They paint `var(--bg)`, like
+`#boxes-panel-label` — including in the `bulletin2` skin, where that token is
+translucent on purpose so the picture shows through every surface at once.
+
 Other points worth knowing:
 - **Three states, three registers.** Filling → the same `basic-pulse` as a box row
   and a Basic actuator. Loaded → an accent frame and a corner tick (a cover cannot

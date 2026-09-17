@@ -106,6 +106,36 @@ const OBJGRID = (() => {
     return true;
   }
 
+  /* ── Sticky geometry ───────────────────────────────────────────────────── */
+
+  /* The toolbar and the filter stay at the top while the mosaic scrolls, and on
+     desktop they must start below the column's own header — which is sticky in
+     the SAME scroller. Its height is measured rather than assumed: it changes
+     with the theme's type, and a wrong guess shows either a strip of scrolled
+     content or an overlap that eats the header. objgrid.css does the rest. */
+  function measureSticky() {
+    const panel = document.getElementById('boxes-panel');
+    if (!panel) return;
+    const set = (name, el) => {
+      if (el) panel.style.setProperty(name, Math.round(el.getBoundingClientRect().height) + 'px');
+    };
+    set('--og-label-h', document.getElementById('boxes-panel-label'));
+    set('--og-bar-h', document.getElementById('auto-bar'));
+  }
+
+  function watchSticky() {
+    measureSticky();
+    window.addEventListener('resize', measureSticky);
+    if (typeof ResizeObserver === 'undefined') return;
+    // The toolbar wraps to two rows in a narrow column, and the header grows with
+    // the count it shows — both change the offsets under them.
+    const ro = new ResizeObserver(measureSticky);
+    ['boxes-panel-label', 'auto-bar'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) ro.observe(el);
+    });
+  }
+
   /* ── Mode ──────────────────────────────────────────────────────────────── */
 
   function setMode(mode) {
@@ -376,6 +406,7 @@ const OBJGRID = (() => {
     let saved = 'boxes';
     try { saved = localStorage.getItem(STORE_KEY) || 'boxes'; } catch (e) {}
     setMode(saved);
+    watchSticky();
     refreshActive();
   }
 

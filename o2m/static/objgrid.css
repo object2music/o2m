@@ -6,9 +6,41 @@
 
 /* ── The column toolbar: switcher left, die right ──────────────────────────── */
 
-/* Wrapping rather than overflowing: this row lives in a third of the screen and
-   the random button carries a word. */
-#auto-bar { flex-wrap: wrap; row-gap: 6px; }
+/* Both the toolbar and the filter stay put while the mosaic scrolls under them:
+   picking a view or typing a filter is what you reach for AFTER scrolling a shelf
+   of covers, and having to scroll back up to reach it is the whole problem.
+   Three things make that work, and all three are load-bearing:
+
+   1. WHICH element scrolls differs by breakpoint. On a phone the accordion's
+      `.panel-body` is the scroller and the column header sits outside it, so the
+      toolbar sticks at 0. On desktop the scroller is `#boxes-panel` and the header
+      is sticky INSIDE it, so the toolbar has to start below the header.
+   2. That header's height is MEASURED (`--og-label-h`, static/objgrid.js), not
+      assumed: it changes with the theme's type, and a wrong guess shows either a
+      gap that leaks scrolled content or an overlap that eats the header.
+   3. A sticky bar only paints its own box, so both bleed out to the scroller's
+      edges with a negative margin and win it back as padding — otherwise tiles
+      scroll visibly through the gutters on either side. */
+#boxes-panel .panel-body {
+  --og-pad-x: 14px;      /* mirrors the mobile .panel-body padding */
+  --og-pad-t: 10px;
+  --og-top: 0px;
+}
+@media (min-width: 700px) {
+  #boxes-panel .panel-body {
+    --og-pad-x: 12px;    /* mirrors the desktop .panel-body padding */
+    --og-pad-t: 0px;
+    --og-top: var(--og-label-h, 44px);
+  }
+}
+
+#auto-bar {
+  position: sticky; top: var(--og-top, 0px); z-index: 5;
+  background: var(--bg);
+  flex-wrap: wrap; row-gap: 6px;
+  margin: calc(-1 * var(--og-pad-t)) calc(-1 * var(--og-pad-x)) 6px;
+  padding: var(--og-pad-t) var(--og-pad-x) 6px;
+}
 
 .pm-seg { display: flex; align-items: center; gap: 2px; }
 .pm-tab {
@@ -45,13 +77,22 @@
 
 /* ── The grid ──────────────────────────────────────────────────────────────── */
 
-#obj-grid-wrap { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+/* gap: 0 — the filter owns the space under itself as padding, so its sticky box
+   covers it. A flex gap is outside the box and would show a scrolling strip. */
+#obj-grid-wrap { display: flex; flex-direction: column; min-height: 0; }
 /* Both wraps carry an explicit display, which beats [hidden]'s UA rule — without
    these two the switcher would show the mosaic UNDER the boxes list. */
 #obj-grid-wrap[hidden] { display: none; }
 #boxes-wrap[hidden]    { display: none; }
 
-.og-tools { display: flex; }
+.og-tools {
+  display: flex;
+  position: sticky; z-index: 4;   /* under the toolbar, which stacks above it */
+  top: calc(var(--og-top, 0px) + var(--og-bar-h, 34px));
+  background: var(--bg);
+  margin: 0 calc(-1 * var(--og-pad-x)) 0;
+  padding: 0 var(--og-pad-x) 8px;
+}
 .og-filter {
   width: 100%; padding: 6px 8px;
   font: inherit; font-size: 13px;
