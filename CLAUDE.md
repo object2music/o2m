@@ -525,17 +525,23 @@ now reads `moodSessionActive || autoBoxActive` — both decided by what is actua
 playing. The removed `autoToggle` was a persisted manual switch that only ever
 restated them, and the row it sat on is the toolbar now.
 
-**At the right of that row, one die — "one at random".** It activates one element
-of whatever view is open, drawn only from what is NOT already on: activating
-something already playing is a no-op the user cannot tell from a broken button, and
-turning it off would be the opposite of what a die is for. In the list view it
-*clicks the existing row* rather than re-implementing `toggleBox`; in a mosaic it
-goes through the same toggle as a tap, and then scrolls the winner into view —
-a die that only prints a name leaves you looking for it.
+**At the right of that row, one die — "one at random".** The glyph alone, in the
+tabs' own 28×26 box so the row reads as one set of controls; its visible border is
+what separates it from them, since it acts rather than selects. It activates one
+element of whatever view is open, drawn only from what is NOT already on:
+activating something already playing is a no-op the user cannot tell from a broken
+button, and turning it off would be the opposite of what a die is for. In the list
+view it *clicks the existing row* rather than re-implementing `toggleBox`; in a
+mosaic it resolves the tile FIRST — so the pick pulses while it fills, exactly like
+a tap on that tile — scrolls it into view, then goes through the same toggle.
 
 Other points worth knowing:
-- **Active state is a frame, not a swatch**: a cover cannot carry the boxes list's
-  coloured square, so it is an accent border plus a corner tick.
+- **Three states, three registers.** Filling → the same `basic-pulse` as a box row
+  and a Basic actuator. Loaded → an accent frame and a corner tick (a cover cannot
+  carry the boxes list's coloured square), **and the cover drops to greyscale**: the
+  page is black and white and the artwork is the only colour in it, so spending that
+  colour is what "this one is in the tracklist" costs — and it survives a glance
+  across a shelf of covers in a way a 1px border does not.
 - **A box tile toggles through `/api/box`** like the list row does, then re-reads
   that row (`checkBoxActive`) — the list and the mosaic are two views of one state,
   and the header count and the auto-box detection both read the list's DOM.

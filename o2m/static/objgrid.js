@@ -14,10 +14,10 @@
    mosaic rather than more rows because these are chosen by their cover — 248
    album names in a third of a screen is a directory, 248 covers is a shelf.
 
-   At the right of that toolbar, one die: **activate one at random, in whatever
-   view is open**. It is the same gesture as reaching into the shelf without
-   looking, and it is the only control here that does not need you to have
-   decided anything.
+   At the right of that toolbar, one die — the glyph alone, in the tabs' own box:
+   **activate one at random, in whatever view is open**. It is the same gesture as
+   reaching into the shelf without looking, and it is the only control here that
+   does not need you to have decided anything.
 
    Loaded in <head>, like ds/o2m-marks.js and for the same reason: mood.html's
    init() runs synchronously at the end of its inline script and calls in here.
@@ -79,7 +79,9 @@ const OBJGRID = (() => {
     rnd.id = 'panel-random';
     rnd.type = 'button';
     rnd.className = 'pm-random';
-    rnd.innerHTML = `${ICONS.dice}<span>One at random</span>`;
+    rnd.title = 'Activate one at random';
+    rnd.setAttribute('aria-label', 'Activate one at random');
+    rnd.innerHTML = ICONS.dice;
     rnd.addEventListener('click', pickRandom);
     bar.appendChild(rnd);
 
@@ -330,24 +332,31 @@ const OBJGRID = (() => {
       return;
     }
     const pick = pool[Math.floor(Math.random() * pool.length)];
+    // Resolved before the toggle, not after: it is what pulses while the fill
+    // runs, so a random pick looks exactly like a tap on the same tile.
+    const el = tileEl(pick);
+    scrollTo(el);
     if (btn) btn.disabled = true;
     try {
       // The list view's rows are the existing buttons, with their own handler and
       // their own feedback — click rather than re-implement them here.
       if (pick.el) pick.el.click();
-      else await toggle(pick, null);
+      else await toggle(pick, el);
     } finally {
       if (btn) btn.disabled = false;
     }
-    scrollTo(pick);
+  }
+
+  function tileEl(pick) {
+    if (pick.el) return pick.el;
+    const key = pick.uid || pick.uri;
+    return document.querySelector(
+      `#obj-grid .og-tile[data-${pick.uid ? 'uid' : 'uri'}="${CSS.escape(key)}"]`);
   }
 
   /* Say WHICH one came up, by showing it: a die that only prints a name leaves
      you looking for it. */
-  function scrollTo(pick) {
-    const sel = pick.el ? null
-      : `#obj-grid .og-tile[data-${pick.uid ? 'uid' : 'uri'}="${CSS.escape(pick.uid || pick.uri)}"]`;
-    const el = pick.el || (sel && document.querySelector(sel));
+  function scrollTo(el) {
     try { el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
   }
 
