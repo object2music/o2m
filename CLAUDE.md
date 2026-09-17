@@ -525,9 +525,10 @@ now reads `moodSessionActive || autoBoxActive` — both decided by what is actua
 playing. The removed `autoToggle` was a persisted manual switch that only ever
 restated them, and the row it sat on is the toolbar now.
 
-**At the right of that row, one die — "one at random".** The glyph alone, in the
-tabs' own 28×26 box so the row reads as one set of controls; its visible border is
-what separates it from them, since it acts rather than selects. It activates one
+**At the right of that row, one die — "one at random".** The glyph alone, unframed,
+in the tabs' exact 28×26 box so the row reads as one set of controls; it keeps their
+transparent border, which is what holds the alignment, and what tells it apart is
+that it never takes the active state — it acts rather than selects. It activates one
 element of whatever view is open, drawn only from what is NOT already on:
 activating something already playing is a no-op the user cannot tell from a broken
 button, and turning it off would be the opposite of what a die is for. In the list

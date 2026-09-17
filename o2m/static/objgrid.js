@@ -14,7 +14,8 @@
    mosaic rather than more rows because these are chosen by their cover — 248
    album names in a third of a screen is a directory, 248 covers is a shelf.
 
-   At the right of that toolbar, one die — the glyph alone, in the tabs' own box:
+   At the right of that toolbar, one die — the glyph alone, in the tabs' own box
+   and without a frame of its own:
    **activate one at random, in whatever view is open**. It is the same gesture as
    reaching into the shelf without looking, and it is the only control here that
    does not need you to have decided anything.

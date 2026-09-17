@@ -58,20 +58,22 @@
   border-color: var(--border-soft);
 }
 
-/* The die sits at the far end of the row, where the AUTO button used to be —
-   the glyph alone, in the tabs' own box, so the row reads as one set of controls
-   rather than four icons and a word. Its visible border is what separates it
-   from them: it acts, it does not select. */
+/* The die sits at the far end of the row, where the AUTO button used to be — the
+   glyph alone, in the tabs' exact box, so the row reads as one set of controls.
+   The transparent border is not decoration: it is what the tabs reserve for their
+   own, and dropping it here would shift the die by a pixel and misalign it. What
+   separates it from them is that it never takes the active state — it acts, it
+   does not select. */
 .pm-random {
   display: flex; align-items: center; justify-content: center;
   margin-left: auto;
   width: 28px; height: 26px; padding: 0;
-  border: 1px solid var(--border); border-radius: var(--r, 0);
-  background: transparent; color: var(--muted); cursor: pointer;
-  transition: color .15s, border-color .15s, background .15s;
+  border: 1px solid transparent; border-radius: var(--r, 0);
+  background: none; color: var(--muted); cursor: pointer;
+  transition: color .15s, background .15s;
 }
 .pm-random svg { width: 15px; height: 15px; display: block; }
-.pm-random:hover { color: var(--text); border-color: var(--text); }
+.pm-random:hover { color: var(--text); }
 .pm-random:active { background: var(--accent-soft); }
 .pm-random:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
 
