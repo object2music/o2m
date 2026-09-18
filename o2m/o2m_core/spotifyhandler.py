@@ -26,6 +26,10 @@ class SpotifyHandler:
         self._db = None  # set via set_db_handler() after DatabaseHandler is ready
         self._mopidy = None  # set via set_mopidy_handler(); fallback source for playlists
         self._tag_mood_map = self._build_tag_mood_map_from_class()
+        # No Web API client until reload_sp() finds a valid token. Several call
+        # sites test `self.sp is None`, so the attribute has to exist even when
+        # every cache is revoked.
+        self.sp = None
         self.init_token_sp()
 
     def set_db_handler(self, db_handler):
@@ -493,7 +497,18 @@ class SpotifyHandler:
             # stream-token paths require the full self.scope.
             client_scope = tok.get("scope") or self.scope
             auth_manager = spotipy.oauth2.SpotifyOAuth(scope=client_scope, cache_handler=cache_handler, show_dialog=False)
-            if not auth_manager.validate_token(tok):
+            # validate_token REFRESHES an expired token, and spotipy raises on a refused
+            # refresh ("Refresh token revoked") rather than returning False. Unguarded,
+            # that exception escapes this loop, __init__ and O2mToMopidy(), and lands in
+            # main.py's connect-retry loop, which retries every 10s for ever: Flask never
+            # binds 6681, the healthcheck turns unhealthy and autoheal kills the container
+            # on a cycle. A dead token must mean "no Spotify", never "no o2m" — so fall
+            # through to the next cache, and to the None below when neither answers.
+            try:
+                if not auth_manager.validate_token(tok):
+                    continue
+            except Exception as e:
+                print(f"Spotify token in {path} is unusable ({e}) - ignoring this cache.")
                 continue
             session = requests.Session()
             def _capture_retry_after(response, *args, **kwargs):
