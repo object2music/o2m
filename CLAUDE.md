@@ -581,15 +581,17 @@ Other points worth knowing:
   so everything typographic is declared once for `.og-art--text, .og-cap` and the
   overlay fills the same box — same 8px padding, same four-line clamp, same top-left
   start. It is **sized against the TILE** (`cqw` with a fixed fallback), so the same
-  name holds at three per row on a phone and four in a third of a desktop. Nothing
-  is painted behind it: **no veil over the picture and no halo behind the glyphs.**
-  Both were tried — a black gradient band, then the theme's own ground at 88% and at
-  45%, then a halo — and each is a mark laid over the artwork, which is the one
-  thing this tile is not supposed to have. The cost is stated rather than hidden:
-  contrast over an arbitrary picture is then whatever the picture gives. It is not a
-  live risk (no box carries an `image_url`), and if it becomes one the answer is a
-  darker or lighter IMAGE — a filter on `.og-art` — not something painted between it
-  and the name.
+  name holds at three per row on a phone and four in a third of a desktop. Behind it,
+  **a veil and only a veil**: a 45% tint over the whole square, in the theme's own
+  ground (`var(--sheet-bg, var(--bg))`) rather than a black gradient — the text is
+  `--muted`/`--accent` like everywhere else, so what stands behind it has to flip
+  with the theme too. `--sheet-bg` is there for the `bulletin2` skin, whose `--bg`
+  is deliberately translucent: mixing THAT with transparent would leave nothing to
+  read against. A tint, not a wash — at 88% the picture was gone and the tile might
+  as well have had none — and **no halo** behind the glyphs, which was tried and
+  reads as a second mark on top of the first. If 45% turns out not to carry a busy
+  picture, the next thing to try is a semi-transparent BAND behind the lines of text
+  rather than a stronger tint over everything.
 - **The details eye moved to the top RIGHT.** It never hides on touch, and a named
   tile sets its name from the top-left corner — it was sitting on the first word of
   every box in the mosaic.

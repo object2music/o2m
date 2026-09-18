@@ -161,17 +161,26 @@
 .og-art--text { width: 100%; height: 100%; }
 
 /* The overlay fills the same box as the text cover — same padding, same four
-   lines, same top-left start — so the name sits in the same place on every tile,
-   and it carries NOTHING behind it: no veil over the picture, no halo behind the
-   glyphs. Both were tried and both are a mark laid over the artwork, which is the
-   one thing this tile is not supposed to have. The name is simply set on the
-   image, in the same colour it takes everywhere else.
+   lines, same top-left start — so the name sits in the same place on every tile.
+   What it adds is a VEIL and only a veil: a light tint over the whole square, in
+   the theme's own ground rather than a black gradient, because the text is
+   `--muted`/`--accent` like everywhere else and what stands behind it has to flip
+   with the theme too. `--sheet-bg` is there for the `bulletin2` skin, whose `--bg`
+   is deliberately translucent — mixing THAT with transparent would leave nothing
+   to read against; every other theme has no such token and falls back to `--bg`.
 
-   The cost is stated rather than hidden: contrast over an arbitrary picture is
-   then whatever the picture gives. It is not a live risk — no box carries an
-   `image_url` — and if it becomes one the answer is a darker or lighter IMAGE
-   (a filter on `.og-art`), not something painted between it and the name. */
-.og-cap { position: absolute; inset: 0; }
+   45%, a tint rather than a wash: at 88% the picture was gone and the tile might
+   as well have had none. No halo behind the glyphs — it was tried and it reads as
+   a second mark on top of the first. If 45% turns out not to carry a busy picture,
+   the next thing to try is a semi-transparent BAND behind the lines of text rather
+   than a stronger tint over everything. */
+.og-cap {
+  position: absolute; inset: 0;
+  background: var(--sheet-bg, var(--bg));
+}
+@supports (background: color-mix(in srgb, red 50%, transparent)) {
+  .og-cap { background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 45%, transparent); }
+}
 
 .og-tile:hover .og-art--text, .og-tile:hover .og-cap { color: var(--text); }
 .og-tile.active .og-art--text, .og-tile.active .og-cap { color: var(--accent); }
