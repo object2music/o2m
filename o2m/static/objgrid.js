@@ -203,19 +203,19 @@ const OBJGRID = (() => {
   function tileHTML(row, kind) {
     const active = isActive(row, kind);
     const name = row.name || '?';
-    /* The artwork — or, with no artwork, the NAME set large in the square.
-       A generated cover was there before and it failed the one view that needs
-       reading rather than recognising: no box carries an image, so the whole
-       boxes mosaic was a wall of abstract marks with a 12px caption under each.
-       An album is recognised by its sleeve; a box is only its name, so the name
-       IS its cover. The caption below is then dropped rather than printed twice
-       (see `og-tile--text`), and the full name lives on the tile's title for the
-       long ones the square has to clip. */
+    /* Where the name goes. An album is recognised by its SLEEVE, so its name is a
+       caption under the tile. A box is only its name — never a picture one knows
+       — so the name belongs IN the square: set large when there is no artwork
+       (which is every box today), laid over the artwork when there is. Either
+       way the caption below is dropped rather than printed twice, and the full
+       name lives on the tile's `title` for the ones the square has to clip. */
+    const named = !row.image || kind === 'box';
     const art = row.image
       ? `<img class="og-art" src="${objEsc(row.image)}" alt="" loading="lazy" decoding="async">`
+        + (kind === 'box' ? `<span class="og-cap">${objEsc(name)}</span>` : '')
       : `<span class="og-art og-art--text">${objEsc(name)}</span>`;
     return `<button type="button" class="og-tile${active ? ' active' : ''}`
-      + `${row.image ? '' : ' og-tile--text'}"`
+      + `${named ? ' og-tile--named' : ''}"`
       + ` data-uri="${objEsc(row.uri)}" data-kind="${objEsc(kind)}"`
       + (row.uid ? ` data-uid="${objEsc(row.uid)}"` : '')
       + ` data-name="${objEsc(name)}" data-sub="${objEsc(row.sub || '')}"`

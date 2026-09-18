@@ -154,8 +154,27 @@
   .og-thumb { container-type: inline-size; }
   .og-art--text { font-size: clamp(12px, 15cqw, 22px); }
 }
-.og-tile--text .og-name { display: none; }   /* the square already says it */
 .og-tile.active .og-art--text { color: var(--accent); opacity: 1; }
+
+/* The name laid OVER artwork — a box that has a picture. White on a gradient
+   scrim rather than the theme's tokens: what is underneath is an arbitrary image,
+   and no token can promise contrast against one. The scrim is the only thing that
+   can, so it is the same in every theme. */
+.og-cap {
+  position: absolute; inset: auto 0 0 0;
+  padding: 6px 7px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere;
+  font-size: 12px; font-weight: 700; line-height: 1.15; letter-spacing: -.01em;
+  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .55);
+  background: linear-gradient(to top, rgba(0,0,0,.80), rgba(0,0,0,.45) 62%, rgba(0,0,0,0));
+}
+@supports (container-type: inline-size) {
+  .og-cap { font-size: clamp(10px, 10cqw, 15px); }
+}
+
+/* Either way the square says the name, so the caption below would say it twice. */
+.og-tile--named .og-name { display: none; }
 
 /* Active state. A cover cannot carry a colour swatch the way a text row does, so
    it is the frame that answers: an accent border, the image lifted out of its

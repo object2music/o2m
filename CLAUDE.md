@@ -565,16 +565,22 @@ Other points worth knowing:
 - **A box tile toggles through `/api/box`** like the list row does, then re-reads
   that row (`checkBoxActive`) — the list and the mosaic are two views of one state,
   and the header count and the auto-box detection both read the list's DOM.
-- **With no artwork, the NAME is the cover** (`og-tile--text`): set large in the
-  square, clamped to four lines, sized against the TILE (`cqw`, with a fixed
-  fallback) so it holds at three per row on a phone and four in a third of a
-  desktop. A generated mark was there first and it failed the one view that needs
-  reading rather than recognising — **no box carries an `image_url`**, so the boxes
-  mosaic was a wall of abstract marks under 12px captions. An album is recognised by
-  its sleeve; a box is only its name. The caption below is then dropped rather than
-  printed twice, the full name lives on the tile's `title`, and a box tile shows no
-  `sub` at all: `option_type` is an internal lifecycle word that would read as the
-  tile's subtitle.
+- **Where the name goes depends on what the tile IS.** An album is recognised by its
+  sleeve, so its name is a caption under the square. A box is never a picture one
+  knows — it is only its name — so the name goes IN the square: set large when there
+  is no artwork (`og-art--text`, clamped to four lines), laid OVER the artwork when
+  there is (`og-cap`). Either way the caption below is dropped (`og-tile--named`)
+  rather than printed twice, and the full name lives on the tile's `title` for what
+  the square has to clip. A generated mark stood there first and it failed the one
+  view that needs reading rather than recognising: **no box carries an `image_url`**,
+  so the whole boxes mosaic was a wall of abstract marks under 12px captions. A box
+  tile also shows no `sub`: `option_type` is an internal lifecycle word that would
+  read as the tile's subtitle.
+- **The in-square type is sized against the TILE** (`cqw` with a fixed fallback), so
+  the same name holds at three per row on a phone and four in a third of a desktop.
+  The overlay is white on a gradient scrim rather than the theme's tokens: what is
+  under it is an arbitrary image and no token can promise contrast against one — the
+  scrim is the only thing that can, so it is the same in every theme.
 - `#boxes-wrap` and `#obj-grid-wrap` both carry an explicit `display`, which beats
   `[hidden]`'s UA rule — without the two `[hidden]` rules the mosaic renders *under*
   the boxes list instead of replacing it.
