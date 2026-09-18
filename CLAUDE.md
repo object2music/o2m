@@ -536,18 +536,21 @@ view it *clicks the existing row* rather than re-implementing `toggleBox`; in a
 mosaic it resolves the tile FIRST — so the pick pulses while it fills, exactly like
 a tap on that tile — scrolls it into view, then goes through the same toggle.
 
-**The toolbar and the filter stay put while the mosaic scrolls.** Picking a view or
-typing a filter is what you reach for AFTER scrolling a shelf of covers, so having
-to scroll back up to reach them is the whole problem. Three things make it work and
-all three are load-bearing: **which element scrolls differs by breakpoint** (phone:
-the accordion's `.panel-body`, with the column header outside it → the toolbar
-sticks at 0; desktop: `#boxes-panel`, with the header sticky INSIDE it → the toolbar
-starts below it); that header's height is **measured** (`--og-label-h`, a
-ResizeObserver in `objgrid.js`) rather than assumed, because it changes with the
-theme's type and a wrong guess shows either a strip of scrolled content or an
-overlap that eats the header; and both bars **bleed to the scroller's edges** with a
-negative margin won back as padding, since a sticky box only paints itself and tiles
-would otherwise scroll visibly through the gutters. They paint `var(--bg)`, like
+**On desktop the toolbar and the filter stay put while the mosaic scrolls; on a
+phone they scroll away with it — and that is not a breakpoint tweak around one
+behaviour, the two sizes want different behaviours.** On a wide screen, picking a
+view or typing a filter is what you reach for AFTER scrolling a shelf of covers, so
+having to scroll back up is the problem sticky solves. On a phone the accordion
+gives the open section what is left of a short screen, and freezing two rows at the
+top of it spends a third of the covers you can see on controls you use once — it was
+tried and it is worse. Two things make the desktop half work, both load-bearing: the
+scroller there is `#boxes-panel` with the column header sticky INSIDE it, so the
+toolbar starts below a header whose height is **measured** (`--og-label-h`, a
+ResizeObserver in `objgrid.js`) rather than assumed — it changes with the theme's
+type, and a wrong guess shows either a strip of scrolled content or an overlap that
+eats the header; and both bars **bleed to the scroller's edges** with a negative
+margin won back as padding, since a sticky box only paints itself and tiles would
+otherwise scroll visibly through the 12px gutters. They paint `var(--bg)`, like
 `#boxes-panel-label` — including in the `bulletin2` skin, where that token is
 translucent on purpose so the picture shows through every surface at once.
 
@@ -557,20 +560,29 @@ Other points worth knowing:
   carry the boxes list's coloured square), **and the cover drops to greyscale**: the
   page is black and white and the artwork is the only colour in it, so spending that
   colour is what "this one is in the tracklist" costs — and it survives a glance
-  across a shelf of covers in a way a 1px border does not.
+  across a shelf of covers in a way a 1px border does not. A name-as-cover tile has
+  no colour to spend, so it takes the accent instead, like the list's active row.
 - **A box tile toggles through `/api/box`** like the list row does, then re-reads
   that row (`checkBoxActive`) — the list and the mosaic are two views of one state,
   and the header count and the auto-box detection both read the list's DOM.
-- **No box carries an `image_url` today**, so every box tile falls to the generated
-  cover, which is deterministic on the uri: a box keeps the same face.
+- **With no artwork, the NAME is the cover** (`og-tile--text`): set large in the
+  square, clamped to four lines, sized against the TILE (`cqw`, with a fixed
+  fallback) so it holds at three per row on a phone and four in a third of a
+  desktop. A generated mark was there first and it failed the one view that needs
+  reading rather than recognising — **no box carries an `image_url`**, so the boxes
+  mosaic was a wall of abstract marks under 12px captions. An album is recognised by
+  its sleeve; a box is only its name. The caption below is then dropped rather than
+  printed twice, the full name lives on the tile's `title`, and a box tile shows no
+  `sub` at all: `option_type` is an internal lifecycle word that would read as the
+  tile's subtitle.
 - `#boxes-wrap` and `#obj-grid-wrap` both carry an explicit `display`, which beats
   `[hidden]`'s UA rule — without the two `[hidden]` rules the mosaic renders *under*
   the boxes list instead of replacing it.
-- **Tile width is tuned for this column, not for a page.** `minmax(108px, 1fr)` puts
-  about one tile fewer per row than the 84px it started at, across the widths the
-  column actually takes (~280–600px: 4 → 3 at 360, 5 → 4 at 500). No single value
-  holds that exactly at every width — the ratio drifts — so it is fitted to the real
-  range rather than to an abstract one.
+- **A fixed count per row — three on a phone, four on a desktop — not a minimum tile
+  width.** `auto-fill` held the tile size steady and let the count drift with the
+  column, so the mosaic never looked the same twice; the tile now takes whatever
+  width the count leaves, which is also what makes the name-as-cover sizing
+  predictable.
 - The header count says `2 boxes · 1 album`: an activated album fills the tracklist
   like a box but is not one, and that line is the only place the interface says so.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label

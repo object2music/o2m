@@ -6,40 +6,46 @@
 
 /* ── The column toolbar: switcher left, die right ──────────────────────────── */
 
-/* Both the toolbar and the filter stay put while the mosaic scrolls under them:
-   picking a view or typing a filter is what you reach for AFTER scrolling a shelf
-   of covers, and having to scroll back up to reach it is the whole problem.
-   Three things make that work, and all three are load-bearing:
+/* Wrapping rather than overflowing: this row lives in a third of the screen. */
+#auto-bar { flex-wrap: wrap; row-gap: 6px; }
 
-   1. WHICH element scrolls differs by breakpoint. On a phone the accordion's
-      `.panel-body` is the scroller and the column header sits outside it, so the
-      toolbar sticks at 0. On desktop the scroller is `#boxes-panel` and the header
-      is sticky INSIDE it, so the toolbar has to start below the header.
-   2. That header's height is MEASURED (`--og-label-h`, static/objgrid.js), not
-      assumed: it changes with the theme's type, and a wrong guess shows either a
-      gap that leaks scrolled content or an overlap that eats the header.
-   3. A sticky bar only paints its own box, so both bleed out to the scroller's
-      edges with a negative margin and win it back as padding — otherwise tiles
-      scroll visibly through the gutters on either side. */
-#boxes-panel .panel-body {
-  --og-pad-x: 14px;      /* mirrors the mobile .panel-body padding */
-  --og-pad-t: 10px;
-  --og-top: 0px;
-}
+/* ── Desktop only: the toolbar and the filter stay put while the mosaic scrolls ──
+   Picking a view or typing a filter is what you reach for AFTER scrolling a shelf
+   of covers, and having to scroll back up to reach it is the problem it solves.
+
+   **On a phone it is the opposite trade and the answer flips.** The accordion
+   gives the open section what is left of a short screen; freezing two rows at the
+   top of it spends a third of the covers you can see on controls you use once.
+   There, both scroll away with the grid. So this is not a breakpoint tweak around
+   one behaviour — the two sizes want different behaviours.
+
+   Two things make the desktop half work, both load-bearing:
+   1. The scroller there is `#boxes-panel`, and the column header is sticky INSIDE
+      it, so the toolbar has to start below the header — whose height is MEASURED
+      (`--og-label-h`, static/objgrid.js), not assumed: it changes with the theme's
+      type, and a wrong guess shows either a gap that leaks scrolled content or an
+      overlap that eats the header.
+   2. A sticky bar only paints its own box, so both bleed out to the scroller's
+      edges with a negative margin won back as padding — otherwise tiles scroll
+      visibly through the 12px gutters on either side. */
 @media (min-width: 700px) {
   #boxes-panel .panel-body {
     --og-pad-x: 12px;    /* mirrors the desktop .panel-body padding */
-    --og-pad-t: 0px;
     --og-top: var(--og-label-h, 44px);
   }
-}
-
-#auto-bar {
-  position: sticky; top: var(--og-top, 0px); z-index: 5;
-  background: var(--bg);
-  flex-wrap: wrap; row-gap: 6px;
-  margin: calc(-1 * var(--og-pad-t)) calc(-1 * var(--og-pad-x)) 6px;
-  padding: var(--og-pad-t) var(--og-pad-x) 6px;
+  #auto-bar {
+    position: sticky; top: var(--og-top, 0px); z-index: 5;
+    background: var(--bg);
+    margin: 0 calc(-1 * var(--og-pad-x)) 6px;
+    padding: 0 var(--og-pad-x) 6px;
+  }
+  .og-tools {
+    position: sticky; z-index: 4;   /* under the toolbar, which stacks above it */
+    top: calc(var(--og-top, 0px) + var(--og-bar-h, 34px));
+    background: var(--bg);
+    margin: 0 calc(-1 * var(--og-pad-x));
+    padding: 0 var(--og-pad-x) 8px;
+  }
 }
 
 .pm-seg { display: flex; align-items: center; gap: 2px; }
@@ -87,14 +93,9 @@
 #obj-grid-wrap[hidden] { display: none; }
 #boxes-wrap[hidden]    { display: none; }
 
-.og-tools {
-  display: flex;
-  position: sticky; z-index: 4;   /* under the toolbar, which stacks above it */
-  top: calc(var(--og-top, 0px) + var(--og-bar-h, 34px));
-  background: var(--bg);
-  margin: 0 calc(-1 * var(--og-pad-x)) 0;
-  padding: 0 var(--og-pad-x) 8px;
-}
+/* The 8px under the field is padding, not a flex gap on the wrap: on desktop this
+   box is sticky, and a gap sits outside it — a strip of tiles would scroll there. */
+.og-tools { display: flex; padding-bottom: 8px; }
 .og-filter {
   width: 100%; padding: 6px 8px;
   font: inherit; font-size: 13px;
@@ -103,17 +104,16 @@
 }
 .og-filter:focus { outline: none; border-color: var(--accent); }
 
-/* auto-fill, not auto-fit: the column is narrow and a two-tile row must stay
-   two tiles rather than stretch to fill the width.
-   108px puts roughly one tile fewer per row than the 84px it started at, across
-   the widths this column actually takes (~280-600px): at 360 it goes 4 → 3, at
-   500 it goes 5 → 4. There is no single value that holds that exactly at every
-   width — the ratio drifts — so it is tuned for the real column, not for 1200px. */
+/* A FIXED count per row, not a minimum tile width. auto-fill kept the tile size
+   steady and let the count drift with the column, which meant the mosaic never
+   looked the same twice; three on a phone and four on a desktop is a layout you
+   can learn. The tile then takes whatever width that leaves. */
 .og-grid {
   display: grid; gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   align-content: start;
 }
+@media (min-width: 700px) { .og-grid { grid-template-columns: repeat(4, 1fr); } }
 
 .og-tile {
   display: flex; flex-direction: column; gap: 3px;
@@ -134,14 +134,36 @@
   border: 1px solid var(--border-soft);
   overflow: hidden;
 }
-.og-art, .og-art svg { display: block; width: 100%; height: 100%; object-fit: cover; }
+.og-art { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* No artwork → the name, set large in the square. An album is recognised by its
+   sleeve; a box is only its name, so the name IS its cover — and no box carries an
+   image, which is what made that whole view unreadable as a grid of marks. */
+.og-art--text {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+  overflow: hidden;
+  padding: 8px; box-sizing: border-box;
+  font-size: 15px; font-weight: 700; line-height: 1.15;
+  letter-spacing: -.01em; hyphens: auto; overflow-wrap: anywhere;
+  color: var(--text); opacity: .72;
+}
+/* Sized against the TILE, not the viewport: the same name has to hold at three
+   per row on a phone and four in a third of a desktop. Falls back to the 15px
+   above wherever container queries are not there — the whole declaration drops. */
+@supports (container-type: inline-size) {
+  .og-thumb { container-type: inline-size; }
+  .og-art--text { font-size: clamp(12px, 15cqw, 22px); }
+}
+.og-tile--text .og-name { display: none; }   /* the square already says it */
+.og-tile.active .og-art--text { color: var(--accent); opacity: 1; }
 
 /* Active state. A cover cannot carry a colour swatch the way a text row does, so
    it is the frame that answers: an accent border, the image lifted out of its
    dimmed rest state, and a tick in the corner for anyone who does not read the
    border as a state. */
-.og-tile .og-art { opacity: .78; transition: opacity .15s, filter .2s; }
-.og-tile:hover .og-art { opacity: 1; }
+.og-tile img.og-art { opacity: .78; transition: opacity .15s, filter .2s; }
+.og-tile:hover img.og-art { opacity: 1; }
+.og-tile:hover .og-art--text { opacity: 1; }
 .og-tile.active { color: var(--text); }
 .og-tile.active .og-thumb { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 /* Loaded → the cover drops its colour. The frame and the tick say WHICH tiles are
@@ -149,7 +171,7 @@
    a shelf of covers, and it is the page's own register — the interface is black
    and white, the artwork is the only colour in it, so spending that colour is
    what "this one is in the tracklist" costs. */
-.og-tile.active .og-art { opacity: 1; filter: grayscale(1); }
+.og-tile.active img.og-art { opacity: 1; filter: grayscale(1); }
 
 .og-mark {
   position: absolute; inset: auto 0 0 auto;

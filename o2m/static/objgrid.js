@@ -169,9 +169,13 @@ const OBJGRID = (() => {
         // image today, so every box tile falls to its generated cover — which is
         // deterministic on the uid, so a box keeps the same face.
         const d = await fetch(API + '/box_favorites').then(r => r.json());
+        // No `sub`: a box's option_type is an internal lifecycle word, and with
+        // the name now set inside the square it would be the tile's only caption
+        // — "library" under twenty-six of twenty-eight tiles, reading as their
+        // subtitle. The list still carries it, as the swatch colour.
         state.rows[mode] = (d || []).map(b => ({
           uri: 'box:' + b.uid, uid: b.uid,
-          name: b.description || b.uid, sub: b.option_type || '',
+          name: b.description || b.uid, sub: '',
           image: b.image_url || '',
         }));
         state.more[mode] = false;
@@ -198,21 +202,28 @@ const OBJGRID = (() => {
 
   function tileHTML(row, kind) {
     const active = isActive(row, kind);
-    /* The artwork, or a generated cover from the uri when there is none (every
-       box, two followed artists). Injected inline rather than through <img src>:
-       the generated svg uses the theme's var(--…) and would lose them. */
+    const name = row.name || '?';
+    /* The artwork — or, with no artwork, the NAME set large in the square.
+       A generated cover was there before and it failed the one view that needs
+       reading rather than recognising: no box carries an image, so the whole
+       boxes mosaic was a wall of abstract marks with a 12px caption under each.
+       An album is recognised by its sleeve; a box is only its name, so the name
+       IS its cover. The caption below is then dropped rather than printed twice
+       (see `og-tile--text`), and the full name lives on the tile's title for the
+       long ones the square has to clip. */
     const art = row.image
       ? `<img class="og-art" src="${objEsc(row.image)}" alt="" loading="lazy" decoding="async">`
-      : `<div class="og-art og-art--gen">${window.O2M ? O2M.coverFor(row.uri) : ''}</div>`;
-    return `<button type="button" class="og-tile${active ? ' active' : ''}"`
+      : `<span class="og-art og-art--text">${objEsc(name)}</span>`;
+    return `<button type="button" class="og-tile${active ? ' active' : ''}`
+      + `${row.image ? '' : ' og-tile--text'}"`
       + ` data-uri="${objEsc(row.uri)}" data-kind="${objEsc(kind)}"`
       + (row.uid ? ` data-uid="${objEsc(row.uid)}"` : '')
-      + ` data-name="${objEsc(row.name || '')}" data-sub="${objEsc(row.sub || '')}"`
-      + ` aria-pressed="${active}">`
+      + ` data-name="${objEsc(name)}" data-sub="${objEsc(row.sub || '')}"`
+      + ` title="${objEsc(name)}" aria-pressed="${active}">`
       + `<span class="og-thumb">${art}<span class="og-mark">${ICON.check}</span>`
       + `<span class="og-open" role="button" tabindex="0" data-og-open`
       + ` title="Details" aria-label="Details">${ICON.eye}</span></span>`
-      + `<span class="og-name">${objEsc(row.name || '?')}</span>`
+      + `<span class="og-name">${objEsc(name)}</span>`
       + (row.sub ? `<span class="og-sub">${objEsc(row.sub)}</span>` : '')
       + `</button>`;
   }
