@@ -161,28 +161,17 @@
 .og-art--text { width: 100%; height: 100%; }
 
 /* The overlay fills the same box as the text cover — same padding, same four
-   lines, same top-left start — so the name sits in the same place on every tile.
-   What it adds is a veil, and the veil uses the theme's own ground rather than a
-   black gradient: the text is `var(--text)`/`var(--accent)` like everywhere else,
-   so what stands behind it has to flip with the theme too. `--sheet-bg` is the
-   bulletin2 skin's own full-strength surface (its `--bg` is deliberately
-   translucent, and mixing THAT with transparent would leave nothing to read
-   against); every other theme has no such token and falls back to `--bg`.
-   The veil is light — 45%, a tint rather than a wash — because at 88% the picture
-   was gone and the tile might as well have had none. What carries the legibility
-   instead is a HALO in the same ground colour behind the glyphs: it protects the
-   text exactly where the text is, rather than flattening the whole square to
-   protect it everywhere. Light ground under dark type, dark ground under light
-   type — it flips with the theme like the veil does, and it touches neither the
-   face, the size nor the alignment, so the two cases still read as one. */
-.og-cap {
-  position: absolute; inset: 0;
-  background: var(--sheet-bg, var(--bg));
-  text-shadow: 0 0 7px var(--sheet-bg, var(--bg)), 0 1px 2px var(--sheet-bg, var(--bg));
-}
-@supports (background: color-mix(in srgb, red 50%, transparent)) {
-  .og-cap { background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 45%, transparent); }
-}
+   lines, same top-left start — so the name sits in the same place on every tile,
+   and it carries NOTHING behind it: no veil over the picture, no halo behind the
+   glyphs. Both were tried and both are a mark laid over the artwork, which is the
+   one thing this tile is not supposed to have. The name is simply set on the
+   image, in the same colour it takes everywhere else.
+
+   The cost is stated rather than hidden: contrast over an arbitrary picture is
+   then whatever the picture gives. It is not a live risk — no box carries an
+   `image_url` — and if it becomes one the answer is a darker or lighter IMAGE
+   (a filter on `.og-art`), not something painted between it and the name. */
+.og-cap { position: absolute; inset: 0; }
 
 .og-tile:hover .og-art--text, .og-tile:hover .og-cap { color: var(--text); }
 .og-tile.active .og-art--text, .og-tile.active .og-cap { color: var(--accent); }
