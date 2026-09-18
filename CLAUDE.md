@@ -587,9 +587,11 @@ Other points worth knowing:
   `--muted`/`--accent` like everywhere else, so what stands behind it has to flip
   with the theme too. `--sheet-bg` is there for the `bulletin2` skin, whose `--bg`
   is deliberately translucent — mixing THAT with transparent would leave nothing to
-  read against. It costs the artwork, faint behind the veil: the price of one
-  appearance for every box tile, where the picture is decoration and the name is the
-  content.
+  read against. The veil is a **tint, not a wash** (45%): at 88% the picture was gone
+  and the tile might as well have had none. What carries the legibility instead is a
+  **halo** in that same ground colour behind the glyphs — it protects the text where
+  the text is rather than flattening the square to protect it everywhere, it flips
+  with the theme like the veil, and it touches neither face, size nor alignment.
 - **The details eye moved to the top RIGHT.** It never hides on touch, and a named
   tile sets its name from the top-left corner — it was sitting on the first word of
   every box in the mosaic.
@@ -857,6 +859,20 @@ nobody asked. **Offline** is never tinted, the network being irrelevant to it by
 The millisecond reading moved to the button's tooltip, under the state line. The probe also
 stopped being silenceable: it used to open with `if (!el) return;` on that dot, so any view
 without one killed the measurement outright.
+
+**A reload drops the Snapcast stream, and only half of that is unavoidable.** The
+WebSocket and the AudioContext live in the document, so nothing survives the page being
+rebuilt — but the client IDENTITY does: snapweb persists its `uniqueId` in `localStorage`,
+so the device comes back to snapserver as the same client, keeping its name and volume.
+What was missing was the reconnection itself. `autoConnectSnapIfNeeded` used to wait for
+the first click anywhere on the page, because an AudioContext needs a user gesture — but
+only the SOUND does, never the socket, which opens freely while the context is simply
+built suspended. A device that had been a speaker therefore sat as a plain remote,
+invisible to snapserver, until something happened to be clicked, with nothing on screen
+saying what the silence meant. It now reconnects at load and the gesture only resumes the
+context, announced when the context is actually suspended. **The phone path is deliberately
+left alone**: it goes through the "Tap to start audio" splash, a single deliberate gesture
+that is far more reliable on iOS than catching an incidental click.
 
 **The switch is manual** (`offStart` / `offStop` in `mood.html`). Two players exist and
 you always know which one has the hand; losing the network is not a reason for the page

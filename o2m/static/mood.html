@@ -6431,12 +6431,25 @@ function autoConnectSnapIfNeeded() {
   // restore the last local state ('1' = was connected → reconnect; '0'/null = stay off).
   const shouldConnect = isPhoneDevice() || pref === '1';
   if (!shouldConnect || !snapWsUrl) return;
-  // Connect on the first user gesture (browsers require it for AudioContext).
-  // Don't use {once}: if the SnapStream bundle isn't loaded yet, _snapStart() is a
-  // no-op — keep the listeners until a player is actually created, then detach.
+  // Reconnect NOW, without waiting for a click. A reload necessarily kills the
+  // stream — the WebSocket and the AudioContext live in the document, and nothing
+  // survives that — but only the SOUND needs a user gesture, never the connection:
+  // the socket opens freely and the context is simply built suspended. Waiting for
+  // a gesture to do BOTH left a device that had been a speaker sitting as a plain
+  // remote, invisible to snapserver, until it happened to be clicked — and nothing
+  // on screen said that was what the silence meant.
+  _snapStart();
+  const suspended = () => {
+    try { return snapPlayer?.ctx?.state === 'suspended'; } catch (e) { return false; }
+  };
+  if (suspended()) setFeedback('Snapcast reconnected — click anywhere for sound');
+  // The gesture is now only what resumes the context. The listeners also still
+  // cover the case the bundle had not loaded yet, when _snapStart() above was a
+  // no-op — which is why they are not {once} and are dropped on the real state.
   const onGesture = () => {
     _snapStart();
-    if (snapPlayer) {
+    try { if (suspended()) snapPlayer.ctx.resume(); } catch (e) {}
+    if (snapPlayer && !suspended()) {
       document.removeEventListener('click', onGesture);
       document.removeEventListener('touchstart', onGesture);
     }
