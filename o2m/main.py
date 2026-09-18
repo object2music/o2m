@@ -1832,19 +1832,25 @@ if __name__ == "__main__":
         if not uri:
             return jsonify({'error': 'uri required'}), 400
         result = {'ok': True, 'uri': uri, 'favorite': favorite}
-        # Local DB
-        try:
-            o2mHandler.dbHandler.set_track_liked(uri, favorite)
-            result['liked_local'] = favorite
-        except Exception as e:
-            result['liked_local_error'] = str(e)
-        # Spotify (compte serveur), seulement pour les morceaux Spotify
+        # Spotify FIRST, and its refusal is the answer. The local flag is only the
+        # mirror of the Spotify library; writing it after a refusal is exactly how
+        # the two drift apart with nothing on screen to say so — the UI reported
+        # "added to library" over a `*_spotify_error` nobody read. Same order as
+        # /api/track_playlist, which had it right from the start.
+        # A track that is not a Spotify one (a podcast episode, a local file, a web
+        # page item) has no other side: there the local flag IS the library.
         if uri.startswith('spotify:track:'):
             try:
                 o2mHandler.spotifyHandler.set_track_saved(uri, favorite)
                 result['liked_spotify'] = favorite
             except Exception as e:
-                result['liked_spotify_error'] = str(e)
+                return jsonify({'ok': False, 'uri': uri,
+                                'error': f'Spotify refused: {e}'}), 502
+        try:
+            o2mHandler.dbHandler.set_track_liked(uri, favorite)
+            result['liked_local'] = favorite
+        except Exception as e:
+            result['liked_local_error'] = str(e)
         return jsonify(result)
 
     # ─── Add an album to the library (saved albums) : DB locale + Spotify ───
@@ -1858,12 +1864,18 @@ if __name__ == "__main__":
         if not uri.startswith('spotify:album:'):
             return jsonify({'error': 'spotify album uri required'}), 400
         result = {'ok': True, 'uri': uri, 'saved': saved}
+        # Spotify FIRST, and its refusal is the answer. The local flag is only the
+        # mirror of the Spotify library; writing it after a refusal is exactly how
+        # the two drift apart with nothing on screen to say so — the UI reported
+        # "added to library" over a `*_spotify_error` nobody read. Same order as
+        # /api/track_playlist, which had it right from the start.
         try:
             o2mHandler.spotifyHandler.set_album_saved(uri, saved)
             result['saved_spotify'] = saved
         except Exception as e:
-            result['saved_spotify_error'] = str(e)
-        # Local DB marker, kept in sync with the Spotify action.
+            return jsonify({'ok': False, 'uri': uri,
+                            'error': f'Spotify refused: {e}'}), 502
+        # Local DB marker — reached only once Spotify has accepted.
         try:
             aid = uri.rsplit(':', 1)[1]
             if saved:
@@ -1897,11 +1909,18 @@ if __name__ == "__main__":
         if not uri.startswith('spotify:artist:'):
             return jsonify({'error': 'spotify artist uri required'}), 400
         result = {'ok': True, 'uri': uri, 'followed': followed}
+        # Spotify FIRST, and its refusal is the answer. The local flag is only the
+        # mirror of the Spotify library; writing it after a refusal is exactly how
+        # the two drift apart with nothing on screen to say so — the UI reported
+        # "added to library" over a `*_spotify_error` nobody read. Same order as
+        # /api/track_playlist, which had it right from the start.
         try:
             o2mHandler.spotifyHandler.set_artist_followed(uri, followed)
             result['followed_spotify'] = followed
         except Exception as e:
-            result['followed_spotify_error'] = str(e)
+            return jsonify({'ok': False, 'uri': uri,
+                            'error': f'Spotify refused: {e}'}), 502
+        # Local DB marker — reached only once Spotify has accepted.
         try:
             aid = uri.rsplit(':', 1)[1]
             if followed:

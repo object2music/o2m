@@ -2367,6 +2367,11 @@ function objMenuItems(uri, kind) {
 // Library toggle (write-through to Spotify + local DB). `add` = desired state.
 // Album → saved albums, artist → follow, track → liked. All synchronized.
 async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
+  // The same gate every other edit action has (mood, favourite heart, history).
+  // Without it the menu offered "Add to library" whatever the lock, fired the
+  // POST, and answered a 401 with a message about editing — over an action that
+  // said nothing about editing.
+  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
   try {
     const r = await fetch(API + endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2374,7 +2379,10 @@ async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
     });
     if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     const d = await r.json().catch(() => ({}));
-    setFeedback(d.error ? 'Error' : (add ? okAdd : okRemove));
+    // A refusal by Spotify is not a success with a note attached — the library is
+    // Spotify's, and saying "added" over it is what let the two drift apart.
+    if (d.error || d.ok === false) { setFeedback(String(d.error || 'Not saved').slice(0, 90)); return; }
+    setFeedback(add ? okAdd : okRemove);
   } catch (e) { setFeedback('Error'); }
 }
 const setAlbumInLibrary  = (uri, add) => _libToggle('/album_save',   'saved',    uri, add, 'Album added to library',  'Album removed from library');
@@ -2611,6 +2619,7 @@ async function renderPlaylistEditor(uri, boxId = 'td-playlists') {
 
 async function togglePlaylistMembership(cb, uri) {
   const pid = cb.dataset.pid, add = cb.checked;
+  if (!editUnlocked) { cb.checked = !add; setFeedback('Enable editing first'); return; }
   cb.disabled = true;
   try {
     const r = await fetch(API + '/track_playlist', {
@@ -7163,6 +7172,12 @@ async function init() {
     const panel = document.getElementById('obj-panel');
     if (!panel || panel.contains(e.target)) return;
     if (e.target.closest?.('#obj-backdrop')) return;   // its own handler covers it
+    // The ⊕ action menu and the playlist dropdown are appended to <body> so they
+    // can escape the panel's overflow — they are geometrically outside it and
+    // logically inside. Pressing "Play next" or ticking a playlist therefore read
+    // as a press outside and closed the search results under the finger, before
+    // the action had even run. Picking one thing to do is not asking to leave.
+    if (e.target.closest?.('.track-menu-dropdown, .pl-dropdown')) return;
     closeObjPanel();
   });
   // The three dismiss gestures, wired once from the registry.
