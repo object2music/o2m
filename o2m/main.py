@@ -467,10 +467,17 @@ if __name__ == "__main__":
         # reach the starter-box setup it is the only entry point to.
         # `mopidy_box` is o2m's own bookkeeping row (created the first time something plays
         # outside a box), never something a person made, hence INTERNAL_UIDS.
+        # Seeds are excluded on top of that: a freshly provisioned instance arrives with ten
+        # of them AND syncs its library within minutes, so counting either would have shut
+        # the wizard mid-onboarding — a reload was enough to lose it. `onboarding/setup`
+        # recognises the same foreign-playlist boxes (_ONBOARDING_FOREIGN) and is what
+        # clears them, so the two tests read the instance the same way.
+        ignored = set(virtualbox.INTERNAL_UIDS) | set(_ONBOARDING_SEED_UIDS)
         try:
-            boxes = (Box.select()
-                     .where(Box.uid.not_in(list(virtualbox.INTERNAL_UIDS)))
-                     .count())
+            boxes = sum(1 for b in Box.select(Box.uid, Box.data)
+                        if b.uid not in ignored
+                        and not any(f in (b.data or '') for f in _ONBOARDING_FOREIGN)
+                        and 'spotify:recommendation:seeds' not in (b.data or ''))
         except Exception:
             boxes = 0
         # Spotify OAuth redirect sanity: the configured SPOTIPY_REDIRECT_URI must point at the
@@ -507,6 +514,15 @@ if __name__ == "__main__":
         'spotify:playlist:4CAjrciXNfqiDdr757UwBx', 'spotify:playlist:0zM5DUb7FYRVvVjBg3ULp3',
         'spotify:playlist:4oXELBuV9B6QtxYwMdzsoE', 'spotify:playlist:2YndOajMlJlkj7x6WyevW6',
     )
+    # The boxes `o2m/samples/mysql/dump.sql` seeds into a brand-new database. They are the
+    # instance's factory content, not something a person made, and counting them as "this
+    # instance is in use" closed the welcome flow on an instance nobody had touched yet —
+    # the very case it exists for. Kept as uids because two of them (an auto box, an albums
+    # box) carry perfectly generic data and cannot be told apart by their content.
+    _ONBOARDING_SEED_UIDS = frozenset({
+        'trash_demo', 'albums_spotify', '04AD43D2204B80', 'discover_demo', 'incoming_demo',
+        'favorites_demo', '045340D2204B80', 'podcast_unfinished', 'recommandation_genre_demo',
+    })
     # Generic starter boxes that work for any authenticated user (no foreign content).
     _ONBOARDING_EXAMPLES = [
         {'description': 'Auto',        'data': 'auto:library\ninfos:library', 'option_type': 'library', 'option_sort': 'smart'},
