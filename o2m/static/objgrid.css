@@ -168,15 +168,20 @@
    bulletin2 skin's own full-strength surface (its `--bg` is deliberately
    translucent, and mixing THAT with transparent would leave nothing to read
    against); every other theme has no such token and falls back to `--bg`.
-   It costs the artwork, which is faint behind an 88% veil — that is the price of
-   one appearance for every box tile, and a box's picture is decoration where its
-   name is the content. */
+   The veil is light — 45%, a tint rather than a wash — because at 88% the picture
+   was gone and the tile might as well have had none. What carries the legibility
+   instead is a HALO in the same ground colour behind the glyphs: it protects the
+   text exactly where the text is, rather than flattening the whole square to
+   protect it everywhere. Light ground under dark type, dark ground under light
+   type — it flips with the theme like the veil does, and it touches neither the
+   face, the size nor the alignment, so the two cases still read as one. */
 .og-cap {
   position: absolute; inset: 0;
   background: var(--sheet-bg, var(--bg));
+  text-shadow: 0 0 7px var(--sheet-bg, var(--bg)), 0 1px 2px var(--sheet-bg, var(--bg));
 }
 @supports (background: color-mix(in srgb, red 50%, transparent)) {
-  .og-cap { background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 88%, transparent); }
+  .og-cap { background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 45%, transparent); }
 }
 
 .og-tile:hover .og-art--text, .og-tile:hover .og-cap { color: var(--text); }
