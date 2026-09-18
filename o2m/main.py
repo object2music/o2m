@@ -371,6 +371,29 @@ if __name__ == "__main__":
                     ids.add(p)
         return ids
 
+    def _spotify_me(access_token):
+        """/v1/me for a raw access token → (me_dict, None) or (None, message).
+
+        The message is meant to be READ: the 403 it most often carries says nothing
+        about what to do, and the thing to do is not obvious."""
+        if not access_token:
+            return None, "No Spotify token on this instance."
+        try:
+            r = requests.get('https://api.spotify.com/v1/me',
+                             headers={'Authorization': f'Bearer {access_token}'}, timeout=8)
+        except Exception as e:
+            return None, f"Spotify unreachable: {e}"
+        if r.status_code == 403:
+            return None, ("This Spotify account is not registered for O2M's Spotify "
+                          "application. The application runs in Development Mode, where "
+                          "every account has to be added by hand in the Spotify dashboard "
+                          "(User Management) \u2014 until then Spotify refuses it on every "
+                          "endpoint, not just this page. Either add the account there, or "
+                          "sign in with one that is already registered.")
+        if r.status_code != 200:
+            return None, f"Spotify refused the account (HTTP {r.status_code})."
+        return r.json(), None
+
     def _edit_current_user():
         tok = request.cookies.get(_EDIT_COOKIE)
         if not tok:
@@ -2778,6 +2801,26 @@ if __name__ == "__main__":
                 # library, write). Seed the instance baseline once (fixed house account for
                 # streaming + fallback), then (re)build sp preferring the overlay.
                 auth_manager.get_access_token(request.args.get("code"))
+                # An account the Spotify app does not know still SIGNS IN — the OAuth round
+                # trip succeeds and a token is issued — and is then refused 403 on every
+                # Web API endpoint, /v1/me included (the app runs in Development Mode, where
+                # accounts are allowlisted by hand). Unchecked, that dead identity is written
+                # to the overlay AND seeded as the instance baseline, which
+                # seed_instance_cache_if_absent() deliberately never overwrites afterwards:
+                # one wrong sign-in costs the instance its Spotify until someone deletes the
+                # files by hand. Ask /v1/me before keeping anything.
+                fresh = cache_handler.get_cached_token() or {}
+                me, err = _spotify_me(fresh.get('access_token'))
+                if err:
+                    try:
+                        os.remove(o2mHandler.spotifyHandler.cache_path)
+                    except OSError:
+                        pass
+                    o2mHandler.spotifyHandler.reload_sp()
+                    print(f"spotipy_init: sign-in rejected, overlay dropped - {err}")
+                    return (f'<h2>Signed in, but this account cannot use O2M</h2>'
+                            f'<p>{err}</p>'
+                            f'<p><a href="/api/spotipy_init">Try another account</a></p>', 403)
                 o2mHandler.spotifyHandler.seed_instance_cache_if_absent()
                 o2mHandler.spotifyHandler.reload_sp()
                 return redirect('/api/spotipy_init')
@@ -2794,11 +2837,27 @@ if __name__ == "__main__":
             # space — set the signed cookie if the identity is in the allowlist (replaces
             # the broken Iris proxy). Secure when served over HTTPS (behind Caddy).
             from flask import make_response
-            me = o2mHandler.spotifyHandler.sp.me()
+            me, err = _spotify_me((cache_handler.get_cached_token() or {}).get('access_token'))
+            if err:
+                # Reached with a token Spotify issued but will not honour. Say so, rather
+                # than raising out of sp.me() and serving a bare "Internal Server Error".
+                return (f'<h2>Signed in, but this account cannot use O2M</h2>'
+                        f'<p>{err}</p>'
+                        f'<p><a href="/api/spotipy_out">Sign out</a> to fall back to this '
+                        f'instance\u2019s own account.</p>', 403)
             uid = (me.get("id") or "").strip()
+            # Playback is librespot, and librespot needs Premium. A free account is a
+            # perfectly good overlay (library, playlists, likes) and will simply never
+            # play a note, which is worth saying HERE rather than leaving it to be
+            # discovered as silence.
+            premium_note = ('' if me.get("product") == "premium" else
+                            '<p>This account is not Premium: it can read the library, but '
+                            'Spotify playback will be refused. Audio keeps running on the '
+                            'account this instance is paired with.</p>')
             resp = make_response(
                 f'<h2>Hi {me.get("display_name") or uid}, '
                 f'<small><a href="/api/spotipy_out">[sign out]</a></small></h2>'
+                f'{premium_note}'
             )
             if uid.lower() in _edit_allowlist():
                 resp.set_cookie(
