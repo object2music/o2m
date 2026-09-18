@@ -472,7 +472,9 @@ if __name__ == "__main__":
         # the wizard mid-onboarding — a reload was enough to lose it. `onboarding/setup`
         # recognises the same foreign-playlist boxes (_ONBOARDING_FOREIGN) and is what
         # clears them, so the two tests read the instance the same way.
-        ignored = set(virtualbox.INTERNAL_UIDS) | set(_ONBOARDING_SEED_UIDS)
+        # 'o2m_onboarding' is the marker row the setup writes to remember it ran (read as
+        # `onboarding_done` below) — bookkeeping like mopidy_box, not a box anyone made.
+        ignored = set(virtualbox.INTERNAL_UIDS) | set(_ONBOARDING_SEED_UIDS) | {'o2m_onboarding'}
         try:
             boxes = sum(1 for b in Box.select(Box.uid, Box.data)
                         if b.uid not in ignored
