@@ -576,11 +576,23 @@ Other points worth knowing:
   so the whole boxes mosaic was a wall of abstract marks under 12px captions. A box
   tile also shows no `sub`: `option_type` is an internal lifecycle word that would
   read as the tile's subtitle.
-- **The in-square type is sized against the TILE** (`cqw` with a fixed fallback), so
-  the same name holds at three per row on a phone and four in a third of a desktop.
-  The overlay is white on a gradient scrim rather than the theme's tokens: what is
-  under it is an arbitrary image and no token can promise contrast against one — the
-  scrim is the only thing that can, so it is the same in every theme.
+- **One type, one size, one alignment, one colour, in both cases.** Two box tiles
+  side by side, one with a picture and one without, have to read as the same object,
+  so everything typographic is declared once for `.og-art--text, .og-cap` and the
+  overlay fills the same box — same 8px padding, same four-line clamp, same top-left
+  start. It is **sized against the TILE** (`cqw` with a fixed fallback), so the same
+  name holds at three per row on a phone and four in a third of a desktop. The only
+  difference is the veil the overlay needs, and it uses the theme's own ground
+  (`var(--sheet-bg, var(--bg))` at 88%) rather than a black gradient: the text is
+  `--muted`/`--accent` like everywhere else, so what stands behind it has to flip
+  with the theme too. `--sheet-bg` is there for the `bulletin2` skin, whose `--bg`
+  is deliberately translucent — mixing THAT with transparent would leave nothing to
+  read against. It costs the artwork, faint behind the veil: the price of one
+  appearance for every box tile, where the picture is decoration and the name is the
+  content.
+- **The details eye moved to the top RIGHT.** It never hides on touch, and a named
+  tile sets its name from the top-left corner — it was sitting on the first word of
+  every box in the mosaic.
 - `#boxes-wrap` and `#obj-grid-wrap` both carry an explicit `display`, which beats
   `[hidden]`'s UA rule — without the two `[hidden]` rules the mosaic renders *under*
   the boxes list instead of replacing it.

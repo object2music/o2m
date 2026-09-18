@@ -136,42 +136,51 @@
 }
 .og-art { display: block; width: 100%; height: 100%; object-fit: cover; }
 
-/* No artwork → the name, set large in the square. An album is recognised by its
-   sleeve; a box is only its name, so the name IS its cover — and no box carries an
-   image, which is what made that whole view unreadable as a grid of marks. */
-.og-art--text {
+/* ── The name IN the square ────────────────────────────────────────────────────
+   An album is recognised by its sleeve; a box is never a picture one knows, it is
+   only its name — so a box wears its name in the square whether or not it has
+   artwork. **One type, one size, one alignment, one colour, in both cases**: two
+   tiles side by side, one with a picture and one without, have to read as the same
+   object. So everything typographic is declared ONCE here, and the only difference
+   between the two is the veil the overlay needs. */
+.og-art--text, .og-cap {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
   overflow: hidden;
   padding: 8px; box-sizing: border-box;
   font-size: 15px; font-weight: 700; line-height: 1.15;
   letter-spacing: -.01em; hyphens: auto; overflow-wrap: anywhere;
-  color: var(--text); opacity: .72;
+  color: var(--muted); transition: color .15s;
 }
 /* Sized against the TILE, not the viewport: the same name has to hold at three
    per row on a phone and four in a third of a desktop. Falls back to the 15px
    above wherever container queries are not there — the whole declaration drops. */
 @supports (container-type: inline-size) {
   .og-thumb { container-type: inline-size; }
-  .og-art--text { font-size: clamp(12px, 15cqw, 22px); }
+  .og-art--text, .og-cap { font-size: clamp(12px, 15cqw, 22px); }
 }
-.og-tile.active .og-art--text { color: var(--accent); opacity: 1; }
+.og-art--text { width: 100%; height: 100%; }
 
-/* The name laid OVER artwork — a box that has a picture. White on a gradient
-   scrim rather than the theme's tokens: what is underneath is an arbitrary image,
-   and no token can promise contrast against one. The scrim is the only thing that
-   can, so it is the same in every theme. */
+/* The overlay fills the same box as the text cover — same padding, same four
+   lines, same top-left start — so the name sits in the same place on every tile.
+   What it adds is a veil, and the veil uses the theme's own ground rather than a
+   black gradient: the text is `var(--text)`/`var(--accent)` like everywhere else,
+   so what stands behind it has to flip with the theme too. `--sheet-bg` is the
+   bulletin2 skin's own full-strength surface (its `--bg` is deliberately
+   translucent, and mixing THAT with transparent would leave nothing to read
+   against); every other theme has no such token and falls back to `--bg`.
+   It costs the artwork, which is faint behind an 88% veil — that is the price of
+   one appearance for every box tile, and a box's picture is decoration where its
+   name is the content. */
 .og-cap {
-  position: absolute; inset: auto 0 0 0;
-  padding: 6px 7px;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
-  overflow: hidden; overflow-wrap: anywhere;
-  font-size: 12px; font-weight: 700; line-height: 1.15; letter-spacing: -.01em;
-  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .55);
-  background: linear-gradient(to top, rgba(0,0,0,.80), rgba(0,0,0,.45) 62%, rgba(0,0,0,0));
+  position: absolute; inset: 0;
+  background: var(--sheet-bg, var(--bg));
 }
-@supports (container-type: inline-size) {
-  .og-cap { font-size: clamp(10px, 10cqw, 15px); }
+@supports (background: color-mix(in srgb, red 50%, transparent)) {
+  .og-cap { background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 88%, transparent); }
 }
+
+.og-tile:hover .og-art--text, .og-tile:hover .og-cap { color: var(--text); }
+.og-tile.active .og-art--text, .og-tile.active .og-cap { color: var(--accent); }
 
 /* Either way the square says the name, so the caption below would say it twice. */
 .og-tile--named .og-name { display: none; }
@@ -182,7 +191,6 @@
    border as a state. */
 .og-tile img.og-art { opacity: .78; transition: opacity .15s, filter .2s; }
 .og-tile:hover img.og-art { opacity: 1; }
-.og-tile:hover .og-art--text { opacity: 1; }
 .og-tile.active { color: var(--text); }
 .og-tile.active .og-thumb { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 /* Loaded → the cover drops its colour. The frame and the tick say WHICH tiles are
@@ -202,9 +210,11 @@
 .og-tile.active .og-mark { display: flex; }
 
 /* Details. Hidden until the tile is hovered or focused — on a phone there is no
-   hover, so it is simply always there. */
+   hover, so it is simply always there. Top RIGHT, not top left: a named tile sets
+   its name from the top-left corner, and on touch — where this button never hides
+   — it sat on the first word of every box in the mosaic. */
 .og-open {
-  position: absolute; inset: 0 auto auto 0;
+  position: absolute; inset: 0 0 auto auto;
   display: flex; align-items: center; justify-content: center;
   width: 22px; height: 22px;
   background: var(--bg); color: var(--muted);
