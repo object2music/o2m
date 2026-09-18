@@ -969,22 +969,58 @@ if __name__ == "__main__":
         except Exception:
             offset = 0
         db = o2mHandler.dbHandler
+        live_names = {}
         feed = db.podcast_uri_remove_max_results(uri)
         channel = feed.split('+', 1)[1] if feed.startswith('podcast+') else feed
         try:
             uris = db.get_episodes_by_channel(channel, limit=limit + offset + 1)
-            if not uris:
-                # Never catalogued (a feed reached from the directory rather than a
-                # box): read it live, the way a fill would.
-                shows = o2mHandler.get_podcast_from_url(channel) or []
-                uris = [getattr(r, 'uri', None) for r in shows]
-                uris = [u for u in uris if u]
+            # A thin catalogue is not an answer, it is a fragment. The fallback used
+            # to fire only on ZERO rows, so a channel the cache happens to hold two
+            # episodes of showed two — measured here: 20 channels hold exactly one
+            # episode, 27 hold two, 11 hold three, while their feeds hold dozens.
+            # Fewer rows than the page asked for means the cache cannot be the whole
+            # channel, so the feed is read and the two are merged: the feed's own
+            # order is the spine (it is the authority on what the channel holds
+            # now), and the catalogued episodes it no longer lists — older ones,
+            # possibly started — are kept after it rather than lost.
+            if offset == 0 and len(uris) < limit:
+                try:
+                    shows = o2mHandler.get_podcast_from_url(channel) or []
+                    live = [u for u in (getattr(r, 'uri', None) for r in shows) if u]
+                    # An episode the catalogue has never seen has no Track row to
+                    # read a name from, and the guid tail is a uuid — the feed's own
+                    # title is the only one there is.
+                    live_names = {getattr(r, 'uri', None): getattr(r, 'name', None)
+                                  for r in shows if getattr(r, 'uri', None)}
+                except Exception as e:
+                    print(f"podcast_episodes(live {channel}): {e}")
+                    live = []
+                if live:
+                    # Not by uri: the same episode reaches us spelled two ways —
+                    # Radio France appends a '?stationId=1' to the enclosure in the
+                    # feed while the catalogue holds the bare url, and merging on the
+                    # uri printed that episode twice. The media FILE is the identity.
+                    # When both spellings exist the catalogued one is kept: it is the
+                    # one carrying the resume position and the play history.
+                    def _ep_key(u):
+                        guid = u.split('#', 1)[1] if '#' in u else u
+                        return guid.split('?', 1)[0]
+                    cached_by_key = {_ep_key(u): u for u in uris}
+                    merged, seen = [], set()
+                    for u in live + uris:
+                        k = _ep_key(u)
+                        if k in seen:
+                            continue
+                        seen.add(k)
+                        merged.append(cached_by_key.get(k, u))
+                    uris = merged
             more = len(uris) > offset + limit
             rows = []
             for u in uris[offset:offset + limit]:
                 t = db.get_stat_by_uri(u)
                 rows.append({'uri': u,
-                             'name': (getattr(t, 'name', None) or u.split('#')[-1])[:200],
+                             'name': (getattr(t, 'name', None) or live_names.get(u)
+                                      or u.split('#')[-1])[:200],
                              'sub': (getattr(t, 'published_at', None) or ''),
                              'image': ''})
             return jsonify({'items': rows, 'has_more': more,

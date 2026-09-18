@@ -3969,7 +3969,10 @@ function objStore(key, kind, title, sub) {
 
 // Small tag showing where the content came from (O2M DB cache vs live Spotify).
 function objSourceTag(source) {
-  return `<span class="obj-src obj-src-${source}">${source === 'db' ? 'from cache' : 'live'}</span>`;
+  // Two skins (cache / live), three answers: a merged view is neither, and saying
+  // so is the only way the reader knows the catalogue half was reached.
+  const label = { db: 'from cache', both: 'cache + live' }[source] || 'live';
+  return `<span class="obj-src obj-src-${source === 'db' ? 'db' : 'live'}">${label}</span>`;
 }
 
 function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = [], albums = [], source = 'db' }) {
@@ -3989,7 +3992,12 @@ function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = 
   objStore('artist:' + uri, 'Artist', name, '');
 }
 
-// DB-first (O2M cache); falls back to a live Spotify browse when not cached.
+/* An artist's page is never the cache's to answer alone. The DB knows only what
+   O2M has already played or saved — for Yuksek that was ONE remix, and because
+   `cached` meant "not empty" rather than "complete", that single row hid the 10
+   top tracks and 129 albums mopidy holds. So both halves are asked, always, and
+   merged: the DB rows first (they carry the O2M status/mood/local metadata the
+   live rows have none of), then the catalogue, deduplicated by uri. */
 async function openArtist(uri, seedName) {
   if (!uri) { setFeedback('No artist link'); return; }
   objNavTo();
@@ -3998,29 +4006,38 @@ async function openArtist(uri, seedName) {
   openObjPanel();
   if (objShowCached('artist:' + uri)) return;
   objLoading();
-  try {
-    const d = await fetch(API + '/artist_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
-    if (d && d.cached) {
-      // Cached rows often lack an image_url (Last.fm genre warmup stores no cover);
-      // fetch the real cover live so the vignette is never a blank/placeholder.
-      let image = d.image;
-      if (!image) { try { image = await objCover(uri); } catch (e) {} }
-      renderArtist(uri, {
-        name: d.name || title, image, genres: d.genres || [], albums: d.albums || [], source: 'db',
-        tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists || [] })),
-      });
-      return;
-    }
-  } catch(e) {}
-  try {
-    const [browseR, cover] = await Promise.all([ rpc('core.library.browse', {uri}), objCover(uri) ]);
-    const rows = browseR?.result || [];
-    renderArtist(uri, {
-      name: title, image: cover, genres: [], source: 'live',
-      tracks: rows.filter(r => r.type === 'track').map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists })),
-      albums: rows.filter(r => r.type !== 'track').map(a => ({ uri: a.uri, name: a.name })),
-    });
-  } catch(e) { objBody().innerHTML = '<div class="obj-empty">Could not load artist.</div>'; }
+  const [d, browseR, cover] = await Promise.all([
+    fetch(API + '/artist_info?uri=' + encodeURIComponent(uri)).then(r => r.json()).catch(() => null),
+    rpc('core.library.browse', { uri }).catch(() => null),
+    objCover(uri).catch(() => ''),
+  ]);
+  const rows = (browseR && browseR.result) || [];
+  const cached   = !!(d && d.cached);
+  const dbTracks = cached && Array.isArray(d.tracks) ? d.tracks : [];
+  const dbAlbums = cached && Array.isArray(d.albums) ? d.albums : [];
+  const liveTracks = rows.filter(r => r.type === 'track')
+    .map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists }));
+  const liveAlbums = rows.filter(r => r.type !== 'track').map(a => ({ uri: a.uri, name: a.name }));
+  const mergeByUri = (a, b) => {
+    const seen = new Set(a.map(x => x.uri));
+    return a.concat(b.filter(x => x.uri && !seen.has(x.uri)));
+  };
+  const tracks = mergeByUri(dbTracks, liveTracks);
+  const albums = mergeByUri(dbAlbums, liveAlbums);
+  if (!tracks.length && !albums.length) {
+    objBody().innerHTML = '<div class="obj-empty">Could not load artist.</div>';
+    return;
+  }
+  renderArtist(uri, {
+    name: (d && d.name) || title,
+    // Cached artist rows often lack an image_url (the Last.fm genre warmup stores
+    // none), so the live cover is the fallback rather than a placeholder.
+    image: (d && d.image) || cover,
+    genres: (d && d.genres) || [],
+    tracks, albums,
+    source: (dbTracks.length || dbAlbums.length)
+      ? ((liveTracks.length || liveAlbums.length) ? 'both' : 'db') : 'live',
+  });
 }
 
 function renderAlbum(uri, { name = 'Album', artist = '', image = '', release = '', tracks = [], source = 'db' }) {

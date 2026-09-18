@@ -1742,7 +1742,13 @@ class DatabaseHandler():
                       .order_by(Track.track_number))
         if a is None and not tracks:
             return None
-        total = a.total_tracks if (a and a.total_tracks) else len(tracks)
+        # "Cached" has to mean COMPLETE, not non-empty. With no total_tracks to
+        # compare against, the count was compared with itself — always equal, so a
+        # handful of played tracks passed as a whole record and shadowed the live
+        # lookup. 2,057 of 8,284 album rows carry no total; they are partial until
+        # the backfill gives them one.
+        known_total = a.total_tracks if a else None
+        total = known_total or len(tracks)
         return {
             'source':  'db',
             'name':    a.name if a else None,
@@ -1751,7 +1757,7 @@ class DatabaseHandler():
             'total':   total,
             # Partial = the DB only has some of the album's tracks (not a full catalog);
             # the client falls back to a live lookup for a complete listing.
-            'partial': bool(total and len(tracks) < total),
+            'partial': bool(not known_total or len(tracks) < known_total),
             'release': a.release_date if a else None,
             'tracks': [self._track_dict(t) for t in tracks],
         }
