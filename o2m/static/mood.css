@@ -1772,11 +1772,15 @@
     font-size: 10px; color: var(--muted); margin: 4px 0 4px;
   }
 
-  /* Clickable affordances on existing elements */
-  #artist-name.obj-link { cursor: pointer; }
-  #artist-name.obj-link:hover { color: var(--text); text-decoration: underline; }
-  .tl-artist.obj-link { cursor: pointer; }
-  .tl-artist.obj-link:hover { color: var(--text); text-decoration: underline; }
+  /* Clickable affordances on existing elements. A multi-artist line is one span
+     per artist (see artistsHTML), so the link is the SPAN, not the whole line —
+     the container form is kept for the single-artist paths that still set it. */
+  #artist-name.obj-link, #artist-name .obj-link,
+  .tl-artist.obj-link, .tl-artist .obj-link { cursor: pointer; }
+  #artist-name.obj-link:hover, #artist-name .obj-link:hover,
+  .tl-artist.obj-link:hover, .tl-artist .obj-link:hover {
+    color: var(--text); text-decoration: underline;
+  }
   /* Radio now-playing: the header artist/album are the live SONG's (not openable
      O2M objects), so make them inert — no pointer/hover, no dead clicks. */
   #now-playing.radio-np #artist-name,

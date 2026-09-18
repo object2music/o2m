@@ -1548,7 +1548,27 @@ const ICON_SHUFFLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri = '', uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '', coverSeed = '' }) {
+/* ── A track's artists, one link each ──────────────────────────────────────────
+   A collaboration is several objects, not one string. Every display used to join
+   the names and hang the FIRST artist's uri on the whole line, so clicking any
+   name but the first opened the wrong artist — and mopidy returns `artists` as a
+   frozenset, so "the first" is not even the main one (the DB keeps that order, in
+   TrackArtist.position). One span per artist, each carrying its own uri, is what
+   makes the click land where the eye is.
+   Accepts what mopidy gives ([{uri, name}]) and what the DB cache gives
+   (DatabaseHandler._track_artists, same shape; legacy bare names still read). */
+function artistList(artists) {
+  return (Array.isArray(artists) ? artists : [])
+    .map(a => (typeof a === 'string' ? { name: a } : (a || {})))
+    .filter(a => a.name);
+}
+function artistsText(artists) { return artistList(artists).map(a => a.name).join(', '); }
+function artistsHTML(artists) {
+  return artistList(artists).map(a => a.uri
+    ? `<span class="obj-link" data-artist-uri="${objEsc(a.uri)}">${objEsc(a.name)}</span>`
+    : objEsc(a.name)).join(', ');
+}
+function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artists = null, uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '', coverSeed = '' }) {
   // Visual in the leading slot: eq-icon if current, else the real artwork, else a
   // generated cover when the caller passes a seed (search results), else the index
   // number. The generated SVG is injected inline: through <img src> it would lose the
@@ -1559,15 +1579,16 @@ function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artistUri 
         ? `<div class="tl-thumb tl-thumb--gen">${O2M.coverFor(coverSeed)}</div>`
         : `<img class="tl-thumb" src="${objEsc(placeholderForUri(coverSeed))}" alt="" loading="lazy">`)
     : indexLabel;
-  const aCls = 'tl-artist' + (artistUri ? ' obj-link' : '');
-  const aAttr = artistUri ? ` data-artist-uri="${objEsc(artistUri)}"` : '';
+  // `artist` stays as the plain-text fallback (an album row's artist line, a
+  // search result that carries no uri).
+  const aHtml = artistsHTML(artists) || objEsc(artist || '');
   // data-kind lets the shared ⓘ handler build a kind-aware menu (track vs
   // artist/album/radio: the latter get Play next/now over the object's tracks +
   // "See details"). Absent = plain track (tracklist, detail track lists).
   const infoAttr = uri ? ` data-uri="${objEsc(uri)}"${kind ? ` data-kind="${objEsc(kind)}"` : ''}` : '';
   return `<div class="tl-num">${numHtml}</div>`
     + `<div class="tl-texts"><div class="tl-name">${objEsc(name || '?')}</div>`
-    + `<div class="${aCls}"${aAttr}>${objEsc(artist)}</div>${statusHtml}</div>`
+    + `<div class="tl-artist">${aHtml}</div>${statusHtml}</div>`
     + `<div class="tl-dur">${objEsc(durText)}</div>`
     + `<button class="tl-info" title="Track actions" aria-label="Track actions"${infoAttr}>${TL_INFO_SVG}</button>`;
 }
@@ -1620,8 +1641,7 @@ function renderTracklist(tracks, activeTlid) {
     item.innerHTML = trackRowInnerHTML({
       indexLabel: String(i + 1).padStart(2, '0'),
       name: track.name,
-      artist: (track.artists || []).map(a => a.name).join(', '),
-      artistUri: (track.artists || [])[0]?.uri || '',
+      artists: track.artists || [],
       uri: track.uri,
       durText: msToMin(track.length),
       statusHtml,
@@ -1632,7 +1652,7 @@ function renderTracklist(tracks, activeTlid) {
       const ib = e.target.closest('.tl-info');
       if (ib) { e.stopPropagation(); openActionMenu(ib, trackMenuItems(ib.dataset.uri || track.uri, tlid)); return; }
       // Clicking the artist name opens the artist detail instead of playing the row.
-      const al = e.target.closest('.tl-artist[data-artist-uri]');
+      const al = e.target.closest('.tl-artist [data-artist-uri]');
       if (al) { e.stopPropagation(); openArtist(al.dataset.artistUri, al.textContent.trim()); return; }
       resetProgress();
       if (OFF.on) { offPlayAt(tlid); return; }   // tlid is the local queue index
@@ -1814,17 +1834,20 @@ function npAnimateIn(...els) {
 /* Title / artist / album, from a tracklist row (optimistic skip) or the confirmed
    track (refresh). Returns whether anything changed: the refresh confirming an
    optimistic skip paints the same text and must not re-run the fade. */
-function paintTrackText(name, artist, album, artistUri) {
+function paintTrackText(name, artist, album, artists) {
   const nameEl = document.getElementById('track-name'), heroEl = document.getElementById('hero-title');
   const artistEl = document.getElementById('artist-name'), albumEl = document.getElementById('album-name');
-  const n = name || '—', a = artist || '—', al = album || '';
+  const list = artistList(artists);
+  const n = name || '—', a = (list.length ? artistsText(list) : artist) || '—', al = album || '';
   const changed = nameEl.textContent !== n || artistEl.textContent !== a || (albumEl && albumEl.textContent !== al);
   if (!changed) return false;
   setTrackName(n);
   heroEl.textContent = name || '';
   fitHeroTitle();
-  artistEl.textContent = a;
-  artistEl.classList.toggle('obj-link', !!artistUri);
+  // One link per artist — the container itself is no longer the link (see artistsHTML).
+  if (list.some(x => x.uri)) artistEl.innerHTML = artistsHTML(list);
+  else artistEl.textContent = a;
+  artistEl.classList.remove('obj-link');
   if (albumEl) albumEl.textContent = al;
   npAnimateIn(nameEl, heroEl, document.getElementById('artist-album'));
   return true;
@@ -1835,7 +1858,7 @@ function paintTrackText(name, artist, album, artistUri) {
    track. Idempotent per uri: the refresh that confirms a skip must not wipe what
    the skip has already loaded (tags, badge, details, cover). */
 let _switchUri = null;
-function switchNowPlayingTo(uri, { name, artist, artistUri, album }) {
+function switchNowPlayingTo(uri, { name, artist, artists, album }) {
   if (!uri || _switchUri === uri) return;
   _switchUri = uri;
   _npEmptyPainted = false;
@@ -1844,7 +1867,7 @@ function switchNowPlayingTo(uri, { name, artist, artistUri, album }) {
   // For a radio this is the station name (or a neutral label when mopidy only has
   // the stream url as name); maybeShowRadioTitle refines it with the live title.
   const isStream = _isStreamUri(uri);
-  paintTrackText(isStream && (!name || _isStreamUri(name)) ? 'Radio' : name, artist, album, artistUri);
+  paintTrackText(isStream && (!name || _isStreamUri(name)) ? 'Radio' : name, artist, album, artists);
   updateHeroAccent(uri);
   clearTrackTags();
   fetchAndRenderTrackTags(uri);
@@ -1940,8 +1963,8 @@ async function refreshNowPlaying() {
   matrixTlItems  = tracks.map(({tlid: id, track: t}) => ({
     uri: t?.uri, tlid: id,
     name:   t?.name || '',
-    artist: (t?.artists || []).map(a => a.name).join(', '),
-    artistUri: (t?.artists || [])[0]?.uri || '',
+    artist: artistsText(t?.artists),      // plain text — the mood-matrix tooltip
+    artists: t?.artists || [],            // the objects — the header's links
     album:  (t?.album && t.album.uri) ? (t.album.name || '') : '',   // what the optimistic skip paints
     length: t?.length || 0,
   }));
@@ -1956,8 +1979,7 @@ async function refreshNowPlaying() {
     if (trackChanged) {
       switchNowPlayingTo(track.uri, {
         name: track.name, album: (track.album && track.album.uri) ? track.album.name : '',
-        artist: (track.artists || []).map(a => a.name).join(', '),
-        artistUri: (track.artists || [])[0]?.uri || '',
+        artists: track.artists || [],
       });
       // Podcasts / news: channel · source and the publication date replace artist/album.
       updateSpokenHeader(track);
@@ -2724,11 +2746,11 @@ async function maybeShowRadioTitle(track) {
   } catch (e) {}
 }
 
-function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artistUri, album, albumUri } = {}) {
+function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artists, album, albumUri } = {}) {
   // Artist and album are clickable when their uri is known (the #obj-body handler
   // opens them via data-artist-uri / data-album-uri). Shown as "artist · album".
   const link = (txt, attr) => `<span class="obj-link" ${attr}>${objEsc(txt)}</span>`;
-  const artistHtml = artist ? (artistUri ? link(artist, `data-artist-uri="${objEsc(artistUri)}"`) : objEsc(artist)) : '';
+  const artistHtml = artistsHTML(artists) || objEsc(artist || '');
   const albumHtml  = album  ? (albumUri  ? link(album,  `data-album-uri="${objEsc(albumUri)}" data-name="${objEsc(album)}"`) : objEsc(album)) : '';
   const sub = [artistHtml, albumHtml].filter(Boolean).join(' · ');
   const heroHtml = hero
@@ -3464,14 +3486,14 @@ async function renderTrackObj(uri, seed) {
     info = i || {}; tr = look; cover = cov;
   } catch (e) {}
   const name = (tr && tr.name) || seed?.name || 'Track';
-  const artist = (tr && (tr.artists || []).map(a => a.name).join(', ')) || seed?.artist || '';
-  const artistUri = (tr && (tr.artists || [])[0]?.uri) || '';
+  const artists = (tr && tr.artists) || [];
+  const artist = artistsText(artists) || seed?.artist || '';
   const album = (tr && tr.album && tr.album.name) || '';
   const albumUri = (tr && tr.album && tr.album.uri) || '';
   objSetHead('Track', name, artist);
   objTMatrixUri = uri;
   // Same shared body as the now-playing panel (one render path — see makeTrackPanel).
-  objPanel.render(info, { hero: true, cover, uri, name, artist, artistUri, album, albumUri });
+  objPanel.render(info, { hero: true, cover, uri, name, artist, artists, album, albumUri });
 }
 
 async function saveCurrentTrackFeatures() {
@@ -3913,8 +3935,7 @@ function objRenderTracks(tracks, kind = '', placeholder = false) {
     const inner = trackRowInnerHTML({
       indexLabel: String(i + 1).padStart(2, '0'),
       name: t.name,
-      artist: (t.artists || []).map(a => a.name).join(', '),
-      artistUri: (t.artists || [])[0]?.uri || '',
+      artists: t.artists || [],
       uri: t.uri,
       durText: t.length ? msToMin(t.length) : '',
       statusHtml,
@@ -3986,7 +4007,7 @@ async function openArtist(uri, seedName) {
       if (!image) { try { image = await objCover(uri); } catch (e) {} }
       renderArtist(uri, {
         name: d.name || title, image, genres: d.genres || [], albums: d.albums || [], source: 'db',
-        tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: (t.artists || []).map(n => ({ name: n })) })),
+        tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists || [] })),
       });
       return;
     }
@@ -4030,7 +4051,7 @@ async function openAlbum(uri, seed) {
       if (!image) { try { image = await objCover(uri); } catch (e) {} }
       renderAlbum(uri, {
         name: d.name || seed?.name, artist: d.artist || seed?.artist, image, release: d.release, source: 'db',
-        tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: (t.artists || []).map(n => ({ name: n })) })),
+        tracks: (d.tracks || []).map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists || [] })),
       });
       return;
     }
@@ -4042,7 +4063,7 @@ async function openAlbum(uri, seed) {
     const first = tracks[0];
     renderAlbum(uri, {
       name: first?.album?.name || seed?.name || 'Album',
-      artist: (first?.artists || []).map(a => a.name).join(', ') || seed?.artist || '',
+      artist: artistsText(first?.artists) || seed?.artist || '',
       image: cover, source: 'live',
       tracks: tracks.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: t.artists })),
     });
@@ -7137,7 +7158,11 @@ async function init() {
     if (e.target === e.currentTarget || e.target.closest?.('[data-sheet-close]')) sh.close();
   }));
   document.getElementById('footer-settings')?.addEventListener('click', openSettings);
-  document.getElementById('artist-name')?.addEventListener('click', () => {
+  document.getElementById('artist-name')?.addEventListener('click', (e) => {
+    // The header holds one link per artist; the fallback covers the single-artist
+    // case painted as plain text (no uri rendered, but the track object has one).
+    const el = e.target.closest?.('[data-artist-uri]');
+    if (el) { openArtist(el.dataset.artistUri, (el.textContent || '').trim()); return; }
     const a = (currentTrackObj?.artists || [])[0];
     if (a?.uri) openArtist(a.uri, a.name);
   });
@@ -7165,7 +7190,7 @@ async function init() {
     }
     // Click on a harmonized object row (not the ⓘ, not the artist sublink) → open its detail.
     const orow = e.target.closest('.tl-item.obj-openable');
-    if (orow && !e.target.closest('.tl-artist[data-artist-uri]')) {
+    if (orow && !e.target.closest('.tl-artist [data-artist-uri]')) {
       objOpenByKind(orow.dataset.uri, orow.dataset.kind, orow.dataset.name); return;
     }
     const row = e.target.closest('[data-artist-uri],[data-album-uri],[data-box-uid]');

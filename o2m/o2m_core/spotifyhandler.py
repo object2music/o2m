@@ -363,8 +363,11 @@ class SpotifyHandler:
             except Exception: pass
             print(f"search_music({query!r}) error: {e}")
             return {'tracks': [], 'artists': [], 'albums': []}
+        # Artists as objects, not names: the UI links each one to itself (see
+        # DatabaseHandler._track_artists — the DB half answers in the same shape).
         tracks = [{'uri': t['uri'], 'name': t['name'], 'length': t.get('duration_ms'),
-                   'artists': [a['name'] for a in t.get('artists') or []]}
+                   'artists': [{'uri': a.get('uri'), 'name': a.get('name')}
+                               for a in (t.get('artists') or []) if a.get('name')]}
                   for t in ((r.get('tracks') or {}).get('items') or [])]
         artists = [{'uri': a['uri'], 'name': a['name'],
                     'image': ((a.get('images') or [{}])[0].get('url'))}

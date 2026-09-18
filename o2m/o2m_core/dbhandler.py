@@ -1680,7 +1680,7 @@ class DatabaseHandler():
                   .limit(limit).offset(offset)):
             results['tracks'].append({
                 'uri': t.uri, 'name': t.name, 'length': t.duration_ms,
-                'artists': self._track_artist_names(t.uri),
+                'artists': self._track_artists(t.uri),
             })
         for ot, bucket in (('podcast', 'podcasts'), ('info', 'info')):
             for t in (Track.select()
@@ -1709,14 +1709,26 @@ class DatabaseHandler():
             })
         return results
 
-    def _track_artist_names(self, track_uri):
-        """Artist name(s) for a track from the TrackArtist join (ordered), cache-only."""
+    def _track_artists(self, track_uri):
+        """Artist(s) of a track from the TrackArtist join, cache-only:
+        [{'uri', 'name'}, ...] ordered by TrackArtist.position (0 = main artist).
+
+        The URI is what makes each name clickable on its own in the UI — a
+        collaboration is several artists, and a list of bare names could only ever
+        link to one of them. Position is the order Spotify gave, and it is the only
+        place it survives: mopidy carries `Track.artists` as a frozenset.
+
+        An artist_id with no Artist row (the catalogue cache is filled lazily) has
+        no name to show, so it is skipped — as it already was."""
         try:
-            rows = (Artist.select(Artist.name)
-                    .join(TrackArtist, on=(Artist.id == TrackArtist.artist_id))
+            rows = (TrackArtist
+                    .select(TrackArtist.artist_id, Artist.name, Artist.uri)
+                    .join(Artist, JOIN.LEFT_OUTER, on=(Artist.id == TrackArtist.artist_id))
                     .where(TrackArtist.track_uri == track_uri)
-                    .order_by(TrackArtist.position))
-            return [r.name for r in rows if r.name]
+                    .order_by(TrackArtist.position)
+                    .objects())
+            return [{'uri': r.uri or f'spotify:artist:{r.artist_id}', 'name': r.name}
+                    for r in rows if r.name]
         except Exception:
             return []
 
@@ -1749,7 +1761,7 @@ class DatabaseHandler():
         return {
             'uri': t.uri, 'name': t.name, 'length': t.duration_ms,
             'track_number': t.track_number,
-            'artists': self._track_artist_names(t.uri),
+            'artists': self._track_artists(t.uri),
             'local': bool(t.local_uri),
             'option_type': t.option_type,
             'mood': (t.mood if (t.mood and t.mood != '_') else None),
