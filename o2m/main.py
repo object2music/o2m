@@ -452,13 +452,27 @@ if __name__ == "__main__":
         per-DB, so an already-populated instance (incl. the o2m_0/o2m_1 shared prod DB)
         is never treated as fresh, and there's nothing to keep in sync."""
         from flask import jsonify, request
-        from o2m_core.o2mmodels import Playlist
+        from o2m_core.o2mmodels import Box, Playlist
         try:
             liked = o2mHandler.dbHandler.count_cached('liked')
             albums = o2mHandler.dbHandler.count_cached('albums')
             playlists = Playlist.select().count()
         except Exception:
             liked = albums = playlists = 0
+        # Boxes are what a PERSON made; the library counts are what the server fetched by
+        # itself. An instance wired to the house account caches a thousand liked tracks at
+        # its first warmup, so the library test alone declared a brand-new instance
+        # "populated" within minutes and the welcome flow closed before anyone was
+        # welcomed — measured on o2m_5: 0 boxes, 1087 liked, no wizard, and no way to
+        # reach the starter-box setup it is the only entry point to.
+        # `mopidy_box` is o2m's own bookkeeping row (created the first time something plays
+        # outside a box), never something a person made, hence INTERNAL_UIDS.
+        try:
+            boxes = (Box.select()
+                     .where(Box.uid.not_in(list(virtualbox.INTERNAL_UIDS)))
+                     .count())
+        except Exception:
+            boxes = 0
         # Spotify OAuth redirect sanity: the configured SPOTIPY_REDIRECT_URI must point at the
         # host the user is actually on, or the login round-trip lands on another instance and
         # the "connect" step can never complete. We only DETECT + report (never edit secrets).
@@ -477,11 +491,11 @@ if __name__ == "__main__":
         except Exception:
             streaming_paired = False
         return jsonify({
-            'first_launch': (liked == 0 and albums == 0 and playlists == 0),
+            'first_launch': boxes == 0 or (liked == 0 and albums == 0 and playlists == 0),
             'onboarding_done': o2mHandler.dbHandler.box_exists('o2m_onboarding'),
             'spotify_connected': _edit_current_user() is not None,
             'streaming_paired': streaming_paired,
-            'counts': {'liked': liked, 'albums': albums, 'playlists': playlists},
+            'counts': {'liked': liked, 'albums': albums, 'playlists': playlists, 'boxes': boxes},
             'redirect_ok': redirect_ok,
             'redirect_configured': cfg_redirect,
             'redirect_expected': expected_redirect,
