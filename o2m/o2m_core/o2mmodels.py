@@ -11,6 +11,7 @@ from peewee import (
     Model,
     OperationalError,
     MySQLDatabase,
+    SQL,
 )
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
 from playhouse.shortcuts import ReconnectMixin, model_to_dict, dict_to_model
@@ -588,8 +589,28 @@ def _migration_v13(migrator):
 
 
 def _migration_v24(migrator):
-    _add_column_safe(migrator, 'track', 'disliked', IntegerField(default=0))
+    # constraints=[SQL('DEFAULT 0')] is NOT decoration on a NOT NULL column: peewee's
+    # `default` is a Python-side value and emits no SQL DEFAULT, so an image whose
+    # model predates the column INSERTs without it and MySQL in STRICT_TRANS_TABLES
+    # rejects the row outright. o2m_0 and o2m_1 share one database — see v25, which
+    # repairs the databases that applied this migration before the constraint was here.
+    _add_column_safe(migrator, 'track', 'disliked',
+                     IntegerField(default=0, constraints=[SQL('DEFAULT 0')]))
     _add_column_safe(migrator, 'track', 'disliked_at', TimestampField(null=True, utc=True))
+
+
+def _migration_v25(migrator):
+    """Repair v24 where it already ran: `disliked` was added NOT NULL with no SQL
+    DEFAULT, and under STRICT_TRANS_TABLES that breaks every INSERT that omits the
+    column — which is every INSERT from an older image. Metadata-only (SET DEFAULT
+    never rewrites the table). SQLite is skipped: it has no ALTER COLUMN, and its
+    tables come from create_tables, not from that ALTER."""
+    if isinstance(db, SqliteDatabase):
+        return
+    try:
+        db.execute_sql("ALTER TABLE track ALTER COLUMN disliked SET DEFAULT 0")
+    except Exception as e:
+        print(f"[DB] v25 disliked default: {e}")
 
 
 def _migration_v23(migrator):
@@ -638,7 +659,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -665,6 +686,7 @@ _MIGRATIONS = [
     (22, "track_last_play_seq_column", _migration_v22),
     (23, "offline_request_table", _migration_v23),
     (24, "track_disliked_columns", _migration_v24),
+    (25, "track_disliked_sql_default", _migration_v25),
 ]
 
 

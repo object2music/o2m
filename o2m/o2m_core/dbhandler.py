@@ -1276,6 +1276,17 @@ class DatabaseHandler():
         if liked:
             updates['disliked'] = 0
             updates['disliked_at'] = None
+            # Lifting a dislike releases the score with it, exactly as
+            # set_track_disliked does on its own way out — and here it matters more:
+            # `dislike -> like` is ONE step of the rating cycle, and leaving the
+            # forced 0 behind would have kept a freshly declared favourite out of
+            # every low-DL draw until the next daily recompute.
+            try:
+                row = Track.get_or_none(Track.uri == uri)
+                if row is not None and row.disliked and row.popularity is not None:
+                    updates['popularity'] = None
+            except Exception as e:
+                self.log.error(f"set_track_liked popularity: {e}")
         Track.insert({**updates, 'uri': uri}).on_conflict(
             action='update', update=updates,
         ).execute()
