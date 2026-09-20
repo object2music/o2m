@@ -193,9 +193,11 @@ that red that reads as the same lit state at 16px.
 state is a WRITE WITH CONSEQUENCES *on the way through*: crossing `like` saves the
 track to the Spotify library, crossing `dislike` skips what is playing and empties it
 out of the tracklist. A naive cycle fires both to get from one pole to the other. So a
-click only moves the mark; the write is deferred by `RATE_SETTLE_MS` (700ms, restarted
-by each tap) and is **the one request** that goes from the state the server holds to
-the state finally chosen — `like`/`dislike` say only their target (the server clears
+click only moves the mark; the write is deferred by `CYCLE_SETTLE_MS` (**1400ms**,
+restarted by each tap — the same constant governs the playback-target cycle, because it
+is one policy: a rotation whose states DO things must not do them while the finger is
+still going round) and is **the one request** that goes from the state the server holds
+to the state finally chosen — `like`/`dislike` say only their target (the server clears
 the other), `none` undoes whichever flag is actually set. Intermediate states never
 leave the page. A pending choice is committed early rather than dropped when the panel
 follows a track change, and `commitRating` reads the state it is moving FROM, so it
@@ -205,7 +207,7 @@ A `Dislike` entry also sits in the track row menu next to `Remove`, which is the
 gesture over one copy — a menu is a list of actions, not a state.
 
 **The cycle is neutral inside the settle window, and not beyond it.** Three taps back
-to the starting state before the 700ms expire send nothing at all (`target === from`).
+to the starting state before the settle expires send nothing at all (`target === from`).
 Once a step has been committed, walking the rest of the way round restores the DB
 state — `liked`, `disliked`, `popularity` all return to where they were — but not the
 world: `dislike` is not only an opinion, it is an ACT, and clearing it does not put
@@ -973,7 +975,20 @@ files) → remote. They are mutually exclusive in fact — `offStart` stops the 
 stream — and two separate toggles made that exclusivity something the user had to know
 rather than something the control expressed. Where Snapcast is not configured the cycle
 has two stops rather than a dead button: offline must stay reachable, which is why the
-button is no longer removed when `snap_ws_url` is absent.
+button is no longer removed when `snap_ws_url` is absent (`nextPlaybackTarget` drops the
+middle stop from the order rather than special-casing it inside the transition).
+
+**The cycle acts when the finger stops, not on the tap** (`CYCLE_SETTLE_MS`, shared with
+the rating cycle — see that section for the reasoning). Each state here is expensive on
+the way through: crossing `snapcast` opens a WebSocket and an AudioContext only to tear
+them down, and crossing `offline` pauses the server, stops the stream and builds a
+download queue for the half-second before the next tap. So a click only moves the glyph
+(softened while it settles, its tooltip saying what it is becoming), and
+`applyPlaybackTarget` then makes **one** transition, from the state the device is really
+in to the state finally chosen — leaving the current state first (`offStop` when coming
+from offline; `offStart` stops the Snapcast stream itself). A side effect worth having:
+`snapcast → remote` becomes reachable in two taps, i.e. stopping being a speaker without
+passing through offline, which the immediate cycle could not express at all.
 
 **The glyph also carries network health, and the separate dot is gone.** One latency probe
 still publishes `html[data-net]` (green/orange/red, `netProbe`), but it now paints the

@@ -798,6 +798,11 @@
      here" — with the pulse while a download pass runs. */
   #btn-snapcast[data-target="offline"] { color: var(--accent); }
   #btn-snapcast.busy { animation: off-pulse 1.2s ease-in-out infinite; }
+  /* A choice made and not yet applied — the window a second tap lives in. Same
+     softening as the rating cell's, and for the same reason: it lasts a moment and
+     a pulse there would read as an error rather than as a pause. `busy` keeps its
+     animation, so a download in progress still says so. */
+  #btn-snapcast.pending:not(.busy) { opacity: .72; }
 
   /* Network health lives in this glyph's colour (html[data-net], one probe), which
      is why there is no dot beside the status badge any more: the health of the link

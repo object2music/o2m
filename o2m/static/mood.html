@@ -2201,10 +2201,7 @@ function pauseFromRouteLoss(source) {
   if (!snapPlayer || !progPlaying) return;
   console.log('[route-loss] ' + source + ' → pausing server');
   rpc('core.playback.pause').catch(() => {});
-  try { snapPlayer.stop(); } catch (e) {}
-  snapPlayer = null;
-  _releaseWakeLock();
-  _snapBtnOff();
+  _snapStop();
   setFeedback('Paused (' + source + ')');
   setTimeout(refreshNowPlaying, 300);
 }
@@ -2743,9 +2740,15 @@ async function togglePlaylistMembership(cb, uri) {
    Spotify library; passing over "dislike" skips the track that is playing and drops
    it from the tracklist. A naive cycle would fire both to get from one pole to the
    other. So a click only moves the mark; the write happens when the finger stops
-   (RATE_SETTLE_MS), and it is the ONE request that goes from the state the server
+   (CYCLE_SETTLE_MS), and it is the ONE request that goes from the state the server
    holds to the state finally chosen — intermediate states never leave the page. */
-const RATE_SETTLE_MS = 700;
+// How long a rotating control waits, after the last tap, before it acts. Shared by
+// the two of them — the rating cycle here and the playback-target cycle on
+// #btn-snapcast — because it is one policy: a rotation whose states DO things must
+// not do them while the finger is still going round. Doubled from 700ms: 700 is
+// enough for a deliberate double tap and short for a hesitant one, and the cost of
+// waiting is nothing next to the cost of acting on a state nobody meant to stop on.
+const CYCLE_SETTLE_MS = 1400;
 const RATE_CYCLE = ['like', 'none', 'dislike'];
 const RATE_LABEL = { like: 'Favorite', none: 'No rating', dislike: 'Disliked' };
 
@@ -3247,7 +3250,7 @@ function cycleRating(p) {
   renderFav(p);
   setFeedback(RATE_LABEL[p.rateWanted] + '…');
   clearTimeout(p.rateTimer);
-  p.rateTimer = setTimeout(() => commitRating(p), RATE_SETTLE_MS);
+  p.rateTimer = setTimeout(() => commitRating(p), CYCLE_SETTLE_MS);
 }
 
 /* The single write that takes the server from what it holds to what was chosen.
@@ -6482,10 +6485,7 @@ function offPaintToggle() { paintPlaybackTarget(); }
 async function offStart() {
   const snapshot = (matrixTlItems || []).slice();   // before anything stops
   try { await rpc('core.playback.pause'); } catch (e) {}
-  if (snapPlayer) {
-    try { snapPlayer.stop(); } catch (e) {}
-    snapPlayer = null; _releaseWakeLock(); _snapBtnOff();
-  }
+  _snapStop();
   // The silent anchor exists to give WebAudio an OS media session; a real
   // <audio> has its own, and two of them fight over the notification.
   stopMediaAnchor();
@@ -6570,6 +6570,16 @@ document.addEventListener('visibilitychange', () => {
   } catch (e) {}
 });
 
+/* Leaving the speaker state. The same three lines offStart and pauseFromRouteLoss
+   already ran, in one place, so no caller can drop the wake lock or the repaint. */
+function _snapStop() {
+  if (!snapPlayer) return;
+  try { snapPlayer.stop(); } catch (e) {}
+  snapPlayer = null;
+  _releaseWakeLock();
+  _snapBtnOff();
+}
+
 function _snapStart() {
   if (snapPlayer || !snapWsUrl || !window.SnapStream) return;
   snapPlayer = new window.SnapStream(snapWsUrl);
@@ -6610,15 +6620,29 @@ const TARGET_TITLE = {
   snapcast: 'This device is a Snapcast speaker — tap to go offline',
   offline:  'Playing this device\u2019s own files — tap to hand back to the server',
 };
+// While a choice is settling the glyph is ahead of the device, so the tooltip says
+// so rather than describing a state that is not reached yet.
+const TARGET_PENDING = {
+  remote:   'Handing playback back to the server…',
+  snapcast: 'Becoming a Snapcast speaker…',
+  offline:  'Switching to this device\u2019s own files…',
+};
 
 function paintPlaybackTarget() {
   const btn = document.getElementById('btn-snapcast');
   if (!btn) return;
-  const st = playbackTarget();
+  const st = targetShown();
+  const settling = !!_targetWanted;
   btn.innerHTML = TARGET_SVG[st];
   btn.classList.toggle('playing', st !== 'remote');
   btn.dataset.target = st;
   btn.classList.toggle('busy', st === 'offline' && OFF.downloading);
+  btn.classList.toggle('pending', settling);
+  if (settling) {
+    btn.title = TARGET_PENDING[st];
+    btn.setAttribute('aria-label', btn.title);
+    return;
+  }
   let title = TARGET_TITLE[st];
   if (st !== 'offline') {
     const n = Object.keys(offInv()).length;
@@ -6634,26 +6658,57 @@ function paintPlaybackTarget() {
 
 function snapAvailable() { return !!(snapWsUrl && window.SnapStream); }
 
-async function cyclePlaybackTarget() {
-  switch (playbackTarget()) {
-    case 'remote':
-      if (snapAvailable()) {
-        _snapStart();
-        localStorage.setItem('snap-autoconnect', '1');
-      } else {
-        // No Snapcast here: skip the middle state rather than stall the cycle.
-        await offStart();
-      }
-      break;
-    case 'snapcast':
-      // offStart stops the stream itself; doing it here too would double-stop.
-      localStorage.setItem('snap-autoconnect', '0');
-      await offStart();
-      break;
-    default:
-      offStop();
-      break;
-  }
+/* A rotation whose states ACT needs a pause before it acts — the same reason and
+   the same constant as the rating cycle. Passing over `snapcast` on the way to
+   `offline` would open a WebSocket and an AudioContext only to tear them down;
+   passing over `offline` would pause the server, stop the stream and build a
+   download queue for the half-second before the next tap. So a click only moves
+   the glyph, and the transition is applied when the finger stops: ONE transition,
+   from the state the device is really in to the state finally chosen. It also
+   makes `snapcast -> remote` reachable in two taps — stopping being a speaker
+   without going through offline, which the immediate cycle could not express. */
+let _targetWanted = null, _targetTimer = null;
+
+function targetShown() { return _targetWanted || playbackTarget(); }
+
+function nextPlaybackTarget(st) {
+  // No Snapcast configured: two stops rather than a dead middle one — offline has
+  // to stay reachable.
+  const order = snapAvailable() ? ['remote', 'snapcast', 'offline'] : ['remote', 'offline'];
+  const i = order.indexOf(st);
+  return order[(i + 1) % order.length];
+}
+
+function cyclePlaybackTarget() {
+  _targetWanted = nextPlaybackTarget(targetShown());
+  paintPlaybackTarget();
+  clearTimeout(_targetTimer);
+  // The apply is async and nothing awaits a timer, so a failure inside it would be
+  // an unhandled rejection with no user context at all. It gets said out loud.
+  _targetTimer = setTimeout(() => {
+    applyPlaybackTarget().catch(e => {
+      console.error('[playback-target]', e);
+      setFeedback('Could not switch playback');
+      paintPlaybackTarget();
+    });
+  }, CYCLE_SETTLE_MS);
+}
+
+async function applyPlaybackTarget() {
+  clearTimeout(_targetTimer);
+  const target = _targetWanted;
+  _targetWanted = null;
+  const from = playbackTarget();
+  // Back where it started: the whole point of the wait is that this costs nothing.
+  if (!target || target === from) { paintPlaybackTarget(); return; }
+  // Leave the state we are in, then enter the chosen one. offStart stops the
+  // Snapcast stream itself, so the only explicit stop is the one the old cycle
+  // never had to make.
+  if (from === 'offline') offStop();
+  localStorage.setItem('snap-autoconnect', target === 'snapcast' ? '1' : '0');
+  if (target === 'snapcast') _snapStart();
+  else if (target === 'offline') await offStart();
+  else _snapStop();
   paintPlaybackTarget();
 }
 
