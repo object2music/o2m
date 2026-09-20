@@ -1588,15 +1588,17 @@ function trackMetaHTML(m) {
   if (!m) return '';
   const bits = [];
   if (m.option_type)      bits.push(objEsc(m.option_type));
-  // Mood and popularity, each with its own icon. Energy and valence are gone from
-  // the row: two bare decimals side by side asked the reader to remember which
-  // axis was which, and the pair is already shown — and edited — as a POSITION on
-  // the mood matrix, which is the form that needs no legend. The mood word is
-  // what those two coordinates amount to in one glance.
-  if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(m.mood)}</span>`);
-  // fmtEV, the same formatter the panel's Popularity row uses — the two must not
-  // drift into saying 0.32 here and 3/10 there.
+  // Popularity leads, because it is the more trustworthy of the two: it is computed
+  // from what was actually listened to on this install, while the mood is inferred
+  // from Last.fm tags and its coverage is partial. The less certain fact reads
+  // second. fmtEV is the same formatter the panel's Popularity row uses — the two
+  // must not drift into saying 0.32 here and 3/10 there.
   if (m.popularity != null) bits.push(`<span title="${objEsc(POP_HINT)}">${ICON.trendingUp} ${fmtEV(m.popularity)}</span>`);
+  // Energy and valence are gone from the row: two bare decimals side by side asked
+  // the reader to remember which axis was which, and the pair is already shown —
+  // and edited — as a POSITION on the mood matrix, which is the form that needs no
+  // legend. The mood word is what those two coordinates amount to in one glance.
+  if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(m.mood)}</span>`);
   // The source is set apart by a dash, not another '·': its own label already
   // contains one ("Album · Light Up the Night"), and two levels of the same
   // separator read as one flat list of six things instead of attributes and a
@@ -1618,8 +1620,8 @@ function trackMetaText(m) {
   if (!m) return '';
   const bits = [];
   if (m.option_type)        bits.push(m.option_type);
-  if (m.mood)               bits.push('mood ' + m.mood);
   if (m.popularity != null) bits.push('popularity ' + fmtEV(m.popularity));
+  if (m.mood)               bits.push('mood ' + m.mood);
   let line = bits.join(' · ');
   if (m.source) line = (line ? line + ' — ' : '') + m.source;
   if (m.local)  line += (line ? ' · ' : '') + 'file on the server';
