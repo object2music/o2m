@@ -2465,8 +2465,13 @@ async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
     if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     const d = await r.json().catch(() => ({}));
     // A refusal by Spotify is not a success with a note attached — the library is
-    // Spotify's, and saying "added" over it is what let the two drift apart.
-    if (d.error || d.ok === false) { setFeedback(String(d.error || 'Not saved').slice(0, 90)); return; }
+    // Spotify's, and saying "added" over it is what let the two drift apart. Nor is
+    // a reply that is not JSON at all: a 404 or a 502 comes back as an HTML page,
+    // the catch above turns it into {}, and everything below would call it a
+    // success. The status is the only thing that cannot lie here.
+    if (!r.ok || d.error || d.ok === false) {
+      setFeedback(String(d.error || 'Not saved (HTTP ' + r.status + ')').slice(0, 90)); return;
+    }
     setFeedback(add ? okAdd : okRemove);
   } catch (e) { setFeedback('Error'); }
 }
@@ -3263,9 +3268,16 @@ async function commitRating(p) {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
     if (r.status === 401) { setFeedback('Editing not authorized'); renderFav(p); return; }
+    // `!r.ok` FIRST, and it is not belt and braces: a route that does not exist
+    // answers 404 with an HTML page, so r.json() throws, the catch hands back {},
+    // and without this the write reported "Disliked — it will not come back" over
+    // a track the server had never heard of. Observed exactly that against an o2m
+    // running code older than this page (the page is a static file, the endpoints
+    // are in the process — the two can be out of step).
     const d = await r.json().catch(() => ({}));
-    if (d.error || d.ok === false) {
-      setFeedback(String(d.error || 'Not saved').slice(0, 90)); renderFav(p); return;
+    if (!r.ok || d.error || d.ok === false) {
+      setFeedback(String(d.error || 'Not saved (HTTP ' + r.status + ')').slice(0, 90));
+      renderFav(p); return;
     }
     // The panel may have moved on to another track while this was in flight; the
     // write still stands, only the cell must not be repainted with its answer.
