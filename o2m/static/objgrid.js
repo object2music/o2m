@@ -154,6 +154,10 @@ const OBJGRID = (() => {
     const mosaic = MOSAICS.includes(mode);
     if (boxes) boxes.hidden = mosaic;
     if (grid) grid.hidden = !mosaic;
+    // What is active may have moved since this view was last looked at — an NFC
+    // tap, the Basic view, the server itself. One request for the whole column,
+    // asked at the moment someone turns to it.
+    refreshActive();
     if (!mosaic) return;
 
     if (state.rows[mode] === null) load(mode);
@@ -313,17 +317,27 @@ const OBJGRID = (() => {
   }
 
   async function toggleBoxTile(uid, name) {
-    await fetch(API + '/box?uid=' + encodeURIComponent(uid) + '&mode=toogle');
-    const on = !state.activeBoxes.has(uid);
-    if (on) state.activeBoxes.add(uid); else state.activeBoxes.delete(uid);
-    paint();
-    setFeedback((on ? '▶ ' : '⏹ ') + (name || uid));
-    // The list and the mosaic are two views of one state: re-read this box's row
-    // in the list so the header count and the auto-box detection stay right.
-    const btn = document.querySelector(`#boxes-wrap .box-btn[data-uid="${CSS.escape(uid)}"]`);
-    if (btn && typeof checkBoxActive === 'function') checkBoxActive(uid, btn);
+    /* `/api/box` fills the tracklist before it answers, so its reply describes a
+       settled state — and it can honestly say `No action`, when the box was
+       already in that state because something else activated it. Flipping the
+       tile locally instead of reading that is how one could end up showing the
+       reverse of the truth until the next poll. */
+    const answer = ((await fetch(API + '/box?uid=' + encodeURIComponent(uid)
+                                 + '&mode=toogle').then(r => r.text())) || '').trim();
+    if (answer === 'TAG added')        setFeedback('▶ ' + (name || uid));
+    else if (answer === 'TAG removed') setFeedback('⏹ ' + (name || uid));
+    else                               setFeedback(name || uid);
+    // Authoritative, and it paints the list row behind this tile at the same time.
+    await refreshActive();
   }
 
+  /* Paints EVERY view of the column from one answer — the mosaic tiles and the
+     boxes LIST. The list used to ask `/api/box_activated` once per box on a ten
+     minute timer, which is where the drift came from: a box activated by an NFC
+     tag, by the Basic view's actuators or by the server itself (the auto box a
+     mood apply lights, the watchdog's reload) sat wrong on screen for minutes,
+     and the two views could disagree with each other because toggling from one
+     never told the other. One request, one painter, one clock. */
   function paint() {
     document.querySelectorAll('#obj-grid .og-tile').forEach(t => {
       const on = t.dataset.kind === 'box'
@@ -332,11 +346,18 @@ const OBJGRID = (() => {
       t.classList.toggle('active', on);
       t.setAttribute('aria-pressed', String(on));
     });
-    if (typeof updateBoxesCount === 'function') updateBoxesCount();
+    document.querySelectorAll('#boxes-wrap .box-btn[data-uid]').forEach(b => {
+      b.classList.toggle('active', state.activeBoxes.has(b.dataset.uid));
+    });
+    // recomputeAutoBox reads those classes back for the live-mode flag, and ends
+    // in updateBoxesCount; falling back to the count alone keeps this module
+    // usable on a page that has no boxes list.
+    if (typeof recomputeAutoBox === 'function') recomputeAutoBox();
+    else if (typeof updateBoxesCount === 'function') updateBoxesCount();
   }
 
-  /* One call for the whole column — objects AND boxes. The list asks per box,
-     which is fine for a dozen rows and would be hundreds of requests here. */
+  /* One call for the whole column — objects AND boxes — and the only place the
+     active state is read. Everything that changes it ends here. */
   async function refreshActive() {
     try {
       const d = await fetch(API + '/active_objects').then(r => r.json());
@@ -417,9 +438,8 @@ const OBJGRID = (() => {
     if (!mount()) return;
     let saved = 'boxes';
     try { saved = localStorage.getItem(STORE_KEY) || 'boxes'; } catch (e) {}
-    setMode(saved);
+    setMode(saved);   // asks for the active state on its way through
     watchSticky();
-    refreshActive();
   }
 
   return { init, setMode, refreshActive, activeCounts, pickRandom };

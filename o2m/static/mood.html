@@ -5694,15 +5694,17 @@ async function loadBoxes() {
         + `<span class="box-info-btn" role="button" tabindex="0" title="Box details" aria-label="Box details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span>`;
       btn.dataset.uid = box.uid;
       btn.title = box.option_type;
+      // A box whose name or type says "auto" drives the live mood mode. Known
+      // here, from the row itself — it used to be re-derived on every poll of
+      // that box's active state, which is a different question entirely.
+      btn.dataset.auto = /auto/i.test((box.description || '') + ' ' + (box.option_type || ''))
+        ? '1' : '0';
       btn.addEventListener('click', (e) => {
         // The info glyph opens the box detail; the rest of the row toggles the box.
         if (e.target.closest('.box-info-btn')) { e.stopPropagation(); openBox(box.uid); return; }
         toggleBox(box.uid, btn);
       });
       wrap.appendChild(btn);
-      checkBoxActive(box.uid, btn);
-      // Refresh active state every 10min (same as o2m.js)
-      setInterval(() => checkBoxActive(box.uid, btn), 600000);
     });
     // "New box" sits at the end of the list (CSS-gated on edit mode).
     const add = document.createElement('button');
@@ -5712,17 +5714,10 @@ async function loadBoxes() {
     add.innerHTML = `<span class="box-new-icon">${ICON.plus}</span><span class="box-name">New box</span>`;
     add.addEventListener('click', (e) => { e.stopPropagation(); openBoxWizard(); });
     wrap.appendChild(add);
-  } catch(e) {}
-}
-
-async function checkBoxActive(uid, btn) {
-  try {
-    const text = await fetch(API + '/box_activated?uid=' + encodeURIComponent(uid)).then(r => r.text());
-    btn.classList.toggle('active', text.trim() === '1');
-    // Une box dont le nom/type contient "auto" → engage le mode auto
-    const label = (btn.querySelector('.box-name')?.textContent || '') + ' ' + (btn.title || '');
-    btn.dataset.auto = /auto/i.test(label) ? '1' : '0';
-    recomputeAutoBox();
+    // Re-rendering the list dropped every `active` class, so the state has to be
+    // re-asked. OBJGRID paints both views from one answer; the guard is what
+    // keeps startup to a single call, since the toolbar is mounted after this.
+    if (document.getElementById('panel-mode')) OBJGRID.refreshActive();
   } catch(e) {}
 }
 
@@ -5780,28 +5775,35 @@ async function syncMoodDials() {
   document.body.classList.toggle('mood-forced', !!s.forced_by);
 }
 
-function refreshBoxStates() {
-  document.querySelectorAll('#boxes-wrap .box-btn').forEach(btn => {
-    if (btn.dataset.uid) checkBoxActive(btn.dataset.uid, btn);
-  });
-  refreshBasicToggles();   // basic view: reflect e.g. the server-activated auto box
-  // Activated objects live in the same activeboxs list and are cleared by the same
-  // trash button, so they resync on exactly the same occasions.
-  if (typeof OBJGRID !== 'undefined') OBJGRID.refreshActive();
+/* Re-read what is active, everywhere it is shown. One request answers for the
+   whole Boxes column — the list, the three mosaics, the header count and the
+   live-mode flag (see OBJGRID.paint). The basic view keeps its own endpoint: it
+   is a different grouping, and /api/basic_boxes also runs the tracklist
+   watchdog, which is not something to fire on a short timer. */
+async function refreshBoxStates() {
+  refreshBasicToggles();
+  if (typeof OBJGRID !== 'undefined') await OBJGRID.refreshActive();
 }
 
 async function toggleBox(uid, btn) {
   btn.disabled = true;
   try {
-    await fetch(API + '/box?uid=' + encodeURIComponent(uid) + '&mode=toogle');
-    moodSessionActive = false;   // lancer une box termine la session mood implicite
-    await new Promise(r => setTimeout(r, 200));
-    await checkBoxActive(uid, btn);
-    // First refresh: box badge state visible early; second: full tracklist after O2M async refill
+    /* `/api/box` fills the tracklist before it answers, so its reply describes a
+       settled state — no need to wait 200ms and guess afterwards. It can also
+       honestly say `No action`, when the box was already in that state because
+       something else activated it, and announcing the opposite is how the row and
+       the mosaic drifted apart. */
+    const answer = ((await fetch(API + '/box?uid=' + encodeURIComponent(uid)
+                                 + '&mode=toogle').then(r => r.text())) || '').trim();
+    moodSessionActive = false;   // starting a box ends the implicit mood session
+    const boxName = btn.querySelector('.box-name')?.textContent || '';
+    if (answer === 'TAG added')        setFeedback(`▶ ${boxName}`);
+    else if (answer === 'TAG removed') setFeedback(`⏹ ${boxName}`);
+    else                               setFeedback(boxName);
+    await refreshBoxStates();   // paints this row AND every mosaic tile
+    // The tracklist itself lands after O2M's asynchronous refill.
     setTimeout(refreshNowPlaying, 800);
     setTimeout(refreshNowPlaying, 3000);
-    const boxName = btn.querySelector('.box-name')?.textContent || '';
-    setFeedback(btn.classList.contains('active') ? `▶ ${boxName}` : `⏹ ${boxName}`);
   } catch(e) { setFeedback('Box error'); }
   finally { btn.disabled = false; }
 }
@@ -7477,6 +7479,12 @@ async function init() {
   // dials would keep showing the previous mood until the page was reloaded. Cheap
   // enough to poll: ?light=1 skips the two table-wide aggregates.
   setInterval(syncMoodDials, 15000);
+  /* What is active can change without this page doing anything — an NFC tag, the
+     Basic view on another device, a box the server activates or empties by
+     itself. One cheap request, on the same order as the now-playing poll; it
+     replaces a per-box /api/box_activated on a ten-minute timer, which is what
+     used to leave the column minutes behind. */
+  setInterval(() => { if (typeof OBJGRID !== 'undefined') OBJGRID.refreshActive(); }, 10000);
   setInterval(tickProgress, 250);          // local display, NO network
   // Mobile with Snapcast → armPhoneAudio: connect as a speaker, start what the
   // server is configured to start, and show the "tap to start audio" splash only

@@ -660,9 +660,23 @@ Other points worth knowing:
   colour is what "this one is in the tracklist" costs — and it survives a glance
   across a shelf of covers in a way a 1px border does not. A name-as-cover tile has
   no colour to spend, so it takes the accent instead, like the list's active row.
-- **A box tile toggles through `/api/box`** like the list row does, then re-reads
-  that row (`checkBoxActive`) — the list and the mosaic are two views of one state,
-  and the header count and the auto-box detection both read the list's DOM.
+- **One request paints every view, and it is the only place the active state is
+  read** (`OBJGRID.paint`, fed by `refreshActive`). The list used to ask
+  `/api/box_activated` once per box on a **ten-minute** timer while the mosaic read
+  `/api/active_objects`, and that is where the drift came from: a box activated by
+  an NFC tag, by the Basic view or by the server itself (the auto box a mood apply
+  lights, the watchdog's reload) sat wrong on screen for minutes, and the two views
+  could disagree with each other because toggling from one never told the other.
+  Now: one answer paints the tiles AND the list rows, on a 10s clock beside the
+  now-playing poll, plus on every toggle and every view switch — 28 requests to
+  learn something late became one request that is right.
+- **A toggle takes the server's word.** `/api/box` fills the tracklist before it
+  answers, so its reply describes a settled state — no 200ms wait and no guess
+  afterwards — and it can honestly say `No action` when the box was already in that
+  state because something else activated it. Both views used to assume the
+  opposite, which is how a row could announce `▶` for a box it had just failed to
+  change. `data-auto` moved to render time for the same reason: whether a box's
+  name says "auto" is a property of the row, not of whether it is active.
 - **Where the name goes depends on what the tile IS.** An album is recognised by its
   sleeve, so its name is a caption under the square. A box is never a picture one
   knows — it is only its name — so the name goes IN the square: set large when there
