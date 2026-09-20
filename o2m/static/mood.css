@@ -1420,8 +1420,23 @@
 
   /* ===== Invert : bandeau pleine largeur, titre superposé en bas ===== */
   [data-theme="invert"] #top-zone {
+    /* The details column holds the same table of values in all three layouts, so it
+       has no reason to be narrower in one of them — and at 190-240px it was the
+       narrowest by a third (overprint gives it ~339px at 1080p, the standard themes
+       ~453px). 42vh is the figure this header is already built around: the standard
+       themes cap #top-zone at 42vh and the square cover — and therefore the details
+       column, which syncDetailsWidth measures off it — follows that height, and
+       invert's own banner cap (32vh) was chosen so its whole header lands at
+       roughly the same 42vh. Using it here is that same reference, not a new number.
+       The 30vw term only binds on a tall narrow window, where the row still has to
+       carry the transport beside this column; `minmax` keeps 240px as the floor, so
+       on a short viewport where the max computes below it the column never collapses.
+       Not shared with overprint's --ovp-w: that token means "the overprint cover
+       square" and drives this panel's HEIGHT there — a different idea that happens
+       to be a number. */
+    --details-w: min(42vh, 30vw);
     display: grid; align-items: start;
-    grid-template-columns: 1fr minmax(190px, 240px);
+    grid-template-columns: 1fr minmax(240px, var(--details-w));
     grid-template-areas: "cover cover" "right details";
   }
   [data-theme="invert"] #cover-col {
