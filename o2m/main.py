@@ -1501,6 +1501,35 @@ if __name__ == "__main__":
         threading.Thread(target=_run, daemon=True).start()
         return "genre warmup started"
 
+    @api.route('/api/warmup_library')
+    def api_warmup_library():
+        """Re-read the Spotify library — saved albums and followed artists — and
+        RECONCILE it: what Spotify no longer lists is unsaved/unfollowed here.
+
+        The nightly warmup does the same thing on its TTL; this is the button for
+        when you have just tidied your library on Spotify and want it to land now.
+        It answers with what it cleared, because unsaving something the user did
+        not unsave here is exactly the kind of change that should not be silent.
+        Synchronous on purpose, for the same reason."""
+        from flask import jsonify
+        sp, db = o2mHandler.spotifyHandler, o2mHandler.dbHandler
+        before_a = set(db.get_saved_album_ids())
+        before_f = set(db.get_followed_artist_ids())
+        try:
+            db.set_cache_meta('warmup_albums_at', 0)
+            sp.warmup_saved_albums()
+            sp.get_all_followed_artists()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        after_a = set(db.get_saved_album_ids())
+        after_f = set(db.get_followed_artist_ids())
+        return jsonify({
+            'albums':  {'kept': len(after_a), 'unsaved': sorted(before_a - after_a),
+                        'added': sorted(after_a - before_a)},
+            'artists': {'kept': len(after_f), 'unfollowed': sorted(before_f - after_f),
+                        'added': sorted(after_f - before_f)},
+        })
+
     @api.route('/api/diag/genres')
     def api_diag_genres():
         """Synchronous genre diagnostic — runs warmup and returns JSON results."""

@@ -1664,6 +1664,40 @@ class DatabaseHandler():
         except Exception:
             return False
 
+    def reconcile_saved_albums(self, seen_ids):
+        """Clear `saved` on every album Spotify no longer lists, and say which.
+
+        **The caller must have swept the WHOLE library and checked its own count
+        against Spotify's `total` before calling this.** It is the one operation in
+        the cache that removes something nobody asked to remove, and a half-read
+        page looks exactly like an emptied library — a rate limit in the middle of
+        the paging would otherwise unsave everything. An empty set is refused for
+        the same reason: it is far more likely to mean "the sweep failed" than
+        "you own no albums".
+
+        Returns the ids it cleared, so the caller can log a change of this weight
+        rather than make it silently."""
+        seen = {i for i in (seen_ids or []) if i}
+        if not seen:
+            return []
+        gone = [a.id for a in Album.select(Album.id)
+                .where((Album.saved == 1) & Album.id.not_in(list(seen)))]
+        if gone:
+            Album.update(saved=0, saved_at=None).where(Album.id.in_(gone)).execute()
+        return gone
+
+    def reconcile_followed_artists(self, seen_ids):
+        """Clear `followed` on every artist Spotify no longer lists. Same contract
+        and same danger as reconcile_saved_albums above."""
+        seen = {i for i in (seen_ids or []) if i}
+        if not seen:
+            return []
+        gone = [a.id for a in Artist.select(Artist.id)
+                .where((Artist.followed == 1) & Artist.id.not_in(list(seen)))]
+        if gone:
+            Artist.update(followed=0, followed_at=None).where(Artist.id.in_(gone)).execute()
+        return gone
+
     def get_saved_album_ids(self):
         """Return list of album IDs where saved=1."""
         return [a.id for a in Album.select(Album.id).where(Album.saved == 1)]

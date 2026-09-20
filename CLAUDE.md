@@ -1282,6 +1282,40 @@ carry O2M's streaming identity and a resilient login.
 ported to Mopidy 4, the UI is now O2M's own, and all of it — with the Mopidy 3 image that
 copied it — was deleted. Git history has it if ever needed.
 
+## The Spotify library mirror: saved albums, followed artists, playlists
+
+The three do not sync the same way, and one of them was not syncing at all.
+
+**Albums and artists were a ONE-WAY mirror until 2026-09-20.** `warmup_saved_albums`
+and `get_all_followed_artists` page the whole library and call `mark_album_saved` /
+`mark_artist_followed` on everything they see — and nothing ever cleared the flag.
+`mark_album_unsaved` / `mark_artist_unfollowed` existed, but only the UI's own
+save/follow toggle called them. So o2m → Spotify worked and Spotify → o2m only ever
+ADDED: unsaving an album on your phone left it `saved=1` here for ever. Found from a
+real case (*Atlantis*, Anne Paceo: Spotify answered `saved:false`, the row said 1),
+and it is **not cosmetic** — `saved`/`followed` scope `newrecent:library`, the
+`albums_artists` bucket and `albums:spotify`, so an album you had dropped kept being
+SELECTED, not just listed.
+
+`_reconcile_library(kind, seen, total)` now closes it, and the guard is the whole
+design: unsaving is the one thing in the cache that removes something nobody asked to
+remove, so it happens **only on a sweep that is provably whole** — Spotify's own
+`total` from the first page must equal what the paging collected. A rate limit or a
+network error mid-paging leaves fewer, and fewer must never be read as a shrunken
+library; an empty set is refused outright. It logs what it clears rather than doing it
+silently. Runs on the warmup TTL, and on demand via **`GET /api/warmup_library`**,
+which is synchronous and answers with the ids it unsaved and unfollowed.
+
+**Playlists are deliberately NOT done this way.** Absence from
+`current_user_playlists` proves nothing — a playlist you own but removed from your
+library keeps existing and simply stops being listed — so `_playlist_is_gone` asks for
+each one by name and treats only a definitive 400/404 as proof, keeping the cache on a
+403, a rate limit or a network hiccup. Same intent, opposite mechanism, because the
+evidence available is different.
+
+First run on this install: 2 albums unsaved (*Atlantis* · *New Grass*), 0 artists
+unfollowed, 248 albums and 102 artists kept.
+
 ## Mood / Energy / Valence Pipeline
 
 Tracks carry three enrichment fields (added via DB migrations v5/v6):
