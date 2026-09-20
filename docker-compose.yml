@@ -16,7 +16,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/music:/app/Music
+      - ${MUSIC_DIR:-./data/music}:/app/Music
       - ./tmp/snapserver:/tmp
       # Spotify OAuth unifié : token user fetché via http://o2m:6681/api/spotify_stream_token
       # → librespot mint le blob (auth_type 1), persisté sur ./data/spotify.
@@ -151,7 +151,7 @@ services:
       context: ./spotdl
       dockerfile: Dockerfile
     volumes:
-      - ./data/music:/music
+      - ${MUSIC_DIR:-./data/music}:/music
     depends_on:
       - o2m
     env_file:
