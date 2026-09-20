@@ -776,7 +776,27 @@ class O2mToMopidy:
 
                 if len(tltracks_added)>0:
                     uris_rem = []
-                    
+
+                    #****DISLIKED***
+                    # Asked on what Mopidy actually ADDED, not on what it was asked
+                    # for, and that is the whole reason this is here rather than in
+                    # front of the call: a line naming an album or an artist hands
+                    # over ONE uri and comes back as fifteen tracks, so a rejected
+                    # track inside it is visible nowhere else. This is also the only
+                    # guard for the box patterns that do not go through the samplers
+                    # (now:library, o2m:favorites, spotify:library, newrecent…, which
+                    # append their uris straight to the fill) — _selection_pool covers
+                    # the AUTO mix and the smart expansion, and nothing else.
+                    # Canonical uri to ask, played uri to remove: the tracklist is
+                    # keyed on what Mopidy was handed.
+                    _canon_added = {t.track.uri: self.get_spotify_uri(t.track.uri)
+                                    for t in tltracks_added}
+                    _rejected = self.dbHandler.disliked_uris(set(_canon_added.values()))
+                    if _rejected:
+                        uris_rem += [played for played, canon in _canon_added.items()
+                                     if canon in _rejected]
+                        print(f"add_tracks: dropping {len(_rejected)} disliked track(s)")
+
                     #****REMOVE***
                     # Exclude tracks already read when option is new
                     # bypass_remove_filter=True skips this for pre-filtered sources (newrecent, newnotcompleted)
@@ -822,7 +842,7 @@ class O2mToMopidy:
                             #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
 
                     if len(uris_rem)>0:
-                        print ("Removing old new tracks")
+                        print (f"Removing {len(uris_rem)} track(s) just added (already read, or disliked)")
                         self.mopidyHandler.tracklist.remove({"uri": uris_rem})
 
                     #***SLICE***
@@ -2099,6 +2119,8 @@ class O2mToMopidy:
         for item in unread_shows:
             stat_pod = self.dbHandler.get_stat_by_uri(item.uri)
             if (stat_pod):
+                #An explicit dislike drops the episode before any other rule
+                if stat_pod.disliked: continue
                 #Keep podcasts when
                 #This is a podcast, never finished (read_count_end == 0), last listen < 0.9, not a promo
                 if (stat_pod.option_type == "podcast" and not stat_pod.read_count_end > 0 and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
@@ -2120,6 +2142,9 @@ class O2mToMopidy:
             stat = self.dbHandler.get_stat_by_uri(uri)
             if stat is None:
                 out.append(uri)
+            # An explicitly rejected episode is done with, whatever its progress.
+            elif stat.disliked:
+                continue
             elif not stat.read_count_end > 0 and (stat.read_end or 0) < 0.9:
                 out.append(uri)
         return out
@@ -2662,6 +2687,40 @@ class O2mToMopidy:
         self.mopidyHandler.playback.next()
         self.mopidyHandler.playback.play()
 
+    def drop_track_from_tracklist(self, uri):
+        """Remove every entry of *uri* from the running tracklist, skipping to the
+        next track first when it is the one playing.
+
+        This is what makes a dislike an ACT rather than a preference filed for
+        later: the selection will not serve it again, but the copy already queued
+        would still play tonight, which is exactly the thing the gesture is asking
+        to stop. Matching is done on the CANONICAL uri (get_spotify_uri): Mopidy
+        holds a downloaded Spotify track under its file path and an 'web:' item
+        under a signed CDN url, so comparing raw uris would silently match nothing
+        for the two kinds of content most likely to be disliked."""
+        try:
+            tl = self.mopidyHandler.tracklist.get_tl_tracks() or []
+        except Exception as e:
+            print(f"drop_track_from_tracklist: {e}")
+            return {'removed': 0, 'skipped': False}
+        doomed = [t for t in tl if self.get_spotify_uri(t.track.uri) == uri]
+        if not doomed:
+            return {'removed': 0, 'skipped': False}
+        skipped = False
+        try:
+            cur = self.mopidyHandler.playback.get_current_tl_track()
+            if cur is not None and any(t.tlid == cur.tlid for t in doomed):
+                self.launch_next()
+                skipped = True
+        except Exception as e:
+            print(f"drop_track_from_tracklist skip: {e}")
+        try:
+            self.mopidyHandler.tracklist.remove({'tlid': [t.tlid for t in doomed]})
+        except Exception as e:
+            print(f"drop_track_from_tracklist remove: {e}")
+            return {'removed': 0, 'skipped': skipped}
+        return {'removed': len(doomed), 'skipped': skipped}
+
     # Shuffling the tracklist
     def shuffle_tracklist(self, start_index, stop_index):
         try:
@@ -2976,6 +3035,17 @@ class O2mToMopidy:
 
                 uris = self.get_track_recommandation(track_uri,discover_level,limit,data)
 
+                # End-of-track recommendations do not all go through the samplers —
+                # a Spotify reco, an album's own next track and the history path add
+                # their uris straight to the tracklist — so the rejection has to be
+                # applied here too, or a disliked track comes back through the one
+                # door the pools do not cover.
+                if uris:
+                    rejected = self.dbHandler.disliked_uris(uris)
+                    if rejected:
+                        uris = [u for u in uris if u not in rejected]
+                        print(f"reco: dropped {len(rejected)} disliked track(s)")
+
                 # Calculate insertion index depending of discover_level
                 tl_length = self.mopidyHandler.tracklist.get_length()
                 if self.mopidyHandler.tracklist.index():
@@ -3279,8 +3349,15 @@ class O2mToMopidy:
         try:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
                                    Track.option_type, Track.last_read_date, Track.read_count,
-                                   Track.last_play_seq)
+                                   Track.last_play_seq, Track.disliked)
                           .where(Track.uri << list(uris)).namedtuples()):
+                # A dislike is dropped whatever the caller asked, `exclude_hidden`
+                # included: hidden/trash are a lifecycle a box may legitimately be
+                # made OF, while a dislike is one deliberate gesture on one track —
+                # nothing it can be part of makes it wanted again.
+                if t.disliked:
+                    excluded.add(t.uri)
+                    continue
                 if exclude_hidden and t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
                     continue

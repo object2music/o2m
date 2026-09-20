@@ -429,7 +429,7 @@ class DatabaseHandler():
                 new = round(compute_popularity(
                     t.read_end, t.read_count, t.read_count_end, t.skipped_count,
                     last_read_date=t.last_read_date, liked=t.liked,
-                    option_type=t.option_type, prior_completion=prior,
+                    option_type=t.option_type, disliked=t.disliked, prior_completion=prior,
                     first_played_at=first_seen.get(t.uri),
                     playlist_count=pl_count.get(t.uri, 0), now=now), 4)
             else:
@@ -929,6 +929,9 @@ class DatabaseHandler():
             # the user keeps dropping it, don't resurface it (a single early skip is
             # tolerated — could be accidental).
             & ~((Track.skipped_count >= 2) & (Track.read_position < RES))
+            # An explicit dislike does in one gesture what the rule above needs
+            # two skips to infer.
+            & (Track.disliked == 0)
             & (Track.option_type != "library")
             & (Track.option_type != "info")
         ).order_by(effective_recency.desc()).limit(pool_size)
@@ -1262,10 +1265,52 @@ class DatabaseHandler():
         ).execute()
 
     def set_track_liked(self, uri, liked):
-        """Pose/retire le flag favori local (crée la ligne si absente)."""
+        """Set/clear the local favourite flag (creates the row if absent).
+
+        Liking clears a dislike: the two are the same judgement with opposite
+        signs, and a row holding both would make every query that reads one of
+        them depend on which was asked first."""
         import datetime as _dt
         updates = {'liked': 1 if liked else 0,
                    'liked_at': _dt.datetime.utcnow() if liked else None}
+        if liked:
+            updates['disliked'] = 0
+            updates['disliked_at'] = None
+        Track.insert({**updates, 'uri': uri}).on_conflict(
+            action='update', update=updates,
+        ).execute()
+
+    def set_track_disliked(self, uri, disliked):
+        """Set/clear the explicit rejection flag (creates the row if absent).
+
+        Symmetrical to set_track_liked, and clears the like for the same reason.
+        This is the signal the selection reads FIRST: a disliked track is dropped
+        from every pool, whatever its popularity, its box or its source.
+
+        The score moves with the flag rather than waiting for the next batch.
+        recompute_popularity runs at most daily (TTL 24h), and a cleared dislike
+        left behind a persisted 0 — which is NOT what an unscored track is worth:
+        the samplers read a missing score as 0.5 (`pool.pop.get(u, 0.5)`, neutral)
+        and a stored 0 as "never draw this", since the weight is popularity**k.
+        Un-disliking a track would have left it invisible at low DL for up to a
+        day. So: forced to 0 on the way in, back to NULL on the way out, and the
+        batch puts the real number back. NULL is also what non-music carries, so
+        a track that had no score never gains one here."""
+        import datetime as _dt
+        updates = {'disliked': 1 if disliked else 0,
+                   'disliked_at': _dt.datetime.utcnow() if disliked else None}
+        if disliked:
+            updates['liked'] = 0
+            updates['liked_at'] = None
+        try:
+            row = Track.get_or_none(Track.uri == uri)
+            if disliked:
+                if row is not None and row.popularity is not None:
+                    updates['popularity'] = 0.0
+            elif row is not None and row.popularity is not None:
+                updates['popularity'] = None
+        except Exception as e:
+            self.log.error(f"set_track_disliked popularity: {e}")
         Track.insert({**updates, 'uri': uri}).on_conflict(
             action='update', update=updates,
         ).execute()
@@ -1276,6 +1321,26 @@ class DatabaseHandler():
             return bool(t and t.liked)
         except Exception:
             return False
+
+    def is_track_disliked(self, uri):
+        try:
+            t = Track.get_or_none(Track.uri == uri)
+            return bool(t and t.disliked)
+        except Exception:
+            return False
+
+    def disliked_uris(self, uris):
+        """The subset of *uris* explicitly rejected — one query, for the filters
+        that run over a whole candidate list."""
+        uris = [u for u in (uris or []) if u]
+        if not uris:
+            return set()
+        try:
+            return {t.uri for t in Track.select(Track.uri)
+                                        .where((Track.uri << uris) & (Track.disliked == 1))}
+        except Exception as e:
+            self.log.error(f"disliked_uris: {e}")
+            return set()
 
     def get_tracks_by_mood_features(self, energy_target, valence_target, radius, genre_names=None, limit=25):
         """Return shuffled URIs of tracks within [energy_target±radius, valence_target±radius].
@@ -1776,6 +1841,7 @@ class DatabaseHandler():
             # whether the list came from here or from the now-playing tracklist.
             'popularity': t.popularity,
             'liked': bool(t.liked),
+            'disliked': bool(t.disliked),
         }
 
     def get_artist_detail(self, artist_id):

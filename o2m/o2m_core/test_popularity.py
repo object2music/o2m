@@ -37,6 +37,16 @@ class TestPopularity(unittest.TestCase):
         s = compute_popularity(1.0, 100, 100, 0, liked=1, option_type='trash')
         self.assertEqual(s, FORCED_LOW_SCORE)
 
+    def test_dislike_forced_low(self):
+        """One explicit rejection outranks a perfect history — and the like that
+        may still be on the row, since only the write path clears it."""
+        s = compute_popularity(1.0, 100, 100, 0, liked=1, option_type='favorites',
+                               disliked=1)
+        self.assertEqual(s, FORCED_LOW_SCORE)
+
+    def test_not_disliked_scores_normally(self):
+        self.assertGreater(compute_popularity(1.0, 10, 10, 0, disliked=0), 0.0)
+
     def test_never_played_sits_near_prior(self):
         """A never-finished track collapses to the shrinkage prior, not 0 or 0.5."""
         prior = 0.55

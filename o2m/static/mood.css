@@ -564,6 +564,20 @@
   .td-fav svg { width: 16px; height: 16px; display: block; }
   .td-fav.on { color: #e0245e; }
   body.edit-mode .td-fav { cursor: pointer; }
+  /* One mark, three states (see renderFav). Shape carries the state — outline,
+     filled, struck — and colour doubles it: the heart keeps its red, the struck
+     heart takes full foreground and NOT --accent, which is a pink two hues from
+     that red and reads as the same lit state at 16px. Unrated sits at --muted,
+     like every other unset control here. */
+  .td-fav .tf-btn { color: var(--muted); display: inline-flex; }
+  .td-fav .tf-like { color: #e0245e; }
+  .td-fav .tf-dislike { color: var(--text); }
+  /* (.td-fav.on above stays for the radio panel, whose single heart is painted
+     straight onto the cell with no .tf-btn inside it.)
+     A choice made and not yet written (the settle window a second tap lives in).
+     Softened rather than animated: it lasts 700ms and a pulse there reads as an
+     error, not as a pause. */
+  .td-fav.pending .tf-btn { opacity: .72; }
   .td-playlists { display: none; }
   /* Right-aligned like the "More" trigger it sits under: the panel body renders
      this as a plain block child, so without the flex row the trigger hugged the

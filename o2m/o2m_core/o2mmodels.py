@@ -122,6 +122,15 @@ class Track(BaseModel):
     storage = CharField(default='sp')    # 'sp' or 'local'
     liked = IntegerField(default=0)      # 1 = in liked tracks
     liked_at = TimestampField(null=True, utc=True)
+    # The other pole of the heart: an EXPLICIT rejection, and the only signal that
+    # takes effect on the first gesture. Skips are read statistically (a threshold
+    # over several plays, see get_uris_podcasts_notread) because one skip may be an
+    # accident; a dislike says it outright, so selection drops the track for good.
+    # Kept apart from option_type='trash': that column is a lifecycle state, and
+    # for spoken content it carries the podcast/info classification the whole
+    # subsystem reads — overwriting it to reject one episode would break it.
+    disliked = IntegerField(default=0)   # 1 = explicitly rejected, never selected again
+    disliked_at = TimestampField(null=True, utc=True)
     local_uri = TextField(null=True)     # file:// URI if downloaded via spotdl
     mood = TextField(null=True)          # Last.fm mood: calm/energetic/dark/happy
     energy = FloatField(null=True)       # 0.0 (calm/sleep) → 1.0 (intense/metal)
@@ -578,6 +587,11 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v24(migrator):
+    _add_column_safe(migrator, 'track', 'disliked', IntegerField(default=0))
+    _add_column_safe(migrator, 'track', 'disliked_at', TimestampField(null=True, utc=True))
+
+
 def _migration_v23(migrator):
     db.create_tables([OfflineRequest], safe=True)
 
@@ -624,7 +638,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -650,6 +664,7 @@ _MIGRATIONS = [
     (21, "podcastchannel_rf_id_column", _migration_v21),
     (22, "track_last_play_seq_column", _migration_v22),
     (23, "offline_request_table", _migration_v23),
+    (24, "track_disliked_columns", _migration_v24),
 ]
 
 

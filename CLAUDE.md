@@ -58,12 +58,12 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
 ### Key source files in `o2m/o2m_core/`:
 - **`o2mtomopidy.py`** — Central logic class `O2mToMopidy`. Manages active NFC boxes, tracklist filling, Spotify recommendations, and stats tracking. This is where most business logic lives.
 - **`o2mmodels.py`** — Peewee ORM models. Connects to MySQL or SQLite based on `o2m.conf`; the connection is initialized at module import time. Current models:
-  - **Core**: `Box` (an NFC object: content + settings), `Track` (one row per uri — stats AND cached metadata, the central table), `Stats_Raw` (one row per play: the raw log behind hourly habits), `PlaylistLog`.
+  - **Core**: `Box` (an NFC object: content + settings), `Track` (one row per uri — stats AND cached metadata, including `liked` / `disliked`, the central table), `Stats_Raw` (one row per play: the raw log behind hourly habits), `PlaylistLog`.
   - **Catalogue**: `Album`, `Artist`, `Genre`, `Playlist`, `TagFeature`, `CacheMeta`, and the N:N links `TrackArtist`, `AlbumArtist`, `ArtistGenre`, `TrackGenre`, `AlbumGenre`, `PlaylistTrack`, `AlbumTrack`.
   - **Spoken content**: `PodcastChannel` (one row per show or feed — see the spoken-content section), `RfTaxonomy` (Radio France subject vocabulary), `EpisodeTaxonomy` (episode ↔ subject pivot).
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **23**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **24**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
 - **`virtualbox.py`** — activating an OBJECT (an album, an artist) the way a box is
   activated: the unsaved `Box` it builds, the `obj:` uid namespace and the toggle
@@ -116,8 +116,102 @@ top of the module):
    a **playlist** endorsement boost (`+PLAYLIST_W=0.10 · min(playlist_count/4, 1)`).
 
 `option_type` stays OUT of the score (favourites already correlate with quality/volume),
-**except `trash` → forced 0**. Non-music (`podcast`/`info`, streams) is left unscored
-(`popularity = NULL`, `is_scorable` guard) and ignored by selection.
+**except `trash` → forced 0** — as is an explicit **dislike** (see below). Non-music
+(`podcast`/`info`, streams) is left unscored (`popularity = NULL`, `is_scorable` guard)
+and ignored by selection.
+
+## Like and dislike: the two poles of one gesture
+
+`Track.liked` had no opposite, so the only way to say no was to keep skipping and let
+the statistics infer it — and they infer it slowly and never for a first offence, on
+purpose: one skip may be a phone in a pocket. For a podcast episode that means
+**two abandoned plays before the resume pool gives up** (`skipped_count >= 2` and
+`read_position < 2 min`, `get_uris_podcasts_notread`), and for music a skip is only a
+rate inside the popularity score. `Track.disliked` / `disliked_at` (migration **v24**)
+is the same judgement said outright, and it takes effect on the first click.
+
+**Three things happen at once, and all three are the point:**
+1. **Selection drops it**, at the four places content reaches a tracklist:
+   - `_selection_pool` — both samplers, and unlike `hidden`/`trash` it is dropped
+     even when a directly-tapped box passes `exclude_hidden=False`: a lifecycle is
+     something a box can legitimately be made of, one deliberate gesture on one
+     track is not.
+   - the spoken pools — `_unread_spoken_uris` (RSS, Radio France, `web:` pages),
+     `get_unread_podcasts`, `get_uris_podcasts_notread`.
+   - **`add_tracks`**, on what Mopidy actually ADDED. This one is not belt and
+     braces: the samplers only see the AUTO mix and the smart expansion, while
+     `now:library`, `herenow:library`, `o2m:favorites`, `spotify:library(2)`,
+     `newrecent:library`, `newnotcompleted:library` and `albums:spotify` append
+     their uris straight to the fill — and a line naming an album or an artist
+     hands over ONE uri that comes back as fifteen tracks, so a rejected track
+     inside it is visible nowhere earlier. Asked on the canonical uri, removed by
+     the played one.
+   - the end-of-track recommendations, which add their uris straight to the
+     tracklist (`DatabaseHandler.disliked_uris`).
+
+   What is NOT filtered: an explicit `Play now` / `Play next`. Asking for a track
+   by name is not the selection choosing it.
+2. **Popularity is forced to 0** (`compute_popularity(..., disliked=1)`), like `trash`
+   — and `set_track_disliked` writes it immediately rather than waiting for the batch,
+   because `recompute_popularity` runs at most daily. Clearing a dislike puts the score
+   back to **NULL**, not 0: the samplers read a missing score as 0.5 (neutral,
+   `pool.pop.get(u, 0.5)`) and a stored 0 as "never draw this" (the weight is
+   `popularity**k`), so an un-disliked track would otherwise have stayed invisible at
+   low DL for up to a day. A track with no score never gains one here — that is how
+   spoken content stays unscored.
+3. **The copy already queued is removed** (`drop_track_from_tracklist`), skipping to
+   the next track when it is the one playing. A rejection filed for later would still
+   have played tonight, which is exactly what the gesture is asking to stop. Matching
+   is on the CANONICAL uri: Mopidy holds a downloaded Spotify track under its file
+   path and a `web:` item under a signed CDN url.
+
+**What it is NOT**: `option_type='trash'`. That column is a lifecycle state, and for
+spoken content it carries the `podcast`/`info` classification the whole subsystem
+reads — rejecting one episode by overwriting it would break its own selection.
+
+**Like and dislike are mutually exclusive**, enforced at the two write paths
+(`set_track_liked` / `set_track_disliked` each clear the other). Disliking a track that
+WAS a favourite also unsaves it from Spotify, and that is not zeal: the liked-tracks
+warmup mirrors the Spotify library back onto `Track.liked`, so the row would come back
+liked on the next sync and read as both. A dislike on anything else never touches the
+Spotify library.
+
+`POST /api/track_dislike` (`{uri, disliked}`, edit-locked like the heart) answers with
+`removed` / `skipped` so the client knows the tracklist moved under it.
+
+**In the interface** — the details panel's `Rating` row is **one mark in three
+readings**: the heart outlined (no opinion), filled (favourite) and struck through
+(Lucide `heart-off`, disliked). A click walks the cycle `like → none → dislike → like`,
+so from `none` — where every track starts — the single tap lands on DISLIKE, which is
+the gesture the feature exists for. Colour doubles the shape: the heart keeps its red,
+the struck heart takes the full foreground and **not** `--accent`, a pink two hues from
+that red that reads as the same lit state at 16px.
+
+**A rotation needs more than a click handler, and that is the whole design.** Each
+state is a WRITE WITH CONSEQUENCES *on the way through*: crossing `like` saves the
+track to the Spotify library, crossing `dislike` skips what is playing and empties it
+out of the tracklist. A naive cycle fires both to get from one pole to the other. So a
+click only moves the mark; the write is deferred by `RATE_SETTLE_MS` (700ms, restarted
+by each tap) and is **the one request** that goes from the state the server holds to
+the state finally chosen — `like`/`dislike` say only their target (the server clears
+the other), `none` undoes whichever flag is actually set. Intermediate states never
+leave the page. A pending choice is committed early rather than dropped when the panel
+follows a track change, and `commitRating` reads the state it is moving FROM, so it
+runs before the new track's state replaces it.
+
+A `Dislike` entry also sits in the track row menu next to `Remove`, which is the same
+gesture over one copy — a menu is a list of actions, not a state.
+
+**The cycle is neutral inside the settle window, and not beyond it.** Three taps back
+to the starting state before the 700ms expire send nothing at all (`target === from`).
+Once a step has been committed, walking the rest of the way round restores the DB
+state — `liked`, `disliked`, `popularity` all return to where they were — but not the
+world: `dislike` is not only an opinion, it is an ACT, and clearing it does not put
+the track back in the tracklist nor unskip what was skipped. A full turn through
+`like` also writes the Spotify library twice (save, then unsave): membership ends
+where it started, the library was still touched. This is inherent to a rotation whose
+states do things, not a defect of the implementation — the deferral is what keeps it
+out of the only window where it would be an accident rather than a decision.
 
 ## Auto-Selection Algorithm (`o2m/o2m_core/o2mtomopidy.py`)
 
@@ -298,6 +392,8 @@ lists of the same patterns drift.
   latter.
 - **Budget sharing**: a box mixing several feeds shares its `max_results` between them in a
   rolling fashion, so one prolific feed cannot crowd out the others.
+- **Rejection**: two early skips retire an episode from the resume pool; one
+  **dislike** retires it immediately and everywhere — see the like/dislike section.
 - **Resume**: any spoken item resumes at its saved position (minus 10s).
 - **Pre-roll ads**: a fixed skip per host (30s for Radio France and BBC hosts, overridable
   with `podcast_ad_skip = host:ms`), applied only on a fresh start. It cannot be detected:

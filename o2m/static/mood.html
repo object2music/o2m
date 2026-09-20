@@ -376,6 +376,10 @@ const ICON = {
   zap:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
   sun:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   heart:  f => `<svg viewBox="0 0 24 24" fill="${f ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>`,
+  // The heart's other pole (Lucide heart-off): a struck-through heart, so the two
+  // states read as one judgement with two signs rather than two unrelated marks.
+  // Never filled — a filled heart says "kept", and there is nothing to keep here.
+  heartOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="2" x2="22" y2="22"/><path d="M16.5 16.5 12 21l-7-7c-1.5-1.45-3-3.2-3-5.5a5.5 5.5 0 0 1 2.14-4.35"/><path d="M8.76 3.1c1.15.22 2.13.78 3.24 1.9 1.5-1.5 2.74-2 4.5-2A5.5 5.5 0 0 1 22 8.5c0 2.12-1.3 3.78-2.67 5.17"/></svg>',
   plus:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
   x:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
   music:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
@@ -2405,6 +2409,12 @@ function trackMenuItems(uri, tlid) {
     { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => playNow(uri) },
   ];
   if (tlid != null) items.push({ label: 'Remove', icon: ICON_REMOVE, action: () => removeFromTracklist(tlid) });
+  // 'Remove' drops this copy; 'Dislike' drops the track — here and from every
+  // future fill. The two sit together because the gesture starts the same way.
+  // Not offered on a radio: a station is named by a box line, never CHOSEN by the
+  // selection, so a dislike would remove this copy and promise something it cannot
+  // deliver — the same line puts it back on the next fill.
+  if (!_isStreamUri(uri)) items.push({ label: 'Dislike', icon: ICON.heartOff, action: () => setTrackDislike(uri, true) });
   items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
@@ -2463,6 +2473,13 @@ async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
 const setAlbumInLibrary  = (uri, add) => _libToggle('/album_save',   'saved',    uri, add, 'Album added to library',  'Album removed from library');
 const setArtistInLibrary = (uri, add) => _libToggle('/artist_follow','followed', uri, add, 'Artist added to library', 'Artist removed from library');
 const setTrackFavorite   = (uri, add) => _libToggle('/track_favorite','favorite',uri, add, 'Added to favorites',      'Removed from favorites');
+// Same write from a row menu, where no panel state is held: the reply is the state.
+async function setTrackDislike(uri, down) {
+  await _libToggle('/track_dislike', 'disliked', uri, down,
+                   'Disliked — it will not come back', 'Dislike removed');
+  if (down) setTimeout(refreshNowPlaying, 300);   // it may have left the tracklist
+  if (detailsUri === uri) renderTrackDetails(uri);
+}
 
 // Live library state for a (uri, kind): true = in library, false = not, null = unknown.
 async function fetchLibState(uri, kind) {
@@ -2710,15 +2727,45 @@ async function togglePlaylistMembership(cb, uri) {
   finally { cb.disabled = false; }
 }
 
+/* ── Rating: ONE mark, three states, rotating ────────────────────────────────
+   The same heart in its three readings — outline (no opinion), filled (favorite),
+   struck through (disliked) — and a click walks the cycle in the order the states
+   form a scale: like → none → dislike → like. From "none", which is where a track
+   starts, the single tap lands on DISLIKE, which is the gesture this exists for.
+
+   The reason a rotation needs more than a click handler: each state is a WRITE
+   WITH CONSEQUENCES on the way through. Passing over "like" saves the track to the
+   Spotify library; passing over "dislike" skips the track that is playing and drops
+   it from the tracklist. A naive cycle would fire both to get from one pole to the
+   other. So a click only moves the mark; the write happens when the finger stops
+   (RATE_SETTLE_MS), and it is the ONE request that goes from the state the server
+   holds to the state finally chosen — intermediate states never leave the page. */
+const RATE_SETTLE_MS = 700;
+const RATE_CYCLE = ['like', 'none', 'dislike'];
+const RATE_LABEL = { like: 'Favorite', none: 'No rating', dislike: 'Disliked' };
+
+// What the SERVER holds for this panel's track.
+function ratingOf(p) {
+  if (p.disliked) return 'dislike';
+  return (p.favLocal || p.favSpotify === true) ? 'like' : 'none';
+}
+// What the cell must draw: the pending choice while one is settling, else the server's.
+function ratingShown(p) { return p.rateWanted || ratingOf(p); }
+
 function renderFav(p) {
   const el = p && p.favEl();
   if (!el) return;
-  const fav = p.favLocal || p.favSpotify === true;
-  el.innerHTML = ICON.heart(fav);
-  el.classList.toggle('on', fav);
+  const st = ratingShown(p);
   const src = [p.favLocal ? 'local' : null, p.favSpotify === true ? 'Spotify' : null].filter(Boolean).join(' + ');
-  el.title = (fav ? 'Favorite' + (src ? ' (' + src + ')' : '') : 'Not a favorite')
-           + (editUnlocked ? ' — click to toggle' : '');
+  const next = RATE_CYCLE[(RATE_CYCLE.indexOf(st) + 1) % RATE_CYCLE.length];
+  const what = st === 'like' ? 'Favorite' + (src && !p.rateWanted ? ' (' + src + ')' : '')
+             : st === 'dislike' ? 'Disliked — never selected again'
+             : 'No rating';
+  el.innerHTML = `<span class="tf-btn tf-${st}" data-fav-act="cycle" title="${what}${
+      editUnlocked ? ' — click for ' + RATE_LABEL[next].toLowerCase() : ''}">${
+      st === 'dislike' ? ICON.heartOff : ICON.heart(st === 'like')}</span>`;
+  el.classList.toggle('on', st === 'like');  // the radio panel styles its single heart on the cell
+  el.classList.toggle('pending', !!p.rateWanted);
 }
 
 /* ── Shared track-detail logic ────────────────────────────────────────────────
@@ -2762,7 +2809,7 @@ const TRACK_FIELDS = [
 const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 // Row order for the shared panel body (Favorite added to TRACK_FIELDS' text rows).
 const TRACK_PANEL_ROWS = [
-  ['Status', 'type'], ['Source', 'source'], ['Audio', 'audio'], ['Favorite', 'fav'],
+  ['Status', 'type'], ['Source', 'source'], ['Audio', 'audio'], ['Rating', 'fav'],
   ['Energy', 'energy'], ['Valence', 'valence'],
   ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Date', 'published'],
   ['Channel', 'channel'], ['Playlists', 'playlists'],
@@ -2890,6 +2937,8 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
   const p = {
     ev: null,                          // {energy, valence} shown by this panel
     favLocal: false, favSpotify: null, // per-panel favourite state (own uri)
+    disliked: false,                   // per-panel rejection state (own uri)
+    rateWanted: null, rateUri: null, rateTimer: null,  // a cycle in flight (see cycleRating)
     cellId, canvasId, playlistsId, lifecycleId, listClass, body, getUri,
     el:  kind => document.getElementById(cellId(kind)),
     favEl: () => document.getElementById(cellId('fav')),
@@ -2912,7 +2961,12 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       if (lc) lc.innerHTML = lifecycleScaleHTML(info);
       p.seed(getUri(), info);
       p.rewire();
+      // A pending choice belongs to the track it was made on, and commitRating
+      // reads the state it is moving FROM — so it has to run before that state is
+      // replaced by the new track's.
+      if (p.rateWanted) commitRating(p);
       p.favLocal = !!(info && info.liked); p.favSpotify = null;
+      p.disliked = !!(info && info.disliked);
       renderFav(p);
       const uri = getUri();
       if (uri && uri.startsWith('spotify:track:')) {
@@ -2934,7 +2988,14 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       initTrackPanelMatrix(p);
       wireTrackPanelEdits(p);
       const f = p.favEl();
-      if (f && !f.dataset.wired) { f.dataset.wired = '1'; f.addEventListener('click', () => toggleFavorite(p)); }
+      // One delegated handler: the cell's two buttons are re-rendered on every
+      // state change, so listeners attached to them would not survive a refresh.
+      if (f && !f.dataset.wired) {
+        f.dataset.wired = '1';
+        f.addEventListener('click', ev => {
+          if (ev.target.closest('[data-fav-act]')) cycleRating(p);
+        });
+      }
     },
     // Seed the matrix dot: a pending manual edit for this uri wins over the
     // server values, so an in-flight drag is never clobbered by a refresh.
@@ -3165,26 +3226,65 @@ async function renderTrackDetails(uri) {
   if (_detailsReq === uri) panel?.classList.remove('switching');
 }
 
-// Per-panel favourite toggle. Reads the current state from the DOM (the cell's .on
-// class) so it stays correct even after a nav-stack restore (no captured state).
-async function toggleFavorite(p) {
+/* One click = one step round the cycle, and nothing else. The write is deferred so
+   a double tap (none → like → dislike, or the way back) costs exactly one request
+   and never the side effects of the state it crossed. */
+function cycleRating(p) {
   if (!editUnlocked) { setFeedback('Enable editing first'); return; }
   const uri = p.getUri();
   if (!uri) return;
-  const next = !p.favEl()?.classList.contains('on');
+  // A pending choice that belongs to another track (the panel followed a track
+  // change) is committed as it stands rather than continued from.
+  if (p.rateWanted && p.rateUri !== uri) commitRating(p);
+  const cur = ratingShown(p);
+  p.rateWanted = RATE_CYCLE[(RATE_CYCLE.indexOf(cur) + 1) % RATE_CYCLE.length];
+  p.rateUri = uri;
+  renderFav(p);
+  setFeedback(RATE_LABEL[p.rateWanted] + '…');
+  clearTimeout(p.rateTimer);
+  p.rateTimer = setTimeout(() => commitRating(p), RATE_SETTLE_MS);
+}
+
+/* The single write that takes the server from what it holds to what was chosen.
+   'like' and 'dislike' each clear the other server-side, so only the target needs
+   saying; going back to 'none' is undoing whichever flag is actually set. */
+async function commitRating(p) {
+  clearTimeout(p.rateTimer);
+  const target = p.rateWanted, uri = p.rateUri, from = ratingOf(p);
+  p.rateWanted = null; p.rateUri = null;
+  if (!target || !uri || target === from) { renderFav(p); return; }
+  let path, body;
+  if (target === 'like')          { path = '/track_favorite'; body = { uri, favorite: true }; }
+  else if (target === 'dislike')  { path = '/track_dislike';  body = { uri, disliked: true }; }
+  else if (from === 'like')       { path = '/track_favorite'; body = { uri, favorite: false }; }
+  else                            { path = '/track_dislike';  body = { uri, disliked: false }; }
   try {
-    const r = await fetch(API + '/track_favorite', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ uri, favorite: next })
+    const r = await fetch(API + path, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
-    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
-    const d = await r.json();
-    if ('liked_local' in d) p.favLocal = d.liked_local;
-    if ('liked_spotify' in d) p.favSpotify = d.liked_spotify;
-    else if (!uri.startsWith('spotify:track:')) p.favSpotify = null;
-    renderFav(p);
-    setFeedback(next ? 'Added to favorites' : 'Removed from favorites');
-  } catch (e) { setFeedback('Favorite error'); }
+    if (r.status === 401) { setFeedback('Editing not authorized'); renderFav(p); return; }
+    const d = await r.json().catch(() => ({}));
+    if (d.error || d.ok === false) {
+      setFeedback(String(d.error || 'Not saved').slice(0, 90)); renderFav(p); return;
+    }
+    // The panel may have moved on to another track while this was in flight; the
+    // write still stands, only the cell must not be repainted with its answer.
+    if (p.getUri() === uri) {
+      if ('liked_local' in d) p.favLocal = d.liked_local;
+      if ('liked_spotify' in d) p.favSpotify = d.liked_spotify;
+      else if (!uri.startsWith('spotify:track:')) p.favSpotify = null;
+      if (path === '/track_dislike') { p.disliked = !!body.disliked; if (body.disliked) p.favLocal = false; }
+      else if (body.favorite) p.disliked = false;   // the server cleared it — the two are exclusive
+      renderFav(p);
+    }
+    setFeedback(target === 'dislike' ? (d.skipped ? 'Disliked — skipped'
+                                                  : 'Disliked — it will not come back')
+              : target === 'like'    ? 'Added to favorites'
+              : from === 'like'      ? 'Removed from favorites' : 'Dislike removed');
+    // The tracklist just lost a row (and possibly its current track), so the page's
+    // view of what is playing is a moment out of date.
+    if (target === 'dislike' && (d.removed || d.skipped)) setTimeout(refreshNowPlaying, 300);
+  } catch (e) { setFeedback('Rating error'); renderFav(p); }
 }
 
 /* ── Édition : auth Spotify via proxy Iris (TEMPORAIRE — migrer en HTTPS) ── */

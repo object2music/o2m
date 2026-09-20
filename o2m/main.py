@@ -1853,6 +1853,59 @@ if __name__ == "__main__":
             result['liked_local_error'] = str(e)
         return jsonify(result)
 
+    # ─── The heart's other pole: an explicit rejection ───
+    @api.route('/api/track_dislike', methods=['POST'])
+    @require_edit_auth
+    def api_track_dislike():
+        """Mark a track as explicitly rejected (or clear it), and drop it from the
+        running tracklist.
+
+        The point of the gesture is speed: skips are only read statistically — a
+        podcast episode has to be abandoned twice before the resume pool gives up
+        on it — and this says it once and for all. The selection stops serving it
+        (every pool filters Track.disliked), its popularity is forced to 0, and the
+        copy already queued is removed rather than left to play tonight.
+        """
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        # Canonical uri, and for the same reason as /api/track_favorite: this INSERTS
+        # the row it cannot find, so a dislike on a substituted uri (a downloaded
+        # Spotify file, an 'web:' item's signed CDN url) would open a Track row that
+        # means nothing tomorrow — and the rejection would be lost.
+        uri = (o2mHandler.get_spotify_uri(data.get('uri')) or '').strip()
+        disliked = bool(data.get('disliked', True))
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        result = {'ok': True, 'uri': uri, 'disliked': disliked}
+        # A disliked track cannot stay in the Spotify library: the liked-tracks
+        # warmup mirrors that library back onto Track.liked, so it would re-like the
+        # row on the next sync and the track would read as both. Only ever done for
+        # a track that WAS a favourite — a dislike on anything else says nothing
+        # about the library and must not touch it.
+        was_liked = False
+        try:
+            was_liked = o2mHandler.dbHandler.is_track_liked_local(uri)
+        except Exception:
+            pass
+        if disliked and was_liked and uri.startswith('spotify:track:'):
+            try:
+                o2mHandler.spotifyHandler.set_track_saved(uri, False)
+                result['liked_spotify'] = False
+            except Exception as e:
+                result['spotify_error'] = str(e)
+        try:
+            o2mHandler.dbHandler.set_track_disliked(uri, disliked)
+            if disliked:
+                result['liked_local'] = False
+        except Exception as e:
+            return jsonify({'ok': False, 'uri': uri, 'error': str(e)}), 500
+        if disliked:
+            try:
+                result.update(o2mHandler.drop_track_from_tracklist(uri))
+            except Exception as e:
+                result['tracklist_error'] = str(e)
+        return jsonify(result)
+
     # ─── Add an album to the library (saved albums) : DB locale + Spotify ───
     @api.route('/api/album_save', methods=['POST'])
     @require_edit_auth
@@ -2104,6 +2157,7 @@ if __name__ == "__main__":
                 'valence':        round(float(stat.valence), 3) if stat and stat.valence is not None else None,
                 'popularity':     round(float(stat.popularity), 3) if stat and stat.popularity is not None else None,
                 'liked':          bool(stat.liked) if stat else False,
+                'disliked':       bool(getattr(stat, 'disliked', 0)) if stat else False,
                 'library':        library,
                 'source':         source,
                 'published':      (getattr(stat, 'published_at', None) or '') if stat else '',
