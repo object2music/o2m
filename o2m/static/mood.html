@@ -391,6 +391,7 @@ const ICON = {
   code:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
   check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   clock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  hardDrive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>',
   globe:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
 };
 
@@ -1568,6 +1569,60 @@ function artistsHTML(artists) {
     ? `<span class="obj-link" data-artist-uri="${objEsc(a.uri)}">${objEsc(a.name)}</span>`
     : objEsc(a.name)).join(', ');
 }
+/* ── A track's meta line, one renderer for every list ─────────────────────────
+   The same facts were rendered three ways in the same visual slot: the tracklist
+   parsed a packed string from /api/track_status ("library - 5·7 - Ma Playlist
+   (happy 7|5)"), the search and album/artist lists built their own chips out of
+   the DB row, and neither agreed with the detail panel. Same row component, three
+   dialects, and nothing keeping them in step — change one and the others drift.
+   This is the only one now, and it takes the legible form of the two: icons and
+   decimals rather than a packed '5·7', plus the live source the compact one never
+   showed.
+   Every field is optional and an absent one prints nothing rather than a dash: a
+   podcast has no energy, a search result no live source. `local` is the SERVER
+   holding the audio as a file (spotdl cache or local media) — it is spelled out
+   here and in the panel's Audio row, because a bare "local" chip said nothing. */
+function trackMetaHTML(m) {
+  if (!m) return '';
+  const bits = [];
+  if (m.option_type)     bits.push(objEsc(m.option_type));
+  if (m.energy != null)  bits.push(ICON.zap + ' ' + Number(m.energy).toFixed(1));
+  if (m.valence != null) bits.push(ICON.sun + ' ' + Number(m.valence).toFixed(1));
+  if (m.mood)            bits.push(objEsc(m.mood));
+  if (m.local)           bits.push(`<span title="${objEsc(FILE_HINT)}">${ICON.hardDrive} file</span>`);
+  // The source is set apart by a dash, not another '·': its own label already
+  // contains one ("Album · Light Up the Night"), and two levels of the same
+  // separator read as one flat list of six things instead of four attributes and
+  // a provenance.
+  const line = bits.join(' · ');
+  return m.source ? (line ? line + ' — ' : '') + objEsc(m.source) : line;
+}
+/* The same line as plain text — the row is one nowrap line and clips, so this is
+   what the hover reveals. */
+function trackMetaText(m) {
+  if (!m) return '';
+  const bits = [];
+  if (m.option_type)     bits.push(m.option_type);
+  if (m.energy != null)  bits.push('energy ' + Number(m.energy).toFixed(1));
+  if (m.valence != null) bits.push('valence ' + Number(m.valence).toFixed(1));
+  if (m.mood)            bits.push(m.mood);
+  if (m.local)           bits.push('file on the server');
+  const line = bits.join(' · ');
+  return m.source ? (line ? line + ' — ' : '') + m.source : line;
+}
+const FILE_HINT = 'The server holds this track as a file — local media, or downloaded'
+  + ' into the spotdl cache. It is played from disk instead of streamed.';
+function trackMetaClass(m) {
+  const ot = ((m && m.option_type) || '').trim().toLowerCase();
+  return 'tl-status' + (STATUS_CLASS[ot] ? ' ' + STATUS_CLASS[ot] : '');
+}
+function trackMetaRowHTML(m, uri) {
+  const attr = uri ? ` data-uri="${objEsc(uri)}"` : '';
+  const txt = trackMetaText(m);
+  return `<div class="${trackMetaClass(m)}"${attr}`
+    + (txt ? ` title="${objEsc(txt)}"` : '') + `>${trackMetaHTML(m)}</div>`;
+}
+
 function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artists = null, uri = '', durText = '', statusHtml = '', isCurrent = false, kind = '', image = '', coverSeed = '' }) {
   // Visual in the leading slot: eq-icon if current, else the real artwork, else a
   // generated cover when the caller passes a seed (search results), else the index
@@ -1635,9 +1690,7 @@ function renderTracklist(tracks, activeTlid) {
     item.className = 'tl-item' + (tlid === activeTlid ? ' current' : '');
     item.dataset.tlid = tlid;
     item.dataset.uri = track.uri || '';   // read by the offline badge pass
-    const cached = getCachedStatus(track.uri);
-    const statusCls = cached ? (STATUS_CLASS[(cached.split(' - ')[0]||'').trim().toLowerCase()] || '') : '';
-    const statusHtml = `<div class="tl-status ${statusCls}" data-uri="${(track.uri||'').replace(/"/g,'&quot;')}">${cached ? formatStatus(cached) : ''}</div>`;
+    const statusHtml = trackMetaRowHTML(getCachedMeta(track.uri), track.uri);
     item.innerHTML = trackRowInnerHTML({
       indexLabel: String(i + 1).padStart(2, '0'),
       name: track.name,
@@ -1667,7 +1720,7 @@ function renderTracklist(tracks, activeTlid) {
     requestAnimationFrame(() => scrollTracklistToCurrent(scrollTarget));
   }
   offRenderBadges();
-  if (!OFF.on) fetchTracklistStatuses(tracks);   // a server read, pointless offline
+  if (!OFF.on) fetchTracklistMeta(tracks);   // a server read, pointless offline
 }
 
 /* Remonte jusqu'au premier ancêtre réellement scrollable (desktop = .col,
@@ -1724,24 +1777,6 @@ function formatStatus(raw) {
   return ot;
 }
 
-function applyStatusEl(el, raw) {
-  const ot  = (raw || '').split(' - ')[0].trim().toLowerCase();
-  const cls = STATUS_CLASS[ot] || '';
-  el.textContent = formatStatus(raw);
-  el.className   = 'tl-status' + (cls ? ' ' + cls : '');
-}
-
-async function fetchStatus(uri) {
-  const cached = getCachedStatus(uri);
-  if (cached !== null) return cached;
-  try {
-    const r = await fetch(API + '/track_status?uri=' + encodeURIComponent(uri));
-    const t = r.ok ? await r.text() : '';
-    statusCache.set(uri, { text: t, ts: Date.now() });
-    return t;
-  } catch(e) { return ''; }
-}
-
 function updateStatusBadge(text) {
   const el = document.getElementById('track-status-badge');
   const ot = (text || '').split(' - ')[0].trim().toLowerCase();
@@ -1769,15 +1804,38 @@ function loadStatusBadge(uri) {
     .catch(() => {});
 }
 
-async function fetchTracklistStatuses(tracks) {
+/* Row meta comes from /api/track_info — the same payload the detail panel reads,
+   which is what keeps the two from drifting. /api/track_status stays for the
+   header badge (and for mood_legacy.html, which reads it as plain text). */
+const metaCache = new Map();   // uri → {meta, ts}
+function getCachedMeta(uri) {
+  const e = metaCache.get(uri);
+  if (!e || Date.now() - e.ts > STATUS_TTL) return null;
+  return e.meta;
+}
+async function fetchMeta(uri) {
+  const cached = getCachedMeta(uri);
+  if (cached !== null) return cached;
+  try {
+    const r = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri));
+    const m = r.ok ? await r.json() : null;
+    if (m && !m.error) { metaCache.set(uri, { meta: m, ts: Date.now() }); return m; }
+  } catch (e) {}
+  return null;
+}
+async function fetchTracklistMeta(tracks) {
   const CONCURRENCY = 4;
   for (let i = 0; i < tracks.length; i += CONCURRENCY) {
     await Promise.all(
       tracks.slice(i, i + CONCURRENCY).map(async ({ track }) => {
         if (!track?.uri) return;
-        const text = await fetchStatus(track.uri);
+        const m = await fetchMeta(track.uri);
         const el = document.querySelector(`.tl-status[data-uri="${CSS.escape(track.uri)}"]`);
-        if (el && text) applyStatusEl(el, text);
+        if (el && m) {
+          el.className = trackMetaClass(m);
+          el.innerHTML = trackMetaHTML(m);
+          el.title = trackMetaText(m);
+        }
       })
     );
   }
@@ -2665,6 +2723,11 @@ const TRACK_FIELDS = [
   // '—' when the track isn't in the running mix. Status is the persisted state,
   // Source the live one — a clean dichotomy. Placed under Status for readability.
   ['Source',     'source',     i => i.source || '—'],
+  // Where the bytes come from. `local_uri` is the SERVER's own copy — local media,
+  // or a track spotdl downloaded into the cache — and _resolve_uri substitutes it
+  // at fill time, so the track is read off the disk rather than streamed. It says
+  // nothing about a phone's offline copy, which never touches this column.
+  ['Audio',      'audio',      i => i.local ? 'File on the server' : 'Streamed'],
   ['Energy',     'energy',     i => fmtEV(i.energy)],
   ['Valence',    'valence',    i => fmtEV(i.valence)],
   ['Mood',       'mood',       i => i.mood || '—'],
@@ -2682,7 +2745,8 @@ const TRACK_FIELDS = [
 const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 // Row order for the shared panel body (Favorite added to TRACK_FIELDS' text rows).
 const TRACK_PANEL_ROWS = [
-  ['Status', 'type'], ['Source', 'source'], ['Favorite', 'fav'], ['Energy', 'energy'], ['Valence', 'valence'],
+  ['Status', 'type'], ['Source', 'source'], ['Audio', 'audio'], ['Favorite', 'fav'],
+  ['Energy', 'energy'], ['Valence', 'valence'],
   ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Date', 'published'],
   ['Channel', 'channel'], ['Playlists', 'playlists'],
 ];
@@ -2765,7 +2829,12 @@ function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artists, album,
   const heroHtml = hero
     ? `<div class="obj-hero">${objCoverHTML(cover, uri || albumUri || name)}`
       + `<div class="obj-meta"><b>${objEsc(name || '')}</b><span>${sub}</span></div></div>`
-    : '';
+    // No hero (the now-playing column, where the cover is already up top): the
+    // title is nowhere to be read in full, since the header line above is a single
+    // ellipsised line by design. This is that place — it wraps, it never clips.
+    // Title only: artist and album are right above it in the header, and repeating
+    // them here would be noise rather than information.
+    : (name ? `<div class="tp-title">${objEsc(name)}</div>` : '');
   // data-row lets a host hide a row by name without touching this markup — the
   // cell itself stays in the DOM, so the matrix sync and the inline editors that
   // write into it keep working.
@@ -3078,7 +3147,12 @@ async function renderTrackDetails(uri) {
     const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
     if (_detailsReq !== uri) return;
     detailsUri = uri;
-    tdPanel.render(info, { hero: false });   // hero off: the now-playing cover is already up top
+    // Hero off: the now-playing cover is already up top. The TITLE is not, though
+    // — the header line is a single ellipsised line by design — so the panel takes
+    // it and shows it whole. info.name is the cached one; the playing track's own
+    // name covers what the cache has not seen yet.
+    const npName = (currentTrackObj && currentTrackObj.uri === uri) ? (currentTrackObj.name || '') : '';
+    tdPanel.render(info, { hero: false, name: info.name || npName });
     requestAnimationFrame(syncDetailsWidth);
   } catch (e) { if (_detailsReq === uri && host) host.innerHTML = ''; }
   if (_detailsReq === uri) panel?.classList.remove('switching');
@@ -3932,15 +4006,8 @@ async function objCover(uri) {
 function objRenderTracks(tracks, kind = '', placeholder = false) {
   if (!tracks.length) return '<div class="obj-empty">No tracks.</div>';
   return '<div class="obj-tracks">' + tracks.map((t, i) => {
-    // Per-track O2M cache fields (status/mood/energy/local) → compact meta line.
-    const meta = [];
-    if (t.option_type) meta.push(objEsc(t.option_type));
-    if (t.energy != null)  meta.push(ICON.zap + ' ' + Number(t.energy).toFixed(1));
-    if (t.valence != null) meta.push(ICON.sun + ' ' + Number(t.valence).toFixed(1));
-    if (t.mood) meta.push(objEsc(t.mood));
-    if (t.local) meta.push('local');
-    const statusCls = t.option_type ? ('s-' + objEsc(t.option_type)) : '';
-    const statusHtml = meta.length ? `<div class="tl-status ${statusCls}">${meta.join(' · ')}</div>` : '';
+    // One renderer for every list — see trackMetaHTML.
+    const statusHtml = trackMetaHTML(t) ? trackMetaRowHTML(t) : '';
     const inner = trackRowInnerHTML({
       indexLabel: String(i + 1).padStart(2, '0'),
       name: t.name,

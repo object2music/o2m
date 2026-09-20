@@ -2081,8 +2081,22 @@ if __name__ == "__main__":
                 except Exception:
                     pass
 
+            # `local_uri` means the SERVER holds this track as a file — spotdl put it
+            # in the cache, or it is local media. It is what _resolve_uri substitutes
+            # into the tracklist, so the audio comes off the disk instead of being
+            # streamed. (It says nothing about a phone's own offline copy, which
+            # lives in the device's IndexedDB and is deliberately never written
+            # here.) The row and the panel both name it, so it stops being a bare
+            # 'local' chip nobody could decode.
+            has_file = bool(getattr(stat, 'local_uri', None)) if stat else False
+            if uri.startswith(('local:', 'file:')):
+                has_file = True
             return jsonify({
                 'option_type':    opt,
+                # The header truncates the title to one line; every detail view is
+                # where it must be readable whole, so it travels with the payload.
+                'name':           (getattr(stat, 'name', None) or '') if stat else '',
+                'local':          has_file,
                 'read_end':       round(float(stat.read_end), 2) if stat else 0.0,
                 'read_count_end': int(stat.read_count_end) if stat else 0,
                 'mood':           str(stat.mood) if stat and stat.mood and stat.mood != '_' else None,

@@ -1772,6 +1772,9 @@ class DatabaseHandler():
             'option_type': t.option_type,
             'mood': (t.mood if (t.mood and t.mood != '_') else None),
             'energy': t.energy, 'valence': t.valence,
+            # Same field set as /api/track_info, so a track row renders identically
+            # whether the list came from here or from the now-playing tracklist.
+            'popularity': t.popularity,
             'liked': bool(t.liked),
         }
 
