@@ -391,6 +391,8 @@ const ICON = {
   code:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
   check:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
   clock:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  smile:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',
+  trendingUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
   hardDrive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>',
   globe:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
 };
@@ -1585,33 +1587,48 @@ function artistsHTML(artists) {
 function trackMetaHTML(m) {
   if (!m) return '';
   const bits = [];
-  if (m.option_type)     bits.push(objEsc(m.option_type));
-  if (m.energy != null)  bits.push(ICON.zap + ' ' + Number(m.energy).toFixed(1));
-  if (m.valence != null) bits.push(ICON.sun + ' ' + Number(m.valence).toFixed(1));
-  if (m.mood)            bits.push(objEsc(m.mood));
-  if (m.local)           bits.push(`<span title="${objEsc(FILE_HINT)}">${ICON.hardDrive} file</span>`);
+  if (m.option_type)      bits.push(objEsc(m.option_type));
+  // Mood and popularity, each with its own icon. Energy and valence are gone from
+  // the row: two bare decimals side by side asked the reader to remember which
+  // axis was which, and the pair is already shown — and edited — as a POSITION on
+  // the mood matrix, which is the form that needs no legend. The mood word is
+  // what those two coordinates amount to in one glance.
+  if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(m.mood)}</span>`);
+  // fmtEV, the same formatter the panel's Popularity row uses — the two must not
+  // drift into saying 0.32 here and 3/10 there.
+  if (m.popularity != null) bits.push(`<span title="${objEsc(POP_HINT)}">${ICON.trendingUp} ${fmtEV(m.popularity)}</span>`);
   // The source is set apart by a dash, not another '·': its own label already
   // contains one ("Album · Light Up the Night"), and two levels of the same
-  // separator read as one flat list of six things instead of four attributes and
-  // a provenance.
-  const line = bits.join(' · ');
-  return m.source ? (line ? line + ' — ' : '') + objEsc(m.source) : line;
+  // separator read as one flat list of six things instead of attributes and a
+  // provenance.
+  let line = bits.join(' · ');
+  if (m.source) line = (line ? line + ' — ' : '') + objEsc(m.source);
+  // Dead last, and that is the point: a streamed track shows NOTHING here, so
+  // anywhere else this flag would push the fields after it out of line between one
+  // row and the next — the reader scans a column and finds it moving. At the end
+  // its presence or absence displaces nothing. Its icon is what separates it from
+  // the source's own words.
+  if (m.local) line += (line ? ' · ' : '')
+    + `<span title="${objEsc(FILE_HINT)}">${ICON.hardDrive} file</span>`;
+  return line;
 }
 /* The same line as plain text — the row is one nowrap line and clips, so this is
    what the hover reveals. */
 function trackMetaText(m) {
   if (!m) return '';
   const bits = [];
-  if (m.option_type)     bits.push(m.option_type);
-  if (m.energy != null)  bits.push('energy ' + Number(m.energy).toFixed(1));
-  if (m.valence != null) bits.push('valence ' + Number(m.valence).toFixed(1));
-  if (m.mood)            bits.push(m.mood);
-  if (m.local)           bits.push('file on the server');
-  const line = bits.join(' · ');
-  return m.source ? (line ? line + ' — ' : '') + m.source : line;
+  if (m.option_type)        bits.push(m.option_type);
+  if (m.mood)               bits.push('mood ' + m.mood);
+  if (m.popularity != null) bits.push('popularity ' + fmtEV(m.popularity));
+  let line = bits.join(' · ');
+  if (m.source) line = (line ? line + ' — ' : '') + m.source;
+  if (m.local)  line += (line ? ' · ' : '') + 'file on the server';
+  return line;
 }
 const FILE_HINT = 'The server holds this track as a file — local media, or downloaded'
   + ' into the spotdl cache. It is played from disk instead of streamed.';
+const POP_HINT = 'Popularity — how completely and how often you play it, minus skips,'
+  + ' faded with time. It is what weighs the selection.';
 function trackMetaClass(m) {
   const ot = ((m && m.option_type) || '').trim().toLowerCase();
   return 'tl-status' + (STATUS_CLASS[ot] ? ' ' + STATUS_CLASS[ot] : '');
@@ -2829,12 +2846,7 @@ function trackPanelBodyHTML(p, { hero, cover, uri, name, artist, artists, album,
   const heroHtml = hero
     ? `<div class="obj-hero">${objCoverHTML(cover, uri || albumUri || name)}`
       + `<div class="obj-meta"><b>${objEsc(name || '')}</b><span>${sub}</span></div></div>`
-    // No hero (the now-playing column, where the cover is already up top): the
-    // title is nowhere to be read in full, since the header line above is a single
-    // ellipsised line by design. This is that place — it wraps, it never clips.
-    // Title only: artist and album are right above it in the header, and repeating
-    // them here would be noise rather than information.
-    : (name ? `<div class="tp-title">${objEsc(name)}</div>` : '');
+    : '';
   // data-row lets a host hide a row by name without touching this markup — the
   // cell itself stays in the DOM, so the matrix sync and the inline editors that
   // write into it keep working.
@@ -3147,12 +3159,7 @@ async function renderTrackDetails(uri) {
     const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
     if (_detailsReq !== uri) return;
     detailsUri = uri;
-    // Hero off: the now-playing cover is already up top. The TITLE is not, though
-    // — the header line is a single ellipsised line by design — so the panel takes
-    // it and shows it whole. info.name is the cached one; the playing track's own
-    // name covers what the cache has not seen yet.
-    const npName = (currentTrackObj && currentTrackObj.uri === uri) ? (currentTrackObj.name || '') : '';
-    tdPanel.render(info, { hero: false, name: info.name || npName });
+    tdPanel.render(info, { hero: false });   // hero off: the now-playing cover and title are already up top
     requestAnimationFrame(syncDetailsWidth);
   } catch (e) { if (_detailsReq === uri && host) host.innerHTML = ''; }
   if (_detailsReq === uri) panel?.classList.remove('switching');

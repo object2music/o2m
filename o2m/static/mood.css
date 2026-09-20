@@ -358,15 +358,6 @@
      sized on the cover, it left the matrix visibly boxed in. Raised so it uses the
      room it has — it stays centred and never wider than its container. The top
      margin sets it apart from the lifecycle scale above, in every view. */
-  /* The title, in full, in the one view with room for it. The header line above
-     is deliberately a single ellipsised line (#track-name) — so a long name was
-     readable nowhere. This wraps and never clips; `anywhere` because a uri or a
-     bracketed live-version suffix has no space to break at. Only the no-hero
-     panel renders it: the modal already carries the name in its vignette. */
-  .tp-title { font-size: var(--t-body); font-weight: 600; color: var(--text);
-    line-height: 1.25; overflow-wrap: anywhere; }
-  .tp-sub { font-size: var(--t-body-s); color: var(--muted); margin-top: 3px;
-    overflow-wrap: anywhere; }
   .tp-matrix { width: 100%; max-width: 300px; aspect-ratio: 1 / 1;
     margin: 20px auto 0; display: block; touch-action: none;
     background: var(--card); border: 1px solid var(--border-strong); }
