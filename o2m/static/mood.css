@@ -715,6 +715,15 @@
   #track-status-badge.s-trash::before      { background: #f44336; }
   #track-status-badge.s-hidden::before     { background: #9c27b0; }
   #track-status-badge.s-podcast::before    { background: #607d8b; }
+  /* The badge renders the same condensed meta line as a tracklist row. The gap on
+     the badge exists to hold the colour square apart from the label, so the label
+     has to be ONE flex item — otherwise every chip inside it would be spaced by
+     that same 6px. It ellipsises rather than wrapping: this line sits under the
+     title in a header whose height is fixed. */
+  #track-status-badge .tsb-text {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #track-status-badge svg { width: 11px; height: 11px; vertical-align: -1px; }
 
   /* volume row */
   #volume-row {

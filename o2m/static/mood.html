@@ -651,11 +651,7 @@ function updateBasicStatus() {
   const tl = document.getElementById('bs-tracks');
   const bx = document.getElementById('bs-boxes');
   if (tl) tl.textContent = `${currentTracklistLength} track${currentTracklistLength === 1 ? '' : 's'}`;
-  if (bx && basicCats) {
-    const n = ['music', 'podcast', 'info', 'radio']
-      .reduce((s, c) => s + (basicCats[c] || []).filter(b => b.active).length, 0);
-    bx.textContent = `${n} box${n === 1 ? '' : 'es'}`;
-  }
+  if (bx) bx.textContent = activeSummary();
 }
 
 // Called from the now-playing refresh (10s + WS events): re-syncs the basic box
@@ -1776,58 +1772,49 @@ const STATUS_CLASS = {
 };
 
 /* ── Status helpers ── */
-const statusCache = new Map(); // uri → {text, ts}
 const STATUS_TTL  = 5 * 60 * 1000;
 
-function getCachedStatus(uri) {
-  const e = statusCache.get(uri);
-  if (!e || Date.now() - e.ts > STATUS_TTL) return null;
-  return e.text;
-}
-
-function formatStatus(raw) {
-  if (!raw || raw === 'Manual') return '';
-  const parts = raw.split(' - ');
-  const ot    = parts[0] || '';
-  const score = parts[1] || '';
-  let lib     = (parts[2] || '').replace(/^(playlist|album|artist):/, '').trim();
-  if (score && lib) return lib.startsWith('(')
-    ? `${ot} · ${score} ${lib}`
-    : `${ot} · ${score} · ${lib}`;
-  if (score) return `${ot} · ${score}`;
-  return ot;
-}
-
-function updateStatusBadge(text) {
+/* The header's condensed line is the same fact set as a tracklist row, so it goes
+   through the same renderer. It was the last place still parsing the packed string
+   /api/track_status answers with — "library - 5·7 - Ma Playlist (happy 7|5)", where
+   5·7 is completion and popularity times ten and 7|5 is energy and valence — which
+   is precisely the dialect the row refactor set out to end, one display short.
+   The label sits in its own span: the badge is an inline-flex whose gap holds the
+   colour square apart from the text, and without a wrapper every chip inside would
+   be spaced by that same gap. */
+let _badgeSig = null;
+function updateStatusBadge(m) {
   const el = document.getElementById('track-status-badge');
-  const ot = (text || '').split(' - ')[0].trim().toLowerCase();
-  const label = formatStatus(text);
-  const changed = el.textContent !== label;
-  el.textContent = label;
-  el.className   = STATUS_CLASS[ot] || '';
-  if (changed && label) npAnimateIn(el);
+  if (!el) return;
+  const html = trackMetaHTML(m);
+  const changed = _badgeSig !== html;
+  _badgeSig = html;
+  el.innerHTML = html ? `<span class="tsb-text">${html}</span>` : '';
+  el.className = STATUS_CLASS[((m && m.option_type) || '').trim().toLowerCase()] || '';
+  el.title = trackMetaText(m);
+  if (changed && html) npAnimateIn(el);
 }
 
 /* Header badge for a track that just became current: the cached value at once when
    there is one (never the previous track's), then a fresh read — guarded, so a slow
-   answer for a track already skipped again cannot land on the next one. */
+   answer for a track already skipped again cannot land on the next one. The cache is
+   the one the tracklist rows fill, so the badge for a track already listed costs
+   nothing and cannot disagree with its own row. */
 let _badgeReq = null;
 function loadStatusBadge(uri) {
   if (uri === _badgeReq) return;
   _badgeReq = uri;
-  updateStatusBadge(getCachedStatus(uri) || '');
-  fetch(API + '/track_status?uri=' + encodeURIComponent(uri))
-    .then(r => r.ok ? r.text() : '')
-    .then(t => {
-      statusCache.set(uri, { text: t, ts: Date.now() });
-      if (npTargetUri() === uri) updateStatusBadge(t);
-    })
-    .catch(() => {});
+  updateStatusBadge(getCachedMeta(uri));
+  fetchMeta(uri).then(m => {
+    if (m && npTargetUri() === uri) updateStatusBadge(m);
+  }).catch(() => {});
 }
 
-/* Row meta comes from /api/track_info — the same payload the detail panel reads,
-   which is what keeps the two from drifting. /api/track_status stays for the
-   header badge (and for mood_legacy.html, which reads it as plain text). */
+/* One cache, read by the three displays that name a track: the tracklist rows, the
+   header badge and — through its own uncached fetch, so an edit shows at once — the
+   detail panel. All of them read /api/track_info, which is what keeps them from
+   drifting. /api/track_status is no longer called here at all; it survives for
+   mood_legacy.html, which reads it as plain text. */
 const metaCache = new Map();   // uri → {meta, ts}
 function getCachedMeta(uri) {
   const e = metaCache.get(uri);
@@ -1963,7 +1950,7 @@ function clearNowPlayingHeader(playing) {
   paintTrackText('', 'O2M', '', '');
   document.getElementById('now-playing')?.classList.remove('radio-np');
   clearTrackTags();
-  _badgeReq = null; updateStatusBadge('');
+  _badgeReq = null; _badgeSig = null; updateStatusBadge(null);
   setCoverGenerated(null);
   resetProgress();
   document.getElementById('prog-duration').textContent = '';
@@ -5729,23 +5716,34 @@ function recomputeAutoBox() {
   updateBoxesCount();
 }
 
-/* Header counter: number of ACTIVE boxes only — refreshed every time a box's
-   active state is (re)checked. */
+/* The ONE sentence that says what is active — `2 boxes · 1 album` — and both
+   views show it, character for character.
+
+   They used to count different things and neither said which, so they disagreed
+   in three ordinary situations, all reproduced here: a plain library box (19 of
+   the 28 pinned boxes are of a kind the Basic view's four actuators do not
+   represent) read `1 box` in Full and `0 boxes` in Basic; an activated album read
+   `1 album` in Full and nothing at all in Basic; a cascade read 3 against 2. One
+   counted rows lit in a list, the other summed the sources its own actuators knew
+   about — and a third number, what the server actually holds, was shown nowhere.
+
+   That third one is the only true answer, so it is the one both views read
+   (OBJGRID's `/api/active_objects`). An album is still named an album: it fills
+   the tracklist like a box but is not one, and this line is the only place the
+   interface says so. */
+function activeSummary() {
+  const c = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
+  const n = c.box || 0;
+  const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}`];
+  ['album', 'artist'].forEach(k => {
+    if (c[k]) parts.push(`${c[k]} ${c[k] === 1 ? k : k + 's'}`);
+  });
+  return parts.join(' · ');
+}
+
 function updateBoxesCount() {
   const bc = document.getElementById('boxes-count');
-  if (!bc) return;
-  const total  = document.querySelectorAll('#boxes-wrap .box-btn').length;
-  const active = document.querySelectorAll('#boxes-wrap .box-btn.active').length;
-  // An activated album is not a box — it fills the tracklist the same way, but
-  // calling it one in the count would be the only place the interface says so.
-  const objs = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
-  const parts = [];
-  if (active || !Object.keys(objs).length)
-    parts.push(`${active} ${active === 1 ? 'box' : 'boxes'}`);
-  ['album', 'artist'].forEach(k => {
-    if (objs[k]) parts.push(`${objs[k]} ${objs[k] === 1 ? k : k + 's'}`);
-  });
-  bc.textContent = total ? parts.join(' · ') : '';
+  if (bc) bc.textContent = activeSummary();
 }
 
 // Resync immédiat de l'état actif de toutes les boxes (ex: la box auto que le

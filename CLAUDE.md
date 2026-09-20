@@ -734,8 +734,24 @@ Other points worth knowing:
   column, so the mosaic never looked the same twice; the tile now takes whatever
   width the count leaves, which is also what makes the name-as-cover sizing
   predictable.
-- The header count says `2 boxes · 1 album`: an activated album fills the tracklist
-  like a box but is not one, and that line is the only place the interface says so.
+- **One sentence says what is active — `2 boxes · 1 album` — and both views show it
+  character for character** (`activeSummary`, fed by `OBJGRID.activeCounts`). They
+  used to count different things and neither said which, so they disagreed in three
+  ordinary situations, all reproduced on this install: a plain library box — and
+  **19 of the 28 pinned boxes are of a kind the Basic view's four actuators do not
+  represent** — read `1 box` in Full and `0 boxes` in Basic; an activated album read
+  `1 album` in Full and nothing at all in Basic; a cascade read 3 against 2. One
+  counted rows lit in a list, the other summed the sources its own actuators knew
+  about, and the only true answer — what the server actually holds — was shown
+  nowhere. That is now the one both read. Counting boxes from the server rather
+  than from the list also fixes a box activated by an NFC tag and never pinned: it
+  has no row, and a count that can only see what it renders is a count of the
+  rendering. An album is still named an album: it fills the tracklist like a box but
+  is not one, and this line is the only place the interface says so.
+  **Known reading**: a cascade counts its children, so putting down one object that
+  includes two others reads `3 boxes`. True of `activeboxs`, and not the same
+  sentence as "you put down one thing" — `_box_parent` knows the lineage if that is
+  ever the number wanted.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
   cannot see them — an album called *Autobahn* does not light the live mode.
 

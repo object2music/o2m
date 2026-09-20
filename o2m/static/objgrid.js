@@ -428,6 +428,8 @@ const OBJGRID = (() => {
     // usable on a page that has no boxes list.
     if (typeof recomputeAutoBox === 'function') recomputeAutoBox();
     else if (typeof updateBoxesCount === 'function') updateBoxesCount();
+    // The Basic view shows the same sentence, from the same answer.
+    if (typeof updateBasicStatus === 'function') updateBasicStatus();
   }
 
   /* One call for the whole column — objects AND boxes — and the only place the
@@ -503,11 +505,14 @@ const OBJGRID = (() => {
 
   /* ── Counts ────────────────────────────────────────────────────────────── */
 
-  /* What the column header counts, per kind — an activated album is not a box
-     and saying "4 boxes" when three of them are records would be wrong. Boxes
-     are counted from the list's DOM by updateBoxesCount itself. */
+  /* What is active, per kind — an activated album is not a box, and saying
+     "4 boxes" when three of them are records would be wrong.
+
+     Boxes are counted from the SERVER's answer, not from rows lit in the list: a
+     box activated from an NFC tag may not be pinned, so it has no row to count,
+     and a count that can only see what it renders is a count of the rendering. */
   function activeCounts() {
-    const out = {};
+    const out = { box: state.activeBoxes.size };
     state.active.forEach(o => { out[o.kind] = (out[o.kind] || 0) + 1; });
     return out;
   }
