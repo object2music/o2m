@@ -2946,9 +2946,12 @@ class O2mToMopidy:
                 box = None
 
                 # Two ways to skip the box auto-launch (unmute + resume-if-paused
-                # still apply): the caller passes allow_box=False (e.g. the /basic
-                # view), or default_box_uid is the sentinel 'none'. An EMPTY
-                # default_box_uid falls back to the stats_raw history box instead.
+                # still apply): the caller passes allow_box=False, or
+                # default_box_uid is the sentinel 'none'. An EMPTY default_box_uid
+                # falls back to the stats_raw history box instead. Saying "start
+                # nothing" belongs to the configuration, not to a view: the /basic
+                # view used to pass allow_box=False and then start a mix all of its
+                # own, which is the opposite of what the setting asks for.
                 if not allow_box:
                     return False
                 if self.default_box_uid and self.default_box_uid.lower() == 'none':

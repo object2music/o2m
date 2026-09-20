@@ -2842,8 +2842,9 @@ if __name__ == "__main__":
 
         The server determines the current time; the client should not supply the time.
         An optional `window` query param is ignored for time-of-day — server-side clock is used.
-        `nobox=1` keeps unmute + resume-if-paused but never auto-launches a box
-        (used by the /basic view).
+        `nobox=1` keeps unmute + resume-if-paused but never auto-launches a box.
+        No view passes it any more — whether a box starts is `default_box_uid`'s
+        call (the sentinel 'none' means start nothing).
         """
         try:
             nobox = request.args.get('nobox') in ('1', 'true')
