@@ -1,3 +1,0 @@
-On a un probleme de lisibilité sur la vue mosaique boxes : peut petre remplacer les images par le texte écrit en gros dans les boites si il n'y a pas d'image dédiée ?
-Par ailleurs passe le nombre par ligne en vue desktop à 4 et en vue moible à 3
-Enfin en vue mobile seulement réintègre le module de sélection + filtre dans le scroll car on a n'a plus aucune visibilité
