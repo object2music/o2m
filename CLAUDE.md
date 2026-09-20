@@ -634,7 +634,9 @@ activating something already playing is a no-op the user cannot tell from a brok
 button, and turning it off would be the opposite of what a die is for. In the list
 view it *clicks the existing row* rather than re-implementing `toggleBox`; in a
 mosaic it resolves the tile FIRST — so the pick pulses while it fills, exactly like
-a tap on that tile — scrolls it into view, then goes through the same toggle.
+a tap on that tile — then goes through the same toggle. It scrolls the winner into
+view **only in the list**: a mosaic sends what is active to the head of the grid,
+so scrolling to a tile would be scrolling to where it is about to no longer be.
 
 **On desktop the toolbar and the filter stay put while the mosaic scrolls; on a
 phone they scroll away with it — and that is not a breakpoint tweak around one

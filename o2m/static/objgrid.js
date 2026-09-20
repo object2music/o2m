@@ -472,7 +472,11 @@ const OBJGRID = (() => {
     // Resolved before the toggle, not after: it is what pulses while the fill
     // runs, so a random pick looks exactly like a tap on the same tile.
     const el = tileEl(pick);
-    scrollTo(el);
+    // Shown only where it will STAY. In a mosaic the winner leaves this spot the
+    // instant it comes on — what is active moves to the head of the grid — so
+    // scrolling to it would be scrolling to where it is about to no longer be.
+    // The list does not reorder, so there it is still the right thing to do.
+    if (pick.el) scrollTo(pick.el);
     if (btn) btn.disabled = true;
     try {
       // The list view's rows are the existing buttons, with their own handler and
@@ -491,8 +495,8 @@ const OBJGRID = (() => {
       `#obj-grid .og-tile[data-${pick.uid ? 'uid' : 'uri'}="${CSS.escape(key)}"]`);
   }
 
-  /* Say WHICH one came up, by showing it: a die that only prints a name leaves
-     you looking for it. */
+  /* Say WHICH one came up by showing it — a die that only prints a name leaves
+     you looking for it. Only where the winner holds its place; see pickRandom. */
   function scrollTo(el) {
     try { el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
   }
