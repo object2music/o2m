@@ -255,11 +255,68 @@ const OBJGRID = (() => {
       return;
     }
     let html = rows.map(r => tileHTML(r, kind)).join('');
+    // The rule that breaks the line between what is on and what is not. It sits
+    // in the grid at all times and hides itself when one of the two groups is
+    // empty (see syncSplit) — a separator with nothing on one side of it
+    // separates nothing.
+    html += '<div class="og-split" hidden></div>';
     // Said, not hidden: the mosaic claims to show the library, so a truncation
     // that goes unmentioned would be a lie about what is not there.
     if (state.more[state.mode] && !state.filter)
       html += `<div class="og-empty og-more">Showing the first ${rows.length}.</div>`;
     grid.innerHTML = html;
+    syncSplit(grid);
+  }
+
+  /* ── Chosen first ──────────────────────────────────────────────────────────
+     An active tile moves to the head of the grid, and returns to its place in
+     the listing when it is released. Done with CSS `order`, not by moving nodes:
+     the DOM stays in library order, so the filter, the random pick, `scrollTo`
+     and every lookup keep addressing the same elements — only the painting
+     order changes.
+
+     And done with FLIP, because a reordering that is not animated is not a
+     reordering: a cover that teleports is a cover you have to find again. Every
+     tile is measured before the change and after it, the difference is applied
+     back as a transform, and releasing it lets the browser interpolate ONE
+     transform per tile. No layout is animated, which is what keeps it smooth
+     with 248 of them on screen. */
+
+  const tileKey = t => t.dataset.uid || t.dataset.uri;
+
+  function reducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch (e) { return false; }
+  }
+
+  function syncSplit(grid) {
+    const split = grid && grid.querySelector('.og-split');
+    if (!split) return;
+    let on = 0, off = 0;
+    grid.querySelectorAll('.og-tile').forEach(t => {
+      if (t.classList.contains('active')) on++; else off++;
+    });
+    split.hidden = !(on && off);
+  }
+
+  function flip(tiles, before) {
+    const moved = [];
+    tiles.forEach(t => {
+      const b = before.get(tileKey(t));
+      if (!b) return;
+      const a = t.getBoundingClientRect();
+      const dx = b.left - a.left, dy = b.top - a.top;
+      if (!dx && !dy) return;
+      t.style.transition = 'none';
+      t.style.transform = `translate(${dx}px, ${dy}px)`;
+      moved.push(t);
+    });
+    if (!moved.length) return;
+    void document.getElementById('obj-grid').offsetWidth;   // one reflow for all
+    requestAnimationFrame(() => moved.forEach(t => {
+      t.style.transition = '';   // back to the stylesheet's transform transition
+      t.style.transform = '';
+    }));
   }
 
   /* ── Activation ────────────────────────────────────────────────────────── */
@@ -339,13 +396,30 @@ const OBJGRID = (() => {
      and the two views could disagree with each other because toggling from one
      never told the other. One request, one painter, one clock. */
   function paint() {
-    document.querySelectorAll('#obj-grid .og-tile').forEach(t => {
-      const on = t.dataset.kind === 'box'
-        ? state.activeBoxes.has(t.dataset.uid)
-        : state.active.has(t.dataset.uri);
+    const grid = document.getElementById('obj-grid');
+    const tiles = grid ? [...grid.querySelectorAll('.og-tile')] : [];
+    const isOn = t => t.dataset.kind === 'box'
+      ? state.activeBoxes.has(t.dataset.uid)
+      : state.active.has(t.dataset.uri);
+
+    /* Whether anything moves is known BEFORE touching the DOM, and it has to be:
+       measuring is what forces a layout flush, and this runs on a 10s poll that
+       usually has nothing to report. Both strings are in DOM order, so they
+       compare directly. */
+    const sig = ts => ts.filter(isOn).map(tileKey).join('|');
+    const sigNow = ts => ts.filter(t => t.classList.contains('active')).map(tileKey).join('|');
+    const before = (tiles.length && sig(tiles) !== sigNow(tiles) && !reducedMotion())
+      ? new Map(tiles.map(t => [tileKey(t), t.getBoundingClientRect()])) : null;
+
+    tiles.forEach(t => {
+      const on = isOn(t);
       t.classList.toggle('active', on);
       t.setAttribute('aria-pressed', String(on));
     });
+    if (grid) {
+      syncSplit(grid);
+      if (before) flip(tiles, before);
+    }
     document.querySelectorAll('#boxes-wrap .box-btn[data-uid]').forEach(b => {
       b.classList.toggle('active', state.activeBoxes.has(b.dataset.uid));
     });

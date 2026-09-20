@@ -677,6 +677,21 @@ Other points worth knowing:
   opposite, which is how a row could announce `▶` for a box it had just failed to
   change. `data-auto` moved to render time for the same reason: whether a box's
   name says "auto" is a property of the row, not of whether it is active.
+- **What is on comes to the head of the grid**, in all three mosaics, and drops
+  back into its place in the listing when it is released; a full-width rule breaks
+  the line between the two groups, and hides itself when one side of it is empty
+  (`syncSplit`) — a separator with nothing beyond it separates nothing. Two
+  decisions carry it. It is **CSS `order`, not a reordered DOM**: the markup stays
+  in library order, so the filter, the random pick, `scrollTo` and every lookup
+  keep addressing the same elements. And the move is **FLIP** — measure every
+  tile, change the order, measure again, apply the difference back as a transform
+  and release it — because a reordering that is not animated is not a reordering:
+  a cover that teleports is a cover you have to find again. Only `transform`
+  transitions, never a layout property, which is what keeps it smooth with 248
+  tiles. Whether anything moves is decided **before** touching the DOM, from
+  `state` against the current classes: measuring is what forces a layout flush,
+  and `paint` runs on a 10s poll that usually has nothing to report.
+  `prefers-reduced-motion` skips the whole thing.
 - **Where the name goes depends on what the tile IS.** An album is recognised by its
   sleeve, so its name is a caption under the square. A box is never a picture one
   knows — it is only its name — so the name goes IN the square: set large when there

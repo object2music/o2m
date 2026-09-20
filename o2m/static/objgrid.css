@@ -115,12 +115,32 @@
 }
 @media (min-width: 700px) { .og-grid { grid-template-columns: repeat(4, 1fr); } }
 
+/* `order`, not a reordered DOM: the markup stays in library order so the filter,
+   the random pick and every lookup keep addressing the same elements — only the
+   painting order changes. The move itself is animated by FLIP in objgrid.js,
+   which is what this `transform` transition is for; nothing here animates a
+   layout property, which is what keeps it smooth with 248 tiles on screen. */
 .og-tile {
   display: flex; flex-direction: column; gap: 3px;
   padding: 0; border: none; background: none; text-align: left;
   color: var(--muted); cursor: pointer;
-  transition: color .15s, opacity .15s;
+  order: 2;
+  transition: color .15s, opacity .15s, transform .34s cubic-bezier(.22, .61, .36, 1);
   min-width: 0;
+}
+/* What is on comes to the head of the grid, and drops back into place in the
+   listing when it is released. */
+.og-tile.active { order: 0; }
+/* The line between the two groups. Full width, so what follows starts a new row;
+   hidden by syncSplit when one side of it is empty. */
+.og-split {
+  order: 1; grid-column: 1 / -1;
+  height: 0; margin: 2px 0 6px;
+  border-top: 1px solid var(--border-soft);
+}
+.og-split[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .og-tile { transition: color .15s, opacity .15s; }
 }
 .og-tile:active { opacity: .6; }
 /* Filling is filling, wherever it was asked from: the same pulse as a box row
@@ -242,4 +262,4 @@
   grid-column: 1 / -1;
   padding: 14px 2px; font-size: 13px; color: var(--muted);
 }
-.og-more { padding-top: 4px; font-size: 11px; opacity: .7; }
+.og-more { order: 3; padding-top: 4px; font-size: 11px; opacity: .7; }
