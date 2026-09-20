@@ -51,6 +51,37 @@ pip install -r requirements.txt
 python3 main.py
 ```
 
+## Committing: several sessions share this working tree
+
+More than one Claude Code session works on `o2m_1` at a time, and they share one
+checkout. So the tree you are looking at may hold someone else's half-finished
+feature, and **`git add -A`, `git add .` and `git commit -a` will commit it**.
+
+- **Stage by explicit path, never the whole tree.** Read `git status --short` before
+  every commit and name the files you actually changed.
+- **Pull and read `git log` before writing**, so you are not editing on top of a
+  version that has already moved.
+- **When your change and theirs sit in the SAME file**, staging that file commits
+  both halves — and their half is usually incomplete, which makes it a commit that
+  does not build. Do not stage it. Rebuild the version to stage instead: take
+  `git show HEAD:<path>`, replay **your own edits** onto it, then
+
+  ```bash
+  h=$(git hash-object -w /tmp/rebuilt)
+  git update-index --cacheinfo 100644,$h,<path>
+  ```
+
+  The index then holds HEAD + your work, the working tree is left untouched with
+  both halves still in it, and `git diff --cached` shows exactly what you are about
+  to commit — grep it for a word from their feature before you commit.
+
+This is not hypothetical, and it has gone both ways. On 2026-09-20 a status-badge
+refactor — two files, the header's condensed line finally sharing the tracklist's
+renderer — was swallowed by a commit titled after view counts, because the other
+session staged the whole tree while that work was in flight; earlier the same day the
+same trap was avoided in the other direction by the rebuild above. The code is fine either way — what is lost is the ability to find out
+later why something changed, which is most of what a history is for.
+
 ## Core Python Code (`o2m/`)
 
 The main application is in `o2m/main.py` — it starts Flask on port 6681 and wires everything together.
