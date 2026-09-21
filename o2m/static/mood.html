@@ -2185,13 +2185,28 @@ function stopMediaAnchor() {
 /* Shared reaction to "the audio route died" (BT/headphones removed, audio focus
    lost). Fed by two detectors: the media-anchor pause event above and the
    devicechange watcher below. Only acts when this device is the audio sink
-   (snapPlayer active) and we believe playback is running. */
+   (snapPlayer active) and we believe playback is running.
+
+   It PAUSES and it does not hang up. Those are two different facts and the old
+   version ran them together: losing a Bluetooth speaker also called _snapStop(),
+   so the phone stopped being a Snapcast client at all and getting the sound back
+   meant reconnecting by hand. But the route died, not the speaker — the OS simply
+   re-routes WebAudio to the phone's own loudspeaker, which is a perfectly good
+   output and often the one you want next (a headset runs out of battery, the music
+   carries on in the room). The stream, the client identity, its name and its volume
+   on snapserver all stay; only the playback stops, because sound leaving a pocket
+   unannounced is not a decision to make for someone.
+
+   The anchor is re-armed because the OS paused it along with the route, and it is
+   what carries the notification and the Bluetooth controls — without it the next
+   play would come back with no media session at all. Its listeners are {once}, so
+   the user's own Play press is the gesture that restarts it. */
 function pauseFromRouteLoss(source) {
   if (!snapPlayer || !progPlaying) return;
-  console.log('[route-loss] ' + source + ' → pausing server');
+  console.log('[route-loss] ' + source + ' → pausing server, staying a speaker');
   rpc('core.playback.pause').catch(() => {});
-  _snapStop();
-  setFeedback('Paused (' + source + ')');
+  armMediaAnchor();
+  setFeedback('Paused (' + source + ') — play to hear it on this device');
   setTimeout(refreshNowPlaying, 300);
 }
 
@@ -6599,8 +6614,10 @@ document.addEventListener('visibilitychange', () => {
   } catch (e) {}
 });
 
-/* Leaving the speaker state. The same three lines offStart and pauseFromRouteLoss
-   already ran, in one place, so no caller can drop the wake lock or the repaint. */
+/* Leaving the speaker state, in one place, so no caller can drop the wake lock or
+   the repaint. Its two callers are both DELIBERATE departures — going offline, and
+   cycling the target back to remote. Losing an audio route is not one of them: see
+   pauseFromRouteLoss, which used to call this and no longer does. */
 function _snapStop() {
   if (!snapPlayer) return;
   try { snapPlayer.stop(); } catch (e) {}
