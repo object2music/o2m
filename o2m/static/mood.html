@@ -3931,10 +3931,39 @@ function armBackTrap() {
   if (s.o2mTrap || s.o2mModal) return;   // already armed (or a modal is on top)
   try { history.pushState({ o2mTrap: true }, ''); } catch (e) {}
 }
+/* A modal that has been navigated inside is a STACK, not a window. Search → an
+   artist → one of its albums is three views deep, and a back gesture that closed
+   the lot threw away two steps the user never asked to leave — the same gesture
+   the ◂ button answers correctly two centimetres away. So back walks the stack,
+   one view per gesture, and closes the modal only from the FIRST view, where
+   there is nothing left to go back to.
+
+   It is one history entry throughout, re-armed after each step (the root trap
+   below is the same idiom). Pushing after a pop drops the browser's forward
+   entry, so a forward GESTURE cannot redo a step — the modal's own ▸ can, from
+   the _objFwd stack objBackNav fills, which is where forward lives anyway.
+
+   The wizard is asked first and answered in its own terms: its steps are a
+   sequence it drives with Back/Next, which is why the modal's ◂ ▸ are hidden
+   while it is on screen. The gesture CLICKS that Back button rather than
+   reimplementing the step logic beside it. */
+function _modalBackStep() {
+  const wizBack = document.getElementById('wiz-back');
+  if (wizBack && document.getElementById('bx-wizard')) { wizBack.click(); return true; }
+  if (_objBack.length) { objBackNav(); return true; }
+  return false;
+}
+
 window.addEventListener('popstate', () => {
   if (_consumingModal) { _consumingModal = false; return; }  // balanced UI close
   const tag = _modalPop;
-  if (tag) {               // back gesture with a modal open → close the modal
+  if (tag) {
+    if (tag === 'obj' && _modalBackStep()) {
+      _modalPop = null;          // the entry we pushed has just been popped…
+      modalHistoryPush('obj');   // …so arm a fresh one for the next gesture
+      return;
+    }
+    // First view (or a modal with no inside): the gesture closes it.
     _modalPop = null;
     if (tag === 'obj') closeObjPanel(true);
     else if (tag === 'details') document.body.classList.remove('details-open');
