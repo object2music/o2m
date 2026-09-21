@@ -429,7 +429,18 @@ lists of the same patterns drift.
   rolling fashion, so one prolific feed cannot crowd out the others.
 - **Rejection**: two early skips retire an episode from the resume pool; one
   **dislike** retires it immediately and everywhere — see the like/dislike section.
-- **Resume**: any spoken item resumes at its saved position (minus 10s).
+- **Resume**: any spoken item resumes at its saved position (minus 10s) — and
+  **finishing retires that bookmark** (`update_stat_track`, spoken only). Without
+  it an item kept the position it ENDED at, so replaying it seeked to ten seconds
+  before its own end and handed over to the next track — which is what "an info
+  bulletin cannot be played again" was — and, being read as a resume, it skipped
+  the fresh-start ad-skip too. The offline player had always done this; only the
+  server never did. Repaired on the existing rows by `retire_finished_bookmarks`,
+  a CacheMeta-guarded one-shot at startup: 4,039 episodes here, with music
+  (16,613 rows, where `read_position == duration` is legitimate) untouched and the
+  1,081 unfinished bookmarks preserved. It does NOT make a finished item eligible
+  again — the pools read `read_count_end`, not the bookmark, so yesterday's
+  bulletin still never comes back by itself; only an explicit play replays it.
 - **Pre-roll ads**: a fixed skip per host (30s for Radio France and BBC hosts, overridable
   with `podcast_ad_skip = host:ms`), applied only on a fresh start. It cannot be detected:
   no feed exposes chapters or ad markers, and `itunes:duration` already includes the ad.

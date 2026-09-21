@@ -851,6 +851,42 @@ class DatabaseHandler():
             print(f"backfill_last_play_seq: {e}")
             return 0
 
+    def retire_finished_bookmarks(self):
+        """Clear the resume position of spoken items that were finished.
+
+        `update_stat_track` writes read_position on every report and, until now,
+        never took it back: an item played to the end kept the position it ENDED
+        at. `track_started_event` then seeks to read_position - 10s on the next
+        start, so a finished bulletin replayed as its own last ten seconds and
+        handed straight over to the next track — and, being read as a resume, it
+        skipped the fresh-start ad-skip too. Measured before the repair: 3,718
+        finished `info` rows carrying a bookmark, average 98.2% of the duration,
+        many exactly equal to it.
+
+        The rule itself is not new. The offline player has always retired the
+        bookmark on completion, for this exact reason; only the server never did.
+        This closes the asymmetry for rows that were written before it was fixed.
+
+        Spoken only — resume is spoken-only (`_is_spoken_uri` guards it), and a
+        music track legitimately ends carrying read_position == its own duration.
+        Guarded by a CacheMeta flag, and idempotent anyway: it only touches rows
+        that still carry a position."""
+        done, _ = self.get_cache_meta('retire_finished_bookmarks')
+        if done:
+            return 0
+        try:
+            cond = ((Track.read_count_end > 0) & (Track.read_position > 0)
+                    & (_uri_starts_with_any(SPOKEN_URI_PREFIXES)
+                       | Track.uri.contains('proxycast.radiofrance.fr')
+                       | Track.uri.contains('radiofrance-podcast.net')))
+            n = Track.update(read_position=0).where(cond).execute()
+            self.set_cache_meta('retire_finished_bookmarks', 1)
+            print(f"retire_finished_bookmarks: {n} finished episodes can be replayed again")
+            return n
+        except Exception as e:
+            print(f"retire_finished_bookmarks: {e}")
+            return 0
+
     def recent_music_play_seq(self, limit=200):
         """Ids of the last `limit` MUSIC plays, ascending — the rotation ruler.
 
