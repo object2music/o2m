@@ -32,6 +32,35 @@ _GENRE_NOISE = frozenset({
 })
 _GENRE_NOISE_RE = _re.compile(r'^\d+s?$')
 
+# ── Spoken content: the uri shapes the heart can reach ─────────────────────────
+
+# `_is_spoken_uri` (o2mtomopidy) is the authority on what counts as spoken; this
+# is the same list as prefixes, because a LIKE is what a query can ask. Kept here
+# rather than imported to avoid a cycle, and deliberately a prefix list: a browse
+# row is chosen by what the uri STARTS with, never by a regex over 80k rows.
+SPOKEN_URI_PREFIXES = ('podcast+', 'youtube:video:', 'yt:', 'web:', 'xp:')
+
+
+def _uri_starts_with_any(prefixes):
+    """A peewee expression matching any of `prefixes`, OR-ed."""
+    cond = None
+    for p in prefixes:
+        c = Track.uri.startswith(p)
+        cond = c if cond is None else (cond | c)
+    return cond
+
+
+def _spoken_source_label(uri):
+    """Where a spoken item comes from, when no channel names it."""
+    u = str(uri or '')
+    if u.startswith('youtube:') or u.startswith('yt:'):
+        return 'YouTube'
+    if u.startswith('web:') or u.startswith('xp:'):
+        host = u.split(':', 1)[1]
+        host = host.split('//', 1)[-1].split('/', 1)[0]
+        return host[4:] if host.startswith('www.') else host
+    return ''
+
 
 def _normalize_genre(name):
     """Lowercase, strip accents, replace hyphens with spaces, collapse whitespace."""
@@ -625,12 +654,17 @@ class DatabaseHandler():
 
     def purge_old_episodes(self, days=365):
         """Drop never-started episodes published longer than `days` ago. Anything
-        ever listened to is kept: its row carries history and stats."""
+        ever listened to is kept: its row carries history and stats — and so is
+        anything hearted, which is a trace of its own."""
         cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
         try:
             gone = [t.uri for t in Track.select(Track.uri).where(
                 (Track.channel_id.is_null(False)) & (Track.published_at < cutoff)
-                & (Track.read_count == 0) & (Track.read_position == 0))]
+                & (Track.read_count == 0) & (Track.read_position == 0)
+                # A heart is the one trace that does not need a play behind it.
+                # Everything else here is "never started", which a favourite may
+                # legitimately be — kept for something one day, then dropped.
+                & ((Track.liked != 1) | Track.liked.is_null()))]
             if not gone:
                 return 0
             for i in range(0, len(gone), 500):
@@ -695,10 +729,15 @@ class DatabaseHandler():
 
         Spoken favourites are near-zero today — the heart writes `liked` for any uri,
         including an episode, so the row fills in as they are marked rather than
-        needing a separate mechanism."""
+        needing a separate mechanism.
+
+        The spoken side is every uri shape the heart can reach that is not a Spotify
+        track (`SPOKEN_URI_PREFIXES`), not `podcast+` alone: a YouTube video and a
+        `web:` page item are listened to, resumed and retired exactly like an
+        episode, and a heart put on one was landing in no list at all."""
         try:
             cond = ((Track.liked == 1) | (Track.option_type == 'favorites'))
-            cond = cond & (Track.uri.startswith('podcast+') if spoken
+            cond = cond & (_uri_starts_with_any(SPOKEN_URI_PREFIXES) if spoken
                            else Track.uri.startswith('spotify:track:'))
             q = (Track.select(Track.uri, Track.name, Track.album_id, Track.channel_id)
                  .where(cond)
@@ -709,10 +748,15 @@ class DatabaseHandler():
             out = []
             for t in rows[:limit]:
                 sub = ''
-                if spoken and t.channel_id:
-                    ch = PodcastChannel.get_or_none(PodcastChannel.id == t.channel_id)
-                    sub = (ch.title or '') if ch else ''
-                elif not spoken and t.album_id:
+                if spoken:
+                    if t.channel_id:
+                        ch = PodcastChannel.get_or_none(PodcastChannel.id == t.channel_id)
+                        sub = (ch.title or '') if ch else ''
+                    # A feed names its channel; a bare video has nobody to name it,
+                    # so say where it comes from rather than leave the line blank —
+                    # that is the one thing the uri does tell.
+                    sub = sub or _spoken_source_label(t.uri)
+                elif t.album_id:
                     al = Album.get_or_none(Album.id == t.album_id)
                     sub = (al.artist_name or '') if al else ''
                 out.append({'uri': t.uri, 'name': t.name or t.uri, 'sub': sub, 'image': ''})
