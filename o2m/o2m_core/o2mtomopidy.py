@@ -3680,6 +3680,22 @@ class O2mToMopidy:
         if track_finished:
             #stat.read_end = True
             stat.read_count_end += 1
+            # Finishing RETIRES the bookmark. read_position is written on every
+            # report, including the one that says "it ended", and track_started_event
+            # seeks to read_position - 10s on the next start: an item that kept the
+            # position it ended at replayed as its own last ten seconds and handed
+            # over to the next track — which is what "an info bulletin cannot be
+            # played again" actually was. Being read as a resume, it also skipped the
+            # fresh-start ad-skip. The offline player has always done this, for this
+            # exact reason; only the server never did.
+            #
+            # Spoken only: resume is guarded by _is_spoken_uri, and a music track
+            # legitimately ends carrying read_position == its own duration. This does
+            # NOT put the item back in the automatic pools — those read read_count_end,
+            # not the bookmark, so yesterday's bulletin still never comes back by
+            # itself. It only makes an explicitly chosen one play from its start.
+            if fix == False and self._is_spoken_uri(uri):
+                stat.read_position = 0
             if stat.read_count_end > 0 and stat.day_time_average != None:
                 # Same frame as read_hour (UTC): this averages listening hours and is
                 # only ever compared against them, never shown to anyone.

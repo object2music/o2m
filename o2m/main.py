@@ -240,6 +240,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"backfill_last_play_seq error: {e}")
         try:
+            o2mHandler.dbHandler.retire_finished_bookmarks()
+        except Exception as e:
+            print(f"retire_finished_bookmarks error: {e}")
+        try:
             o2mHandler.dbHandler.merge_rfshow_into_channels()
         except Exception as e:
             print(f"merge_rfshow_into_channels error: {e}")
