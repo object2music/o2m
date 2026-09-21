@@ -1767,6 +1767,53 @@ function scrollTracklistToCurrent(item) {
   container.scrollBy({ top: offset, behavior: 'smooth' });
 }
 
+/* ── Coming back to the playing track after a manual scroll ──────────────────
+   The recentring above fires once per track change and nothing else, so a list
+   scrolled by hand stayed where it was left until the next track began — which on
+   a three-minute song is a few seconds and on an hour-long episode is the rest of
+   the afternoon. It now returns on its own once the scrolling has stopped.
+
+   The gesture is what is watched, NOT the 'scroll' event: our own
+   scrollBy({behavior:'smooth'}) emits scroll events too, so a listener on those
+   would read the recentring as a user scrolling away and cancel the very thing it
+   just did. 'wheel' and 'touchmove' are the two ways a person actually scrolls
+   here, and neither can be produced by the page moving itself. They are watched on
+   the document because the scroller differs by layout (a column on desktop,
+   #scroll-area on a phone) and the gesture is the same either way.
+
+   Nothing happens while the current row is on screen: a list that is already
+   showing what plays has nothing to return to, and moving it would be a jump the
+   reader did not ask for. */
+const TL_RECENTER_MS = 15000;
+let _tlScrolledAt = 0, _tlRecenterTimer = null;
+
+function _tlRowOnScreen(item) {
+  const c = scrollableAncestor(item);
+  if (!c) return true;                       // nothing scrolls → nothing to do
+  const cr = c.getBoundingClientRect(), ir = item.getBoundingClientRect();
+  return ir.bottom > cr.top && ir.top < cr.bottom;
+}
+
+function _tlRecenterIfIdle() {
+  _tlRecenterTimer = null;
+  // A gesture landed while the timer was running: wait out the remainder rather
+  // than moving under a finger that is still going.
+  const left = TL_RECENTER_MS - (Date.now() - _tlScrolledAt);
+  if (left > 0) { _tlRecenterTimer = setTimeout(_tlRecenterIfIdle, left); return; }
+  const cur = document.querySelector('#tracklist-wrap .tl-item.current');
+  if (!cur || _tlRowOnScreen(cur)) return;
+  scrollTracklistToCurrent(cur);
+}
+
+function watchTracklistScroll() {
+  const touched = () => {
+    _tlScrolledAt = Date.now();
+    if (!_tlRecenterTimer) _tlRecenterTimer = setTimeout(_tlRecenterIfIdle, TL_RECENTER_MS);
+  };
+  document.addEventListener('wheel',     touched, { capture: true, passive: true });
+  document.addEventListener('touchmove', touched, { capture: true, passive: true });
+}
+
 const STATUS_CLASS = {
   library: 's-library', normal: 's-library',
   favorites: 's-favorites', incoming: 's-incoming',
@@ -7654,6 +7701,7 @@ async function init() {
   }
   armMediaAnchor();
   watchAudioDevices();
+  watchTracklistScroll();
   watchSheetTop();
 
   let fitTimer = null;
