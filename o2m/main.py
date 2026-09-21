@@ -2,6 +2,7 @@ import logging, subprocess, os, spotipy, json, threading, requests
 
 from mopidyapi import MopidyAPI
 from o2m_core import util
+from o2m_core import virtualbox
 from o2m_core.o2mtomopidy import O2mToMopidy
 from o2m_core.spotifyhandler import SpotifyHandler
 from time import sleep
@@ -9,6 +10,13 @@ from time import sleep
 from flask import Flask, request, session, redirect
 from flask_session import Session
 from flask_cors import CORS
+
+# Which transport carries Mopidy's playback events. Read before anything else
+# because it decides whether a websocket is opened at all.
+#   'websocket'  the mopidyapi client below (historic)
+#   'http'       pushed in-process by the Mopidy-O2M extension, to /api/event
+_EVENT_SOURCE = (os.environ.get("O2M_EVENT_SOURCE") or "websocket").strip().lower()
+_USE_WEBSOCKET = _EVENT_SOURCE == "websocket"
 
 """
     TODO :
@@ -70,7 +78,11 @@ def _install_resilient_ws_listener():
     MopidyWSClient._websocket_runner = _resilient_websocket_runner
 
 
-_install_resilient_ws_listener()
+# Only worth installing when a websocket is actually opened. Kept rather than
+# deleted so O2M_EVENT_SOURCE=websocket stays a working rollback: without them
+# that path is fragile on Mopidy 4 (see each function's docstring).
+if _USE_WEBSOCKET:
+    _install_resilient_ws_listener()
 
 
 def _install_mopidy4_model_compat():
@@ -120,7 +132,8 @@ def _install_mopidy4_model_compat():
     wsclient.deserialize_mopidy = deserialize
 
 
-_install_mopidy4_model_compat()
+if _USE_WEBSOCKET:
+    _install_mopidy4_model_compat()
 
 
 # --- Playback event transport -------------------------------------------------
@@ -134,8 +147,6 @@ _install_mopidy4_model_compat()
 #
 # Set with O2M_EVENT_SOURCE. Changing it needs only an o2m restart — no image
 # rebuild — so the switch and the rollback are both cheap.
-_EVENT_SOURCE = (os.environ.get("O2M_EVENT_SOURCE") or "websocket").strip().lower()
-
 # Filled in where the handlers are defined, which sits inside the Spotify-config
 # block: with no Spotify config there are no handlers at all, and /api/event
 # reports that rather than pretending it dispatched. That gate is pre-existing
@@ -188,7 +199,15 @@ if __name__ == "__main__":
         strer = 1
         try:
             if mopidy is None:
-                mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"], port=o2mConf["o2m"]["port_mopidy"])
+                # use_websocket=False drops the listener thread AND the client's
+                # on_event/add_callback attributes — hence the guarded
+                # registration further down. With the extension pushing events
+                # over HTTP there is nothing left for that socket to carry.
+                mopidy = MopidyAPI(host=o2mConf["o2m"]["host_mopidy"],
+                                   port=o2mConf["o2m"]["port_mopidy"],
+                                   use_websocket=_USE_WEBSOCKET)
+                print(f"Mopidy event transport: {_EVENT_SOURCE}"
+                      f" (websocket {'open' if _USE_WEBSOCKET else 'not opened'})")
                 # Fail loudly on an incomplete player rather than at the first
                 # call on a code path nobody exercised. MopidyAPI satisfies the
                 # port today; this is the guard for whatever replaces it.
@@ -216,6 +235,10 @@ if __name__ == "__main__":
             o2mHandler.spotifyHandler.warmup_cache(discover_level=dl)
         except Exception as e:
             print(f"background warmup error: {e}")
+        try:
+            o2mHandler.dbHandler.backfill_last_play_seq()
+        except Exception as e:
+            print(f"backfill_last_play_seq error: {e}")
         try:
             o2mHandler.dbHandler.merge_rfshow_into_channels()
         except Exception as e:
@@ -289,6 +312,7 @@ if __name__ == "__main__":
                 try:
                     o2mHandler.activeboxs.append(box)  #adding box to list
                     print(f"added box {box}") 
+                    o2mHandler.note_box_activation()   # newest intent: outranks the dials
                     o2mHandler.box_action(box)
                     #box.add_count()  # Incrémente le compteur de contacts pour ce box
                     return "TAG added"
@@ -346,6 +370,29 @@ if __name__ == "__main__":
                 if p:
                     ids.add(p)
         return ids
+
+    def _spotify_me(access_token):
+        """/v1/me for a raw access token → (me_dict, None) or (None, message).
+
+        The message is meant to be READ: the 403 it most often carries says nothing
+        about what to do, and the thing to do is not obvious."""
+        if not access_token:
+            return None, "No Spotify token on this instance."
+        try:
+            r = requests.get('https://api.spotify.com/v1/me',
+                             headers={'Authorization': f'Bearer {access_token}'}, timeout=8)
+        except Exception as e:
+            return None, f"Spotify unreachable: {e}"
+        if r.status_code == 403:
+            return None, ("This Spotify account is not registered for O2M's Spotify "
+                          "application. The application runs in Development Mode, where "
+                          "every account has to be added by hand in the Spotify dashboard "
+                          "(User Management) \u2014 until then Spotify refuses it on every "
+                          "endpoint, not just this page. Either add the account there, or "
+                          "sign in with one that is already registered.")
+        if r.status_code != 200:
+            return None, f"Spotify refused the account (HTTP {r.status_code})."
+        return r.json(), None
 
     def _edit_current_user():
         tok = request.cookies.get(_EDIT_COOKIE)
@@ -405,13 +452,36 @@ if __name__ == "__main__":
         per-DB, so an already-populated instance (incl. the o2m_0/o2m_1 shared prod DB)
         is never treated as fresh, and there's nothing to keep in sync."""
         from flask import jsonify, request
-        from o2m_core.o2mmodels import Playlist
+        from o2m_core.o2mmodels import Box, Playlist
         try:
             liked = o2mHandler.dbHandler.count_cached('liked')
             albums = o2mHandler.dbHandler.count_cached('albums')
             playlists = Playlist.select().count()
         except Exception:
             liked = albums = playlists = 0
+        # Boxes are what a PERSON made; the library counts are what the server fetched by
+        # itself. An instance wired to the house account caches a thousand liked tracks at
+        # its first warmup, so the library test alone declared a brand-new instance
+        # "populated" within minutes and the welcome flow closed before anyone was
+        # welcomed — measured on o2m_5: 0 boxes, 1087 liked, no wizard, and no way to
+        # reach the starter-box setup it is the only entry point to.
+        # `mopidy_box` is o2m's own bookkeeping row (created the first time something plays
+        # outside a box), never something a person made, hence INTERNAL_UIDS.
+        # Seeds are excluded on top of that: a freshly provisioned instance arrives with ten
+        # of them AND syncs its library within minutes, so counting either would have shut
+        # the wizard mid-onboarding — a reload was enough to lose it. `onboarding/setup`
+        # recognises the same foreign-playlist boxes (_ONBOARDING_FOREIGN) and is what
+        # clears them, so the two tests read the instance the same way.
+        # 'o2m_onboarding' is the marker row the setup writes to remember it ran (read as
+        # `onboarding_done` below) — bookkeeping like mopidy_box, not a box anyone made.
+        ignored = set(virtualbox.INTERNAL_UIDS) | set(_ONBOARDING_SEED_UIDS) | {'o2m_onboarding'}
+        try:
+            boxes = sum(1 for b in Box.select(Box.uid, Box.data)
+                        if b.uid not in ignored
+                        and not any(f in (b.data or '') for f in _ONBOARDING_FOREIGN)
+                        and 'spotify:recommendation:seeds' not in (b.data or ''))
+        except Exception:
+            boxes = 0
         # Spotify OAuth redirect sanity: the configured SPOTIPY_REDIRECT_URI must point at the
         # host the user is actually on, or the login round-trip lands on another instance and
         # the "connect" step can never complete. We only DETECT + report (never edit secrets).
@@ -430,11 +500,11 @@ if __name__ == "__main__":
         except Exception:
             streaming_paired = False
         return jsonify({
-            'first_launch': (liked == 0 and albums == 0 and playlists == 0),
+            'first_launch': boxes == 0 or (liked == 0 and albums == 0 and playlists == 0),
             'onboarding_done': o2mHandler.dbHandler.box_exists('o2m_onboarding'),
             'spotify_connected': _edit_current_user() is not None,
             'streaming_paired': streaming_paired,
-            'counts': {'liked': liked, 'albums': albums, 'playlists': playlists},
+            'counts': {'liked': liked, 'albums': albums, 'playlists': playlists, 'boxes': boxes},
             'redirect_ok': redirect_ok,
             'redirect_configured': cfg_redirect,
             'redirect_expected': expected_redirect,
@@ -446,6 +516,15 @@ if __name__ == "__main__":
         'spotify:playlist:4CAjrciXNfqiDdr757UwBx', 'spotify:playlist:0zM5DUb7FYRVvVjBg3ULp3',
         'spotify:playlist:4oXELBuV9B6QtxYwMdzsoE', 'spotify:playlist:2YndOajMlJlkj7x6WyevW6',
     )
+    # The boxes `o2m/samples/mysql/dump.sql` seeds into a brand-new database. They are the
+    # instance's factory content, not something a person made, and counting them as "this
+    # instance is in use" closed the welcome flow on an instance nobody had touched yet —
+    # the very case it exists for. Kept as uids because two of them (an auto box, an albums
+    # box) carry perfectly generic data and cannot be told apart by their content.
+    _ONBOARDING_SEED_UIDS = frozenset({
+        'trash_demo', 'albums_spotify', '04AD43D2204B80', 'discover_demo', 'incoming_demo',
+        'favorites_demo', '045340D2204B80', 'podcast_unfinished', 'recommandation_genre_demo',
+    })
     # Generic starter boxes that work for any authenticated user (no foreign content).
     _ONBOARDING_EXAMPLES = [
         {'description': 'Auto',        'data': 'auto:library\ninfos:library', 'option_type': 'library', 'option_sort': 'smart'},
@@ -566,6 +645,40 @@ if __name__ == "__main__":
         #boxes = json.dumps(boxes)
         return (boxes)
 
+    # ── Activating an OBJECT (album, artist) the way a box is activated ──
+    # Deliberately NOT /api/box: that route is uid-keyed, and get_box_by_uid opens
+    # a row for any uid it does not know — one tap on a mosaic tile would leave a
+    # junk box behind. The decision and the virtual Box live in
+    # o2m_core/virtualbox.py; these two are the wire.
+
+    @api.route('/api/object_toggle')
+    def api_object_toggle():
+        from flask import jsonify
+        uri  = (request.args.get('uri') or '').strip()
+        mode = (request.args.get('mode') or 'toogle').strip()
+        # The caller passes the name it already has on screen, so the fill does not
+        # have to look up what the mosaic just displayed.
+        name = (request.args.get('name') or '').strip()
+        try:
+            r = virtualbox.toggle(o2mHandler, uri, mode=mode, name=name)
+            return jsonify(r), (200 if r.get('ok') else 400)
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e), 'uri': uri}), 500
+
+    @api.route('/api/active_objects')
+    def api_active_objects():
+        """What is lit in the Boxes column, in ONE call: the active objects
+        (`items`) and the uids of the active stored boxes (`boxes`). A mosaic
+        holds hundreds of tiles and each asking for its own state — as the boxes
+        LIST does, one request per box — would be hundreds of requests per
+        refresh."""
+        from flask import jsonify
+        try:
+            return jsonify({'items': virtualbox.active_objects(o2mHandler),
+                            'boxes': virtualbox.active_box_uids(o2mHandler)})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     #Return a single box's data without triggering playback (used by spotdl cache service)
     @api.route('/api/newrecent')
     def api_newrecent():
@@ -644,6 +757,31 @@ if __name__ == "__main__":
                     results['podcasts'] = (hit.get('episodes') or []) + (results.get('podcasts') or [])
         except Exception as e:
             pass
+        # Any other pasted page: read it and show what it holds. Same gesture as
+        # the radiofrance.fr block above, generalised — a page announces nothing
+        # about itself, so the only way to answer "what is in there" is to look.
+        # Kept last and guarded by first_page: it is one live http fetch.
+        try:
+            from o2m_core import webmedia
+            from o2m_core import radiofrance as _rfm
+            if first_page and webmedia.is_page_url(q) and not _rfm.is_rf_url(q):
+                found = webmedia.find_media(q, limit=10, timeout=8)
+                if found.get('items'):
+                    page = {'uri': webmedia.as_uri(q), 'name': found.get('title') or q,
+                            'sub': f"{len(found['items'])} media on this page",
+                            'source': 'web', 'kind': 'web'}
+                    results['podcast_channels'] = [page] + (results.get('podcast_channels') or [])
+                    results['podcasts'] = [
+                        {'uri': it['uri'], 'name': it.get('name') or it['uri'], 'source': 'web'}
+                        for it in found['items']] + (results.get('podcasts') or [])
+                elif found.get('reason'):
+                    # Say WHY. 'challenge' means the site refused an automated
+                    # reader — nothing the user types differently will help, and
+                    # silence here reads as "there is nothing on that page".
+                    results['web_page'] = {'url': q, 'reason': found['reason'],
+                                           'message': found.get('error') or ''}
+        except Exception as e:
+            print(f"api_search(web {q}): {e}")
         try:
             results['spotify'] = (o2mHandler.spotifyHandler.search_music(q) if first_page
                                   else {'tracks': [], 'artists': [], 'albums': []})
@@ -758,23 +896,135 @@ if __name__ == "__main__":
 
     @api.route('/api/library_browse')
     def api_library_browse():
-        """Cached library listings for the box-content browser:
-        kind=playlists|albums|artists. Rows are ready-to-pick (uri/name/sub/image).
-        Empty when the Spotify cache hasn't been warmed up yet."""
+        """Cached library listings, for the box-content browser and the Browse modal:
+        kind=playlists|albums|artists|favorites|podfavorites|podrecent. Rows are
+        ready to use (uri/name/sub/image). Empty when the Spotify cache hasn't been
+        warmed up yet.
+
+        The favourites kinds and podrecent page (limit/offset + has_more): there are
+        ~1,100 favourites and thousands of listened episodes, past what one list
+        should hand over at once."""
         from flask import jsonify
         kind = (request.args.get('kind') or '').strip()
         db = o2mHandler.dbHandler
         try:
+            # 500, not 200: the Full view's mosaic asks for the whole album or
+            # artist library in one request, because its filter field has to
+            # search what is not on screen to be worth anything.
+            limit = max(1, min(int(request.args.get('limit') or 50), 500))
+        except Exception:
+            limit = 50
+        try:
+            offset = max(0, int(request.args.get('offset') or 0))
+        except Exception:
+            offset = 0
+        try:
+            if kind in ('favorites', 'podfavorites'):
+                rows, more = db.get_favorite_rows(spoken=(kind == 'podfavorites'),
+                                                  limit=limit, offset=offset)
+                return jsonify({'items': rows, 'has_more': more,
+                                'limit': limit, 'offset': offset})
+            if kind == 'podrecent':
+                rows, more = db.get_recent_episode_rows(limit=limit, offset=offset)
+                return jsonify({'items': rows, 'has_more': more,
+                                'limit': limit, 'offset': offset})
+            if kind in ('albums', 'artists'):
+                # Paged like the favourites above: the Full view's mosaic asks for
+                # the whole library at once (248 albums here), which is past what
+                # the 50-row default was sized for.
+                rows, more = (db.get_saved_albums(limit=limit, offset=offset) if kind == 'albums'
+                              else db.get_followed_artists(limit=limit, offset=offset))
+                return jsonify({'items': rows, 'has_more': more,
+                                'limit': limit, 'offset': offset})
             if kind == 'playlists':
                 rows = [{'uri': p['uri'], 'name': p['name'], 'sub': '', 'image': ''}
                         for p in db.get_playlists_for_select(owner_id=getattr(o2mHandler, 'username', None))]
-            elif kind == 'albums':
-                rows = db.get_saved_albums()
-            elif kind == 'artists':
-                rows = db.get_followed_artists()
             else:
                 return jsonify({'error': 'unknown kind'}), 400
             return jsonify({'items': rows})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/podcast_episodes')
+    def api_podcast_episodes():
+        """Episodes of one feed, for the podcast view.
+
+        Not mopidy's browse: a backend is only registered as browsable when it has a
+        root directory, and mopidy-podcast's is None unless `browse_root` is set —
+        which it is not here, so core._browse returned [] before ever reaching the
+        provider. O2M parses feeds itself anyway (get_podcast_from_url), and the
+        catalogue already holds the episodes of every box-referenced feed, so this
+        answers from the DB first and only falls back to the network.
+        """
+        from flask import jsonify
+        uri = (request.args.get('uri') or '').strip()
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        try:
+            limit = max(1, min(int(request.args.get('limit') or 50), 200))
+        except Exception:
+            limit = 50
+        try:
+            offset = max(0, int(request.args.get('offset') or 0))
+        except Exception:
+            offset = 0
+        db = o2mHandler.dbHandler
+        live_names = {}
+        feed = db.podcast_uri_remove_max_results(uri)
+        channel = feed.split('+', 1)[1] if feed.startswith('podcast+') else feed
+        try:
+            uris = db.get_episodes_by_channel(channel, limit=limit + offset + 1)
+            # A thin catalogue is not an answer, it is a fragment. The fallback used
+            # to fire only on ZERO rows, so a channel the cache happens to hold two
+            # episodes of showed two — measured here: 20 channels hold exactly one
+            # episode, 27 hold two, 11 hold three, while their feeds hold dozens.
+            # Fewer rows than the page asked for means the cache cannot be the whole
+            # channel, so the feed is read and the two are merged: the feed's own
+            # order is the spine (it is the authority on what the channel holds
+            # now), and the catalogued episodes it no longer lists — older ones,
+            # possibly started — are kept after it rather than lost.
+            if offset == 0 and len(uris) < limit:
+                try:
+                    shows = o2mHandler.get_podcast_from_url(channel) or []
+                    live = [u for u in (getattr(r, 'uri', None) for r in shows) if u]
+                    # An episode the catalogue has never seen has no Track row to
+                    # read a name from, and the guid tail is a uuid — the feed's own
+                    # title is the only one there is.
+                    live_names = {getattr(r, 'uri', None): getattr(r, 'name', None)
+                                  for r in shows if getattr(r, 'uri', None)}
+                except Exception as e:
+                    print(f"podcast_episodes(live {channel}): {e}")
+                    live = []
+                if live:
+                    # Not by uri: the same episode reaches us spelled two ways —
+                    # Radio France appends a '?stationId=1' to the enclosure in the
+                    # feed while the catalogue holds the bare url, and merging on the
+                    # uri printed that episode twice. The media FILE is the identity.
+                    # When both spellings exist the catalogued one is kept: it is the
+                    # one carrying the resume position and the play history.
+                    def _ep_key(u):
+                        guid = u.split('#', 1)[1] if '#' in u else u
+                        return guid.split('?', 1)[0]
+                    cached_by_key = {_ep_key(u): u for u in uris}
+                    merged, seen = [], set()
+                    for u in live + uris:
+                        k = _ep_key(u)
+                        if k in seen:
+                            continue
+                        seen.add(k)
+                        merged.append(cached_by_key.get(k, u))
+                    uris = merged
+            more = len(uris) > offset + limit
+            rows = []
+            for u in uris[offset:offset + limit]:
+                t = db.get_stat_by_uri(u)
+                rows.append({'uri': u,
+                             'name': (getattr(t, 'name', None) or live_names.get(u)
+                                      or u.split('#')[-1])[:200],
+                             'sub': (getattr(t, 'published_at', None) or ''),
+                             'image': ''})
+            return jsonify({'items': rows, 'has_more': more,
+                            'limit': limit, 'offset': offset})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -1060,6 +1310,7 @@ if __name__ == "__main__":
         if dl != None:
             o2mHandler.discover_level = int(dl)
             o2mHandler.discover_level_on = True
+            o2mHandler.note_ui_override('dl')   # newest intent: outranks the active box
 
             #Should we relaunch when dl is changed?
             state = o2mHandler.mopidyHandler.playback.get_state()
@@ -1087,7 +1338,12 @@ if __name__ == "__main__":
     #Get the value from tlid or uri in list
     @api.route('/api/track_status')
     def api_track_status():
-        uri = request.args.get('uri')
+        # The uri a client holds is the one MOPIDY reports, and that is not always
+        # the one the database knows: _resolve_uri substitutes a downloaded
+        # Spotify track's file:// path and a 'web:' media's signed CDN url. Ask
+        # under the canonical uri or every lookup below misses — which is how an
+        # 'web:' track came to show no status at all.
+        uri = o2mHandler.get_spotify_uri(request.args.get('uri'))
         try:
             # _track_info is authoritative for current session: checked first so reco/replaced
             # tracks return the right option_type even before (or without) a DB stat entry.
@@ -1245,6 +1501,35 @@ if __name__ == "__main__":
         threading.Thread(target=_run, daemon=True).start()
         return "genre warmup started"
 
+    @api.route('/api/warmup_library')
+    def api_warmup_library():
+        """Re-read the Spotify library — saved albums and followed artists — and
+        RECONCILE it: what Spotify no longer lists is unsaved/unfollowed here.
+
+        The nightly warmup does the same thing on its TTL; this is the button for
+        when you have just tidied your library on Spotify and want it to land now.
+        It answers with what it cleared, because unsaving something the user did
+        not unsave here is exactly the kind of change that should not be silent.
+        Synchronous on purpose, for the same reason."""
+        from flask import jsonify
+        sp, db = o2mHandler.spotifyHandler, o2mHandler.dbHandler
+        before_a = set(db.get_saved_album_ids())
+        before_f = set(db.get_followed_artist_ids())
+        try:
+            db.set_cache_meta('warmup_albums_at', 0)
+            sp.warmup_saved_albums()
+            sp.get_all_followed_artists()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        after_a = set(db.get_saved_album_ids())
+        after_f = set(db.get_followed_artist_ids())
+        return jsonify({
+            'albums':  {'kept': len(after_a), 'unsaved': sorted(before_a - after_a),
+                        'added': sorted(after_a - before_a)},
+            'artists': {'kept': len(after_f), 'unfollowed': sorted(before_f - after_f),
+                        'added': sorted(after_f - before_f)},
+        })
+
     @api.route('/api/diag/genres')
     def api_diag_genres():
         """Synchronous genre diagnostic — runs warmup and returns JSON results."""
@@ -1301,7 +1586,7 @@ if __name__ == "__main__":
     @api.route('/api/track_tags')
     def api_track_tags():
         from flask import jsonify
-        uri = request.args.get('uri', '')
+        uri = o2mHandler.get_spotify_uri(request.args.get('uri', ''))
         if not uri:
             return jsonify([])
         tags = o2mHandler.dbHandler.get_track_genres(uri)  # [(name, weight)]
@@ -1368,13 +1653,52 @@ if __name__ == "__main__":
     @api.route('/api/mood', methods=['GET'])
     def api_mood_get():
         from flask import jsonify
-        dist = o2mHandler.dbHandler.get_mood_distribution()
-        pending = o2mHandler.dbHandler.count_tracks_without_mood()
+        # ?light=1 skips the two aggregates over the whole track table, which cost
+        # ~590ms against the shared production database. The UI polls this to catch
+        # a box activated elsewhere (an NFC tap, another device), and neither the
+        # distribution nor the pending count is used for that.
+        light = request.args.get('light') in ('1', 'true')
+        dist = {} if light else o2mHandler.dbHandler.get_mood_distribution()
+        pending = 0 if light else o2mHandler.dbHandler.count_tracks_without_mood()
+        # What is ACTUALLY driving the mix right now. The three values above are the
+        # session's — the dials' own state — and a box that forces a mood or a
+        # discover level outranks them until a dial is touched. Without this the
+        # matrix showed 0.5/0.5/5 while the mix ran on the box's "calm", which is
+        # the control lying about what it controls.
+        # Several boxes can be active with different settings, so "what is in effect"
+        # is only well defined relative to a track: the one being played. That is the
+        # same box ambient_settings uses for the end-of-track recommendations, so the
+        # dials show what the next additions will follow. Falls back to the first
+        # active box when nothing is playing.
+        eff_e, eff_v, eff_dl, forced = (o2mHandler.mood_energy, o2mHandler.mood_valence,
+                                        o2mHandler.discover_level, None)
+        try:
+            cur = None
+            try:
+                t = o2mHandler.mopidyHandler.playback.get_current_track()
+                cur = getattr(t, 'uri', None)
+            except Exception:
+                cur = None
+            box = o2mHandler.get_active_box_for_playback(cur, None) if cur else None
+            if box is None and o2mHandler.activeboxs:
+                box = o2mHandler.activeboxs[0]
+            if box is not None:
+                eff_e, eff_v = o2mHandler.effective_mood(box)
+                eff_dl = o2mHandler.effective_dl(box)
+                if (eff_e, eff_v, eff_dl) != (o2mHandler.mood_energy, o2mHandler.mood_valence,
+                                              o2mHandler.discover_level):
+                    forced = box.description or box.uid
+        except Exception as e:
+            print(f"api_mood_get effective: {e}")
         return jsonify({
             'energy':          o2mHandler.mood_energy,
             'valence':         o2mHandler.mood_valence,
             'genres':          o2mHandler.mood_genres,
             'discover_level':  o2mHandler.discover_level,
+            'effective_energy':  eff_e,
+            'effective_valence': eff_v,
+            'effective_dl':      eff_dl,
+            'forced_by':         forced,
             'distribution':    dist,
             'tracks_pending':  pending,
         })
@@ -1391,6 +1715,13 @@ if __name__ == "__main__":
             o2mHandler.mood_genres = data['genres'] if isinstance(data['genres'], list) else []
         if 'discover_level' in data:
             o2mHandler.discover_level = int(data['discover_level'])
+        # A dial gesture is the newest intent and outranks the active box's own
+        # mood/DL — until the next object is put down. Either axis counts: the
+        # matrix sends both, the BASIC mood dial can send one.
+        if 'energy' in data or 'valence' in data:
+            o2mHandler.note_ui_override('mood')
+        if 'discover_level' in data:
+            o2mHandler.note_ui_override('dl')
         # apply=false → store the settings only (no rebuild, no auto-box launch).
         # Used by the /basic view when no actuator is on: the dials set the values
         # that the next Music launch will use.
@@ -1407,21 +1738,61 @@ if __name__ == "__main__":
             return jsonify({'status': 'boxes_active', 'tracks_added': 0})
         return jsonify({'status': 'ok', 'tracks_added': added})
 
+    @api.route('/api/played_meta')
+    def api_played_meta():
+        """Names for tracks Mopidy holds under a uri that is not their own.
+
+        `_resolve_uri` hands Mopidy something it can actually open — a file:// path
+        for a downloaded Spotify track, a signed CDN url for a 'web:' media — and
+        Mopidy then reports THAT as the track's uri, with no name at all for a
+        plain stream. The page reads its tracklist straight from Mopidy, so an
+        'web:' replay showed its CDN address where its title belongs.
+
+        The database knows the title; only the mapping back was missing. Answers
+        under the uri the caller asked with, and says nothing about uris that were
+        not substituted — so the client can tell "no translation needed" from "not
+        known here" without a second call.
+        """
+        from flask import jsonify
+        from o2m_core.o2mmodels import Track
+        asked = request.args.getlist('uri')[:60]
+        out = {}
+        for played in asked:
+            canonical = o2mHandler.get_spotify_uri(played)
+            if not canonical or canonical == played:
+                continue
+            try:
+                row = Track.get_or_none(Track.uri == canonical)
+            except Exception:
+                row = None
+            out[played] = {'uri': canonical,
+                           'name': (getattr(row, 'name', None) or '') if row else '',
+                           'length': (getattr(row, 'duration_ms', None) or None) if row else None}
+        return jsonify(out)
+
     @api.route('/api/track_features')
     def api_track_features():
         from flask import jsonify
         from o2m_core.o2mmodels import Track
-        uris = request.args.getlist('uri')[:40]
-        if not uris:
+        asked = request.args.getlist('uri')[:40]
+        if not asked:
             return jsonify({})
         try:
+            # Look up the canonical uri, answer under the one the client asked
+            # with: it matches the reply against its own rows, which carry the
+            # uri Mopidy reported.
+            back = {}
+            for a in asked:
+                back.setdefault(o2mHandler.get_spotify_uri(a), []).append(a)
             result = {}
             for t in Track.select(Track.uri, Track.energy, Track.valence, Track.popularity).where(
-                Track.uri.in_(uris) & Track.energy.is_null(False)
+                Track.uri.in_(list(back)) & Track.energy.is_null(False)
             ):
-                result[t.uri] = {'energy': float(t.energy), 'valence': float(t.valence)}
+                row = {'energy': float(t.energy), 'valence': float(t.valence)}
                 if t.popularity is not None:
-                    result[t.uri]['popularity'] = float(t.popularity)
+                    row['popularity'] = float(t.popularity)
+                for a in back.get(t.uri, [t.uri]):
+                    result[a] = dict(row)
             return jsonify(result)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -1432,7 +1803,10 @@ if __name__ == "__main__":
     def api_track_features_set():
         from flask import jsonify
         data = request.get_json(silent=True) or {}
-        uri = (data.get('uri') or '').strip()
+        # Canonical uri: a mood edit is a WRITE, and update_track_features_manual
+        # also stamps mood_edited_at as a lock. Written against a signed CDN url it
+        # would lock a row nobody will ever look up again.
+        uri = (o2mHandler.get_spotify_uri(data.get('uri')) or '').strip()
         if not uri:
             return jsonify({'error': 'uri required'}), 400
         def _f01(x):
@@ -1464,7 +1838,7 @@ if __name__ == "__main__":
     @api.route('/api/track_saved')
     def api_track_saved():
         from flask import jsonify
-        uri = (request.args.get('uri') or '').strip()
+        uri = (o2mHandler.get_spotify_uri(request.args.get('uri')) or '').strip()
         if not uri or not uri.startswith('spotify:track:'):
             return jsonify({'saved': None})
         try:
@@ -1478,24 +1852,87 @@ if __name__ == "__main__":
     def api_track_favorite():
         from flask import jsonify
         data = request.get_json(silent=True) or {}
-        uri = (data.get('uri') or '').strip()
+        # Canonical uri, and here it is not cosmetic: set_track_liked INSERTS the
+        # row it cannot find, so liking a track Mopidy holds under a substituted
+        # uri would open a Track row keyed on a signed CDN url — a row that means
+        # nothing tomorrow, and a like quietly lost.
+        uri = (o2mHandler.get_spotify_uri(data.get('uri')) or '').strip()
         favorite = bool(data.get('favorite'))
         if not uri:
             return jsonify({'error': 'uri required'}), 400
         result = {'ok': True, 'uri': uri, 'favorite': favorite}
-        # Local DB
-        try:
-            o2mHandler.dbHandler.set_track_liked(uri, favorite)
-            result['liked_local'] = favorite
-        except Exception as e:
-            result['liked_local_error'] = str(e)
-        # Spotify (compte serveur), seulement pour les morceaux Spotify
+        # Spotify FIRST, and its refusal is the answer. The local flag is only the
+        # mirror of the Spotify library; writing it after a refusal is exactly how
+        # the two drift apart with nothing on screen to say so — the UI reported
+        # "added to library" over a `*_spotify_error` nobody read. Same order as
+        # /api/track_playlist, which had it right from the start.
+        # A track that is not a Spotify one (a podcast episode, a local file, a web
+        # page item) has no other side: there the local flag IS the library.
         if uri.startswith('spotify:track:'):
             try:
                 o2mHandler.spotifyHandler.set_track_saved(uri, favorite)
                 result['liked_spotify'] = favorite
             except Exception as e:
-                result['liked_spotify_error'] = str(e)
+                return jsonify({'ok': False, 'uri': uri,
+                                'error': f'Spotify refused: {e}'}), 502
+        try:
+            o2mHandler.dbHandler.set_track_liked(uri, favorite)
+            result['liked_local'] = favorite
+        except Exception as e:
+            result['liked_local_error'] = str(e)
+        return jsonify(result)
+
+    # ─── The heart's other pole: an explicit rejection ───
+    @api.route('/api/track_dislike', methods=['POST'])
+    @require_edit_auth
+    def api_track_dislike():
+        """Mark a track as explicitly rejected (or clear it), and drop it from the
+        running tracklist.
+
+        The point of the gesture is speed: skips are only read statistically — a
+        podcast episode has to be abandoned twice before the resume pool gives up
+        on it — and this says it once and for all. The selection stops serving it
+        (every pool filters Track.disliked), its popularity is forced to 0, and the
+        copy already queued is removed rather than left to play tonight.
+        """
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        # Canonical uri, and for the same reason as /api/track_favorite: this INSERTS
+        # the row it cannot find, so a dislike on a substituted uri (a downloaded
+        # Spotify file, an 'web:' item's signed CDN url) would open a Track row that
+        # means nothing tomorrow — and the rejection would be lost.
+        uri = (o2mHandler.get_spotify_uri(data.get('uri')) or '').strip()
+        disliked = bool(data.get('disliked', True))
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        result = {'ok': True, 'uri': uri, 'disliked': disliked}
+        # A disliked track cannot stay in the Spotify library: the liked-tracks
+        # warmup mirrors that library back onto Track.liked, so it would re-like the
+        # row on the next sync and the track would read as both. Only ever done for
+        # a track that WAS a favourite — a dislike on anything else says nothing
+        # about the library and must not touch it.
+        was_liked = False
+        try:
+            was_liked = o2mHandler.dbHandler.is_track_liked_local(uri)
+        except Exception:
+            pass
+        if disliked and was_liked and uri.startswith('spotify:track:'):
+            try:
+                o2mHandler.spotifyHandler.set_track_saved(uri, False)
+                result['liked_spotify'] = False
+            except Exception as e:
+                result['spotify_error'] = str(e)
+        try:
+            o2mHandler.dbHandler.set_track_disliked(uri, disliked)
+            if disliked:
+                result['liked_local'] = False
+        except Exception as e:
+            return jsonify({'ok': False, 'uri': uri, 'error': str(e)}), 500
+        if disliked:
+            try:
+                result.update(o2mHandler.drop_track_from_tracklist(uri))
+            except Exception as e:
+                result['tracklist_error'] = str(e)
         return jsonify(result)
 
     # ─── Add an album to the library (saved albums) : DB locale + Spotify ───
@@ -1509,12 +1946,18 @@ if __name__ == "__main__":
         if not uri.startswith('spotify:album:'):
             return jsonify({'error': 'spotify album uri required'}), 400
         result = {'ok': True, 'uri': uri, 'saved': saved}
+        # Spotify FIRST, and its refusal is the answer. The local flag is only the
+        # mirror of the Spotify library; writing it after a refusal is exactly how
+        # the two drift apart with nothing on screen to say so — the UI reported
+        # "added to library" over a `*_spotify_error` nobody read. Same order as
+        # /api/track_playlist, which had it right from the start.
         try:
             o2mHandler.spotifyHandler.set_album_saved(uri, saved)
             result['saved_spotify'] = saved
         except Exception as e:
-            result['saved_spotify_error'] = str(e)
-        # Local DB marker, kept in sync with the Spotify action.
+            return jsonify({'ok': False, 'uri': uri,
+                            'error': f'Spotify refused: {e}'}), 502
+        # Local DB marker — reached only once Spotify has accepted.
         try:
             aid = uri.rsplit(':', 1)[1]
             if saved:
@@ -1548,11 +1991,18 @@ if __name__ == "__main__":
         if not uri.startswith('spotify:artist:'):
             return jsonify({'error': 'spotify artist uri required'}), 400
         result = {'ok': True, 'uri': uri, 'followed': followed}
+        # Spotify FIRST, and its refusal is the answer. The local flag is only the
+        # mirror of the Spotify library; writing it after a refusal is exactly how
+        # the two drift apart with nothing on screen to say so — the UI reported
+        # "added to library" over a `*_spotify_error` nobody read. Same order as
+        # /api/track_playlist, which had it right from the start.
         try:
             o2mHandler.spotifyHandler.set_artist_followed(uri, followed)
             result['followed_spotify'] = followed
         except Exception as e:
-            result['followed_spotify_error'] = str(e)
+            return jsonify({'ok': False, 'uri': uri,
+                            'error': f'Spotify refused: {e}'}), 502
+        # Local DB marker — reached only once Spotify has accepted.
         try:
             aid = uri.rsplit(':', 1)[1]
             if followed:
@@ -1588,7 +2038,7 @@ if __name__ == "__main__":
     @api.route('/api/track_playlists')
     def api_track_playlists():
         from flask import jsonify
-        uri = (request.args.get('uri') or '').strip()
+        uri = (o2mHandler.get_spotify_uri(request.args.get('uri')) or '').strip()
         if not uri:
             return jsonify([])
         try:
@@ -1647,7 +2097,8 @@ if __name__ == "__main__":
     @api.route('/api/track_info')
     def api_track_info():
         from flask import jsonify
-        uri = request.args.get('uri')
+        # Canonical uri, for the same reason as /api/track_status above.
+        uri = o2mHandler.get_spotify_uri(request.args.get('uri'))
         if not uri:
             return jsonify({})
         try:
@@ -1708,13 +2159,26 @@ if __name__ == "__main__":
             # fall back to its name. Still strictly live: nothing persisted.
             if not source and info and info.get('box_id'):
                 try:
-                    _b = o2mHandler.dbHandler.get_box_by_uid(info['box_id'])
-                    source = (getattr(_b, 'description', '') or info['box_id']).strip()
+                    source = o2mHandler.box_label(info['box_id'])
                 except Exception:
                     pass
 
+            # `local_uri` means the SERVER holds this track as a file — spotdl put it
+            # in the cache, or it is local media. It is what _resolve_uri substitutes
+            # into the tracklist, so the audio comes off the disk instead of being
+            # streamed. (It says nothing about a phone's own offline copy, which
+            # lives in the device's IndexedDB and is deliberately never written
+            # here.) The row and the panel both name it, so it stops being a bare
+            # 'local' chip nobody could decode.
+            has_file = bool(getattr(stat, 'local_uri', None)) if stat else False
+            if uri.startswith(('local:', 'file:')):
+                has_file = True
             return jsonify({
                 'option_type':    opt,
+                # The header truncates the title to one line; every detail view is
+                # where it must be readable whole, so it travels with the payload.
+                'name':           (getattr(stat, 'name', None) or '') if stat else '',
+                'local':          has_file,
                 'read_end':       round(float(stat.read_end), 2) if stat else 0.0,
                 'read_count_end': int(stat.read_count_end) if stat else 0,
                 'mood':           str(stat.mood) if stat and stat.mood and stat.mood != '_' else None,
@@ -1722,6 +2186,7 @@ if __name__ == "__main__":
                 'valence':        round(float(stat.valence), 3) if stat and stat.valence is not None else None,
                 'popularity':     round(float(stat.popularity), 3) if stat and stat.popularity is not None else None,
                 'liked':          bool(stat.liked) if stat else False,
+                'disliked':       bool(getattr(stat, 'disliked', 0)) if stat else False,
                 'library':        library,
                 'source':         source,
                 'published':      (getattr(stat, 'published_at', None) or '') if stat else '',
@@ -2103,6 +2568,293 @@ if __name__ == "__main__":
         except Exception:
             return '', 404
 
+    # ─── Offline: bytes for a listening device ────────────────────────────────
+    # See o2m_core/offline.py for why this exists at all and what it can and
+    # cannot serve. The short version: a phone can only hold a track the server
+    # holds as a FILE, so music goes through spotdl's cache and spoken content
+    # is streamed back from its feed.
+
+    @api.route('/api/offline/plan', methods=['POST'])
+    def api_offline_plan():
+        """Per-uri availability for the device's download pass.
+
+        Also the moment the queue is fed: a music track with no file is queued
+        for spotdl here rather than through a separate call, because "tell me
+        what you have" and "then go and get the rest" are one intent and
+        splitting them let a client ask and never queue."""
+        from flask import jsonify
+        from o2m_core import offline
+        data = request.get_json(silent=True) or {}
+        uris = [u for u in (data.get('uris') or []) if isinstance(u, str) and u]
+        if not uris:
+            return jsonify({'items': [], 'queued': []})
+        items = []
+        for uri in uris[:500]:
+            try:
+                items.append(offline.describe(uri, db=o2mHandler.dbHandler, config=o2mConf))
+            except Exception as e:
+                items.append({'uri': uri, 'kind': 'other', 'state': 'unavailable',
+                              'bytes': 0, 'reason': str(e)})
+        # Where the server left off, and the pre-roll to skip on a fresh start.
+        # Without these the device would restart every half-heard episode from
+        # zero the moment it went offline — the two sides would hold the same
+        # audio and disagree about where the listener is in it.
+        for i in items:
+            try:
+                stat = (o2mHandler.dbHandler.get_stat_by_uri(i['uri'])
+                        if o2mHandler.dbHandler.stat_exists(i['uri']) else None)
+                i['position'] = int(getattr(stat, 'read_position', 0) or 0) if stat else 0
+                i['length'] = int(getattr(stat, 'duration_ms', 0) or 0) if stat else 0
+            except Exception:
+                i['position'], i['length'] = 0, 0
+            try:
+                i['ad_skip'] = int(o2mHandler.ad_skip_ms(i['uri']) or 0) \
+                    if i['kind'] == 'spoken' else 0
+            except Exception:
+                i['ad_skip'] = 0
+
+        missing = [i['uri'] for i in items if i['state'] == 'pending']
+
+        # Read the queue BEFORE touching it. Queueing first destroyed the very
+        # answer this needs: request_offline would flip a 'failed' row back to
+        # 'pending', so the give-up was reported as "still coming" and the
+        # client polled it back into the queue for ever.
+        try:
+            states = o2mHandler.dbHandler.offline_request_states(missing)
+        except Exception:
+            states = {}
+        max_tries = o2mHandler.dbHandler.OFFLINE_MAX_TRIES
+        retry = bool(data.get('retry_failed'))
+        for i in items:
+            if states.get(i['uri']) == 'failed' and not retry:
+                i['state'] = 'unavailable'
+                i['reason'] = 'spotdl could not fetch it'
+
+        queued = []
+        if data.get('fetch_missing', True):
+            try:
+                queued = o2mHandler.dbHandler.request_offline(missing, retry_failed=retry)
+            except Exception as e:
+                print(f"api_offline_plan(queue): {e}")
+        # Asked for a retry but the row is spent: say so rather than promising.
+        for i in items:
+            if i['state'] == 'pending' and states.get(i['uri']) == 'failed' \
+                    and i['uri'] not in queued:
+                i['state'] = 'unavailable'
+                i['reason'] = f'spotdl gave up after {max_tries} tries'
+        return jsonify({'items': items, 'queued': queued})
+
+    @api.route('/api/audio')
+    def api_audio():
+        """The audio bytes behind one uri: a file we hold, or an episode we fetch.
+
+        Range is honoured for files (`send_file(conditional=True)`) because a
+        media element asks for one before it will accept a stream at all. The
+        remote case is a straight passthrough of the CDN's own response,
+        Range header included, so a resumed download stays a resumed download.
+        """
+        from flask import send_file, Response, stream_with_context
+        from o2m_core import offline
+        from urllib.parse import urlparse
+        import urllib.request as _u
+        uri = (request.args.get('uri') or '').strip()
+        if not uri:
+            return '', 400
+
+        path = offline.local_file_for(uri, db=o2mHandler.dbHandler, config=o2mConf)
+        if path and os.path.isfile(path):
+            resp = send_file(path, mimetype=offline.mime_for(path), conditional=True)
+            resp.headers['Cache-Control'] = 'private, max-age=86400'
+            return resp
+
+        url, _size = offline.episode_media_url(uri)
+        if not url:
+            return '', 404
+        headers = {'User-Agent': 'o2m/1.0'}
+        rng = request.headers.get('Range')
+        if rng:
+            headers['Range'] = rng
+        try:
+            up = _u.urlopen(_u.Request(url, headers=headers), timeout=20)
+        except Exception as e:
+            print(f"api_audio({uri}): {e}")
+            return '', 502
+        status = getattr(up, 'status', 200) or 200
+        out = {'Content-Type': up.headers.get('Content-Type')
+                               or offline.mime_for(urlparse(url).path),
+               'Accept-Ranges': 'bytes'}
+        for h in ('Content-Length', 'Content-Range'):
+            if up.headers.get(h):
+                out[h] = up.headers[h]
+
+        def _pump():
+            try:
+                while True:
+                    chunk = up.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                try:
+                    up.close()
+                except Exception:
+                    pass
+        return Response(stream_with_context(_pump()), status=status, headers=out)
+
+    @api.route('/api/offline/plays', methods=['POST'])
+    def api_offline_plays():
+        """Plays that happened on a device while it had no network.
+
+        Deliberately NOT /api/event. That path also runs
+        `add_reco_after_track_read`, which appends a recommendation to the
+        SERVER tracklist for every finished track — replaying an evening of
+        offline listening through it would push a dozen tracks into whatever is
+        playing now. Stats are the only thing an offline play can honestly
+        report, so stats are the only thing this writes.
+
+        Each play carries its own timestamp: the hourly habits are read from
+        `stats_raw.read_hour`, so crediting a flush at reconnection time would
+        teach the selector that the listener listens on the commute home rather
+        than on the train.
+        """
+        from flask import jsonify
+        from types import SimpleNamespace
+        import datetime as _dt
+        data = request.get_json(silent=True) or {}
+        # Two kinds of record, and the server already treats them the same way:
+        # online, `track_playback_paused` is wired to the SAME handler as
+        # `ended`, so a pause is simply a play reported at its position. A
+        # bookmark is therefore a play with `finished` false — it updates
+        # read_position (what resume reads) without entering the raw log.
+        plays = list(data.get('plays') or []) + [
+            dict(b, partial=True) for b in (data.get('positions') or [])]
+        written, skipped, logged = 0, 0, 0
+        for p in plays[:200]:
+            uri = (p.get('uri') or '').strip()
+            if not uri:
+                continue
+            length = int(p.get('length') or 0)
+            position = int(p.get('position') or 0)
+            if length and position / length < 0.05:
+                skipped += 1
+                continue
+            # Pass the track's CURRENT lifecycle state back in: update_stat_track
+            # writes option_type from its argument, so an empty one would erase
+            # the classification of every track played offline.
+            option_type = ''
+            try:
+                if o2mHandler.dbHandler.stat_exists(uri):
+                    option_type = o2mHandler.dbHandler.get_stat_by_uri(uri).option_type or ''
+            except Exception:
+                pass
+            track = SimpleNamespace(uri=uri, name=p.get('name'), length=length or None,
+                                    track_no=None)
+            try:
+                o2mHandler.update_stat_track(track, position, option_type, '')
+            except Exception as e:
+                print(f"api_offline_plays({uri}): {e}")
+                continue
+            finished = (bool(length) and (position / length) > 0.9
+                        and not p.get('partial'))
+            if finished and option_type not in ('hidden', 'trash'):
+                when = None
+                try:
+                    when = _dt.datetime.fromisoformat(
+                        (p.get('at') or '').replace('Z', '+00:00'))
+                except Exception:
+                    when = _dt.datetime.now(_dt.timezone.utc)
+                try:
+                    # last_play_seq follows the INSERT order, not `when` — a
+                    # backdated play therefore reads as recent to the rotation
+                    # cooldown. That errs towards protecting the track from
+                    # coming straight back, which is the direction to err in.
+                    o2mHandler.dbHandler.create_stat_raw(
+                        uri, when, when.astimezone(_dt.timezone.utc).hour,
+                        o2mHandler.username)
+                    logged += 1
+                except Exception as e:
+                    print(f"api_offline_plays(raw {uri}): {e}")
+            written += 1
+        # `logged` is the count that entered the raw play log — the rotation
+        # clock. A bookmark must never be in it: it says where someone is, not
+        # that they got to the end.
+        return jsonify({'ok': True, 'written': written, 'skipped': skipped,
+                        'logged': logged})
+
+    @api.route('/api/offline/storage')
+    def api_offline_storage():
+        """Where the server keeps the audio a device can download.
+
+        The device's own copies are NOT described here — a page cannot be told
+        where its browser put an IndexedDB, and the UI says so rather than
+        inventing a path.
+
+        Three paths for one directory, and conflating them is the classic way
+        to break this: the host bind-mounts `./data/music`, mopidy sees it as
+        `media_dir` (what `local_uri` records), and this container mounts it at
+        MUSIC_MOUNT. All three are reported so a reader can match what they see
+        in a shell to what they see in the database.
+        """
+        from flask import jsonify
+        from o2m_core import offline
+        root = offline.MUSIC_MOUNT
+        cache_dir = os.path.join(root, 'cache')
+        files, total = 0, 0
+        for base, _dirs, names in os.walk(cache_dir):
+            for n in names:
+                if n.lower().endswith(('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav')):
+                    try:
+                        total += os.path.getsize(os.path.join(base, n))
+                        files += 1
+                    except OSError:
+                        pass
+        try:
+            registered = o2mHandler.dbHandler.count_local_tracks()
+        except Exception:
+            registered = None
+        # The cap belongs to the spotdl service, which this container cannot
+        # ask — it reads the same environment, so report what it would read.
+        try:
+            cap_gb = float(os.environ.get('SPOTDL_CACHE_MAX_GB', '10'))
+        except ValueError:
+            cap_gb = 10.0
+        return jsonify({
+            'mount': root,                       # as THIS container sees it
+            'media_dir': offline.media_dir(o2mConf),   # as mopidy/local_uri sees it
+            'cache_dir': cache_dir,
+            'host_path': './data/music/cache',   # as the compose file bind-mounts it
+            'env_var': 'SPOTDL_CACHE_DIR',       # where to change it
+            'files': files,
+            'bytes': total,
+            'cap_bytes': int(cap_gb * 1024 ** 3) if cap_gb > 0 else 0,
+            'cap_env_var': 'SPOTDL_CACHE_MAX_GB',
+            'retention_days': int(os.environ.get('SPOTDL_CACHE_DAYS', '30') or 30),
+            'registered': registered,
+            'writable': os.access(root, os.W_OK),
+        })
+
+    @api.route('/api/offline/queue')
+    def api_offline_queue():
+        """What spotdl should fetch next. Polled by the spotdl service."""
+        from flask import jsonify
+        try:
+            limit = max(1, min(100, int(request.args.get('limit', 25))))
+        except Exception:
+            limit = 25
+        return jsonify(o2mHandler.dbHandler.offline_queue(limit))
+
+    @api.route('/api/offline/queue_done', methods=['POST'])
+    def api_offline_queue_done():
+        """spotdl reporting one request finished (or given up on)."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uri = (data.get('uri') or '').strip()
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        o2mHandler.dbHandler.offline_request_done(
+            uri, ok=bool(data.get('ok', True)), note=(data.get('note') or None))
+        return jsonify({'ok': True})
+
     #RESTART
     @api.route('/health')
     def health_check():
@@ -2119,8 +2871,9 @@ if __name__ == "__main__":
 
         The server determines the current time; the client should not supply the time.
         An optional `window` query param is ignored for time-of-day — server-side clock is used.
-        `nobox=1` keeps unmute + resume-if-paused but never auto-launches a box
-        (used by the /basic view).
+        `nobox=1` keeps unmute + resume-if-paused but never auto-launches a box.
+        No view passes it any more — whether a box starts is `default_box_uid`'s
+        call (the sentinel 'none' means start nothing).
         """
         try:
             nobox = request.args.get('nobox') in ('1', 'true')
@@ -2145,6 +2898,7 @@ if __name__ == "__main__":
         deactivates boxes it renders; this is the reliable empty-everything.)"""
         from flask import jsonify
         o2mHandler.activeboxs = []
+        o2mHandler._box_parent = {}   # nothing left to inherit from
         try:
             o2mHandler.starting_mode(clear=True)
         except Exception as e:
@@ -2232,6 +2986,26 @@ if __name__ == "__main__":
                 # library, write). Seed the instance baseline once (fixed house account for
                 # streaming + fallback), then (re)build sp preferring the overlay.
                 auth_manager.get_access_token(request.args.get("code"))
+                # An account the Spotify app does not know still SIGNS IN — the OAuth round
+                # trip succeeds and a token is issued — and is then refused 403 on every
+                # Web API endpoint, /v1/me included (the app runs in Development Mode, where
+                # accounts are allowlisted by hand). Unchecked, that dead identity is written
+                # to the overlay AND seeded as the instance baseline, which
+                # seed_instance_cache_if_absent() deliberately never overwrites afterwards:
+                # one wrong sign-in costs the instance its Spotify until someone deletes the
+                # files by hand. Ask /v1/me before keeping anything.
+                fresh = cache_handler.get_cached_token() or {}
+                me, err = _spotify_me(fresh.get('access_token'))
+                if err:
+                    try:
+                        os.remove(o2mHandler.spotifyHandler.cache_path)
+                    except OSError:
+                        pass
+                    o2mHandler.spotifyHandler.reload_sp()
+                    print(f"spotipy_init: sign-in rejected, overlay dropped - {err}")
+                    return (f'<h2>Signed in, but this account cannot use O2M</h2>'
+                            f'<p>{err}</p>'
+                            f'<p><a href="/api/spotipy_init">Try another account</a></p>', 403)
                 o2mHandler.spotifyHandler.seed_instance_cache_if_absent()
                 o2mHandler.spotifyHandler.reload_sp()
                 return redirect('/api/spotipy_init')
@@ -2248,11 +3022,27 @@ if __name__ == "__main__":
             # space — set the signed cookie if the identity is in the allowlist (replaces
             # the broken Iris proxy). Secure when served over HTTPS (behind Caddy).
             from flask import make_response
-            me = o2mHandler.spotifyHandler.sp.me()
+            me, err = _spotify_me((cache_handler.get_cached_token() or {}).get('access_token'))
+            if err:
+                # Reached with a token Spotify issued but will not honour. Say so, rather
+                # than raising out of sp.me() and serving a bare "Internal Server Error".
+                return (f'<h2>Signed in, but this account cannot use O2M</h2>'
+                        f'<p>{err}</p>'
+                        f'<p><a href="/api/spotipy_out">Sign out</a> to fall back to this '
+                        f'instance\u2019s own account.</p>', 403)
             uid = (me.get("id") or "").strip()
+            # Playback is librespot, and librespot needs Premium. A free account is a
+            # perfectly good overlay (library, playlists, likes) and will simply never
+            # play a note, which is worth saying HERE rather than leaving it to be
+            # discovered as silence.
+            premium_note = ('' if me.get("product") == "premium" else
+                            '<p>This account is not Premium: it can read the library, but '
+                            'Spotify playback will be refused. Audio keeps running on the '
+                            'account this instance is paired with.</p>')
             resp = make_response(
                 f'<h2>Hi {me.get("display_name") or uid}, '
                 f'<small><a href="/api/spotipy_out">[sign out]</a></small></h2>'
+                f'{premium_note}'
             )
             if uid.lower() in _edit_allowlist():
                 resp.set_cookie(
@@ -2398,24 +3188,28 @@ with the house Premium account.</li>
 
     #MOPIDY LISTENERS
         # Fonction called when track started
-        @mopidy.on_event("track_playback_started")
         #@mopidy.audio.AudioListener.state_changed("PAUSED","PLAYING",None)
-        def on_ws_track_started(event):
-            if _EVENT_SOURCE != "websocket":
-                return  # the extension pushes this over HTTP instead
-            track_started_event(event)
-
         def track_started_event(event):
             track = event.tl_track.track
             print (event)
+
+            # Mopidy reports the uri it was HANDED, which is not always the uri the
+            # database knows this track by: `_resolve_uri` substitutes a downloaded
+            # Spotify track's file:// path, and a 'web:' media's signed CDN url,
+            # which changes every few hours. Everything below asks the database
+            # about this track — is it spoken, where was it left — so it has to ask
+            # under the canonical uri. Music never noticed (a file:// track is not
+            # spoken either way); 'web:' is the first SPOKEN content whose uri gets
+            # substituted, and it silently lost both its resume and its ad-skip.
+            uri = o2mHandler.get_spotify_uri(track.uri)
 
             #Quick and dirty volume Management
             # Podcast : seek previous position
             # Any spoken item resumes where it was left. Testing 'podcast+'/youtube
             # left Radio France episodes out — they are plain mp3 links — so their
             # position was recorded on every pause and then never restored.
-            if o2mHandler._is_spoken_uri(track.uri):
-                stat_uri = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
+            if o2mHandler._is_spoken_uri(uri):
+                stat_uri = o2mHandler.dbHandler.get_stat_by_uri(uri)
                 if (stat_uri):
                     #if (o2mHandler.dbHandler.get_pos_stat(track.uri) > 0) and (o2mHandler.dbHandler.get_pos_stat(track.uri)/track.length < 0.9) :
                     if (stat_uri.read_position > 10) and (stat_uri.read_position <= track.length):
@@ -2425,11 +3219,11 @@ with the house Premium account.</li>
                     elif stat_uri.read_position <= 10:
                         # Fresh start: skip the pre-roll ad. Never when resuming —
                         # the saved position already sits past it.
-                        _ad = o2mHandler.ad_skip_ms(track.uri)
+                        _ad = o2mHandler.ad_skip_ms(uri)
                         if _ad and track.length and _ad < track.length:
                             o2mHandler.mopidyHandler.playback.seek(_ad)
                 else:
-                    _ad = o2mHandler.ad_skip_ms(track.uri)
+                    _ad = o2mHandler.ad_skip_ms(uri)
                     if _ad and track.length and _ad < track.length:
                         o2mHandler.mopidyHandler.playback.seek(_ad)
                     #skip advertising 
@@ -2472,7 +3266,9 @@ with the house Premium account.</li>
                         if active_box.data == 'spotify:favorites':
                             library_link = 'o2m:favorites'
                         else:
-                            data_lines = [x for x in active_box.data.split("\n")
+                            from o2m_core import boxdirectives as _bdir
+                            data_lines = [_bdir.split_condition(x)[1]
+                                          for x in active_box.data.split("\n")
                                           if not x.startswith('#') and not x.startswith('\r')]
                             for content in data_lines:
                                 if 'spotify:playlist' in content:
@@ -2531,7 +3327,12 @@ with the house Premium account.</li>
                 print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
 
                 # Update stats 
-                if (event.event == "track_playback_ended") or ("podcast+" in track.uri and ("#" or "episode") in track.uri) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+                # A pause is a play reported at its position, and that is what writes
+                # read_position — the value track_started_event reads back to resume.
+                # This used to re-spell "is it spoken" as its own list of schemes, which
+                # had already drifted away from _is_spoken_uri: no 'web:', no Radio
+                # France host. One definition, asked under the canonical uri.
+                if (event.event == "track_playback_ended") or o2mHandler._is_spoken_uri(effective_uri):
                     
                     try:
                         o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri)
@@ -2554,17 +3355,13 @@ with the house Premium account.</li>
                 if tracks_left_count < 1:
                     o2mHandler.update_tracks()  # si besoin on ajoute des chansons à la tracklist avec de la reco
 
-        @mopidy.on_event("track_playback_ended")
-        def event_track_playback_ended(event):
-            if _EVENT_SOURCE != "websocket":
-                return  # the extension pushes this over HTTP instead
-            track_ended_event(event)
-
-        @mopidy.on_event("track_playback_paused")
-        def event_track_playback_paused(event):
-            if _EVENT_SOURCE != "websocket":
-                return  # the extension pushes this over HTTP instead
-            track_ended_event(event)
+        # Attach to the websocket only when one exists: use_websocket=False
+        # leaves the client with no on_event at all, so this cannot be a
+        # decorator any more. Same three functions either way.
+        if _USE_WEBSOCKET:
+            mopidy.on_event("track_playback_started")(track_started_event)
+            mopidy.on_event("track_playback_ended")(track_ended_event)
+            mopidy.on_event("track_playback_paused")(track_ended_event)
 
         # Publish the handlers for the HTTP transport. Same functions, same
         # closure over o2mHandler/mopidy — only the transport differs, so the

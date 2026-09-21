@@ -8,6 +8,10 @@ import o2m_core.util as util
 from o2m_core.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
 from o2m_core.spotifyhandler import SpotifyHandler
 from o2m_core import radiofrance as rf
+from o2m_core import boxdirectives as bdir
+from o2m_core import webmedia
+from o2m_core import selection
+from o2m_core import virtualbox as vbox
 
 '''
 option_type 
@@ -34,8 +38,9 @@ class O2mToMopidy:
     expand_pick_mode = "hybrid"  # smart-selection variant: hybrid (P0) | temp (P1) | band (P2)
     cooldown_hours = 8.0         # (legacy) kept for reference; the played cooldown is now multi-day (cooldown_days)
     cooldown_mult = 0.05         # weight floor: multiplier at age 0 (just played), ramps back to 1 over the window
-    cooldown_days = 2.0          # base played-cooldown window (days); a just-played track eases back to full over this
+    cooldown_days = 3.0          # base played-cooldown window (days); a just-played track eases back to full over this
     cooldown_rc_ref = 20         # read_count giving the max window stretch (heavy-rotation tracks rest ~2× longer)
+    cooldown_plays = 80          # rotation depth: OTHER music plays a track must wait out, stretched like cooldown_days
     exploit_sharpness = 1.3      # P0 exploit weight exponent (affinity**this); 2 was too repetitive
     served_cooldown_min = 30.0   # minutes; tracks just SERVED (selected) are down-weighted
     served_mult = 0.1            # weight multiplier applied within the served-cooldown window
@@ -69,7 +74,16 @@ class O2mToMopidy:
         # and the `with` release is exception-safe (a failed load no longer wedges the mutex).
         self._box_lock = threading.RLock()
         self._box_lock_timeout = 30  # seconds; on timeout we proceed rather than hang forever
-        self._local_to_spotify = {}  # file:// URI → spotify:track: URI for stat routing
+        # PLAYED uri → the uri o2m keeps history under. Two things need it, for
+        # the same reason: a downloaded Spotify track is played from file://,
+        # and an 'web:' media is played from a signed CDN url that is worthless
+        # tomorrow. In both cases Mopidy reports back the uri it was handed,
+        # and stats must land on the stable one.
+        self._played_to_canonical = {}
+        # 'web:' media uri → the page it was discovered on. The page is the
+        # Referer an embed-only video needs, and it reaches the DB only once
+        # the item is stored, so the fill that just found it answers first.
+        self._web_pages = {}
         self._rf_published = {}      # RF episode uri → 'YYYY-MM-DD' (rows may not exist yet at fetch time)
 
         if "api_result_limit" in self.configO2M:
@@ -88,6 +102,23 @@ class O2mToMopidy:
         self.mood_energy = 0.5     # float 0.0-1.0 target energy
         self.mood_valence = 0.5    # float 0.0-1.0 target valence (ambiance)
         self.mood_genres = []      # list of genre name strings
+
+        # ── Who wins: the box's own mood/DL, or the dials? ───────────────────
+        # A box states an intent ("this object is calm"); so does a hand on a dial.
+        # The later one wins, which is why these are timestamps and not booleans:
+        # touching a dial outranks the active box, and putting a new object down is
+        # itself a fresh intent that outranks the dial again. A session-wide boolean
+        # (what discover_level_on still is, kept for the legacy paths) could only
+        # say "the dials have spoken, forever".
+        self._ui_touched_at = {'dl': None, 'mood': None}
+        self._box_activated_at = None
+        # Who included whom: child uid -> parent uid. An included box is part of the
+        # object you put down, so it plays under that object's mood and discover level
+        # unless it states its own. A durable map rather than a stack around the fill:
+        # the question is asked again long after — when the dials refresh, and when the
+        # end-of-track recommendations pick what to add next to a track belonging to
+        # the child. A stack was empty by then and the inheritance silently vanished.
+        self._box_parent = {}
 
         # ── Radio now-playing + auto-save to library ─────────────────────────
         self._radio_np = None          # last known {title,artist,album,key,is_music,source} for the UI
@@ -194,17 +225,105 @@ class O2mToMopidy:
 
 #LOCAL CACHE RESOLUTION
     def _resolve_uri(self, uri):
-        """Return the local file URI if this Spotify track was downloaded, else original."""
-        if not uri or not uri.startswith('spotify:track:'):
+        """Return the local file URI if this Spotify track was downloaded, else original.
+
+        The file is checked before it is substituted, whenever this container can
+        see the music volume. A `local_uri` outlives its file more easily than it
+        looks: the cache cleaner swallows the error if its unregister call fails,
+        and once several instances share one cache directory the one that prunes
+        is not always the one holding the row. Handing Mopidy a path to a missing
+        file turns a track that would have streamed from Spotify into a playback
+        failure — so an absent file simply means "not downloaded".
+        """
+        if not uri:
+            return uri
+        if webmedia.is_web_uri(uri):
+            return self._resolve_web(uri)
+        if not uri.startswith('spotify:track:'):
             return uri
         try:
             local = self.dbHandler.get_local_uri(uri)
             if local:
-                self._local_to_spotify[local] = uri
+                if not self._local_file_present(local):
+                    return uri
+                self._played_to_canonical[local] = uri
                 return local
         except Exception:
             pass
         return uri
+
+    def _local_file_present(self, local_uri):
+        """True if the file behind a `local_uri` is really there.
+
+        Returns True when the volume is not mounted here at all: without it we
+        cannot tell a missing file from a missing mount, and refusing to
+        substitute would break every instance that has not added the mount."""
+        import os
+        from o2m_core import offline
+        try:
+            if not os.path.isdir(offline.MUSIC_MOUNT):
+                return True                      # no mount: trust the database
+            path = offline.local_file_for(local_uri)
+            return bool(path) and os.path.isfile(path)
+        except Exception:
+            return True
+
+    def _web_referer(self, uri):
+        """The page an 'web:' media was found on.
+
+        Not a detail: an embed-only Vimeo — which is what a film's own site uses —
+        answers "Cannot download embed-only video without embedding URL" to every
+        direct request and resolves only when that page is sent as Referer.
+
+        It is read from `Track.channel_id`, the column that already means "the
+        source this episode belongs to", with the in-process map from the fill
+        that just discovered it as the fallback — the row may not be written yet
+        the first time a media is played."""
+        page = self._web_pages.get(uri)
+        if page:
+            return page
+        try:
+            row = self.dbHandler.get_stat_by_uri(uri)
+            if row and row.channel_id and str(row.channel_id).startswith('http'):
+                return row.channel_id
+        except Exception:
+            pass
+        return None
+
+    def _resolve_web(self, uri):
+        """An 'web:' uri → the url Mopidy can open, resolved as late as we can.
+
+        Late on purpose. The signed url carries its own expiry — 5.8 hours for
+        the Vimeo measured while writing this — and a tracklist holding four
+        hour-long conferences reaches its last one well after that. Resolving at
+        fill time and storing the result would be a tracklist that rots while it
+        waits.
+
+        The reverse mapping is the other half: Mopidy reports playback against
+        the uri it was handed, so without it every stat, every resume position
+        and every cooldown would be recorded against a CDN url that means nothing
+        tomorrow."""
+        entry = webmedia.resolve_stream(uri, self._web_referer(uri))
+        if not entry or not entry.get('url'):
+            print(f"web: unresolved {uri}")
+            return None
+        self._played_to_canonical[entry['url']] = uri
+        # The extractor knows the real title, duration and publication date; the
+        # page rarely does. These are the three descriptive columns the details
+        # panel reads for every other spoken item (name, duration_ms,
+        # published_at), so filling them here is what makes an 'web:' track
+        # describe itself like a podcast episode rather than as a bare url.
+        # Written once, never over an existing value (upsert_episodes' rule).
+        try:
+            if entry.get('name') or entry.get('length') or entry.get('day'):
+                self.dbHandler.upsert_episodes(
+                    [{'uri': uri, 'name': entry.get('name'),
+                      'length': entry.get('length'), 'day': entry.get('day')}],
+                    option_type=self._spoken_type_for_uri(
+                        self._web_referer(uri) or uri, entry.get('length')))
+        except Exception as e:
+            print(f"web: metadata {uri}: {e}")
+        return entry['url']
 
     def _resolve_uris(self, uris):
         """Resolve a list of URIs, substituting local files where available.
@@ -216,15 +335,149 @@ class O2mToMopidy:
         if isinstance(uris, str):
             uris = [uris]
         uris = [u for u in uris if isinstance(u, str) and ':' in u]
-        return [self._resolve_uri(u) for u in uris]
+        # A None means "this one could not be resolved" (an 'web:' media whose
+        # platform refused us). Dropping it here is what keeps the rest of the
+        # fill intact — handing Mopidy an 'web:' uri it has no backend for would
+        # lose the track just as surely, only without a word in the log.
+        return [u for u in (self._resolve_uri(u) for u in uris) if u]
 
     def get_spotify_uri(self, uri):
         """Canonicalize a local file URI back to its Spotify URI for stat recording."""
         if not uri or uri.startswith('spotify:'):
             return uri
-        return self._local_to_spotify.get(uri, uri)
+        return self._played_to_canonical.get(uri, uri)
 
 #TAG MANAGEMENT
+    @property
+    def cooldown_seq_window(self):
+        """How far back the play sequence is read, in music plays."""
+        return self._tunables().seq_window
+
+    @staticmethod
+    def stats_hour():
+        """The hour listening HABITS are keyed on — always UTC.
+
+        Two different notions of "now" live in this file and they must not be
+        confused. read_hour is written in UTC (update_stat_raw) across 100k+ rows,
+        so every lookup against it asks in UTC: this is an internal correlation, it
+        does not need to be human-readable. Everything a person reads or writes —
+        a box's time window, a broadcast schedule — uses local time instead, which
+        is what datetime.now() gives now that the containers set TZ.
+        """
+        return datetime.datetime.now(datetime.timezone.utc).hour
+
+    def note_ui_override(self, what):
+        """Record a dial gesture ('dl' or 'mood') as the newest intent."""
+        self._ui_touched_at[what] = datetime.datetime.now()
+
+    def note_box_include(self, parent, child):
+        """Record that `child` is part of `parent`'s cascade, for as long as it is
+        active. What the child inherits is resolved on demand, not frozen here: the
+        parent's own mood may itself be under a time window that has since turned."""
+        try:
+            if parent is not None and child is not None and parent.uid != child.uid:
+                self._box_parent[child.uid] = parent.uid
+        except Exception:
+            pass
+
+    def _parent_box(self, box, _seen=None):
+        """The active box that included this one, if any. Guards against a cycle:
+        two boxes can perfectly well include each other."""
+        try:
+            uid = getattr(box, 'uid', None)
+            if not uid:
+                return None
+            _seen = _seen or set()
+            if uid in _seen:
+                return None
+            _seen.add(uid)
+            puid = self._box_parent.get(uid)
+            if not puid or puid in _seen:
+                return None
+            for b in (self.activeboxs or []):
+                if b.uid == puid:
+                    return b
+        except Exception:
+            pass
+        return None
+
+    def box_label(self, uid):
+        """Display name of whatever owns a tracklist entry — WITHOUT creating it.
+
+        `get_box_by_uid` opens a box for any uid it does not know, so a display
+        path must never call it; and the owner may not be a stored box at all —
+        an activated album is a virtual one (see o2m_core/virtualbox.py), and its
+        name lives only on the live instance in `activeboxs`."""
+        if not uid:
+            return ''
+        for b in (self.activeboxs or []):
+            if getattr(b, 'uid', None) == uid:
+                return (getattr(b, 'description', '') or '').strip() or uid
+        b = self.dbHandler.find_box_by_uid(uid)
+        if b is not None:
+            return (getattr(b, 'description', '') or '').strip() or uid
+        return vbox.uri_of(uid) or uid
+
+    def note_box_activation(self):
+        """Record that an object was PUT DOWN — a fresh intent that outranks the
+        dials again.
+
+        Deliberately not called from box_action: eight internal paths go through
+        that (cascade includes, every reload, applying a mood), so stamping there
+        made a rebuild count as a new activation and the dial gesture that caused
+        the rebuild lost to the box it was meant to override."""
+        self._box_activated_at = datetime.datetime.now()
+
+    def ui_override_active(self, what):
+        """Does the dial still outrank the active box for this setting?"""
+        t = self._ui_touched_at.get(what)
+        if t is None:
+            return False
+        return self._box_activated_at is None or t > self._box_activated_at
+
+    def effective_mood(self, box):
+        """(energy, valence) for a fill, by the settled precedence:
+        dial gesture newer than the activation, else a box directive (a matching
+        time window beats an unconditional line), else the box column, else the
+        session default."""
+        if self.ui_override_active('mood'):
+            return self.mood_energy, self.mood_valence
+        d = bdir.read_directives(getattr(box, 'data', '') or '')
+        energy = d['energy']
+        valence = d['valence']
+        if energy is None:
+            energy = getattr(box, 'option_energy', None)
+        if valence is None:
+            valence = getattr(box, 'option_valence', None)
+        if energy is None or valence is None:
+            parent = self._parent_box(box)
+            if parent is not None:
+                pe, pv = self.effective_mood(parent)
+                if energy is None:
+                    energy = pe
+                if valence is None:
+                    valence = pv
+        if energy is None:
+            energy = self.mood_energy
+        if valence is None:
+            valence = self.mood_valence
+        return energy, valence
+
+    def effective_dl(self, box):
+        """Discover level for a fill, same precedence as effective_mood."""
+        if self.ui_override_active('dl') or self.discover_level_on:
+            return self.discover_level
+        dl = bdir.read_directives(getattr(box, 'data', '') or '')['dl']
+        if dl is None:
+            dl = getattr(box, 'option_discover_level', None)
+        if dl is None:
+            parent = self._parent_box(box)
+            if parent is not None:
+                dl = self.effective_dl(parent)
+        if dl is None:
+            dl = self.discover_level
+        return int(dl)
+
     def box_action(self,box):
         if self.configO2M["discover"] == "true":
             try: 
@@ -258,6 +511,16 @@ class O2mToMopidy:
                 self._box_lock.release()
 
     def box_action_remove(self,box,removedBox):
+        # A box that is no longer active can neither inherit nor be inherited from.
+        try:
+            uid = getattr(removedBox, 'uid', None)
+            if uid:
+                self._box_parent.pop(uid, None)
+                for k, v in list(self._box_parent.items()):
+                    if v == uid:
+                        self._box_parent.pop(k, None)
+        except Exception:
+            pass
         with self._box_ops_lock():
             if len(self.activeboxs) == 0:
                     self.starting_mode(clear=True)
@@ -422,7 +685,7 @@ class O2mToMopidy:
         if box == None:
             box = self.dbHandler.get_box_by_option_type('new_mopidy')
         #Common tracks :launch quickly auto with one track
-        go = self.add_tracks(box, self.get_common_tracks(datetime.datetime.now().hour,window,max_results), max_results, "library","o2m:history")
+        go = self.add_tracks(box, self.get_common_tracks(self.stats_hour(),window,max_results), max_results, "library","o2m:history")
         #go += self.add_tracks(box, self.lastinfos(box,max_results), 1, "info","o2m:info")
         if go > 0:
             self.play_or_resume()
@@ -513,14 +776,40 @@ class O2mToMopidy:
 
                 if len(tltracks_added)>0:
                     uris_rem = []
-                    
+
+                    #****DISLIKED***
+                    # Asked on what Mopidy actually ADDED, not on what it was asked
+                    # for, and that is the whole reason this is here rather than in
+                    # front of the call: a line naming an album or an artist hands
+                    # over ONE uri and comes back as fifteen tracks, so a rejected
+                    # track inside it is visible nowhere else. This is also the only
+                    # guard for the box patterns that do not go through the samplers
+                    # (now:library, o2m:favorites, spotify:library, newrecent…, which
+                    # append their uris straight to the fill) — _selection_pool covers
+                    # the AUTO mix and the smart expansion, and nothing else.
+                    # Canonical uri to ask, played uri to remove: the tracklist is
+                    # keyed on what Mopidy was handed.
+                    _canon_added = {t.track.uri: self.get_spotify_uri(t.track.uri)
+                                    for t in tltracks_added}
+                    _rejected = self.dbHandler.disliked_uris(set(_canon_added.values()))
+                    if _rejected:
+                        uris_rem += [played for played, canon in _canon_added.items()
+                                     if canon in _rejected]
+                        print(f"add_tracks: dropping {len(_rejected)} disliked track(s)")
+
                     #****REMOVE***
                     # Exclude tracks already read when option is new
                     # bypass_remove_filter=True skips this for pre-filtered sources (newrecent, newnotcompleted)
                     if option_type == 'new' and not bypass_remove_filter:
                         for t in tltracks_added:
-                            if self.dbHandler.stat_exists(t.track.uri):
-                                stat = self.dbHandler.get_stat_by_uri(t.track.uri)
+                            # Mopidy hands back the uri it was GIVEN, which _resolve_uris
+                            # may have substituted (a downloaded Spotify file, an 'web:'
+                            # media's signed url). Ask the database under the canonical
+                            # one — but keep removing by the played uri, since that is
+                            # what the tracklist is keyed on.
+                            _canon = self.get_spotify_uri(t.track.uri)
+                            if self.dbHandler.stat_exists(_canon):
+                                stat = self.dbHandler.get_stat_by_uri(_canon)
                                 # When track skipped or too many counts we remove them
                                 if (stat.skipped_count > 0
                                     or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'library' or stat.option_type == 'incoming')
@@ -535,8 +824,13 @@ class O2mToMopidy:
                         #Removing trash and hidden : too long
                         for t in tltracks_added:
                             #Option_type fixing (to be improved)
-                            if self.fix_stats==True: 
-                                self.update_stat_track(t.track,0,option_type,'',True)
+                            if self.fix_stats==True:
+                                # uri_override, for the same reason: without it this
+                                # OPENS a Track row keyed on the substituted uri —
+                                # measured, 15 rows on signed CDN addresses that stop
+                                # meaning anything within hours, one per track served.
+                                self.update_stat_track(t.track, 0, option_type, '', True,
+                                                       uri_override=self.get_spotify_uri(t.track.uri))
                             
                             '''if self.dbHandler.stat_exists(t.track.uri):
                                 stat = self.dbHandler.get_stat_by_uri(t.track.uri)
@@ -548,7 +842,7 @@ class O2mToMopidy:
                             #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
 
                     if len(uris_rem)>0:
-                        print ("Removing old new tracks")
+                        print (f"Removing {len(uris_rem)} track(s) just added (already read, or disliked)")
                         self.mopidyHandler.tracklist.remove({"uri": uris_rem})
 
                     #***SLICE***
@@ -672,9 +966,19 @@ class O2mToMopidy:
                     # (one background worker, sequential in play order, rate-limit aware).
                     self._enrich_tracks_preemptive(_enrich_items)
 
-                    # Shuffle complete computed tracklist if more than two boxs
+                    # Shuffle complete computed tracklist if more than two boxs —
+                    # UNLESS this box asked for an order. 'asc'/'desc' is the one
+                    # explicit statement a box makes about sequence, and a second
+                    # active box (mopidy_box joins the list on its own as soon as
+                    # a track plays) silently overrode it. one_box_changed's own
+                    # shuffle already excludes the two; this one had drifted from
+                    # it. It is what makes an activated album play as a record
+                    # rather than as a bag of its tracks.
                     #self.shuffle_tracklist(current_index + 1, new_length)
-                    if (len(self.activeboxs) > 1 or active_box.option_sort=="shuffle" or active_box.option_sort=="smart") and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1)):
+                    _sort = getattr(active_box, 'option_sort', None)
+                    if (_sort not in ("asc", "desc")
+                            and (len(self.activeboxs) > 1 or _sort == "shuffle" or _sort == "smart")
+                            and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1))):
                         if new_length > current_index + 1:
                             print ("shuffling")
                             self.smart_shuffle_tracklist(current_index + 1, new_length)
@@ -910,12 +1214,9 @@ class O2mToMopidy:
             window = int(round(discover_level / 2))
             tracklist_uris= []
 
-            # Effective mood criteria: box option overrides else global context (default 0.5/0.5).
-            # Applied to every entry below to bias selection towards energy/ambiance.
-            energy = getattr(active_box, 'option_energy', None)
-            if energy is None: energy = self.mood_energy
-            valence = getattr(active_box, 'option_valence', None)
-            if valence is None: valence = self.mood_valence
+            # Effective mood criteria — see effective_mood for the precedence
+            # (dial gesture > box directive > box column > session default).
+            energy, valence = self.effective_mood(active_box)
             radius = discover_level / 20.0 + 0.05   # DL=0 → 0.05, DL=10 → 0.55 (same as apply_mood_settings)
             OVERSAMPLE, POOL_CAP = 3, 60
             def _pool(c): return min(c * OVERSAMPLE, POOL_CAP)   # oversampled fetch size for an entry
@@ -966,7 +1267,7 @@ class O2mToMopidy:
             #Common tracks
             if base_counts.get('common', 0) > 0:
                 print(f"\nAUTO : Common {base_counts['common']} tracks\n")
-                common = self.get_common_tracks(datetime.datetime.now().hour,window,_pool(base_counts['common']))
+                common = self.get_common_tracks(self.stats_hour(),window,_pool(base_counts['common']))
                 common = self._mood_pick(common, base_counts['common'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, common, base_counts['common'], "library","o2m:history")
 
@@ -1107,7 +1408,9 @@ class O2mToMopidy:
                 continue
             label = None
             for raw in (box.data or '').splitlines():
-                line = raw.strip()
+                # A time window says WHEN a line plays, not whether the box refers to
+                # it: drop the prefix so a gated feed is still catalogued and listed.
+                line = bdir.split_condition(raw)[1]
                 if not line:
                     continue
                 if line.startswith('#'):
@@ -1130,7 +1433,9 @@ class O2mToMopidy:
         for box in Box.select():
             label = None
             for raw in (box.data or '').splitlines():
-                line = raw.strip()
+                # A time window says WHEN a line plays, not whether the box refers to
+                # it: drop the prefix so a gated feed is still catalogued and listed.
+                line = bdir.split_condition(raw)[1]
                 if not line:
                     continue
                 if line.startswith('podcast+'):
@@ -1329,16 +1634,10 @@ class O2mToMopidy:
             return max(0, max_results - live - _planned[0])
         if max_results>0:
             
-            #If discover level has been pushed by api since the begining of session, we priorise it
-            discover_level = self.discover_level
-            if not(self.discover_level_on) and (self.get_option_for_box(box, "option_discover_level")!=None) :
-                discover_level = self.get_option_for_box(box, "option_discover_level")
-
-            # Effective mood criteria for cache-expansion filtering (box option else global context)
-            energy = getattr(box, 'option_energy', None)
-            if energy is None: energy = self.mood_energy
-            valence = getattr(box, 'option_valence', None)
-            if valence is None: valence = self.mood_valence
+            # Discover level and mood — see effective_dl / effective_mood for the
+            # precedence (dial gesture > box directive > box column > session default).
+            discover_level = self.effective_dl(box)
+            energy, valence = self.effective_mood(box)
 
             # Smart selection (popularity/mood/cooldown via _expand_pick) is the DEFAULT:
             # it applies when option_sort is 'smart' OR unspecified (NULL/empty).
@@ -1350,9 +1649,13 @@ class O2mToMopidy:
             content = 0
 
             # Looping on hybrid playlist (delimited by \n)
-            data = box.data.split("\n")
-            data = [x for x in data if not x.startswith('#')]
-            data = [x for x in data if not x.startswith('\r')]
+            # Resolve time windows once, here: iter_lines handles both the inline
+            # form and blocks, and hands back plain stripped payloads. Everything
+            # below — the prefetch pools as well as the dispatch — then works on
+            # lines that apply right now, with no prefix and no block indentation
+            # left to trip a startswith().
+            data = [p for ok, p in bdir.iter_lines(box.data)
+                    if ok and p and not p.startswith('#')]
             data = [x.replace('\r', '') for x in data]
 
             # Podcast feeds share the box's budget instead of each taking all of it.
@@ -1365,6 +1668,10 @@ class O2mToMopidy:
             _pod_feeds = [x for x in data if 'podcast+' in x and '#' not in x]
             _pod_left = len(_pod_feeds)
             _pod_budget = max_results
+
+            # Same rolling budget for the experimental 'web:' pages.
+            _web_left = len([x for x in data if x.strip().startswith(('web:', 'web:'))])
+            _web_budget = max_results
 
             # Warm the Radio France episode cache for every 'rf:sujet:' line at once.
             # Each line costs one API call per station, and the loop below is
@@ -1395,6 +1702,12 @@ class O2mToMopidy:
                     print(f"rf:sujet prefetch pool: {e}")
 
             for content in data:
+                # Windows were already resolved above. Directives (dl:/mood:) were
+                # read by the pre-pass in effective_dl / effective_mood, so they must
+                # not fall through to the branches and be mistaken for content.
+                if bdir.is_directive(content):
+                    continue
+
                 #Other box called (cascade include)
                 if "box:" in content :
                     box_uid = content.split(":", 1)[1].strip()
@@ -1414,6 +1727,7 @@ class O2mToMopidy:
                             continue
                         seen.add(sub_box.uid)
                     print(f"added box {sub_box}")
+                    self.note_box_include(box, sub_box)
                     self.box_action(sub_box)
                 
                 # Recommandation
@@ -1434,7 +1748,7 @@ class O2mToMopidy:
                 elif "herenow:library" in content :
                     window = int(round(discover_level / 2))
                     max_result1 = int(round(max_results/2))
-                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_result1))
+                    tracklist_uris.append(self.get_common_tracks(self.stats_hour(),window,max_result1))
                     tracklist_uris.append(self.spotifyHandler.get_my_albums_tracks(max_result1,1))
 
                 # auto:library testing (daily habits + library auto extract)
@@ -1485,7 +1799,7 @@ class O2mToMopidy:
                 elif "now:library" in content :
                     print ("now:library")
                     window = int(round(discover_level / 2))
-                    tracklist_uris.append(self.get_common_tracks(datetime.datetime.now().hour,window,max_results))
+                    tracklist_uris.append(self.get_common_tracks(self.stats_hour(),window,max_results))
 
                 # infos:library (more recent news podcasts (to be updated))
                 elif "infos:library" in content :
@@ -1571,6 +1885,20 @@ class O2mToMopidy:
                             tracklist_uris.append(
                                 self.rf_subject_episodes(value.strip(), max_results, picked or None))
 
+                # web:<url> — experimental: read a web page, play what it holds.
+                # 'xp:' is the prefix this shipped under for a few days; still read,
+                # never written (see webmedia.LEGACY_PREFIX).
+                # Shares the box budget between several pages exactly as the feeds
+                # above do: one replay listing holding three hour-long conferences
+                # must not crowd out the other lines of the box.
+                elif content.strip().startswith(('web:', 'web:')):
+                    _share = max(1, round(_web_budget / _web_left)) if _web_left > 0 else max_results
+                    _got = self.web_page_tracks(
+                        box, webmedia.media_url(content.strip()), _share)
+                    _web_left = max(0, _web_left - 1)
+                    _web_budget = max(0, _web_budget - len(_got or []))
+                    tracklist_uris.append(_got)
+
                 # Podcast channel
                 elif "podcast+" in content and "#" not in content:
                     print(f"Podcast channel : {content}")
@@ -1640,8 +1968,11 @@ class O2mToMopidy:
         return tracklist_uris  
 
     def lastinfos(self,box,max_results):
-        hour = datetime.datetime.now().hour
-        minute = datetime.datetime.now().minute
+        # The French broadcast grid below is in local time, so ask for it that way
+        # rather than trusting the container's clock (see bdir.local_now).
+        _now = bdir.local_now()
+        hour = _now.hour
+        minute = _now.minute
         day = datetime.datetime.today().weekday() #0 : Monday - 6 : Sunday
         info_url = ""
         print (f"infos:library {day} {hour} {minute}")
@@ -1674,6 +2005,71 @@ class O2mToMopidy:
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
             #return []
+
+    def web_page_tracks(self, box, page_url, max_results):
+        """`web:<url>` — whatever a web page holds that o2m can play.
+
+        The experimental line. Every other source announces what it is; a page
+        announces nothing, so this one goes and looks (see `webmedia`). What
+        comes back already wears the right uri: a YouTube video as `yt:video:`,
+        an mp3 as itself, an RSS feed expanded through the normal podcast path,
+        and only what nothing else can carry stays `web:`.
+
+        The page is registered as a CHANNEL. That is not bookkeeping — it is
+        where the Referer lives, without which an embed-only Vimeo is refused,
+        and it is what lets the panel name the source instead of showing a url.
+        """
+        page_url = (page_url or '').strip()
+        if not page_url:
+            return []
+        found = webmedia.find_media(page_url, limit=max(10, max_results or 10))
+        items = found.get('items') or []
+        if found.get('reason'):
+            # 'challenge' is worth its own sentence: the page was not empty, we
+            # were refused. No header gets past it, so there is nothing to retry.
+            print(f"web: {page_url} -> {found['reason']}"
+                  + (" (the site refuses automated readers)" if found['reason'] == 'challenge' else ""))
+            return []
+
+        try:
+            self.dbHandler.upsert_podcast_channel(
+                page_url, 'web', title=found.get('title') or page_url, url=page_url)
+        except Exception as e:
+            print(f"web: channel {page_url}: {e}")
+
+        uris, episodes = [], []
+        for it in items:
+            uri = it['uri']
+            # A feed found on the page is a podcast, not a one-off: hand it to the
+            # subsystem that knows about episodes, resume and unread.
+            if uri.startswith('podcast+'):
+                uris += self.add_podcast_from_channel(box, uri, max_results) or []
+                continue
+            self._web_pages[uri] = page_url
+            uris.append(uri)
+            # The row is opened WITHOUT a name on purpose. What the page calls a
+            # link ("Lire le replay …") is a button label, not a title, and
+            # upsert_episodes never overwrites a name once set — so writing the
+            # provisional one here would lock the real title out for good. The
+            # extractor knows it ("Les mots des transitions - cycle 8 — Problème
+            # systémique") and fills it at resolution, a moment later.
+            episodes.append({'uri': uri, 'name': '', 'length': None, 'day': None})
+
+        if episodes:
+            try:
+                # Classified from the PAGE, like a feed is classified as a whole:
+                # the box referencing it is what says 'info' or 'podcast'.
+                self.dbHandler.upsert_episodes(
+                    episodes, channel_id=page_url,
+                    option_type=self._spoken_type_for_uri(page_url))
+            except Exception as e:
+                print(f"web: store {page_url}: {e}")
+
+        # Same unread rule as every other spoken source: a replay already watched
+        # to the end does not come back.
+        uris = self._unread_spoken_uris(uris)
+        print(f"web: {page_url} -> {len(uris)} playable / {len(items)} found")
+        return uris[:max_results] if max_results else uris
 
     def add_podcast_from_channel(self,box,uri, max_results):
         feedurl = uri.split("+")[1]
@@ -1723,6 +2119,8 @@ class O2mToMopidy:
         for item in unread_shows:
             stat_pod = self.dbHandler.get_stat_by_uri(item.uri)
             if (stat_pod):
+                #An explicit dislike drops the episode before any other rule
+                if stat_pod.disliked: continue
                 #Keep podcasts when
                 #This is a podcast, never finished (read_count_end == 0), last listen < 0.9, not a promo
                 if (stat_pod.option_type == "podcast" and not stat_pod.read_count_end > 0 and stat_pod.read_end < 0.9 and "app_rf_promotion" not in item.uri): uris.append(item.uri)
@@ -1744,6 +2142,9 @@ class O2mToMopidy:
             stat = self.dbHandler.get_stat_by_uri(uri)
             if stat is None:
                 out.append(uri)
+            # An explicitly rejected episode is done with, whatever its progress.
+            elif stat.disliked:
+                continue
             elif not stat.read_count_end > 0 and (stat.read_end or 0) < 0.9:
                 out.append(uri)
         return out
@@ -1901,7 +2302,7 @@ class O2mToMopidy:
         feeds, shows, subjects = set(), set(), set()
         for b in Box.select():
             for raw in (b.data or '').splitlines():
-                line = raw.strip()
+                line = bdir.split_condition(raw)[1]   # see the note above: when ≠ whether
                 if not line or line.startswith('#'):
                     continue
                 if line.startswith('podcast+'):
@@ -2286,6 +2687,40 @@ class O2mToMopidy:
         self.mopidyHandler.playback.next()
         self.mopidyHandler.playback.play()
 
+    def drop_track_from_tracklist(self, uri):
+        """Remove every entry of *uri* from the running tracklist, skipping to the
+        next track first when it is the one playing.
+
+        This is what makes a dislike an ACT rather than a preference filed for
+        later: the selection will not serve it again, but the copy already queued
+        would still play tonight, which is exactly the thing the gesture is asking
+        to stop. Matching is done on the CANONICAL uri (get_spotify_uri): Mopidy
+        holds a downloaded Spotify track under its file path and an 'web:' item
+        under a signed CDN url, so comparing raw uris would silently match nothing
+        for the two kinds of content most likely to be disliked."""
+        try:
+            tl = self.mopidyHandler.tracklist.get_tl_tracks() or []
+        except Exception as e:
+            print(f"drop_track_from_tracklist: {e}")
+            return {'removed': 0, 'skipped': False}
+        doomed = [t for t in tl if self.get_spotify_uri(t.track.uri) == uri]
+        if not doomed:
+            return {'removed': 0, 'skipped': False}
+        skipped = False
+        try:
+            cur = self.mopidyHandler.playback.get_current_tl_track()
+            if cur is not None and any(t.tlid == cur.tlid for t in doomed):
+                self.launch_next()
+                skipped = True
+        except Exception as e:
+            print(f"drop_track_from_tracklist skip: {e}")
+        try:
+            self.mopidyHandler.tracklist.remove({'tlid': [t.tlid for t in doomed]})
+        except Exception as e:
+            print(f"drop_track_from_tracklist remove: {e}")
+            return {'removed': 0, 'skipped': skipped}
+        return {'removed': len(doomed), 'skipped': skipped}
+
     # Shuffling the tracklist
     def shuffle_tracklist(self, start_index, stop_index):
         try:
@@ -2511,9 +2946,12 @@ class O2mToMopidy:
                 box = None
 
                 # Two ways to skip the box auto-launch (unmute + resume-if-paused
-                # still apply): the caller passes allow_box=False (e.g. the /basic
-                # view), or default_box_uid is the sentinel 'none'. An EMPTY
-                # default_box_uid falls back to the stats_raw history box instead.
+                # still apply): the caller passes allow_box=False, or
+                # default_box_uid is the sentinel 'none'. An EMPTY default_box_uid
+                # falls back to the stats_raw history box instead. Saying "start
+                # nothing" belongs to the configuration, not to a view: the /basic
+                # view used to pass allow_box=False and then start a mix all of its
+                # own, which is the opposite of what the setting asks for.
                 if not allow_box:
                     return False
                 if self.default_box_uid and self.default_box_uid.lower() == 'none':
@@ -2529,7 +2967,7 @@ class O2mToMopidy:
 
                 if box is None:
                     # Fallback: pick a box from stats_raw history matching current hour
-                    hour = datetime.datetime.now().hour
+                    hour = self.stats_hour()   # keyed on read_hour, which is UTC
                     try:
                         uris = self.dbHandler.get_stat_raw_by_hour(hour, window, 1, 'box:')
                     except Exception as e:
@@ -2600,6 +3038,17 @@ class O2mToMopidy:
 
                 uris = self.get_track_recommandation(track_uri,discover_level,limit,data)
 
+                # End-of-track recommendations do not all go through the samplers —
+                # a Spotify reco, an album's own next track and the history path add
+                # their uris straight to the tracklist — so the rejection has to be
+                # applied here too, or a disliked track comes back through the one
+                # door the pools do not cover.
+                if uris:
+                    rejected = self.dbHandler.disliked_uris(uris)
+                    if rejected:
+                        uris = [u for u in uris if u not in rejected]
+                        print(f"reco: dropped {len(rejected)} disliked track(s)")
+
                 # Calculate insertion index depending of discover_level
                 tl_length = self.mopidyHandler.tracklist.get_length()
                 if self.mopidyHandler.tracklist.index():
@@ -2655,17 +3104,36 @@ class O2mToMopidy:
 
             #self.play_or_resume()
 
+    def ambient_settings(self, track_uri='', tlid=None):
+        """(energy, valence, dl) for what is added AROUND the track being played.
+
+        Several boxes can be active at once with different settings, so there is no
+        single ambient mood: the one that applies is the one belonging to the track
+        you are actually hearing. Everything added on its heels — the end-of-track
+        recommendations — is chosen under those, through the same ladder as the fill
+        (see effective_mood / effective_dl), not under a different one.
+
+        Before this, the two disagreed: the recommendation took the owning box's DL
+        COLUMN but the SESSION mood, so a box forcing 'calm' filled calm and then had
+        neutral tracks appended to it."""
+        box = None
+        try:
+            box = self.get_active_box_for_playback(track_uri or None, tlid)
+        except Exception:
+            box = None
+        if box is None:
+            box = self.activeboxs[0] if self.activeboxs else None
+        if box is None:
+            return self.mood_energy, self.mood_valence, int(self.discover_level)
+        e, v = self.effective_mood(box)
+        return e, v, self.effective_dl(box)
+
     def calculate_discover_level(self,track_uri='',push_discover_level=None):
-        # Calculate the discover_level : box associated or updated discover_level via api
-        discover_level = self.discover_level
-        if not self.discover_level_on :
-            if push_discover_level != None and push_discover_level:
-                discover_level = push_discover_level
-            if track_uri != '':
-                dl = self.get_option_for_box_uri(track_uri,"option_discover_level")
-                if dl and dl != None: discover_level = dl
-        print (int(discover_level))
-        return int(discover_level)
+        # Discover level for what is added around a played track. push_discover_level
+        # is an explicit caller override; otherwise the ambient settings decide.
+        if push_discover_level and not self.discover_level_on:
+            return int(push_discover_level)
+        return self.ambient_settings(track_uri)[2]
 
     def get_track_recommandation(self,track_uri, discover_level=5, limit=1, data=''):
         # Get tracks recommandations
@@ -2699,7 +3167,10 @@ class O2mToMopidy:
         if not candidates:
             return []
 
-        uris = self._expand_pick(candidates, limit, self.mood_energy, self.mood_valence, discover_level)
+        # Mood of the box the played track belongs to, not the session's — see
+        # ambient_settings for why those two used to disagree.
+        _e, _v, _ = self.ambient_settings(track_uri)
+        uris = self._expand_pick(candidates, limit, _e, _v, discover_level)
 
         return uris
 
@@ -2714,6 +3185,9 @@ class O2mToMopidy:
         data = box.data.split("\n")
         data = [x for x in data if not x.startswith('#')]
         data = [x for x in data if not x.startswith('\r')]
+        # Strip any time-window prefix: the substring test below would otherwise
+        # match and hand back a "08:00-10:00 > spotify:playlist:…" as the uri.
+        data = [bdir.split_condition(x)[1] for x in data]
         #Loop on lines containing the playlist uris
         for content in data:
             #Taking the first one. Pb if manies ?
@@ -2839,125 +3313,54 @@ class O2mToMopidy:
         if self.local and self.username == None : pattern = "local:local"
         return self.dbHandler.get_stat_raw_by_hour(read_hour,window,limit,pattern)
 
-    def _mood_pick(self, uris, n, energy, valence, radius, discover_level=5):
-        """Bias a candidate list towards (energy, valence) AND track popularity.
+    def _tunables(self):
+        """The selection knobs this instance is running with.
 
-        Two orthogonal axes, both modulated by discover_level, without ever
-        dropping tracks:
-          - mood: tracks whose energy/valence are known AND within `radius` of the
-            target come first; the rest (NULL or out-of-radius) are fallback.
-          - popularity: within each group, tracks are drawn weighted by their
-            popularity score raised to a temperature k(DL). Low DL sharpens toward
-            popular/comfort tracks; high DL flattens toward uniform discovery.
-
-        Before the first popularity recompute (all scores NULL) the weights are
-        uniform, so behaviour is identical to the previous random shuffle.
+        Rebuilt per call rather than cached: expand_pick_mode is switched at
+        runtime (A/B testing) and a cached copy would ignore the switch.
         """
-        if not uris:
-            return []
-        # Some auto-fill sources hand in nested lists (e.g. News) — flatten to flat
-        # scalar URIs, else the `uri IN (...)` lookup raises "Operand should contain
-        # 1 column(s)" and the whole mood/popularity selection silently falls back.
-        uris = [u for u in util.flatten_list(list(uris)) if isinstance(u, str) and u]
-        if not uris:
-            return []
-        # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1 (proportional), DL=10 → 0 (uniform)
-        k = max(0.0, (10 - discover_level) / 5.0)
+        return selection.Tunables(
+            cooldown_mult=self.cooldown_mult,
+            cooldown_days=self.cooldown_days,
+            cooldown_rc_ref=self.cooldown_rc_ref,
+            cooldown_plays=self.cooldown_plays,
+            exploit_sharpness=self.exploit_sharpness,
+            served_cooldown_min=self.served_cooldown_min,
+            served_mult=self.served_mult,
+            expand_pick_mode=getattr(self, 'expand_pick_mode', 'hybrid'),
+        )
 
-        # Single query for energy/valence + popularity; drop hidden/trash from the pool
-        # so explicitly rejected tracks never resurface.
-        feat, pop, last_read, rc, excluded = {}, {}, {}, {}, set()
-        try:
-            for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
-                                   Track.option_type, Track.last_read_date, Track.read_count)
-                          .where(Track.uri << list(uris)).namedtuples()):
-                if t.option_type in ('hidden', 'trash'):
-                    excluded.add(t.uri)
-                    continue
-                if t.energy is not None and t.valence is not None:
-                    feat[t.uri] = (t.energy, t.valence)
-                if t.popularity is not None:
-                    pop[t.uri] = t.popularity
-                if t.last_read_date is not None:
-                    last_read[t.uri] = t.last_read_date
-                if t.read_count is not None:
-                    rc[t.uri] = t.read_count
-        except Exception as e:
-            print(f"_mood_pick lookup error: {e}")
-            return uris[:min(n, len(uris))]
-
-        if excluded:
-            uris = [u for u in uris if u not in excluded]
-        if not uris:
-            return []
-        n = min(n, len(uris))
-
-        now = datetime.datetime.utcnow()
-        now_ts = time.time()
+    def _served_map(self):
+        """The intra-session "just served" stamps, shared across a whole fill."""
         served = getattr(self, '_served_at', None)
         if served is None:
             self._served_at = served = {}
+        return served
 
-        # Concentric mood weighting (replaces the old hard ±radius band): a DL-scaled
-        # Gaussian around the (energy, valence) target. σ = radius (tight at DL0 →
-        # broad at DL10), so the closest tracks are favoured and farther ones fade
-        # smoothly instead of being cut off. `floor` rises with DL so mood stops
-        # mattering at DL10 (discovery); unknown-mood (NULL) tracks sit at the floor
-        # as low-weight fillers, so the pool is never empty even when few tracks carry
-        # energy/valence (the sparse-coverage case). Single weighted draw — no split.
-        mood_on = (energy is not None and valence is not None)
-        sigma = max(radius, 1e-3)
-        floor = 0.05 + 0.95 * (min(max(discover_level, 0), 10) / 10.0)
+    def _selection_pool(self, uris, exclude_hidden, label):
+        """Everything the samplers need about `uris`, in one query.
 
-        def _mood_w(u):
-            if not mood_on:
-                return 1.0
-            f = feat.get(u)
-            if f is None:
-                return floor
-            d2 = (f[0] - energy) ** 2 + (f[1] - valence) ** 2
-            return max(math.exp(-d2 / (2.0 * sigma * sigma)), floor)
-
-        # Weight = popularity**k × concentric-mood × anti-repeat cooldown (played + served).
-        def _w(u):
-            return (max(pop.get(u, 0.5), 1e-6) ** k) * _mood_w(u) \
-                   * self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
-        weights = {u: _w(u) for u in uris}
-        result = self._sample_by_weight(uris, weights, n)
-        for u in result:
-            served[u] = now_ts  # served-cooldown for subsequent selections
-        return result
-
-    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True):
-        """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
-        DL-controlled popularity target. Always SAMPLES max_results at random from
-        the pool (no deterministic block) so a large playlist ROTATES around the
-        target each tap instead of replaying the same top tracks. Returns a
-        source-ordered subset (sequencing stays option_sort's job); count drops
-        below n only when the source has fewer tracks. Only invoked when the box's
-        option_sort is 'smart' (shuffle/asc/desc keep the basic legacy path).
-
-        Variant = self.expand_pick_mode:
-          - 'hybrid' (P0): n*(1-DL/10) exploit (sampled ∝ affinity²) + n*DL/10
-                       explore (uniform from the rest) — both stochastic.
-          - 'temp'   (P1): one sample weighted by affinity^k, k=(5-DL)/2.5
-                       (+2 favours the top → 0 uniform → -2 favours the obscure).
-          - 'band'   (P2): one sample weighted by a Gaussian around a target
-                       popularity P*(DL) (≈p90 at DL0 → ≈p10 at DL10).
-        Mood adds a small bonus only when features exist (unknown = neutral).
-        recently-played tracks are down-weighted (cooldown). hidden/trash are
-        excluded ONLY when exclude_hidden=True (recos/discovery): a directly-tapped
-        box whose OWN tracks are hidden/trash (e.g. a box with option_type='hidden')
-        passes exclude_hidden=False so it can still play its own content — otherwise
-        the exclusion would gut it (bug: 60/66 hidden → only 6 playable).
+        Returns None when the lookup fails, so the caller falls back to the raw
+        list rather than selecting from an empty pool. hidden/trash are dropped
+        when `exclude_hidden`, so explicitly rejected tracks never resurface —
+        but a directly-tapped box whose OWN tracks are hidden or trash passes
+        False, or the exclusion would gut it (bug: 60/66 hidden -> 6 playable).
         """
-        if not uris:
-            return []
-        feat, pop, last_read, rc, excluded = {}, {}, {}, {}, set()
+        feat, pop, last_read, rc, seq, excluded = {}, {}, {}, {}, {}, set()
+        # The rotation ruler, read once for the whole pool (see recent_music_play_seq).
+        seq_tail = self.dbHandler.recent_music_play_seq(self.cooldown_seq_window)
         try:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
-                                   Track.option_type, Track.last_read_date, Track.read_count)
+                                   Track.option_type, Track.last_read_date, Track.read_count,
+                                   Track.last_play_seq, Track.disliked)
                           .where(Track.uri << list(uris)).namedtuples()):
+                # A dislike is dropped whatever the caller asked, `exclude_hidden`
+                # included: hidden/trash are a lifecycle a box may legitimately be
+                # made OF, while a dislike is one deliberate gesture on one track —
+                # nothing it can be part of makes it wanted again.
+                if t.disliked:
+                    excluded.add(t.uri)
+                    continue
                 if exclude_hidden and t.option_type in ('hidden', 'trash'):
                     excluded.add(t.uri)
                     continue
@@ -2969,116 +3372,55 @@ class O2mToMopidy:
                     last_read[t.uri] = t.last_read_date
                 if t.read_count is not None:
                     rc[t.uri] = t.read_count
+                if t.last_play_seq is not None:
+                    seq[t.uri] = t.last_play_seq
         except Exception as e:
-            print(f"_expand_pick lookup error: {e}")
-            return list(uris[:min(n, len(uris))])
+            print(f"{label} lookup error: {e}")
+            return None
 
         if excluded:
             uris = [u for u in uris if u not in excluded]
+        return selection.Pool(uris=list(uris), feat=feat, pop=pop, last_read=last_read,
+                              read_count=rc, seq=seq, seq_tail=seq_tail)
+
+    def _mood_pick(self, uris, n, energy, valence, radius, discover_level=5):
+        """Bias a candidate list towards (energy, valence) AND track popularity.
+
+        Adapter over o2m_core.selection.mood_pick, which holds the algorithm and
+        is unit-tested there: this reads the pool and supplies the clock.
+        """
         if not uris:
             return []
-        m = min(n, len(uris))
-        mode = getattr(self, 'expand_pick_mode', 'hybrid')
-        now = datetime.datetime.utcnow()
-        now_ts = time.time()
-        served = getattr(self, '_served_at', None)
-        if served is None:
-            self._served_at = served = {}
-        sigma = max(discover_level / 20.0 + 0.05, 1e-3)
-        MOOD_BONUS = 0.15  # soft, features-only; unknown mood = neutral
-
-        def mood_g(u):  # concentric Gaussian proximity to the target in (0,1]; 0 if unknown
-            if energy is None or valence is None:
-                return 0.0
-            f = feat.get(u)
-            if f is None:
-                return 0.0
-            d2 = (f[0] - energy) ** 2 + (f[1] - valence) ** 2
-            return math.exp(-d2 / (2.0 * sigma * sigma))
-
-        def cd(u):
-            return self._cooldown_factor(u, last_read.get(u), now, now_ts, served, rc.get(u, 0))
-
-        def aff(u):  # affinity = popularity + soft, distance-graded mood bonus
-            return pop.get(u, 0.5) + MOOD_BONUS * mood_g(u)
-
-        if mode == 'temp':
-            k = (5 - discover_level) / 2.5  # +2 (favour top) .. 0 (uniform) .. -2 (favour obscure)
-            weights = {u: (max(aff(u), 1e-6) ** k) * cd(u) for u in uris}
-            sel = self._sample_by_weight(uris, weights, m)
-        elif mode == 'band':
-            vals = sorted(pop.get(u, 0.5) for u in uris)
-            p10 = vals[int(0.10 * (len(vals) - 1))]
-            p90 = vals[int(0.90 * (len(vals) - 1))]
-            target = p90 - (p90 - p10) * (discover_level / 10.0)  # DL0→top, DL10→bottom
-            sigma_pop = 0.15  # popularity-band spread (distinct from the mood sigma above)
-            weights = {u: math.exp(-((pop.get(u, 0.5) - target) ** 2) / (2 * sigma_pop * sigma_pop))
-                          * (1.0 + MOOD_BONUS * mood_g(u)) * cd(u) for u in uris}
-            sel = self._sample_by_weight(uris, weights, m)
-        else:  # 'hybrid' (P0): stochastic exploit + uniform explore
-            n_explore = int(round(m * discover_level / 10.0))
-            ew = {u: (max(aff(u), 1e-6) ** self.exploit_sharpness) * cd(u) for u in uris}
-            exploit = self._sample_by_weight(uris, ew, m - n_explore)
-            ex_set = set(exploit)
-            rest = [u for u in uris if u not in ex_set]
-            xw = {u: cd(u) for u in rest}
-            sel = exploit + self._sample_by_weight(rest, xw, n_explore)
-
-        sel_set = set(sel)
-        for u in sel_set:
-            served[u] = now_ts  # remember what we just served (served-cooldown)
-        try:
-            ps = [pop.get(u, 0.5) for u in sel_set]
-            print(f"_expand_pick[{mode}] DL={discover_level} pool={len(uris)} "
-                  f"-> {len(sel_set)} tracks, avg_pop={round(sum(ps)/len(ps), 3) if ps else 0}")
-        except Exception:
-            pass
-        return [u for u in uris if u in sel_set]  # source order preserved
-
-    def _sample_by_weight(self, uris, weights, n):
-        """Efraimidis-Spirakis weighted sampling without replacement from a
-        precomputed {uri: weight} map (key = rand**(1/w), keep the largest).
-        Returns up to n uris. Missing/≤0 weights fall back to a tiny epsilon."""
-        n = min(n, len(uris))
-        if n <= 0:
+        # Some auto-fill sources hand in nested lists (e.g. News) — flatten to flat
+        # scalar URIs, else the `uri IN (...)` lookup raises "Operand should contain
+        # 1 column(s)" and the whole mood/popularity selection silently falls back.
+        uris = [u for u in util.flatten_list(list(uris)) if isinstance(u, str) and u]
+        if not uris:
             return []
-        keyed = []
-        for u in uris:
-            w = weights.get(u, 1e-9)
-            if w <= 0:
-                w = 1e-9
-            keyed.append((random.random() ** (1.0 / w), u))
-        keyed.sort(reverse=True)
-        return [u for _, u in keyed[:n]]
+        pool = self._selection_pool(uris, exclude_hidden=True, label='_mood_pick')
+        if pool is None:
+            return uris[:min(n, len(uris))]
+        return selection.mood_pick(pool, n, energy, valence, radius, discover_level,
+                                   self._served_map(), datetime.datetime.utcnow(),
+                                   time.time(), self._tunables())
 
-    def _cooldown_factor(self, uri, last_read_at, now, now_ts, served, read_count=0):
-        """Combined anti-repeat down-weight in (0,1]: a track recently PLAYED and/or
-        recently SERVED is demoted, so successive selections rotate. Shared by
-        _expand_pick and _mood_pick.
+    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True):
+        """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
+        DL-controlled popularity target. Only invoked when the box's option_sort is
+        'smart' (shuffle/asc/desc keep the basic legacy path).
 
-        Played cooldown is MULTI-DAY and graduated (not a hard step): a track played
-        just now sits at cooldown_mult and eases linearly back to 1.0 over the window.
-        The window is cooldown_days, stretched up to ~2× for heavy-rotation tracks
-        (read_count → cooldown_rc_ref) so comfort favourites don't recur every session.
-        Served cooldown (intra-session, minutes) is unchanged."""
-        f = 1.0
-        if last_read_at is not None:
-            try:
-                lr = last_read_at
-                if isinstance(lr, (int, float)):
-                    lr = datetime.datetime.utcfromtimestamp(lr)
-                if getattr(lr, 'tzinfo', None) is not None:
-                    lr = lr.replace(tzinfo=None)
-                age_days = (now - lr).total_seconds() / 86400.0
-                cd_days = self.cooldown_days * (1.0 + min(read_count or 0, self.cooldown_rc_ref) / float(self.cooldown_rc_ref))
-                if 0.0 <= age_days < cd_days:
-                    f *= self.cooldown_mult + (1.0 - self.cooldown_mult) * (age_days / cd_days)
-            except Exception:
-                pass
-        sa = served.get(uri)
-        if sa is not None and (now_ts - sa) < self.served_cooldown_min * 60.0:
-            f *= self.served_mult
-        return f
+        Adapter over o2m_core.selection.expand_pick, which holds the three
+        variants (hybrid / temp / band) and is unit-tested there.
+        """
+        if not uris:
+            return []
+        pool = self._selection_pool(uris, exclude_hidden=exclude_hidden, label='_expand_pick')
+        if pool is None:
+            return list(uris[:min(n, len(uris))])
+        return selection.expand_pick(pool, n, energy, valence, discover_level,
+                                     self._served_map(), datetime.datetime.utcnow(),
+                                     time.time(), self._tunables(), on_debug=print)
+
 
 
     def get_new_tracks_notread(self, limit):
@@ -3339,12 +3681,14 @@ class O2mToMopidy:
             #stat.read_end = True
             stat.read_count_end += 1
             if stat.read_count_end > 0 and stat.day_time_average != None:
+                # Same frame as read_hour (UTC): this averages listening hours and is
+                # only ever compared against them, never shown to anyone.
                 stat.day_time_average = (
-                    datetime.datetime.now().hour
+                    self.stats_hour()
                     + stat.day_time_average * (stat.read_count_end - 1)
                 ) / (stat.read_count_end)
             else:
-                stat.day_time_average = datetime.datetime.now().hour
+                stat.day_time_average = self.stats_hour()
         elif (fix == False):
             #if stat.read_end != True: stat.read_end = False
             stat.skipped_count += 1
@@ -3508,7 +3852,7 @@ class O2mToMopidy:
     # episode. RF episodes are plain https mp3 URLs with no 'podcast+' marker to
     # key on, so every spoken-content test has to know these hosts too.
     _SPOKEN_URI_RE = re.compile(
-        r'podcast\+|youtube:video|(?:^|:)yt:'
+        r'podcast\+|youtube:video|(?:^|:)yt:|^(?:web|xp):'
         r'|proxycast\.radiofrance\.fr|radiofrance-podcast\.net', re.I)
 
     def _fill_spoken_meta(self, stat, mopidy_track, uri):
@@ -3582,6 +3926,10 @@ class O2mToMopidy:
             # warmup classifies a whole feed at once and passed the bare url, which
             # silently skipped the box heritage below and tagged every info episode
             # as a generic podcast.
+            # 'web:<media url>' too: a box line may name the media directly rather
+            # than the page that holds it, and the heritage lookup below works on
+            # whatever string the box actually contains.
+            uri = webmedia.media_url(uri) if webmedia.is_web_uri(uri) else uri
             if 'podcast+' in uri or (uri or '').startswith('http'):
                 raw = uri.split('podcast+', 1)[1] if 'podcast+' in uri else uri
                 feed = re.sub(r'[?&]max_results=\d+', '', raw.split('#')[0]).strip().rstrip('/')
@@ -3817,6 +4165,14 @@ class O2mToMopidy:
         except Exception:
             cur = None
         uri = getattr(cur, 'uri', '') if cur else ''
+        # "Is this a radio?" was asked of the uri MOPIDY reports, and an 'web:'
+        # media reports a signed CDN url — which starts with http, so a replay
+        # from a web page was answered as a live stream: the header looked for an
+        # ICY title and the item was presented as a station. The question belongs
+        # to the canonical uri, where 'web:' is plainly not a stream.
+        canonical = self.get_spotify_uri(uri)
+        if webmedia.is_web_uri(canonical):
+            return None
         if not uri or not (uri.startswith('http') or uri.startswith('tunein:')):
             return None
         # Friendly station name (kept visible in the UI even when a song plays).

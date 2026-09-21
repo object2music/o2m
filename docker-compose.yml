@@ -7,7 +7,8 @@ services:
     build:
       context: ./mopidy
       # Dockerfile4 = Mopidy 4 on Debian trixie, no Iris. The Mopidy 3
-      # Dockerfile is kept next to it but nothing uses it any more.
+      # Dockerfile was deleted once every instance ran Mopidy 4; the built
+      # image pvincent4/mopidy:latest is the rollback, not a rebuild.
       dockerfile: Dockerfile4
     ports:
       - ${PORT_MOPIDY}:6680 #Mopidy
@@ -15,7 +16,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/music:/app/Music
+      - ${MUSIC_DIR:-./data/music}:/app/Music
       - ./tmp/snapserver:/tmp
       # Spotify OAuth unifié : token user fetché via http://o2m:6681/api/spotify_stream_token
       # → librespot mint le blob (auth_type 1), persisté sur ./data/spotify.
@@ -35,6 +36,7 @@ services:
       # The OPML browse root the config points at exists in no image; left
       # empty so startup stays warning-free.
       - PODCAST_BROWSE_ROOT=
+      - TZ=${TZ:-Europe/Paris}   # same clock as o2m, so the two agree in logs
 
 
   o2m:
@@ -59,6 +61,12 @@ services:
       # Take playback events from the Mopidy-O2M extension's frontend in-process
       # instead of the websocket listener. Set to 'websocket' to roll back.
       - O2M_EVENT_SOURCE=http
+      # Local time, because two things the core reads the clock for face a person:
+      # a box's time windows ("08:00-10:00 > …") and the news-bulletin schedule,
+      # which follows the French broadcast grid. Listening HABITS stay on UTC
+      # (see O2mToMopidy.stats_hour) so they keep matching read_hour, stored in UTC
+      # across 100k+ rows. Override per instance with TZ in .env.
+      - TZ=${TZ:-Europe/Paris}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6681/health')"]
       interval: 120s
@@ -143,7 +151,7 @@ services:
       context: ./spotdl
       dockerfile: Dockerfile
     volumes:
-      - ./data/music:/music
+      - ${MUSIC_DIR:-./data/music}:/music
     depends_on:
       - o2m
     env_file:

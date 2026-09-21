@@ -1,6 +1,17 @@
 # misc
 spotipy
 requests
+# 'xp:<url>' resolution (o2m_core/webmedia.py): a page's Vimeo/Dailymotion embed
+# has no Mopidy backend, so o2m extracts the audio stream itself. The mopidy image
+# already carries yt_dlp for Mopidy-YouTube; this is o2m's own copy.
+yt_dlp
+# Not a hard dependency of yt_dlp, and not optional here. Dailymotion's extractor
+# demands a TLS fingerprint it recognises — INTERMITTENTLY, which is the trap: it
+# resolved fine in the mopidy container, which has no curl_cffi either, and then
+# answered "attempting impersonation, but none of these impersonate targets are
+# available: firefox" here. A missing curl_cffi is a feature that works until the
+# day it doesn't. Wheels exist for musl, so alpine needs no toolchain.
+curl_cffi
 mock
 six
 

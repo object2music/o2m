@@ -6,9 +6,9 @@
 # Mopidy itself comes from pip; the repo is still used for gst-plugin-spotify,
 # which replaces the hand-pinned .deb from a GitHub release.
 #
-# Iris is deliberately NOT installed: the UI is o2m's own. That also removes the
-# o2m.js / o2m.css / index.html / app.js copies into mopidy_iris/static and the
-# sed rewrites in the entrypoint.
+# Iris is deliberately NOT installed: the UI is o2m's own. The o2m.js / o2m.css /
+# index.html / app.js it used to be patched with, and the Mopidy 3 image that
+# copied them, were deleted once every instance ran Mopidy 4.
 FROM debian:trixie-slim
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
@@ -39,8 +39,9 @@ RUN pip install --break-system-packages --root-user-action=ignore -q \
       Mopidy-MPD Mopidy-Local Mopidy-Podcast Mopidy-Podcast-iTunes \
       Mopidy-YouTube Mopidy-TuneIn
 
-# o2m's own python deps (from mopidy/requirements.txt, minus the mopidy
-# extensions installed above and minus Iris).
+# o2m's own python deps. Listed here rather than in a requirements.txt: the
+# Mopidy 3 image that owned that file is gone, and this list is deliberately
+# not the same one (no Iris, no mopidy extensions already installed above).
 RUN pip install --break-system-packages --root-user-action=ignore -q \
       spotipy requests mock six yt_dlp mopidyapi \
       peewee PyMysql numpy flask flask_cors flask_session mysql-connector-python

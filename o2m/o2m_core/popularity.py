@@ -14,6 +14,8 @@ Design notes (discussion 2026-06-17):
   ever zeroing out an old favourite.
 - option_type stays OUT of the intrinsic score (favourites already correlate
   with high quality/volume — double counting), except 'trash' which is forced low.
+- An explicit dislike (Track.disliked) is forced low too: it is a statement about
+  the track, not a measurement of it.
 
 Keep the tunables below grouped so the curve is easy to adjust during tuning.
 """
@@ -64,17 +66,22 @@ def is_scorable(uri, option_type=None):
 
 def compute_popularity(read_end, read_count, read_count_end, skipped_count,
                        last_read_date=None, liked=0, option_type='library',
-                       prior_completion=DEFAULT_PRIOR_COMPLETION,
+                       disliked=0, prior_completion=DEFAULT_PRIOR_COMPLETION,
                        first_played_at=None, playlist_count=0, now=None):
     """Return a popularity score in [0, 1] for a single track.
 
     All raw arguments come straight from the Track row; None values are tolerated.
+    `disliked` is the heart's other pole (Track.disliked): 1 forces the score to
+    FORCED_LOW_SCORE, like option_type='trash'.
     prior_completion is the cohort completion mean (read_end averaged over played
     tracks) — see DatabaseHandler.get_completion_prior. first_played_at (datetime or
     unix ts, from stats_raw MIN(read_date)) anchors the novelty boost; playlist_count
     is the number of playlists the track belongs to (endorsement).
     """
-    if option_type in _FORCED_LOW:
+    # An explicit rejection is not a weight among others: it answers the question
+    # the score exists to answer. Same floor as 'trash', reached in one gesture
+    # instead of a history.
+    if disliked or option_type in _FORCED_LOW:
         return FORCED_LOW_SCORE
 
     read_count = read_count or 0

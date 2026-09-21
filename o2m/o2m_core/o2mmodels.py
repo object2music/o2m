@@ -11,6 +11,7 @@ from peewee import (
     Model,
     OperationalError,
     MySQLDatabase,
+    SQL,
 )
 from playhouse.migrate import migrate, MySQLMigrator, SqliteDatabase, SqliteMigrator
 from playhouse.shortcuts import ReconnectMixin, model_to_dict, dict_to_model
@@ -122,6 +123,15 @@ class Track(BaseModel):
     storage = CharField(default='sp')    # 'sp' or 'local'
     liked = IntegerField(default=0)      # 1 = in liked tracks
     liked_at = TimestampField(null=True, utc=True)
+    # The other pole of the heart: an EXPLICIT rejection, and the only signal that
+    # takes effect on the first gesture. Skips are read statistically (a threshold
+    # over several plays, see get_uris_podcasts_notread) because one skip may be an
+    # accident; a dislike says it outright, so selection drops the track for good.
+    # Kept apart from option_type='trash': that column is a lifecycle state, and
+    # for spoken content it carries the podcast/info classification the whole
+    # subsystem reads — overwriting it to reject one episode would break it.
+    disliked = IntegerField(default=0)   # 1 = explicitly rejected, never selected again
+    disliked_at = TimestampField(null=True, utc=True)
     local_uri = TextField(null=True)     # file:// URI if downloaded via spotdl
     mood = TextField(null=True)          # Last.fm mood: calm/energetic/dark/happy
     energy = FloatField(null=True)       # 0.0 (calm/sleep) → 1.0 (intense/metal)
@@ -131,6 +141,9 @@ class Track(BaseModel):
     published_at = CharField(null=True)  # episode publication date 'YYYY-MM-DD' (spoken content; feed/API formats vary)
     channel_id = CharField(null=True, index=True)  # → PodcastChannel.id (spoken content; one episode has exactly one channel)
     episode_key = CharField(null=True, index=True)  # Radio France episode-page id: the SAME episode reaches us as an RSS item and as an API episode, under different audio files
+    # stats_raw.id of this track's last play — a monotonic sequence, so the number of
+    # OTHER tracks played since is a rotation depth, which a mere elapsed time is not.
+    last_play_seq = IntegerField(null=True)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -319,6 +332,29 @@ class AlbumTrack(BaseModel):
 
     class Meta:
         indexes = ((('album_id', 'track_uri'), True),)
+
+
+class OfflineRequest(BaseModel):
+    """A track a listening device wants offline and the server has no file for.
+
+    O2M already had an offline path and it is the OTHER one: spotdl downloads
+    the pinned boxes into the music volume and writes `Track.local_uri`, which
+    the fill substitutes for the Spotify uri. That cache only ever fed Mopidy.
+    A browser cannot be fed a Spotify uri at all — librespot decrypts into
+    GStreamer, never into a file — so the only music a device can hold is music
+    the server holds as an actual file. This table is the hand-off: the UI posts
+    what it is missing, the spotdl service polls it and downloads, and
+    `local_uri` (written by the existing register endpoint) is what says the
+    bytes arrived.
+
+    Persisted rather than kept in memory: the wait is minutes to hours, and the
+    two processes restart independently of each other and of the phone.
+    """
+    uri = CharField(primary_key=True)                  # the spotify:track: uri asked for
+    requested_at = TimestampField(null=True, utc=True)
+    state = CharField(default='pending', index=True)   # pending | done | failed
+    tries = IntegerField(default=0)
+    note = TextField(null=True)                        # last failure, for diagnosis
 
 
 class CacheMeta(BaseModel):
@@ -552,6 +588,39 @@ def _migration_v13(migrator):
     _add_column_safe(migrator, 'box', 'image_url', TextField(null=True))
 
 
+def _migration_v24(migrator):
+    # constraints=[SQL('DEFAULT 0')] is NOT decoration on a NOT NULL column: peewee's
+    # `default` is a Python-side value and emits no SQL DEFAULT, so an image whose
+    # model predates the column INSERTs without it and MySQL in STRICT_TRANS_TABLES
+    # rejects the row outright. o2m_0 and o2m_1 share one database — see v25, which
+    # repairs the databases that applied this migration before the constraint was here.
+    _add_column_safe(migrator, 'track', 'disliked',
+                     IntegerField(default=0, constraints=[SQL('DEFAULT 0')]))
+    _add_column_safe(migrator, 'track', 'disliked_at', TimestampField(null=True, utc=True))
+
+
+def _migration_v25(migrator):
+    """Repair v24 where it already ran: `disliked` was added NOT NULL with no SQL
+    DEFAULT, and under STRICT_TRANS_TABLES that breaks every INSERT that omits the
+    column — which is every INSERT from an older image. Metadata-only (SET DEFAULT
+    never rewrites the table). SQLite is skipped: it has no ALTER COLUMN, and its
+    tables come from create_tables, not from that ALTER."""
+    if isinstance(db, SqliteDatabase):
+        return
+    try:
+        db.execute_sql("ALTER TABLE track ALTER COLUMN disliked SET DEFAULT 0")
+    except Exception as e:
+        print(f"[DB] v25 disliked default: {e}")
+
+
+def _migration_v23(migrator):
+    db.create_tables([OfflineRequest], safe=True)
+
+
+def _migration_v22(migrator):
+    _add_column_safe(migrator, 'track', 'last_play_seq', IntegerField(null=True))
+
+
 def _migration_v21(migrator):
     # One channel table. PodcastChannel already held the sources in use (RSS and
     # RF); it now also carries the searchable RF catalogue that RfShow held, so
@@ -590,7 +659,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 25
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -614,6 +683,10 @@ _MIGRATIONS = [
     (19, "track_episode_key_column", _migration_v19),
     (20, "podcastchannel_feed_url_column", _migration_v20),
     (21, "podcastchannel_rf_id_column", _migration_v21),
+    (22, "track_last_play_seq_column", _migration_v22),
+    (23, "offline_request_table", _migration_v23),
+    (24, "track_disliked_columns", _migration_v24),
+    (25, "track_disliked_sql_default", _migration_v25),
 ]
 
 

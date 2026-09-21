@@ -7,12 +7,13 @@ from playhouse.reflection import generate_models, print_model
 from playhouse.shortcuts import model_to_dict, dict_to_model
 
 
+from o2m_core import virtualbox
 from o2m_core.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
-    RfTaxonomy, PodcastChannel, EpisodeTaxonomy,
+    RfTaxonomy, PodcastChannel, EpisodeTaxonomy, OfflineRequest,
     setup_database,
 )
 
@@ -30,6 +31,35 @@ _GENRE_NOISE = frozenset({
     'various artists', 'unknown', 'albums i own', 'check', 'spotify',
 })
 _GENRE_NOISE_RE = _re.compile(r'^\d+s?$')
+
+# ── Spoken content: the uri shapes the heart can reach ─────────────────────────
+
+# `_is_spoken_uri` (o2mtomopidy) is the authority on what counts as spoken; this
+# is the same list as prefixes, because a LIKE is what a query can ask. Kept here
+# rather than imported to avoid a cycle, and deliberately a prefix list: a browse
+# row is chosen by what the uri STARTS with, never by a regex over 80k rows.
+SPOKEN_URI_PREFIXES = ('podcast+', 'youtube:video:', 'yt:', 'web:', 'xp:')
+
+
+def _uri_starts_with_any(prefixes):
+    """A peewee expression matching any of `prefixes`, OR-ed."""
+    cond = None
+    for p in prefixes:
+        c = Track.uri.startswith(p)
+        cond = c if cond is None else (cond | c)
+    return cond
+
+
+def _spoken_source_label(uri):
+    """Where a spoken item comes from, when no channel names it."""
+    u = str(uri or '')
+    if u.startswith('youtube:') or u.startswith('yt:'):
+        return 'YouTube'
+    if u.startswith('web:') or u.startswith('xp:'):
+        host = u.split(':', 1)[1]
+        host = host.split('//', 1)[-1].split('/', 1)[0]
+        return host[4:] if host.startswith('www.') else host
+    return ''
 
 
 def _normalize_genre(name):
@@ -178,20 +208,63 @@ class DatabaseHandler():
                     if b:
                         out[uri] = {'name': b.description or b.uid, 'kind': 'box',
                                     'sub': b.option_type}
+                elif uri.startswith(('web:', 'xp:')):
+                    # Two different things wear this prefix, and the editor shows
+                    # both: a box line names a PAGE (registered as a web channel
+                    # when it was first read), while a line naming a single media
+                    # is a Track like any episode. Ask for the page first — it is
+                    # the shape a person types — then fall back to the item.
+                    # Look the row up under the CURRENT spelling: a legacy
+                    # 'xp:' line still plays, so it should still be named, and
+                    # the rows it points at were migrated to 'web:'.
+                    target = uri.split(':', 1)[1]
+                    uri_key = 'web:' + target
+                    host = ''
+                    try:
+                        from urllib.parse import urlparse
+                        host = (urlparse(target).hostname or '')
+                        if host.startswith('www.'):
+                            host = host[4:]      # not lstrip(): it strips CHARACTERS,
+                                                 # and would turn wired.com into ired.com
+                    except Exception:
+                        pass
+                    ch = PodcastChannel.get_or_none(PodcastChannel.id == target)
+                    if ch and (ch.title or '').strip():
+                        out[uri] = {'name': ch.title.strip(), 'kind': 'web', 'sub': host}
+                    else:
+                        t = (Track.get_or_none(Track.uri == uri_key)
+                             or Track.get_or_none(Track.uri == uri))
+                        if t and t.name:
+                            out[uri] = {'name': t.name, 'kind': 'web', 'sub': host}
             except Exception as err:
                 self.log.error(f'resolve_uris: {uri}: {err}')
         return out
 
+    def find_box_by_uid(self, uid):
+        """The stored box with this uid, or None — WITHOUT creating one.
+
+        `get_box_by_uid` below opens a box for any uid it does not know, which is
+        right where it comes from (an unseen NFC tag IS a new box) and wrong
+        everywhere else. Every read-only path — displaying the name of the box
+        that owns a track, testing existence — asks this one instead."""
+        if not uid:
+            return None
+        results = self.transform_query_to_list(Box.select().where(Box.uid == uid))
+        return results[0] if results else None
+
     def get_box_by_uid(self, uid):
         #self.log.info('searching for box : {} '.format(uid))
-        query = Box.select().where(Box.uid == uid)
-        results = self.transform_query_to_list(query)
-        #print (results)
-        if len(results) > 0:
-            return results[0]
-        else:
-            mopidy_box = self.create_box('mopidy_box','')
-            return mopidy_box
+        # A virtual object's uid (obj:<uri>, see o2m_core/virtualbox.py) is not a
+        # box and must never become one: it reaches here through the uid-keyed
+        # paths — /api/track_info resolving the owner of the playing track, most
+        # quietly — and the auto-create below would open a junk row per tap on a
+        # mosaic tile.
+        if virtualbox.is_virtual(uid):
+            return None
+        box = self.find_box_by_uid(uid)
+        if box is not None:
+            return box
+        return self.create_box('mopidy_box', '')
 
     def get_boxes_pinned(self):
         #results = Box.select().where(Box.favorite == 1).get()
@@ -385,7 +458,7 @@ class DatabaseHandler():
                 new = round(compute_popularity(
                     t.read_end, t.read_count, t.read_count_end, t.skipped_count,
                     last_read_date=t.last_read_date, liked=t.liked,
-                    option_type=t.option_type, prior_completion=prior,
+                    option_type=t.option_type, disliked=t.disliked, prior_completion=prior,
                     first_played_at=first_seen.get(t.uri),
                     playlist_count=pl_count.get(t.uri, 0), now=now), 4)
             else:
@@ -581,12 +654,17 @@ class DatabaseHandler():
 
     def purge_old_episodes(self, days=365):
         """Drop never-started episodes published longer than `days` ago. Anything
-        ever listened to is kept: its row carries history and stats."""
+        ever listened to is kept: its row carries history and stats — and so is
+        anything hearted, which is a trace of its own."""
         cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
         try:
             gone = [t.uri for t in Track.select(Track.uri).where(
                 (Track.channel_id.is_null(False)) & (Track.published_at < cutoff)
-                & (Track.read_count == 0) & (Track.read_position == 0))]
+                & (Track.read_count == 0) & (Track.read_position == 0)
+                # A heart is the one trace that does not need a play behind it.
+                # Everything else here is "never started", which a favourite may
+                # legitimately be — kept for something one day, then dropped.
+                & ((Track.liked != 1) | Track.liked.is_null()))]
             if not gone:
                 return 0
             for i in range(0, len(gone), 500):
@@ -619,6 +697,12 @@ class DatabaseHandler():
         # `read_time` field — the old kwarg was silently dropped, so read_date fell
         # back to the field default). Passing it explicitly records the event time.
         stat_raw = Stats_Raw.create(uri=uri, read_date=read_time, read_hour=read_hour, username=username)
+        # Remember WHERE in the play sequence this happened, so the selector can ask
+        # "how much other music has gone by since?" and not only "how long ago?".
+        try:
+            Track.update(last_play_seq=stat_raw.id).where(Track.uri == uri).execute()
+        except Exception as e:
+            print(f"create_stat_raw(last_play_seq): {e}")
         return stat_raw
 
     def create_playlist_log(self, track_uri, playlist_uri, action, from_option_type=None, to_option_type=None, username=None, track_name=None, playlist_name=None):
@@ -633,6 +717,158 @@ class DatabaseHandler():
             to_option_type=to_option_type,
             username=username,
         )
+
+    def get_favorite_rows(self, spoken=False, limit=50, offset=0):
+        """Favourites in the browser's row shape, music or spoken.
+
+        Two notions of "favourite" coexist and the heart already merges them, so
+        this does too: `liked` is what the heart sets (and what Spotify saved-tracks
+        sync writes), `option_type='favorites'` is the lifecycle state the
+        `o2m:favorites` pattern plays. Showing only one would hide rows the interface
+        calls favourite.
+
+        Spoken favourites are near-zero today — the heart writes `liked` for any uri,
+        including an episode, so the row fills in as they are marked rather than
+        needing a separate mechanism.
+
+        The spoken side is every uri shape the heart can reach that is not a Spotify
+        track (`SPOKEN_URI_PREFIXES`), not `podcast+` alone: a YouTube video and a
+        `web:` page item are listened to, resumed and retired exactly like an
+        episode, and a heart put on one was landing in no list at all."""
+        try:
+            cond = ((Track.liked == 1) | (Track.option_type == 'favorites'))
+            cond = cond & (_uri_starts_with_any(SPOKEN_URI_PREFIXES) if spoken
+                           else Track.uri.startswith('spotify:track:'))
+            q = (Track.select(Track.uri, Track.name, Track.album_id, Track.channel_id)
+                 .where(cond)
+                 .order_by(Track.last_read_date.desc(), Track.uri)
+                 .limit(limit + 1).offset(offset))
+            rows = list(q)
+            more = len(rows) > limit
+            out = []
+            for t in rows[:limit]:
+                sub = ''
+                if spoken:
+                    if t.channel_id:
+                        ch = PodcastChannel.get_or_none(PodcastChannel.id == t.channel_id)
+                        sub = (ch.title or '') if ch else ''
+                    # A feed names its channel; a bare video has nobody to name it,
+                    # so say where it comes from rather than leave the line blank —
+                    # that is the one thing the uri does tell.
+                    sub = sub or _spoken_source_label(t.uri)
+                elif t.album_id:
+                    al = Album.get_or_none(Album.id == t.album_id)
+                    sub = (al.artist_name or '') if al else ''
+                out.append({'uri': t.uri, 'name': t.name or t.uri, 'sub': sub, 'image': ''})
+            return out, more
+        except Exception as e:
+            print(f"get_favorite_rows: {e}")
+            return [], False
+
+    def get_recent_episode_rows(self, limit=50, offset=0):
+        """The episodes actually LISTENED to, most recent first, in the browser's
+        row shape.
+
+        Played is not listened: a fill serves far more spoken items than anyone
+        stays with, so a plain "recently played" list is mostly things that went by.
+        The bar is half the episode — either a logged completion (`read_count_end`,
+        only written past 90%) or a bookmark past the midpoint.
+
+        `read_end` is deliberately NOT a criterion despite being the obvious column:
+        it is a running average across every read, and its column default is 0.5, so
+        it cannot tell a half-listened episode from one nothing ever touched.
+
+        This is the nearest thing to a record of which episodes mattered — likes on
+        episodes were being wiped by the Spotify reconciliation, and listening is the
+        only trace that survived. The subtitle therefore carries what a person needs
+        to recognise one: channel, when, how far in, how long."""
+        from o2m_core import boxdirectives
+        try:
+            substantial = ((Track.read_count_end > 0)
+                           | ((Track.duration_ms > 0)
+                              & (Track.read_position >= Track.duration_ms / 2)))
+            q = (Track.select(Track.uri, Track.name, Track.channel_id,
+                              Track.last_read_date, Track.read_position,
+                              Track.duration_ms, Track.read_count_end)
+                 .where(Track.uri.startswith('podcast+')
+                        & (Track.read_count > 0)
+                        & Track.last_read_date.is_null(False)
+                        & substantial)
+                 .order_by(Track.last_read_date.desc())
+                 .limit(limit + 1).offset(offset))
+            rows = list(q)
+            more = len(rows) > limit
+            chans, out = {}, []
+            for t in rows[:limit]:
+                if t.channel_id not in chans:
+                    ch = PodcastChannel.get_or_none(PodcastChannel.id == t.channel_id)
+                    chans[t.channel_id] = (ch.title or '') if ch else ''
+                dur = t.duration_ms or 0
+                pct = round(100.0 * t.read_position / dur) if (dur and t.read_position) else 0
+                if t.read_count_end and pct < 90:
+                    pct = 100          # a completion was logged; the bookmark lagged
+                when = boxdirectives.to_local(t.last_read_date)
+                bits = [chans[t.channel_id],
+                        when.strftime('%d %b %H:%M') if when else '',
+                        f"{min(pct, 100)}%" if pct else '',
+                        f"{round(dur / 60000)} min" if dur else '']
+                out.append({'uri': t.uri, 'name': t.name or t.uri,
+                            'sub': ' · '.join(b for b in bits if b), 'image': ''})
+            return out, more
+        except Exception as e:
+            print(f"get_recent_episode_rows: {e}")
+            return [], False
+
+    def backfill_last_play_seq(self):
+        """Give every already-played track the sequence position of its last play.
+
+        Without this the rotation-depth cooldown is inert on an existing install:
+        last_play_seq is only written when a track ENDS, so on the day the column
+        was added it protected 25 tracks out of 22,733 already played — 0.1%. The
+        whole history is right there in stats_raw, which is why "no backfill needed"
+        was the wrong call: the rule would have taken weeks of listening to mean
+        anything, and would have silently let exactly the popular tracks it exists
+        to slow down through.
+
+        One statement, only touching rows that have no value yet, so it is safe to
+        call again; a CacheMeta flag keeps it from re-scanning at every startup."""
+        done, _ = self.get_cache_meta('backfill_last_play_seq')
+        if done:
+            return 0
+        try:
+            db.execute_sql("""
+              UPDATE track t
+                JOIN (SELECT uri, MAX(id) AS m FROM stats_raw
+                      WHERE uri LIKE 'spotify:track:%%' GROUP BY uri) s ON s.uri = t.uri
+                 SET t.last_play_seq = s.m
+               WHERE t.last_play_seq IS NULL
+            """)
+            n = Track.select().where(Track.last_play_seq.is_null(False)).count()
+            self.set_cache_meta('backfill_last_play_seq', 1)
+            print(f"backfill_last_play_seq: {n} tracks now carry a play position")
+            return n
+        except Exception as e:
+            print(f"backfill_last_play_seq: {e}")
+            return 0
+
+    def recent_music_play_seq(self, limit=200):
+        """Ids of the last `limit` MUSIC plays, ascending — the rotation ruler.
+
+        Music only: 55% of stats_raw is podcasts, radios and box activations, and an
+        evening of podcasts is not other music having gone by. Counting them would
+        inflate the depth and lift the anti-repeat cooldown early, which is exactly
+        the failure it exists to prevent.
+
+        One query per fill, then bisect per candidate — cheaper than asking "how many
+        plays since" once per track, which is the same question asked N times."""
+        try:
+            rows = db.execute_sql(
+                "SELECT id FROM stats_raw WHERE uri LIKE 'spotify:track:%%' "
+                "ORDER BY id DESC LIMIT %s", (int(limit),)).fetchall()
+            return sorted(r[0] for r in rows)
+        except Exception as e:
+            print(f"recent_music_play_seq: {e}")
+            return []
 
     def get_stat_raw_by_hour(self, read_hour, window=0, limit=1, uri_pattern='track:'):
         print (f"Get stat raw by hour {read_hour} {window} {limit} {uri_pattern}")
@@ -737,6 +973,9 @@ class DatabaseHandler():
             # the user keeps dropping it, don't resurface it (a single early skip is
             # tolerated — could be accidental).
             & ~((Track.skipped_count >= 2) & (Track.read_position < RES))
+            # An explicit dislike does in one gesture what the rule above needs
+            # two skips to infer.
+            & (Track.disliked == 0)
             & (Track.option_type != "library")
             & (Track.option_type != "info")
         ).order_by(effective_recency.desc()).limit(pool_size)
@@ -1070,10 +1309,63 @@ class DatabaseHandler():
         ).execute()
 
     def set_track_liked(self, uri, liked):
-        """Pose/retire le flag favori local (crée la ligne si absente)."""
+        """Set/clear the local favourite flag (creates the row if absent).
+
+        Liking clears a dislike: the two are the same judgement with opposite
+        signs, and a row holding both would make every query that reads one of
+        them depend on which was asked first."""
         import datetime as _dt
         updates = {'liked': 1 if liked else 0,
                    'liked_at': _dt.datetime.utcnow() if liked else None}
+        if liked:
+            updates['disliked'] = 0
+            updates['disliked_at'] = None
+            # Lifting a dislike releases the score with it, exactly as
+            # set_track_disliked does on its own way out — and here it matters more:
+            # `dislike -> like` is ONE step of the rating cycle, and leaving the
+            # forced 0 behind would have kept a freshly declared favourite out of
+            # every low-DL draw until the next daily recompute.
+            try:
+                row = Track.get_or_none(Track.uri == uri)
+                if row is not None and row.disliked and row.popularity is not None:
+                    updates['popularity'] = None
+            except Exception as e:
+                self.log.error(f"set_track_liked popularity: {e}")
+        Track.insert({**updates, 'uri': uri}).on_conflict(
+            action='update', update=updates,
+        ).execute()
+
+    def set_track_disliked(self, uri, disliked):
+        """Set/clear the explicit rejection flag (creates the row if absent).
+
+        Symmetrical to set_track_liked, and clears the like for the same reason.
+        This is the signal the selection reads FIRST: a disliked track is dropped
+        from every pool, whatever its popularity, its box or its source.
+
+        The score moves with the flag rather than waiting for the next batch.
+        recompute_popularity runs at most daily (TTL 24h), and a cleared dislike
+        left behind a persisted 0 — which is NOT what an unscored track is worth:
+        the samplers read a missing score as 0.5 (`pool.pop.get(u, 0.5)`, neutral)
+        and a stored 0 as "never draw this", since the weight is popularity**k.
+        Un-disliking a track would have left it invisible at low DL for up to a
+        day. So: forced to 0 on the way in, back to NULL on the way out, and the
+        batch puts the real number back. NULL is also what non-music carries, so
+        a track that had no score never gains one here."""
+        import datetime as _dt
+        updates = {'disliked': 1 if disliked else 0,
+                   'disliked_at': _dt.datetime.utcnow() if disliked else None}
+        if disliked:
+            updates['liked'] = 0
+            updates['liked_at'] = None
+        try:
+            row = Track.get_or_none(Track.uri == uri)
+            if disliked:
+                if row is not None and row.popularity is not None:
+                    updates['popularity'] = 0.0
+            elif row is not None and row.popularity is not None:
+                updates['popularity'] = None
+        except Exception as e:
+            self.log.error(f"set_track_disliked popularity: {e}")
         Track.insert({**updates, 'uri': uri}).on_conflict(
             action='update', update=updates,
         ).execute()
@@ -1084,6 +1376,26 @@ class DatabaseHandler():
             return bool(t and t.liked)
         except Exception:
             return False
+
+    def is_track_disliked(self, uri):
+        try:
+            t = Track.get_or_none(Track.uri == uri)
+            return bool(t and t.disliked)
+        except Exception:
+            return False
+
+    def disliked_uris(self, uris):
+        """The subset of *uris* explicitly rejected — one query, for the filters
+        that run over a whole candidate list."""
+        uris = [u for u in (uris or []) if u]
+        if not uris:
+            return set()
+        try:
+            return {t.uri for t in Track.select(Track.uri)
+                                        .where((Track.uri << uris) & (Track.disliked == 1))}
+        except Exception as e:
+            self.log.error(f"disliked_uris: {e}")
+            return set()
 
     def get_tracks_by_mood_features(self, energy_target, valence_target, radius, genre_names=None, limit=25):
         """Return shuffled URIs of tracks within [energy_target±radius, valence_target±radius].
@@ -1396,27 +1708,68 @@ class DatabaseHandler():
         except Exception:
             return False
 
+    def reconcile_saved_albums(self, seen_ids):
+        """Clear `saved` on every album Spotify no longer lists, and say which.
+
+        **The caller must have swept the WHOLE library and checked its own count
+        against Spotify's `total` before calling this.** It is the one operation in
+        the cache that removes something nobody asked to remove, and a half-read
+        page looks exactly like an emptied library — a rate limit in the middle of
+        the paging would otherwise unsave everything. An empty set is refused for
+        the same reason: it is far more likely to mean "the sweep failed" than
+        "you own no albums".
+
+        Returns the ids it cleared, so the caller can log a change of this weight
+        rather than make it silently."""
+        seen = {i for i in (seen_ids or []) if i}
+        if not seen:
+            return []
+        gone = [a.id for a in Album.select(Album.id)
+                .where((Album.saved == 1) & Album.id.not_in(list(seen)))]
+        if gone:
+            Album.update(saved=0, saved_at=None).where(Album.id.in_(gone)).execute()
+        return gone
+
+    def reconcile_followed_artists(self, seen_ids):
+        """Clear `followed` on every artist Spotify no longer lists. Same contract
+        and same danger as reconcile_saved_albums above."""
+        seen = {i for i in (seen_ids or []) if i}
+        if not seen:
+            return []
+        gone = [a.id for a in Artist.select(Artist.id)
+                .where((Artist.followed == 1) & Artist.id.not_in(list(seen)))]
+        if gone:
+            Artist.update(followed=0, followed_at=None).where(Artist.id.in_(gone)).execute()
+        return gone
+
     def get_saved_album_ids(self):
         """Return list of album IDs where saved=1."""
         return [a.id for a in Album.select(Album.id).where(Album.saved == 1)]
 
-    def get_saved_albums(self, limit=200):
-        """Saved albums as picker rows (uri/name/sub/image) for the box editor."""
-        rows = (Album.select().where(Album.saved == 1)
-                .order_by(Album.name).limit(limit))
-        return [{'uri': a.uri or f'spotify:album:{a.id}',
-                 'name': a.name or a.id,
-                 'sub': a.artist_name or '',
-                 'image': a.image_url or ''} for a in rows]
+    def get_saved_albums(self, limit=200, offset=0):
+        """Saved albums as picker rows (uri/name/sub/image), paged.
 
-    def get_followed_artists(self, limit=200):
-        """Followed artists as picker rows (uri/name/image) for the box editor."""
-        rows = (Artist.select().where(Artist.followed == 1)
-                .order_by(Artist.name).limit(limit))
-        return [{'uri': a.uri or f'spotify:artist:{a.id}',
-                 'name': a.name or a.id,
-                 'sub': '',
-                 'image': a.image_url or ''} for a in rows]
+        Returns (rows, has_more) — the extra row probed beyond `limit` is what
+        says whether there is a next page, the same shape get_favorite_rows uses.
+        Paged because the mosaic in the Full view lists the lot (248 here), where
+        the box editor only ever showed a capped picker."""
+        rows = list(Album.select().where(Album.saved == 1)
+                    .order_by(Album.name).limit(limit + 1).offset(offset))
+        more = len(rows) > limit
+        return ([{'uri': a.uri or f'spotify:album:{a.id}',
+                  'name': a.name or a.id,
+                  'sub': a.artist_name or '',
+                  'image': a.image_url or ''} for a in rows[:limit]], more)
+
+    def get_followed_artists(self, limit=200, offset=0):
+        """Followed artists as picker rows (uri/name/image), paged like above."""
+        rows = list(Artist.select().where(Artist.followed == 1)
+                    .order_by(Artist.name).limit(limit + 1).offset(offset))
+        more = len(rows) > limit
+        return ([{'uri': a.uri or f'spotify:artist:{a.id}',
+                  'name': a.name or a.id,
+                  'sub': '',
+                  'image': a.image_url or ''} for a in rows[:limit]], more)
 
     def save_album_track(self, album_id, track_uri, position=0):
         """Link a track_uri to an album_id in AlbumTrack cache."""
@@ -1481,7 +1834,7 @@ class DatabaseHandler():
                   .limit(limit).offset(offset)):
             results['tracks'].append({
                 'uri': t.uri, 'name': t.name, 'length': t.duration_ms,
-                'artists': self._track_artist_names(t.uri),
+                'artists': self._track_artists(t.uri),
             })
         for ot, bucket in (('podcast', 'podcasts'), ('info', 'info')):
             for t in (Track.select()
@@ -1510,14 +1863,26 @@ class DatabaseHandler():
             })
         return results
 
-    def _track_artist_names(self, track_uri):
-        """Artist name(s) for a track from the TrackArtist join (ordered), cache-only."""
+    def _track_artists(self, track_uri):
+        """Artist(s) of a track from the TrackArtist join, cache-only:
+        [{'uri', 'name'}, ...] ordered by TrackArtist.position (0 = main artist).
+
+        The URI is what makes each name clickable on its own in the UI — a
+        collaboration is several artists, and a list of bare names could only ever
+        link to one of them. Position is the order Spotify gave, and it is the only
+        place it survives: mopidy carries `Track.artists` as a frozenset.
+
+        An artist_id with no Artist row (the catalogue cache is filled lazily) has
+        no name to show, so it is skipped — as it already was."""
         try:
-            rows = (Artist.select(Artist.name)
-                    .join(TrackArtist, on=(Artist.id == TrackArtist.artist_id))
+            rows = (TrackArtist
+                    .select(TrackArtist.artist_id, Artist.name, Artist.uri)
+                    .join(Artist, JOIN.LEFT_OUTER, on=(Artist.id == TrackArtist.artist_id))
                     .where(TrackArtist.track_uri == track_uri)
-                    .order_by(TrackArtist.position))
-            return [r.name for r in rows if r.name]
+                    .order_by(TrackArtist.position)
+                    .objects())
+            return [{'uri': r.uri or f'spotify:artist:{r.artist_id}', 'name': r.name}
+                    for r in rows if r.name]
         except Exception:
             return []
 
@@ -1531,7 +1896,13 @@ class DatabaseHandler():
                       .order_by(Track.track_number))
         if a is None and not tracks:
             return None
-        total = a.total_tracks if (a and a.total_tracks) else len(tracks)
+        # "Cached" has to mean COMPLETE, not non-empty. With no total_tracks to
+        # compare against, the count was compared with itself — always equal, so a
+        # handful of played tracks passed as a whole record and shadowed the live
+        # lookup. 2,057 of 8,284 album rows carry no total; they are partial until
+        # the backfill gives them one.
+        known_total = a.total_tracks if a else None
+        total = known_total or len(tracks)
         return {
             'source':  'db',
             'name':    a.name if a else None,
@@ -1540,7 +1911,7 @@ class DatabaseHandler():
             'total':   total,
             # Partial = the DB only has some of the album's tracks (not a full catalog);
             # the client falls back to a live lookup for a complete listing.
-            'partial': bool(total and len(tracks) < total),
+            'partial': bool(not known_total or len(tracks) < known_total),
             'release': a.release_date if a else None,
             'tracks': [self._track_dict(t) for t in tracks],
         }
@@ -1550,12 +1921,16 @@ class DatabaseHandler():
         return {
             'uri': t.uri, 'name': t.name, 'length': t.duration_ms,
             'track_number': t.track_number,
-            'artists': self._track_artist_names(t.uri),
+            'artists': self._track_artists(t.uri),
             'local': bool(t.local_uri),
             'option_type': t.option_type,
             'mood': (t.mood if (t.mood and t.mood != '_') else None),
             'energy': t.energy, 'valence': t.valence,
+            # Same field set as /api/track_info, so a track row renders identically
+            # whether the list came from here or from the now-playing tracklist.
+            'popularity': t.popularity,
             'liked': bool(t.liked),
+            'disliked': bool(t.disliked),
         }
 
     def get_artist_detail(self, artist_id):
@@ -1854,6 +2229,87 @@ class DatabaseHandler():
         """Set local_uri=NULL for all tracks with this local file URI."""
         Track.update(local_uri=None).where(Track.local_uri == local_uri).execute()
 
+    # ─── Offline: the queue between a device and spotdl ───────────────────────
+    # A device can only hold a track the server holds as a file. These four
+    # methods are the whole hand-off: the UI asks, spotdl serves, `local_uri`
+    # says it landed. Nothing here decides WHAT to download — that is the UI's
+    # tracklist — and nothing here downloads; spotdl remains the only thing that
+    # runs spotdl.
+
+    OFFLINE_MAX_TRIES = 3
+
+    def request_offline(self, uris, retry_failed=False):
+        """Queue the Spotify tracks we have no file for. Returns those queued.
+
+        `retry_failed` is off by default, and that default is the whole point.
+        A client polls this endpoint while it waits, so resurrecting every
+        'failed' row on each poll made the give-up decision unreachable: spotdl
+        re-downloaded the same unfetchable tracks every 30s for ever, the tries
+        counter climbing, the UI reporting 'being fetched by the server' with no
+        end. Retrying is a deliberate act (the person presses download again),
+        and even then it stops at OFFLINE_MAX_TRIES.
+
+        A 'done' row whose file has since been swept by the cache cleaner IS
+        re-queued: it reached here, so it has no local_uri any more."""
+        wanted = []
+        for uri in uris or []:
+            if not uri or not uri.startswith('spotify:track:'):
+                continue
+            if self.get_local_uri(uri):
+                continue
+            wanted.append(uri)
+        if not wanted:
+            return []
+        rows = {r.uri: r for r in OfflineRequest.select().where(OfflineRequest.uri.in_(wanted))}
+        now = datetime.datetime.utcnow()
+        fresh, revive = [], []
+        for u in wanted:
+            r = rows.get(u)
+            if r is None:
+                fresh.append({'uri': u, 'requested_at': now, 'state': 'pending', 'tries': 0})
+            elif r.state == 'pending':
+                pass                                   # already waiting; leave it alone
+            elif r.state == 'done':
+                revive.append(u)                       # the file went away, fetch it again
+            elif retry_failed and (r.tries or 0) < self.OFFLINE_MAX_TRIES:
+                revive.append(u)
+        if fresh:
+            OfflineRequest.insert_many(fresh).on_conflict_ignore().execute()
+        if revive:
+            OfflineRequest.update(state='pending', requested_at=now).where(
+                OfflineRequest.uri.in_(revive)).execute()
+        return [r['uri'] for r in fresh] + revive
+
+    def offline_queue(self, limit=25):
+        """Pending requests, oldest first — what spotdl polls for."""
+        rows = (OfflineRequest.select()
+                .where(OfflineRequest.state == 'pending')
+                .order_by(OfflineRequest.requested_at.asc())
+                .limit(limit))
+        return [{'uri': r.uri, 'tries': r.tries or 0} for r in rows]
+
+    def offline_request_done(self, uri, ok=True, note=None):
+        """Close one request. A failure keeps the row: it is the only trace of
+        a track spotdl cannot find, and the UI reads it to stop waiting."""
+        OfflineRequest.update(
+            state='done' if ok else 'failed',
+            tries=OfflineRequest.tries + 1,
+            note=(note or None),
+        ).where(OfflineRequest.uri == uri).execute()
+
+    def count_local_tracks(self):
+        """How many tracks the server holds as a file — the offline pool's size."""
+        return (Track.select()
+                .where(Track.local_uri.is_null(False), Track.local_uri != '')
+                .count())
+
+    def offline_request_states(self, uris):
+        """`uri -> state` for the subset that is queued at all."""
+        if not uris:
+            return {}
+        return {r.uri: r.state for r in OfflineRequest.select().where(
+            OfflineRequest.uri.in_(list(uris)))}
+
     def mark_track_liked(self, uri, liked_at=None):
         """Set liked=1 on a track row (create it if needed)."""
         if isinstance(liked_at, str):
@@ -1871,16 +2327,24 @@ class DatabaseHandler():
         ).execute()
 
     def reconcile_liked(self, liked_uris):
-        """Clear liked=1 on tracks no longer in the Spotify liked set (un-likes
-        done directly on Spotify). `liked_uris` = the COMPLETE set currently
-        liked. Callers MUST pass it only after a complete fetch, and skip the
-        call when the set is empty (guarded here too) so a transient empty API
-        response can never wipe every like."""
+        """Clear liked=1 on SPOTIFY tracks no longer in the Spotify liked set
+        (un-likes done directly on Spotify). `liked_uris` = the COMPLETE set
+        currently liked. Callers MUST pass it only after a complete fetch, and skip
+        the call when the set is empty (guarded here too) so a transient empty API
+        response can never wipe every like.
+
+        Scoped to `spotify:track:` deliberately. The heart writes `liked` for ANY
+        uri — a podcast episode included, which is what makes "Favourite episodes"
+        possible — and an episode can never appear in Spotify's saved set. Without
+        the scope this reconciliation silently un-liked every episode on the next
+        sync: verified, a freshly liked episode came back at liked=0."""
         if not liked_uris:
             return 0
         try:
             return (Track.update(liked=0, liked_at=None)
-                    .where((Track.liked == 1) & (Track.uri.not_in(list(liked_uris))))
+                    .where((Track.liked == 1)
+                           & Track.uri.startswith('spotify:track:')
+                           & (Track.uri.not_in(list(liked_uris))))
                     .execute())
         except Exception as e:
             self.log.error(f"reconcile_liked: {e}")

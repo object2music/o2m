@@ -16,11 +16,10 @@ with its history into a standalone repo.
 
 The extension must **never depend on Mopidy-Iris**, neither as a package dependency
 nor by reaching into its files. The existing Iris integration is a set of hard-coded
-edits — on the legacy Mopidy 3 image `mopidy/o2m.js` and `mopidy/o2m.css` are copied over
-`mopidy_iris/static/`, and `mopidy/mopidy_spotify_backend5.py` is bind-mounted over
-`mopidy_spotify/backend.py`. Those stay where they are, in the non-plugin code; they are
-**not** to be reproduced here. The Mopidy 4 image does not install Iris at all, so the
-question is settled there.
+edits: `mopidy/mopidy_spotify_backend5.py` is bind-mounted over
+`mopidy_spotify/backend.py`. That stays where it is, in the non-plugin code, and is **not**
+to be reproduced here. The `o2m.js` / `o2m.css` that were patched into `mopidy_iris/static/`
+are deleted — the Mopidy 4 image installs no Iris, so the question is settled.
 
 Consequence for design: anything this extension wants to expose to a browser it serves
 itself, through its own `registry.add("http:app", ...)` handler under

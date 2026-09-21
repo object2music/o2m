@@ -26,6 +26,10 @@ class SpotifyHandler:
         self._db = None  # set via set_db_handler() after DatabaseHandler is ready
         self._mopidy = None  # set via set_mopidy_handler(); fallback source for playlists
         self._tag_mood_map = self._build_tag_mood_map_from_class()
+        # No Web API client until reload_sp() finds a valid token. Several call
+        # sites test `self.sp is None`, so the attribute has to exist even when
+        # every cache is revoked.
+        self.sp = None
         self.init_token_sp()
 
     def set_db_handler(self, db_handler):
@@ -359,8 +363,11 @@ class SpotifyHandler:
             except Exception: pass
             print(f"search_music({query!r}) error: {e}")
             return {'tracks': [], 'artists': [], 'albums': []}
+        # Artists as objects, not names: the UI links each one to itself (see
+        # DatabaseHandler._track_artists — the DB half answers in the same shape).
         tracks = [{'uri': t['uri'], 'name': t['name'], 'length': t.get('duration_ms'),
-                   'artists': [a['name'] for a in t.get('artists') or []]}
+                   'artists': [{'uri': a.get('uri'), 'name': a.get('name')}
+                               for a in (t.get('artists') or []) if a.get('name')]}
                   for t in ((r.get('tracks') or {}).get('items') or [])]
         artists = [{'uri': a['uri'], 'name': a['name'],
                     'image': ((a.get('images') or [{}])[0].get('url'))}
@@ -493,7 +500,18 @@ class SpotifyHandler:
             # stream-token paths require the full self.scope.
             client_scope = tok.get("scope") or self.scope
             auth_manager = spotipy.oauth2.SpotifyOAuth(scope=client_scope, cache_handler=cache_handler, show_dialog=False)
-            if not auth_manager.validate_token(tok):
+            # validate_token REFRESHES an expired token, and spotipy raises on a refused
+            # refresh ("Refresh token revoked") rather than returning False. Unguarded,
+            # that exception escapes this loop, __init__ and O2mToMopidy(), and lands in
+            # main.py's connect-retry loop, which retries every 10s for ever: Flask never
+            # binds 6681, the healthcheck turns unhealthy and autoheal kills the container
+            # on a cycle. A dead token must mean "no Spotify", never "no o2m" — so fall
+            # through to the next cache, and to the None below when neither answers.
+            try:
+                if not auth_manager.validate_token(tok):
+                    continue
+            except Exception as e:
+                print(f"Spotify token in {path} is unusable ({e}) - ignoring this cache.")
                 continue
             session = requests.Session()
             def _capture_retry_after(response, *args, **kwargs):
@@ -1700,8 +1718,13 @@ class SpotifyHandler:
             return
         print("warmup: syncing saved albums…")
         count = 0
+        # What the sweep SAW, and what Spotify says there is to see. Both are
+        # needed to unsave anything at the end: see the reconcile block below.
+        seen, total = set(), None
         try:
             response = self.sp.current_user_saved_albums(limit=50)
+            if response:
+                total = response.get('total')
             while response and response.get('items'):
                 for item in response['items']:
                     if self._is_rate_limited():
@@ -1710,6 +1733,7 @@ class SpotifyHandler:
                     if not album:
                         continue
                     self._cache_album(album)
+                    seen.add(album['id'])
                     if self._db:
                         self._db.mark_album_saved(album['id'])
                     # cache tracks if not already fully fresh
@@ -1741,8 +1765,44 @@ class SpotifyHandler:
             print(f"warmup_saved_albums error: {e}")
             return
         print(f"warmup: {count} saved albums synced")
+        self._reconcile_library('albums', seen, total)
         if self._db:
             self._db.set_cache_meta('warmup_albums_at', count)
+
+    def _reconcile_library(self, kind, seen, total):
+        """Unsave / unfollow what Spotify no longer lists — and only then.
+
+        The mirror used to run one way: both sweeps MARKED everything they saw and
+        never cleared anything, so unsaving an album on your phone left it saved
+        here for ever. It kept being offered as a tile, and — because
+        `newrecent:library` and the `albums_artists` bucket are scoped on
+        `saved`/`followed` — it kept being SELECTED, which is the part that is not
+        cosmetic.
+
+        Turning that around is the one thing in the cache that removes something
+        nobody asked to remove, so it happens only on a sweep that is provably
+        whole: Spotify's own `total` from the first page has to match what the
+        paging actually collected. A rate limit or a network error mid-paging
+        leaves fewer, and fewer must never be read as "the rest was deleted".
+        Playlists are deliberately NOT done this way — absence from
+        `current_user_playlists` proves nothing there, so `_playlist_is_gone` asks
+        for each one by name instead."""
+        if not self._db or not seen:
+            return
+        if total is None or len(seen) != total:
+            print(f"warmup: not reconciling {kind} — saw {len(seen)} of {total}, "
+                  f"an incomplete sweep is not a shrunken library")
+            return
+        fn = (self._db.reconcile_saved_albums if kind == 'albums'
+              else self._db.reconcile_followed_artists)
+        try:
+            gone = fn(seen)
+        except Exception as e:
+            print(f"warmup: reconcile {kind} failed: {e}")
+            return
+        if gone:
+            print(f"warmup: {len(gone)} {kind} no longer in the Spotify library "
+                  f"— cleared: {', '.join(gone[:10])}{' …' if len(gone) > 10 else ''}")
 
     def _lastfm_get_top_tags(self, artist_name, max_tags=8, min_count=5):
         """Fetch top tags for an artist from Last.fm API.
@@ -2623,7 +2683,10 @@ class SpotifyHandler:
                 print("get_all_followed_artists: rate-limited, followed cache empty")
             return []
         all_followed = []
+        total = None
         response = self.sp.current_user_followed_artists(limit=50)
+        if response:
+            total = (response.get('artists') or {}).get('total')
         while response:
             # sp.next() may return the outer {'artists': {...}} or the raw paging object
             page = response.get('artists', response)
@@ -2641,6 +2704,7 @@ class SpotifyHandler:
             else:
                 break
         print(f"get_all_followed_artists: cached {len(all_followed)} followed artists")
+        self._reconcile_library('artists', set(all_followed), total)
         return all_followed
     
     def get_my_artists_tracks(self, limit=1, unit=1, return_source=False, return_pairs=False):

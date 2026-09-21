@@ -1,0 +1,265 @@
+/* ══ Object mosaic — the Boxes column's two other views ═══════════════════════
+   Its own file rather than another section of mood.css (2 300 lines): one
+   component, one pair of files, and the page keeps loading exactly what it uses.
+   Loaded after mood.css, so it wins on equal specificity.
+   Behaviour and rationale: static/objgrid.js. */
+
+/* ── The column toolbar: switcher left, die right ──────────────────────────── */
+
+/* Wrapping rather than overflowing: this row lives in a third of the screen. */
+#auto-bar { flex-wrap: wrap; row-gap: 6px; }
+
+/* ── Desktop only: the toolbar and the filter stay put while the mosaic scrolls ──
+   Picking a view or typing a filter is what you reach for AFTER scrolling a shelf
+   of covers, and having to scroll back up to reach it is the problem it solves.
+
+   **On a phone it is the opposite trade and the answer flips.** The accordion
+   gives the open section what is left of a short screen; freezing two rows at the
+   top of it spends a third of the covers you can see on controls you use once.
+   There, both scroll away with the grid. So this is not a breakpoint tweak around
+   one behaviour — the two sizes want different behaviours.
+
+   Two things make the desktop half work, both load-bearing:
+   1. The scroller there is `#boxes-panel`, and the column header is sticky INSIDE
+      it, so the toolbar has to start below the header — whose height is MEASURED
+      (`--og-label-h`, static/objgrid.js), not assumed: it changes with the theme's
+      type, and a wrong guess shows either a gap that leaks scrolled content or an
+      overlap that eats the header.
+   2. A sticky bar only paints its own box, so both bleed out to the scroller's
+      edges with a negative margin won back as padding — otherwise tiles scroll
+      visibly through the 12px gutters on either side. */
+@media (min-width: 700px) {
+  #boxes-panel .panel-body {
+    --og-pad-x: 12px;    /* mirrors the desktop .panel-body padding */
+    --og-top: var(--og-label-h, 44px);
+  }
+  #auto-bar {
+    position: sticky; top: var(--og-top, 0px); z-index: 5;
+    background: var(--bg);
+    margin: 0 calc(-1 * var(--og-pad-x)) 6px;
+    padding: 0 var(--og-pad-x) 6px;
+  }
+  .og-tools {
+    position: sticky; z-index: 4;   /* under the toolbar, which stacks above it */
+    top: calc(var(--og-top, 0px) + var(--og-bar-h, 34px));
+    background: var(--bg);
+    margin: 0 calc(-1 * var(--og-pad-x));
+    padding: 0 var(--og-pad-x) 8px;
+  }
+}
+
+.pm-seg { display: flex; align-items: center; gap: 2px; }
+.pm-tab {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 26px; padding: 0;
+  background: none; border: 1px solid transparent; border-radius: var(--r, 0);
+  color: var(--muted); cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.pm-tab svg { width: 15px; height: 15px; }
+.pm-tab:hover { color: var(--text); }
+.pm-tab.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--border-soft);
+}
+
+/* The die sits at the far end of the row, where the AUTO button used to be — the
+   glyph alone, in the tabs' exact box, so the row reads as one set of controls.
+   The transparent border is not decoration: it is what the tabs reserve for their
+   own, and dropping it here would shift the die by a pixel and misalign it. What
+   separates it from them is that it never takes the active state — it acts, it
+   does not select. */
+.pm-random {
+  display: flex; align-items: center; justify-content: center;
+  margin-left: auto;
+  width: 28px; height: 26px; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r, 0);
+  background: none; color: var(--muted); cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.pm-random svg { width: 15px; height: 15px; display: block; }
+.pm-random:hover { color: var(--text); }
+.pm-random:active { background: var(--accent-soft); }
+.pm-random:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
+
+/* ── The grid ──────────────────────────────────────────────────────────────── */
+
+/* gap: 0 — the filter owns the space under itself as padding, so its sticky box
+   covers it. A flex gap is outside the box and would show a scrolling strip. */
+#obj-grid-wrap { display: flex; flex-direction: column; min-height: 0; }
+/* Both wraps carry an explicit display, which beats [hidden]'s UA rule — without
+   these two the switcher would show the mosaic UNDER the boxes list. */
+#obj-grid-wrap[hidden] { display: none; }
+#boxes-wrap[hidden]    { display: none; }
+
+/* The 8px under the field is padding, not a flex gap on the wrap: on desktop this
+   box is sticky, and a gap sits outside it — a strip of tiles would scroll there. */
+.og-tools { display: flex; padding-bottom: 8px; }
+.og-filter {
+  width: 100%; padding: 6px 8px;
+  font: inherit; font-size: 13px;
+  color: var(--text); background: var(--card);
+  border: 1px solid var(--border-soft); border-radius: var(--r, 0);
+}
+.og-filter:focus { outline: none; border-color: var(--accent); }
+
+/* A FIXED count per row, not a minimum tile width. auto-fill kept the tile size
+   steady and let the count drift with the column, which meant the mosaic never
+   looked the same twice; three on a phone and four on a desktop is a layout you
+   can learn. The tile then takes whatever width that leaves. */
+.og-grid {
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  align-content: start;
+}
+@media (min-width: 700px) { .og-grid { grid-template-columns: repeat(4, 1fr); } }
+
+/* `order`, not a reordered DOM: the markup stays in library order so the filter,
+   the random pick and every lookup keep addressing the same elements — only the
+   painting order changes. The move itself is animated by FLIP in objgrid.js,
+   which is what this `transform` transition is for; nothing here animates a
+   layout property, which is what keeps it smooth with 248 tiles on screen. */
+.og-tile {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 0; border: none; background: none; text-align: left;
+  color: var(--muted); cursor: pointer;
+  order: 2;
+  transition: color .15s, opacity .15s, transform .34s cubic-bezier(.22, .61, .36, 1);
+  min-width: 0;
+}
+/* What is on comes to the head of the grid, and drops back into place in the
+   listing when it is released. */
+.og-tile.active { order: 0; }
+/* The line between the two groups. Full width, so what follows starts a new row;
+   hidden by syncSplit when one side of it is empty. */
+.og-split {
+  order: 1; grid-column: 1 / -1;
+  height: 0; margin: 2px 0 6px;
+  border-top: 1px solid var(--border-soft);
+}
+.og-split[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .og-tile { transition: color .15s, opacity .15s; }
+}
+.og-tile:active { opacity: .6; }
+/* Filling is filling, wherever it was asked from: the same pulse as a box row
+   and as a Basic actuator (basic-pulse lives in mood.css). */
+.og-tile:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
+
+.og-thumb {
+  position: relative; display: block;
+  aspect-ratio: 1 / 1; width: 100%;
+  background: var(--card);
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+}
+.og-art { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* ── The name IN the square ────────────────────────────────────────────────────
+   An album is recognised by its sleeve; a box is never a picture one knows, it is
+   only its name — so a box wears its name in the square whether or not it has
+   artwork. **One type, one size, one alignment, one colour, in both cases**: two
+   tiles side by side, one with a picture and one without, have to read as the same
+   object. So everything typographic is declared ONCE here, and the only difference
+   between the two is the veil the overlay needs. */
+.og-art--text, .og-cap {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+  overflow: hidden;
+  padding: 8px; box-sizing: border-box;
+  font-size: 15px; font-weight: 700; line-height: 1.15;
+  letter-spacing: -.01em; hyphens: auto; overflow-wrap: anywhere;
+  color: var(--muted); transition: color .15s;
+}
+/* Sized against the TILE, not the viewport: the same name has to hold at three
+   per row on a phone and four in a third of a desktop. Falls back to the 15px
+   above wherever container queries are not there — the whole declaration drops. */
+@supports (container-type: inline-size) {
+  .og-thumb { container-type: inline-size; }
+  .og-art--text, .og-cap { font-size: clamp(12px, 15cqw, 22px); }
+}
+.og-art--text { width: 100%; height: 100%; }
+
+/* The overlay fills the same box as the text cover — same padding, same four
+   lines, same top-left start — so the name sits in the same place on every tile.
+   What it adds is a VEIL and only a veil: a light tint over the whole square, in
+   the theme's own ground rather than a black gradient, because the text is
+   `--muted`/`--accent` like everywhere else and what stands behind it has to flip
+   with the theme too. `--sheet-bg` is there for the `bulletin2` skin, whose `--bg`
+   is deliberately translucent — mixing THAT with transparent would leave nothing
+   to read against; every other theme has no such token and falls back to `--bg`.
+
+   45%, a tint rather than a wash: at 88% the picture was gone and the tile might
+   as well have had none. No halo behind the glyphs — it was tried and it reads as
+   a second mark on top of the first. If 45% turns out not to carry a busy picture,
+   the next thing to try is a semi-transparent BAND behind the lines of text rather
+   than a stronger tint over everything. */
+.og-cap {
+  position: absolute; inset: 0;
+  background: var(--sheet-bg, var(--bg));
+}
+@supports (background: color-mix(in srgb, red 50%, transparent)) {
+  .og-cap { background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 45%, transparent); }
+}
+
+.og-tile:hover .og-art--text, .og-tile:hover .og-cap { color: var(--text); }
+.og-tile.active .og-art--text, .og-tile.active .og-cap { color: var(--accent); }
+
+/* Either way the square says the name, so the caption below would say it twice. */
+.og-tile--named .og-name { display: none; }
+
+/* Active state. A cover cannot carry a colour swatch the way a text row does, so
+   it is the frame that answers: an accent border, the image lifted out of its
+   dimmed rest state, and a tick in the corner for anyone who does not read the
+   border as a state. */
+.og-tile img.og-art { opacity: .78; transition: opacity .15s, filter .2s; }
+.og-tile:hover img.og-art { opacity: 1; }
+.og-tile.active { color: var(--text); }
+.og-tile.active .og-thumb { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+/* Loaded → the cover drops its colour. The frame and the tick say WHICH tiles are
+   on; the greyscale says it a second time in a way that survives a glance across
+   a shelf of covers, and it is the page's own register — the interface is black
+   and white, the artwork is the only colour in it, so spending that colour is
+   what "this one is in the tracklist" costs. */
+.og-tile.active img.og-art { opacity: 1; filter: grayscale(1); }
+
+.og-mark {
+  position: absolute; inset: auto 0 0 auto;
+  display: none; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  background: var(--accent); color: var(--on-accent, #fff);
+}
+.og-mark svg { width: 14px; height: 14px; }
+.og-tile.active .og-mark { display: flex; }
+
+/* Details. Hidden until the tile is hovered or focused — on a phone there is no
+   hover, so it is simply always there. Top RIGHT, not top left: a named tile sets
+   its name from the top-left corner, and on touch — where this button never hides
+   — it sat on the first word of every box in the mosaic. */
+.og-open {
+  position: absolute; inset: 0 0 auto auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  background: var(--bg); color: var(--muted);
+  opacity: 0; transition: opacity .15s;
+}
+.og-open svg { width: 14px; height: 14px; }
+.og-open:hover { color: var(--text); }
+.og-tile:hover .og-open, .og-tile:focus-within .og-open { opacity: .92; }
+@media (hover: none) { .og-open { opacity: .92; } }
+
+.og-name {
+  font-size: 12px; font-weight: 600; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.og-sub {
+  font-size: 11px; line-height: 1.2; color: var(--muted); opacity: .75;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.og-tile.active .og-name { color: var(--accent); }
+
+.og-empty {
+  grid-column: 1 / -1;
+  padding: 14px 2px; font-size: 13px; color: var(--muted);
+}
+.og-more { order: 3; padding-top: 4px; font-size: 11px; opacity: .7; }
