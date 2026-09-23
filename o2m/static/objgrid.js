@@ -241,6 +241,18 @@ const OBJGRID = (() => {
       + `</button>`;
   }
 
+  /* "New box", as the last tile of the boxes mosaic — the list has it as its
+     last row, and the mosaic had simply never been given one. Not an `.og-tile`:
+     it is an action, not an object, so the random pick, the active paint, the
+     split and the FLIP must not count it. It borrows the tile's square and type,
+     and stays last whatever is on (`order` in objgrid.css). Shown in edit mode
+     only, like the list's row. */
+  function newBoxHTML() {
+    return `<button type="button" class="og-new" data-og-new title="Create a new box">`
+      + `<span class="og-thumb"><span class="og-art og-art--text og-new-art">`
+      + `<span class="og-new-icon">${ICON.plus}</span>New box</span></span></button>`;
+  }
+
   function visibleRows() {
     const all = state.rows[state.mode] || [];
     const q = state.filter;
@@ -261,10 +273,12 @@ const OBJGRID = (() => {
         : state.mode === 'albums'  ? 'No saved albums cached yet.'
         : state.mode === 'tags'    ? 'No tags yet — they come from the genre enrichment.'
                                    : 'No followed artists cached yet.';
-      grid.innerHTML = `<div class="og-empty">${objEsc(empty)}</div>`;
+      grid.innerHTML = `<div class="og-empty">${objEsc(empty)}</div>`
+        + (state.mode === 'boxgrid' ? newBoxHTML() : '');
       return;
     }
     let html = rows.map(r => tileHTML(r, kind)).join('');
+    if (state.mode === 'boxgrid') html += newBoxHTML();
     // The rule that breaks the line between what is on and what is not. It sits
     // in the grid at all times and hides itself when one of the two groups is
     // empty (see syncSplit) — a separator with nothing on one side of it
@@ -332,6 +346,11 @@ const OBJGRID = (() => {
   /* ── Activation ────────────────────────────────────────────────────────── */
 
   function onGridClick(e) {
+    if (e.target.closest('[data-og-new]')) {
+      e.stopPropagation();
+      if (typeof openBoxWizard === 'function') openBoxWizard();
+      return;
+    }
     const tile = e.target.closest('.og-tile');
     if (!tile) return;
     // The eye opens the object's detail view; the rest of the tile toggles it —

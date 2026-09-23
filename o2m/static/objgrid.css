@@ -143,6 +143,20 @@
   border-top: 1px solid var(--border-soft);
 }
 .og-split[hidden] { display: none; }
+
+/* "New box": the boxes mosaic's last tile, whatever is on (order 2 like the
+   idle tiles, and last in the markup). Edit mode only, like the list's row.
+   A dashed frame: it is a place for a box, not a box. */
+.og-new {
+  display: none; order: 2; min-width: 0;
+  padding: 0; border: none; background: none; text-align: left;
+  color: var(--muted); cursor: pointer;
+}
+body.edit-mode .og-new { display: block; }
+.og-new .og-thumb { border-style: dashed; background: none; }
+.og-new-icon { display: block; width: 1em; height: 1em; margin-bottom: 4px; }
+.og-new-icon svg { display: block; width: 100%; height: 100%; }
+.og-new:hover .og-new-art { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .og-tile { transition: color .15s, opacity .15s; }
 }
