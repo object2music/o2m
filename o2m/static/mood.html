@@ -1684,8 +1684,11 @@ function updateCurrentRow(wrap, activeTlid) {
         num.innerHTML = '<span class="eq-icon"><i></i><i></i><i></i></span>';
     } else {
       item.classList.remove('current');
-      if (num && num.querySelector('.eq-icon'))
-        num.textContent = String(i + 1).padStart(2, '0');
+      // Every row, not only the one that stopped playing: a reused row keeps the
+      // number it had, and an insertion above it (a recommendation) shifts it.
+      const label = String(i + 1).padStart(2, '0');
+      if (num && (num.querySelector('.eq-icon') || num.textContent !== label))
+        num.textContent = label;
     }
   });
   const cur = wrap.querySelector('.tl-item.current');
@@ -1706,18 +1709,37 @@ function renderTracklist(tracks, activeTlid) {
     updateCurrentRow(wrap, activeTlid);
     return;
   }
+  // Rows already on screen are KEPT, not rebuilt. The list changes at the end
+  // of almost every track (a recommendation is inserted), and wiping it made the
+  // whole tracklist blink empty and refill line by line — every meta line older
+  // than the cache's five minutes coming back blank and fetched again. A row is
+  // the same row when both its tlid and its uri are; only new ones are built,
+  // and updateCurrentRow below renumbers the rest. A null signature (leaving
+  // offline, where a tlid is a local index) still forces a full rebuild.
+  const reuse = lastTracklistSig !== null;
   lastTracklistSig = sig;
+  const kept = new Map();
+  if (reuse) wrap.querySelectorAll(':scope > .tl-item').forEach(el =>
+    kept.set(el.dataset.tlid + '|' + el.dataset.uri, el));
 
-  wrap.innerHTML = '';
+  const frag = document.createDocumentFragment();
   count.textContent = tracks.length ? `${tracks.length} tracks` : '';
   let scrollTarget = null;
   tracks.forEach(({tlid, track}, i) => {
     registerTrackMeta(track);   // so the row's "Copy link" can resolve a podcast episode page
+    const key = tlid + '|' + (track.uri || '');
+    const old = kept.get(key);
+    if (old) {
+      kept.delete(key);
+      frag.appendChild(old);
+      if (tlid === activeTlid) scrollTarget = old;
+      return;
+    }
     const item = document.createElement('div');
     item.className = 'tl-item' + (tlid === activeTlid ? ' current' : '');
     item.dataset.tlid = tlid;
     item.dataset.uri = track.uri || '';   // read by the offline badge pass
-    const statusHtml = trackMetaRowHTML(getCachedMeta(track.uri), track.uri);
+    const statusHtml = trackMetaRowHTML(peekMeta(track.uri), track.uri);
     item.innerHTML = trackRowInnerHTML({
       indexLabel: String(i + 1).padStart(2, '0'),
       name: track.name,
@@ -1738,9 +1760,11 @@ function renderTracklist(tracks, activeTlid) {
       if (OFF.on) { offPlayAt(tlid); return; }   // tlid is the local queue index
       rpc('core.playback.play', {tlid}).then(() => setTimeout(refreshNowPlaying, 200));
     });
-    wrap.appendChild(item);
+    frag.appendChild(item);
     if (tlid === activeTlid) scrollTarget = item;
   });
+  wrap.replaceChildren(frag);
+  updateCurrentRow(wrap, activeTlid);
   // Auto-scroll vers le titre en cours (uniquement quand il change, pour ne pas gêner)
   if (scrollTarget && activeTlid !== lastScrolledTlid) {
     lastScrolledTlid = activeTlid;
@@ -1878,6 +1902,12 @@ function getCachedMeta(uri) {
   if (!e || Date.now() - e.ts > STATUS_TTL) return null;
   return e.meta;
 }
+// What to PAINT while a fresh read is on its way: the cached line even past its
+// TTL. A stale status is a better placeholder than an empty row that fills in.
+function peekMeta(uri) {
+  const e = metaCache.get(uri);
+  return e ? e.meta : null;
+}
 async function fetchMeta(uri) {
   const cached = getCachedMeta(uri);
   if (cached !== null) return cached;
@@ -1930,6 +1960,8 @@ function _hydrateMetaRow(el) {
   if (!uri) return;
   const c = getCachedMeta(uri);
   if (c) { _paintMetaRow(el, c); return; }
+  const stale = peekMeta(uri);
+  if (stale) _paintMetaRow(el, stale);
   _fetchMetaShared(uri).then(m => { if (m && el.dataset.uri === uri) _paintMetaRow(el, m); }).catch(() => {});
 }
 const _metaIO = ('IntersectionObserver' in window)
