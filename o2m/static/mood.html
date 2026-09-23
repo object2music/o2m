@@ -511,7 +511,10 @@ let _moodDirty = false;
 
 function scheduleApply() {
   if (mixBusy) return;
-  if (!shouldApplyMood()) return;
+  // No shouldApplyMood() guard here any more: a gesture that will not rebuild is
+  // still SAVED (see applyMood), so it is always armed. Dropping it was what sent
+  // the matrix back to the centre in non-auto mode — the value never reached the
+  // server, and the 15s syncMoodDials put the server's back.
   // Set only once the apply is actually armed: marking it before this guard left
   // the flag stuck whenever the guard returned, and a stuck flag freezes the dials
   // against every later refresh — worse than the race it exists to prevent.
@@ -522,26 +525,31 @@ function scheduleApply() {
 
 async function applyMood() {
   if (mixBusy) { _moodDirty = false; return; }   // a fill is in flight — its result would be half-replaced
-  if (!shouldApplyMood()) { _moodDirty = false; return; }
   // Basic view: the dials are settings, the actuators are the switches. With no
   // actuator on, just save the values server-side — don't launch anything.
   const basicIdle = isBasic() && basicCats
     && !Object.values(basicCats).some(l => Array.isArray(l) && l.some(b => b.active));
-  setFeedback(basicIdle ? 'Saving…' : 'Applying…');
+  // Non-auto mode (boxes playing, a queue in place): the gesture does not rebuild
+  // anything, but it is not lost either. Saved with apply:false, it becomes the
+  // newest intent server-side (note_ui_override), so the end-of-track
+  // recommendations follow it, and the dials keep the position they were given.
+  const saveOnly = basicIdle || !shouldApplyMood();
+  setFeedback(saveOnly ? 'Saving…' : 'Applying…');
   // The server rebuilds the queue for the duration of this call: dials, tiles, ALL
   // and Auto are parked meanwhile (same pulse as a tile fill), released in finally.
   setMixBusy(true, true);
   try {
     const body = { energy: appState.energy, valence: appState.valence,
                    discover_level: appState.dl, genres: appState.genres };
-    if (basicIdle) body.apply = false;
+    if (saveOnly) body.apply = false;
     const r = await fetch(API + '/mood', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
     });
     const d = await r.json();
     if (d.status === 'settings_saved') {
-      setFeedback('Settings saved — turn Music on to start');
+      setFeedback(basicIdle ? 'Settings saved — turn Music on to start'
+                            : 'Mood saved — the next recommendations follow it');
       return;
     }
     setFeedback(d.status === 'boxes_active'
