@@ -253,6 +253,14 @@ const OBJGRID = (() => {
       + `<span class="og-new-icon">${ICON.plus}</span>New box</span></span></button>`;
   }
 
+  function clearFilter() {
+    const f = document.querySelector('.og-filter');
+    if (f) f.value = '';
+    state.filter = '';
+    render();
+    paint();
+  }
+
   function visibleRows() {
     const all = state.rows[state.mode] || [];
     const q = state.filter;
@@ -384,6 +392,13 @@ const OBJGRID = (() => {
        that move has been seen. Turning off stays where it is: the tile is
        already at the head, among what is on. */
     const turningOn = kind === 'box' ? !state.activeBoxes.has(uid) : !state.active.has(uri);
+    /* A filter is how you FIND what to turn on; once it is found and turned on,
+       the filter has done its job. Kept, it would hide every other active tile —
+       the head of the grid would show the one just chosen alone, as if the
+       others had been switched off. So turning something on clears it: the whole
+       shelf comes back, with the chosen tile among the chosen ones. Turning off
+       leaves it alone — that is still a search in progress. */
+    if (turningOn && state.filter) clearFilter();
     if (turningOn && MOSAICS.includes(state.mode)) {
       state.pending.add(key);
       paint();
