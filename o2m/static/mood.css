@@ -1380,7 +1380,12 @@
   }
   /* Overprint: cover stays monochrome; on hover (rollover) or click it is
      recolorized — and the overlaid title then switches to grey. */
-  [data-theme="overprint"] #cover { filter: grayscale(1); }
+  /* Flattened and lightened as well as grey: the title is printed over it in
+     orange with `multiply`, which can only darken — over a contrasty or dark
+     cover the orange sank into the blacks. Low contrast + raised brightness turns
+     the picture into a pale ground the ink stays readable on. The lit state
+     below restores the picture as it is. */
+  [data-theme="overprint"] #cover { filter: grayscale(1) contrast(.55) brightness(1.35); }
   [data-theme="overprint"] #cover-wrap:hover #cover,
   [data-theme="overprint"] #top-zone.cover-lit #cover { filter: grayscale(0); }
   [data-theme="overprint"] #top-zone:has(#cover-wrap:hover) #hero-title,
