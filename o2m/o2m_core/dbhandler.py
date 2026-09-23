@@ -1504,6 +1504,60 @@ class DatabaseHandler():
             print(f"get_genres_with_counts error: {e}")
             return []
 
+    def get_top_tags(self, limit=300, min_tracks=20):
+        """The tags worth offering as something to put on: [{name, count}], most
+        tracks first. Counted in TRACKS rather than artists (get_genres_with_counts)
+        because a tag is activated for what it will play, and one prolific artist
+        and one single are not the same weight there.
+
+        A tag reaches a track through its artist (see search_by_genre). The join
+        stops at trackartist on purpose: going on to `track` to drop unnamed rows
+        took 8.5 s against 0.44 s, for a count that only orders a list. Tags the
+        scoring already treats as noise ("favorites", "seen live", nationalities…)
+        are left out — nobody activates "awesome"."""
+        try:
+            noise = set(_GENRE_NOISE) | {t.tag for t in TagFeature.select(TagFeature.tag).where(TagFeature.is_noise == 1)}
+            cnt = fn.COUNT(TrackArtist.track_uri.distinct())
+            rows = (Genre.select(Genre.name, cnt.alias('cnt'))
+                    .join(ArtistGenre, on=(Genre.id == ArtistGenre.genre_id))
+                    .join(TrackArtist, on=(TrackArtist.artist_id == ArtistGenre.artist_id))
+                    .group_by(Genre.id)
+                    .having(cnt >= min_tracks)
+                    .order_by(cnt.desc())
+                    .limit(limit + len(noise))
+                    .namedtuples())
+            return [{'name': r.name, 'count': r.cnt} for r in rows if r.name not in noise][:limit]
+        except Exception as e:
+            print(f"get_top_tags error: {e}")
+            return []
+
+    def get_tag_track_uris(self, name, cap=2000):
+        """Every Spotify track carrying this tag, directly or through its artist —
+        the candidate pool a `tag:` box line is drawn from.
+
+        Capped by a RANDOM sample, not by rank: 'jazz' holds ~11k tracks here, and
+        the selection pool is one IN(...) query over whatever this returns. Taking
+        the most-played would fix which 2000 a tag can ever reach; sampling lets
+        _expand_pick weigh popularity itself, per discover level, over a different
+        slice each fill."""
+        key = _normalize_genre(name or '')
+        if not key:
+            return []
+        try:
+            gids = [g.id for g in Genre.select(Genre.id).where(Genre.name == key)]
+            if not gids:
+                return []
+            uris = {r.track_uri for r in
+                    TrackGenre.select(TrackGenre.track_uri).where(TrackGenre.genre_id.in_(gids))}
+            aids = ArtistGenre.select(ArtistGenre.artist_id).where(ArtistGenre.genre_id.in_(gids))
+            uris.update(r.track_uri for r in
+                        TrackArtist.select(TrackArtist.track_uri).where(TrackArtist.artist_id.in_(aids)))
+            uris = [u for u in uris if u.startswith('spotify:track:')]
+            return random.sample(uris, cap) if len(uris) > cap else uris
+        except Exception as e:
+            print(f"get_tag_track_uris({name}) error: {e}")
+            return []
+
     def search_by_genre(self, name, limit=25):
         """Everything carrying a genre/tag, in the search view's row shapes.
 

@@ -41,11 +41,17 @@ _KINDS = {'album': 'album', 'artist': 'artist', 'playlist': 'playlist'}
 # up to 314). Served whole it would BE the tracklist, so it goes through the smart
 # path — `_expand_pick`, i.e. popularity, mood and cooldown, exactly like a box
 # line pointing at the same artist.
-_SORTS = {'album': 'asc', 'artist': 'smart', 'playlist': 'smart'}
+# A TAG is the artist case taken further (jazz: ~11k tracks here) — smart, always.
+_SORTS = {'album': 'asc', 'artist': 'smart', 'playlist': 'smart', 'tag': 'smart'}
 
 
 def kind_of(uri):
-    """'spotify:album:7vEJ…' → 'album'. None when it is not activable."""
+    """'spotify:album:7vEJ…' → 'album', 'tag:jazz' → 'tag'. None when it is not
+    activable."""
+    # A tag is our own enrichment, not a Spotify object: its "uri" is the box line
+    # that plays it, which is also what the virtual box's data is.
+    if (uri or '').startswith('tag:'):
+        return 'tag' if uri[4:].strip() else None
     parts = (uri or '').split(':')
     if len(parts) < 3 or parts[0] != 'spotify' or not parts[2]:
         return None

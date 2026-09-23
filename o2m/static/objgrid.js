@@ -28,8 +28,8 @@
 const OBJGRID = (() => {
   /* 'boxes' is the pre-existing list, rendered by mood.html's loadBoxes(); the
      other three are mosaics owned by this file. */
-  const MODES = ['boxes', 'boxgrid', 'albums', 'artists'];
-  const MOSAICS = ['boxgrid', 'albums', 'artists'];
+  const MODES = ['boxes', 'boxgrid', 'albums', 'artists', 'tags'];
+  const MOSAICS = ['boxgrid', 'albums', 'artists', 'tags'];
   /* Views whose tab is hidden for now (the code behind them stays). A hidden
      view is never entered — a saved one falls back to the mosaic, or the column
      would open on a view with no tab to leave it by. */
@@ -41,19 +41,20 @@ const OBJGRID = (() => {
      248 rows of json is ~40 KB. Covers are the weight, and they are lazy. */
   const PAGE = 500;
 
-  const KIND_OF = { boxgrid: 'box', albums: 'album', artists: 'artist' };
+  const KIND_OF = { boxgrid: 'box', albums: 'album', artists: 'artist', tags: 'tag' };
   const ICONS = {
     /* Two box glyphs, as asked: the solid box opens the list, the same box drawn
        as a grid of four opens the mosaic. */
     boxes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
     boxgrid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
     dice: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>',
   };
 
   const state = {
     mode: 'boxes',
-    rows: { boxgrid: null, albums: null, artists: null },   // null = not fetched
-    more: { boxgrid: false, albums: false, artists: false },
+    rows: { boxgrid: null, albums: null, artists: null, tags: null },   // null = not fetched
+    more: { boxgrid: false, albums: false, artists: false, tags: false },
     filter: '',
     active: new Map(),      // object uri → {kind, name}
     activeBoxes: new Set(), // box uid
@@ -76,6 +77,7 @@ const OBJGRID = (() => {
       ['boxgrid', ICONS.boxgrid, 'Boxes as a mosaic'],
       ['albums',  ICON.disc,     'Albums'],
       ['artists', ICON.user,     'Artists'],
+      ['tags',    ICONS.tag,     'Tags'],
     ].map(([m, icon, label]) =>
       `<button type="button" class="pm-tab" role="tab" data-panel-mode="${m}"`
       + ` title="${label}" aria-label="${label}"${HIDDEN.has(m) ? ' hidden' : ''}>${icon}</button>`).join('');
@@ -256,6 +258,7 @@ const OBJGRID = (() => {
         ? 'Nothing matches that filter.'
         : state.mode === 'boxgrid' ? 'No pinned boxes.'
         : state.mode === 'albums'  ? 'No saved albums cached yet.'
+        : state.mode === 'tags'    ? 'No tags yet — they come from the genre enrichment.'
                                    : 'No followed artists cached yet.';
       grid.innerHTML = `<div class="og-empty">${objEsc(empty)}</div>`;
       return;
@@ -337,6 +340,8 @@ const OBJGRID = (() => {
       const { uri, kind, name, sub, uid } = tile.dataset;
       if (kind === 'album') openAlbum(uri, { name, artist: sub });
       else if (kind === 'artist') openArtist(uri, name);
+      // A tag's detail is what carries it — the same view a tag chip opens.
+      else if (kind === 'tag') openTagSearch(name);
       else openBox(uid);
       return;
     }

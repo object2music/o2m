@@ -495,6 +495,7 @@ dispatch branches against the picker).
 | `podcasts:channel` | the episodes of this box's own feeds |
 | `infos:library` | the scheduled news bulletin (see the two-clocks note below) |
 | `rf:sujet:<keyword>` | Radio France episodes matching a theme or tag, refilled dynamically |
+| `tag:<name>` | every track carrying that genre/tag (through its artist), drawn like an artist line — `_expand_pick`, from a random 2,000-track sample of the pool |
 | `meta_podcasts` · `meta_infos` · `meta_radios` | every source of that category, across all boxes |
 | `recommendation:…` | live Spotify recommendations (legacy; the API has since been restricted) |
 
@@ -664,10 +665,18 @@ exactly the object's tracks (30 → 0), Music OFF in the Basic view sweeps it up
 end-of-track recommendations lean on the artist because `get_track_recommandation`
 branches on `'album' in data`.
 
-### The column's four views and its die (`o2m/static/objgrid.js` + `objgrid.css`)
-The Boxes column has **four views**, switched at the left of its toolbar: the boxes
-**list** as it always was, the same boxes as a **mosaic**, then **albums** and
-**artists**. A mosaic rather than more rows because these are chosen by their cover
+### The column's views and its die (`o2m/static/objgrid.js` + `objgrid.css`)
+The Boxes column has **five views**, switched at the left of its toolbar: the boxes
+**list** as it always was (its tab hidden for now, the code kept — `HIDDEN` in
+`objgrid.js`), the same boxes as a **mosaic**, then **albums**, **artists** and
+**tags**.
+
+**Tags** are the genres the enrichment put on artists (`ArtistGenre` — `TrackGenre`
+is empty), ranked by the tracks they reach (`get_top_tags`, noise tags left out,
+memoised 10 min in `/api/library_browse?kind=tags`). A tag activates exactly like an
+artist: its "uri" is the box line that plays it, `tag:<name>`, which is also the
+virtual box's data (`obj:tag:<name>`); the tile's eye opens the same view a tag chip
+does (`openTagSearch`). A mosaic rather than more rows because these are chosen by their cover
 — 248 album names in a third of a screen is a directory, 248 covers are a shelf.
 Its own pair of files rather than more of `mood.html`'s inline script and of
 `mood.css`'s 2 300 lines; loaded in `<head>` like `ds/o2m-marks.js`, and for the

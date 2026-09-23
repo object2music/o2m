@@ -748,8 +748,10 @@ class O2mToMopidy:
                             if line.startswith('spotify:playlist:') or line.startswith('spotify:album:') or line.startswith('spotify:artist:'):
                                 library_link = line
                                 break
-                            # Fallback to any spotify:/o2m: link-like value
-                            if line.startswith('spotify:') or line.startswith('o2m:'):
+                            # Fallback to any spotify:/o2m:/tag: link-like value — a
+                            # tag is what an activated tag box holds, and it is the
+                            # only name its tracks' Source line can give.
+                            if line.startswith(('spotify:', 'o2m:', 'tag:')):
                                 library_link = line
                                 break
                     except Exception:
@@ -1733,8 +1735,21 @@ class O2mToMopidy:
                 if bdir.is_directive(content):
                     continue
 
+                # A tag: every track carrying it, drawn like an artist is — through
+                # _expand_pick (popularity, mood, cooldown), since a tag is a body of
+                # work far larger than a tracklist. First in the chain on purpose: the
+                # branches below test SUBSTRINGS ("library", "podcast+", "spotify"),
+                # and a tag is free text that can contain any of them.
+                if content.strip().startswith('tag:'):
+                    _tag = content.strip()[4:].strip()
+                    _pool = self.dbHandler.get_tag_track_uris(_tag)
+                    if _pool:
+                        tracklist_uris.append(self._expand_pick(_pool, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
+                    else:
+                        print(f"tag:{_tag}: no track carries it — skipped")
+
                 #Other box called (cascade include)
-                if "box:" in content :
+                elif "box:" in content :
                     box_uid = content.split(":", 1)[1].strip()
                     sub_box = self.dbHandler.get_box_by_uid(box_uid)
                     if sub_box is None:
@@ -3272,6 +3287,9 @@ class O2mToMopidy:
                 return ''
             if library_link in self.library_name_cache:
                 return self.library_name_cache[library_link]
+            # A tag names itself; asking Spotify for 'tag:jazz' is a wasted round trip.
+            if isinstance(library_link, str) and library_link.startswith('tag:'):
+                return library_link
 
             display = library_link
             prefix = ''

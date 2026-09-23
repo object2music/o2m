@@ -942,6 +942,23 @@ if __name__ == "__main__":
                               else db.get_followed_artists(limit=limit, offset=offset))
                 return jsonify({'items': rows, 'has_more': more,
                                 'limit': limit, 'offset': offset})
+            if kind == 'tags':
+                # The tags worth putting on, as the mosaic's fourth shelf. The
+                # aggregate costs ~0.4 s and moves only when enrichment adds
+                # artists' genres, so it is memoised for ten minutes rather than
+                # recounted on every view switch. A tag's "uri" is the box line
+                # that plays it — which is what virtualbox activates.
+                memo = getattr(api_library_browse, '_tags', None)
+                import time as _time
+                if not memo or _time.time() - memo[0] > 600:
+                    memo = (_time.time(), db.get_top_tags())
+                    api_library_browse._tags = memo
+                tags = memo[1]
+                rows = [{'uri': 'tag:' + t['name'], 'name': t['name'],
+                         'sub': f"{t['count']} tracks", 'image': ''}
+                        for t in tags[offset:offset + limit]]
+                return jsonify({'items': rows, 'has_more': offset + limit < len(tags),
+                                'limit': limit, 'offset': offset})
             if kind == 'playlists':
                 rows = [{'uri': p['uri'], 'name': p['name'], 'sub': '', 'image': ''}
                         for p in db.get_playlists_for_select(owner_id=getattr(o2mHandler, 'username', None))]
@@ -2153,7 +2170,7 @@ if __name__ == "__main__":
                     return 'Saved on Spotify'
                 if low == 'favorites':
                     return 'Favorites'
-                for pfx, lbl in (('album:', 'Album'), ('playlist:', 'Playlist'), ('artist:', 'Artist')):
+                for pfx, lbl in (('album:', 'Album'), ('playlist:', 'Playlist'), ('artist:', 'Artist'), ('tag:', 'Tag')):
                     if s.startswith(pfx):
                         return f'{lbl} · ' + s.split(':', 1)[1]
                 return s

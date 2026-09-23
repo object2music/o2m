@@ -48,6 +48,19 @@ class _FakeHandler:
 
 
 class KindAndUid(unittest.TestCase):
+    def test_tag(self):
+        # A tag is not a Spotify object: its uri is the box line that plays it.
+        self.assertEqual(vb.kind_of('tag:jazz'), 'tag')
+        self.assertEqual(vb.kind_of('tag:chanson francaise'), 'tag')
+        self.assertIsNone(vb.kind_of('tag:'))
+        self.assertIsNone(vb.kind_of('tag:   '))
+        s = vb.spec('tag:jazz', 'jazz')
+        self.assertEqual(s['uid'], 'obj:tag:jazz')
+        self.assertEqual(s['data'], 'tag:jazz')
+        # ~11k tracks for jazz: served whole it would BE the tracklist.
+        self.assertEqual(s['option_sort'], 'smart')
+        self.assertEqual(vb.uri_of('obj:tag:jazz'), 'tag:jazz')
+
     def test_kinds(self):
         self.assertEqual(vb.kind_of('spotify:album:7vEJAtP3KgKSpOHVgwm3Eh'), 'album')
         self.assertEqual(vb.kind_of('spotify:artist:5TkylUv5ysSbNoawmn3PBj'), 'artist')

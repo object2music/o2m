@@ -4584,7 +4584,7 @@ const BX_SETTING_RE = /^(dl|mood)\s*:\s*\S/i;
 
 function _bxIsDirective(line) {
   const { rest } = _bxSplitWindow(line);
-  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:|web:|xp:)/.test(rest)
+  return /^(spotify:(album|artist|track|playlist):|box:|podcast\+|rf:(show|subject|sujet):|tag:|https?:\/\/|tunein:|local:|m3u:|file:|yt:|youtube:|web:|xp:)/.test(rest)
       || BX_SETTING_RE.test(rest)
       || _bxIsKeyword(rest);
 }
@@ -4820,6 +4820,9 @@ const RAWB_TYPES = [
     build: s => /^(?:local|m3u|file):\S/.test(s) ? s : { error: 'Start with local:, m3u: or file:.' } },
   { group: 'Sources', id: 'box', icon: ICON.box, label: 'Another box', ph: 'The box uid',
     build: s => { const u = s.replace(/^box:/, '').trim(); return u && !/\s/.test(u) ? 'box:' + u : { error: 'Give the uid of the box to include.' }; } },
+  { group: 'Sources', id: 'tag', icon: ICON.hash, label: 'Tag', ph: 'A genre or a tag, e.g. jazz',
+    hint: 'Every track whose artist carries this tag, drawn by popularity, mood and discovery level.',
+    build: s => { const k = s.replace(/^tag:/, '').trim().toLowerCase(); return k ? 'tag:' + k : { error: 'Give a tag.' }; } },
   { group: 'Sources', id: 'rf-sujet', icon: ICON.hash, label: 'Radio France subject', ph: 'A theme or a tag, e.g. histoire',
     build: s => { const k = s.replace(/^rf:(?:sujet|subject):/, '').trim(); return k ? 'rf:sujet:' + k : { error: 'Give a theme or a tag.' }; } },
   { group: 'Settings', id: 'mood', icon: ICON.smile, label: 'Mood', ph: 'calm · intense · normy · happy · energetic — or 0.3,0.8',
@@ -6039,7 +6042,7 @@ function activeSummary() {
   const c = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
   const n = c.box || 0;
   const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}`];
-  ['album', 'artist'].forEach(k => {
+  ['album', 'artist', 'playlist', 'tag'].forEach(k => {
     if (c[k]) parts.push(`${c[k]} ${c[k] === 1 ? k : k + 's'}`);
   });
   return parts.join(' · ');
