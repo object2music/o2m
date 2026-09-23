@@ -69,6 +69,12 @@ class O2mToMopidy:
         # Replaces the parallel box.tlids / box.uris / box.option_types / box.library_link lists.
         # {tlid: {'uri': str, 'option_type': str, 'library_link': str, 'box_id': str}}
         self._track_info = {}
+        # (owner box uid, uri) → the box LINE that drew it ('tag:jazz',
+        # 'spotify:artist:…'). tracklistappend_box returns one flat uri list per
+        # box, so add_tracks used to GUESS the source from the box's first
+        # spotify:/tag: line — a box holding a playlist and a tag labelled every
+        # track with the playlist. Consumed (popped) by add_tracks.
+        self._source_hint = {}
         # Serialize box add/remove/reload ops (Flask HTTP threads + mopidy-event thread). RLock
         # is reentrant so a cascade (box: include) re-enters on the same thread without deadlock,
         # and the `with` release is exception-safe (a failed load no longer wedges the mutex).
@@ -945,7 +951,9 @@ class O2mToMopidy:
                             library_display = 'Reco'
                         else:
                             try:
-                                effective_link = self.get_library_link_for_track(track_uri, library_link)
+                                hinted = self._source_hint.pop(
+                                    (active_box.uid, self.get_spotify_uri(track_uri)), None)
+                                effective_link = hinted or self.get_library_link_for_track(track_uri, library_link)
                                 library_display = self.get_library_display(effective_link) if effective_link else ''
                             except Exception:
                                 library_display = ''
@@ -1658,6 +1666,20 @@ class O2mToMopidy:
             _planned[0] += added
             return added
 
+        # The owner add_tracks will register these tracks under — the same box
+        # tracklistfill_auto passes as active_box when it fills through box1.
+        _owner = getattr(attribute_to or box, 'uid', None)
+
+        def _from_line(uris, line):
+            """Record which line drew these uris, for their Source (see _source_hint)."""
+            if _owner and line:
+                if len(self._source_hint) > 5000:   # never consumed: a fill cut short
+                    self._source_hint.clear()
+                for u in util.flatten_list(uris or []):
+                    if isinstance(u, str) and u:
+                        self._source_hint[(_owner, u)] = line
+            return uris
+
         def _remaining():
             # Budget consumed so far: what actually landed in the tracklist (the
             # historic measure) plus what has only been planned. One of the two
@@ -1749,7 +1771,7 @@ class O2mToMopidy:
                     _tag = content.strip()[4:].strip()
                     _pool = self.dbHandler.get_tag_track_uris(_tag)
                     if _pool:
-                        tracklist_uris.append(self._expand_pick(_pool, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
+                        tracklist_uris.append(_from_line(self._expand_pick(_pool, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), 'tag:' + _tag))
                     else:
                         print(f"tag:{_tag}: no track carries it — skipped")
 
@@ -1976,16 +1998,16 @@ class O2mToMopidy:
                         # Smart only: expand the artist's cached tracks and stochastically pick.
                         cached = self.dbHandler.get_artist_track_uris(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), content.strip()))
                         else:
                             # Basic / cache-miss: legacy top + all tracks (may hit the API)
                             tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
-                            tracklist_uris.append(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10))  # all tracks of artist with no specific order
+                            tracklist_uris.append(_from_line(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10), content.strip()))  # all tracks of artist with no specific order
                     elif media_parts[1] == "album":
                         # Smart only: expand album sub-tracks from AlbumTrack and stochastically pick.
                         cached = self.dbHandler.get_album_tracks(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), content.strip()))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole album
                     elif media_parts[1] == "playlist":
@@ -1996,7 +2018,7 @@ class O2mToMopidy:
                         else:
                             cached = None
                         if cached:
-                            tracklist_uris.append(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), content.strip()))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole playlist
                     else:

@@ -2156,7 +2156,9 @@ if __name__ == "__main__":
             # the running mix. Status already carries the persisted state; this keeps
             # the two rows a clean dichotomy (Status = persisted, Source = live).
             # `_clean_source` just normalises the label ('Reco After Track' → 'Reco
-            # after track', 'album:X' → 'Album · X', drops the '0' junk…).
+            # after track', 'album:X' → 'Album: X', drops the '0' junk…). A colon and
+            # not a '·': the row joins its fields with '·', and a label carrying the
+            # same separator read as two fields.
             def _clean_source(raw):
                 s = (raw or '').strip()
                 if s in ('', '0', 'None'):
@@ -2168,11 +2170,15 @@ if __name__ == "__main__":
                     return 'History'
                 if low == 'spotify:library':
                     return 'Saved on Spotify'
-                if low == 'favorites':
+                if low in ('favorites', 'o2m:favorites', 'spotify:favorites'):
                     return 'Favorites'
+                if low == 'o2m:newrecent':
+                    return 'New in library'
+                if low == 'o2m:newnotcompleted':
+                    return 'Not finished'
                 for pfx, lbl in (('album:', 'Album'), ('playlist:', 'Playlist'), ('artist:', 'Artist'), ('tag:', 'Tag')):
                     if s.startswith(pfx):
-                        return f'{lbl} · ' + s.split(':', 1)[1]
+                        return f'{lbl}: ' + s.split(':', 1)[1].strip()
                 return s
             source = _clean_source(info.get('library_display') if info else None)
             # Spoken content carries no library link to derive a name from (a podcast

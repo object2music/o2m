@@ -1601,9 +1601,13 @@ function artistsHTML(artists) {
    decimals rather than a packed '5·7', plus the live source the compact one never
    showed.
    Every field is optional and an absent one prints nothing rather than a dash: a
-   podcast has no energy, a search result no live source. `local` is the SERVER
-   holding the audio as a file (spotdl cache or local media) — it is spelled out
-   here and in the panel's Audio row, because a bare "local" chip said nothing. */
+   podcast has no energy, a search result no live source.
+   ONE separator, '·', between every field. The source used to be set apart by a
+   dash because its own label carried a '·' ("Album · Light Up the Night"); the
+   label now says "Album: Light Up the Night" instead, so the line is a flat list
+   again and nothing mixes two separators. The server's file flag is no longer
+   shown here: whether the audio comes off the disk or the network changes
+   nothing about what the track is, and the details panel still says it. */
 function trackMetaHTML(m) {
   if (!m) return '';
   const bits = [];
@@ -1619,20 +1623,8 @@ function trackMetaHTML(m) {
   // and edited — as a POSITION on the mood matrix, which is the form that needs no
   // legend. The mood word is what those two coordinates amount to in one glance.
   if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(m.mood)}</span>`);
-  // The source is set apart by a dash, not another '·': its own label already
-  // contains one ("Album · Light Up the Night"), and two levels of the same
-  // separator read as one flat list of six things instead of attributes and a
-  // provenance.
-  let line = bits.join(' · ');
-  if (m.source) line = (line ? line + ' — ' : '') + objEsc(m.source);
-  // Dead last, and that is the point: a streamed track shows NOTHING here, so
-  // anywhere else this flag would push the fields after it out of line between one
-  // row and the next — the reader scans a column and finds it moving. At the end
-  // its presence or absence displaces nothing. Its icon is what separates it from
-  // the source's own words.
-  if (m.local) line += (line ? ' · ' : '')
-    + `<span title="${objEsc(FILE_HINT)}">${ICON.hardDrive} file</span>`;
-  return line;
+  if (m.source)           bits.push(`<span title="Source">${objEsc(m.source)}</span>`);
+  return bits.join(' · ');
 }
 /* The same line as plain text — the row is one nowrap line and clips, so this is
    what the hover reveals. */
@@ -1642,13 +1634,9 @@ function trackMetaText(m) {
   if (m.option_type)        bits.push(m.option_type);
   if (m.popularity != null) bits.push('popularity ' + fmtEV(m.popularity));
   if (m.mood)               bits.push('mood ' + m.mood);
-  let line = bits.join(' · ');
-  if (m.source) line = (line ? line + ' — ' : '') + m.source;
-  if (m.local)  line += (line ? ' · ' : '') + 'file on the server';
-  return line;
+  if (m.source)             bits.push('source ' + m.source);
+  return bits.join(' · ');
 }
-const FILE_HINT = 'The server holds this track as a file — local media, or downloaded'
-  + ' into the spotdl cache. It is played from disk instead of streamed.';
 const POP_HINT = 'Popularity — how completely and how often you play it, minus skips,'
   + ' faded with time. It is what weighs the selection.';
 function trackMetaClass(m) {
