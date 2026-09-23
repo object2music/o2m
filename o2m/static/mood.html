@@ -4763,6 +4763,208 @@ function _bxKind() {
   return 'hybrid';
 }
 
+/* ── Add content › Guided: one line, built from its parts ─────────────────
+   The other three tabs find something that already exists; this one is for what
+   only the user knows — a feed address, a page, a stream, a setting, a time
+   window. Written by hand those are where the syntax bites: a prefix typed twice,
+   an open.spotify.com link pasted where a uri belongs, a label on the wrong side
+   of its line, each kept verbatim as a raw line that plays nothing, silently. So
+   the tab asks for the parts (a kind, the content, a title, a window) and writes
+   the line itself. `build` returns the line, or a sentence saying why it cannot.
+   Smart patterns are not repeated here: they have their own tab, and 'Detect'
+   still accepts one typed out (e.g. to put it under a window). */
+const _RAWB_SPOTIFY_URL = /open\.spotify\.com\/(?:intl-[\w-]+\/)?(track|album|artist|playlist)\/([A-Za-z0-9]+)/;
+const _RAWB_YT_ID = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/;
+const _RAWB_YT_LIST = /youtube\.com\/.*[?&]list=([\w-]+)/;
+const _rawbIsUrl = s => /^https?:\/\/\S+$/i.test(s);
+function _rawbSpotify(kind) {
+  return s => {
+    const m = _RAWB_SPOTIFY_URL.exec(s);
+    if (m) return m[1] === kind ? `spotify:${kind}:${m[2]}` : { error: `That link is a Spotify ${m[1]}, not a ${kind}.` };
+    const id = s.replace(new RegExp(`^spotify:${kind}:`), '');
+    if (/^[A-Za-z0-9]{22}$/.test(id)) return `spotify:${kind}:${id}`;
+    return { error: `Paste a Spotify ${kind} link, its uri or its 22-character id.` };
+  };
+}
+// Prefixed schemes: strip the prefix if it was pasted along, then insist on a url.
+function _rawbUrlWith(prefix, what) {
+  return s => {
+    const u = s.startsWith(prefix) ? s.slice(prefix.length) : s;
+    return _rawbIsUrl(u) ? prefix + u : { error: `Paste the ${what} address (https://…).` };
+  };
+}
+const RAWB_TYPES = [
+  { group: 'Guess', id: 'auto', icon: ICON.zap, label: 'Detect', ph: 'A link, a uri, a feed…',
+    hint: 'Paste a link or a uri. Spotify and YouTube links become uris, an RSS feed a podcast, a stream stays a stream, any other page is read for the media it holds.' },
+  { group: 'Sources', id: 'sp-track', icon: ICON.music,    label: 'Spotify track',    ph: 'https://open.spotify.com/track/…', build: _rawbSpotify('track') },
+  { group: 'Sources', id: 'sp-album', icon: ICON.disc,    label: 'Spotify album',    ph: 'https://open.spotify.com/album/…', build: _rawbSpotify('album') },
+  { group: 'Sources', id: 'sp-artist', icon: ICON.user,   label: 'Spotify artist',   ph: 'https://open.spotify.com/artist/…', build: _rawbSpotify('artist') },
+  { group: 'Sources', id: 'sp-playlist', icon: ICON.list, label: 'Spotify playlist', ph: 'https://open.spotify.com/playlist/…', build: _rawbSpotify('playlist') },
+  { group: 'Sources', id: 'podcast', icon: ICON.rss, label: 'Podcast feed (RSS)', ph: 'https://…/feed.xml',
+    hint: 'Add ?max_results=N to cap it, or #<guid> for a single episode.', build: _rawbUrlWith('podcast+', 'feed') },
+  { group: 'Sources', id: 'rf-show', icon: ICON.rss, label: 'Radio France show', ph: 'https://www.radiofrance.fr/…/podcasts/…',
+    build: _rawbUrlWith('rf:show:', 'show page') },
+  { group: 'Sources', id: 'stream', icon: ICON.radio, label: 'Radio stream', ph: 'https://…/stream.mp3  or  tunein:station:…',
+    build: s => (_rawbIsUrl(s) || /^tunein:\S+$/.test(s)) ? s : { error: 'Paste the stream address (https://…) or a tunein: uri.' } },
+  { group: 'Sources', id: 'web', icon: ICON.globe, label: 'Web page', ph: 'https://…',
+    hint: 'O2M reads the page and plays what it holds — a film site, a replay listing.',
+    build: s => { const u = s.replace(/^(?:web|xp):/, ''); return _rawbIsUrl(u) ? 'web:' + u : { error: 'Paste the page address (https://…).' }; } },
+  { group: 'Sources', id: 'youtube', icon: ICON.globe, label: 'YouTube', ph: 'https://www.youtube.com/watch?v=…',
+    build: s => {
+      if (/^(?:yt|youtube):\S+$/.test(s)) return s;
+      const v = _RAWB_YT_ID.exec(s); if (v) return 'yt:video:' + v[1];
+      const l = _RAWB_YT_LIST.exec(s); if (l) return 'yt:playlist:' + l[1];
+      return { error: 'Paste a YouTube video or playlist link.' };
+    } },
+  { group: 'Sources', id: 'local', icon: ICON.hardDrive, label: 'Local file', ph: 'local:… · m3u:… · file:…',
+    build: s => /^(?:local|m3u|file):\S/.test(s) ? s : { error: 'Start with local:, m3u: or file:.' } },
+  { group: 'Sources', id: 'box', icon: ICON.box, label: 'Another box', ph: 'The box uid',
+    build: s => { const u = s.replace(/^box:/, '').trim(); return u && !/\s/.test(u) ? 'box:' + u : { error: 'Give the uid of the box to include.' }; } },
+  { group: 'Sources', id: 'rf-sujet', icon: ICON.hash, label: 'Radio France subject', ph: 'A theme or a tag, e.g. histoire',
+    build: s => { const k = s.replace(/^rf:(?:sujet|subject):/, '').trim(); return k ? 'rf:sujet:' + k : { error: 'Give a theme or a tag.' }; } },
+  { group: 'Settings', id: 'mood', icon: ICON.smile, label: 'Mood', ph: 'calm · intense · normy · happy · energetic — or 0.3,0.8',
+    hint: 'A setting, not a source: the box plays in this mood. A name, or an energy,valence pair between 0 and 1.',
+    build: s => {
+      const v = s.replace(/^mood\s*:\s*/i, '').trim().toLowerCase();
+      if (['calm', 'intense', 'normy', 'happy', 'energetic'].includes(v)) return 'mood:' + v;
+      const m = /^(0(?:\.\d+)?|1(?:\.0+)?)\s*,\s*(0(?:\.\d+)?|1(?:\.0+)?)$/.exec(v);
+      return m ? `mood:${m[1]},${m[2]}` : { error: 'A mood name, or energy,valence between 0 and 1.' };
+    } },
+  { group: 'Settings', id: 'dl', icon: ICON.sun, label: 'Discovery level', ph: '0 – 10',
+    hint: 'A setting, not a source: 0 plays what you know, 10 what you have never heard.',
+    build: s => { const v = s.replace(/^dl\s*:\s*/i, '').trim(); return /^(10|\d)$/.test(v) ? 'dl:' + v : { error: 'A whole number from 0 to 10.' }; } },
+];
+const _rawbType = id => RAWB_TYPES.find(t => t.id === id) || RAWB_TYPES[0];
+
+/* What 'Detect' makes of a paste: the line, and the type it read it as. */
+function _rawbDetect(s) {
+  // A bare http(s) link IS a valid line (a stream), which is exactly why it is
+  // not trusted as one here: a pasted link is far more often a page or a share.
+  if (!_rawbIsUrl(s) && _bxIsDirective(s)) return { line: s, as: 'already a box line' };
+  if (_RAWB_SPOTIFY_URL.test(s)) { const m = _RAWB_SPOTIFY_URL.exec(s); return { line: `spotify:${m[1]}:${m[2]}`, as: 'Spotify ' + m[1] }; }
+  const yt = _rawbType('youtube').build(s);
+  if (typeof yt === 'string') return { line: yt, as: 'YouTube' };
+  if (!_rawbIsUrl(s)) return { error: 'Not recognised — choose its type above.' };
+  if (/\.(?:xml|rss)(?:[?#]|$)|\/(?:feed|rss)(?:[/?#]|$)/i.test(s)) return { line: 'podcast+' + s, as: 'podcast feed' };
+  if (/\.(?:mp3|aac|m3u8?|pls|ogg|opus)(?:[?#]|$)|\/(?:stream|live)(?:[/?#.]|$)|:\d{4,5}\//i.test(s)) return { line: s, as: 'radio stream' };
+  return { line: 'web:' + s, as: 'web page — O2M will read it for media' };
+}
+
+let _bxRawB = { type: 'auto', label: '', content: '', from: '', to: '' };
+
+/* The finished text for the builder's current values: '#Label' then the line,
+   the window in front of the line. Null line = nothing to insert, with `note`. */
+function _rawbCompose() {
+  const b = _bxRawB, t = _rawbType(b.type), c = (b.content || '').trim();
+  let line, note = '', error = '';
+  if (!c) error = ' ';
+  else if (t.id === 'auto') { const d = _rawbDetect(c); if (d.error) error = d.error; else { line = d.line; note = 'Read as: ' + d.as; } }
+  else { const r = t.build(c); if (typeof r === 'string') line = r; else error = r.error; }
+  if (line && (b.from || b.to)) {
+    if (!(b.from && b.to)) { error = 'A time window needs both a start and an end.'; line = null; }
+    else line = `${b.from}-${b.to} > ${line}`;
+  }
+  const label = (b.label || '').trim().replace(/^#+\s*/, '');
+  return { text: line ? (label ? '#' + label + '\n' : '') + line : '', note, error: error.trim() };
+}
+
+function _rawbHtml() {
+  const b = _bxRawB, t = _rawbType(b.type);
+  const chips = g => `<div class="wiz-chips">`
+    + RAWB_TYPES.filter(x => x.group === g).map(x =>
+        `<button type="button" class="bx-chip${x.id === t.id ? ' on' : ''}" data-rawb-type="${objEsc(x.id)}">`
+        + `${x.icon}<span>${objEsc(x.label)}</span></button>`).join('')
+    + `</div>`;
+  // Sources first: they are what a line is for. The settings — a mood, a discovery
+  // level, the hours a line plays — are secondary, so they sit together at the
+  // bottom, under the button, where they cost nothing to the common case.
+  return `<div class="wc-panel" id="rawb"><div class="wc-panel-head">Guided</div>`
+    + `<div class="wc-hint">Write one line from its parts: what it is, then its content.</div>`
+    + chips('Guess') + chips('Sources')
+    + `<input class="bx-input bx-wide rawb-in" id="rawb-content" placeholder="${objEsc(t.ph || '')}" value="${objEsc(b.content)}" autocomplete="off" spellcheck="false">`
+    + `<div class="wc-hint" id="rawb-hint">${objEsc(t.hint || '')}</div>`
+    + `<input class="bx-input bx-wide rawb-in" id="rawb-label" placeholder="Title (optional) — shown instead of the address" value="${objEsc(b.label)}" autocomplete="off">`
+    + `<div class="rawb-group">Will be added as</div>`
+    + `<div id="rawb-preview"></div>`
+    + `<div class="rawb-foot"><button type="button" class="wc-tab" id="rawb-insert" data-rawb-insert>${ICON.plus}<span>Add</span></button></div>`
+    + `<div class="rawb-settings"><div class="rawb-group">Settings</div>`
+    +   chips('Settings')
+    +   `<div class="rawb-when">${ICON.clock}`
+    +     `<input class="bx-input" type="time" id="rawb-from" value="${objEsc(b.from)}" aria-label="From"><span>–</span>`
+    +     `<input class="bx-input" type="time" id="rawb-to" value="${objEsc(b.to)}" aria-label="To">`
+    +     `<span class="wc-hint">only at these hours — optional</span></div>`
+    + `</div></div>`;
+}
+
+/* The preview is the row the list will show — same glyph, name and address, via
+   the same _bxItemMeta — so what is promised here is what lands above. */
+function _rawbRefresh() {
+  const out = document.getElementById('rawb-preview'), btn = document.getElementById('rawb-insert');
+  if (!out) return;
+  const r = _rawbCompose();
+  if (r.error) {
+    out.innerHTML = `<div class="wc-hint-warn">${objEsc(r.error)}</div>`;
+  } else if (!r.text) {
+    out.innerHTML = `<div class="bx-empty">Nothing yet.</div>`;
+  } else {
+    out.innerHTML = parseBoxData(r.text).map(it => {
+      const m = _bxItemMeta(it);
+      return `<div class="bx-line"><span class="bx-kind" title="${objEsc(m.tag)}">${m.icon}</span>`
+        + `<span class="bx-main"><span class="bx-name">${objEsc(m.name)}</span>`
+        + `<span class="bx-sub">${objEsc(m.sub || (it.kind === 'keyword' ? it.value : ''))}</span></span></div>`;
+    }).join('') + (r.note ? `<div class="wc-hint">${objEsc(r.note)}</div>` : '');
+  }
+  if (btn) btn.disabled = !r.text;
+}
+
+function _rawbSetType(id) {
+  _bxRawB.type = id;
+  const t = _rawbType(id);
+  document.querySelectorAll('#rawb [data-rawb-type]').forEach(c => c.classList.toggle('on', c.dataset.rawbType === id));
+  const f = document.getElementById('rawb-content');
+  if (f) { f.placeholder = t.ph || ''; f.focus(); }
+  const h = document.getElementById('rawb-hint');
+  if (h) h.textContent = t.hint || '';
+  _rawbRefresh();
+}
+
+function _rawbWire() {
+  const root = document.getElementById('rawb');
+  if (!root || root.dataset.wired) return;
+  root.dataset.wired = '1';
+  const val = id => document.getElementById(id)?.value ?? '';
+  root.addEventListener('input', () => {
+    _bxRawB.label = val('rawb-label'); _bxRawB.content = val('rawb-content');
+    _bxRawB.from = val('rawb-from'); _bxRawB.to = val('rawb-to');
+    _rawbRefresh();
+  });
+  root.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); _rawbInsert(); }
+    else if (e.key === 'Escape') e.stopPropagation();   // don't close the modal
+  });
+  _rawbRefresh();
+}
+
+/* Into the list, through the same parser a saved box goes through — so a label
+   and a window come back exactly as the textarea would have read them. The type
+   and the window stay set: several lines of one kind, or one morning, in a row. */
+function _rawbInsert() {
+  const r = _rawbCompose();
+  if (!r.text || !_bxItems) return;
+  const items = parseBoxData(r.text).filter(it => it.kind !== 'comment' && it.kind !== 'raw');
+  if (!items.length) return;
+  const key = it => it.kind === 'keyword' ? it.value : it.uri;
+  if (items.every(n => _bxItems.some(it => key(it) === key(n)))) { setFeedback('Already added'); return; }
+  _bxItems.push(...items);
+  const it = items[0];
+  setFeedback('Added: ' + (it.label || key(it)));
+  _bxRenderRows(); _bxSyncPanelState();
+  _bxRawB.label = ''; _bxRawB.content = '';
+  const l = document.getElementById('rawb-label'), c = document.getElementById('rawb-content');
+  if (l) l.value = ''; if (c) { c.value = ''; c.focus(); }
+  _rawbRefresh();
+}
+
 function _bxRowsHtml(items) {
   if (_bxRawMode) {
     return `<textarea class="bx-input bx-data" id="bx-data" rows="4" spellcheck="false">${objEsc(serializeBoxData(items))}</textarea>`;
@@ -4792,6 +4994,7 @@ function renderDataEditor(items) {
     `<div class="wc-add">`
     + `<div class="wc-add-head">Add content</div>`
     + `<div class="wc-tabs">`
+    +   tab('guided', ICON.code, 'Guided')
     +   tab('search', ICON.plus, 'Search')
     +   tab('browse', ICON.list, 'Browse')
     +   tab('patterns', ICON.zap, 'Smart patterns')
@@ -4818,6 +5021,7 @@ function _bxDetailHtml() {
       + `<div class="wc-hint">Paste the address of a web page and O2M reads what is playable inside it — a film's own site, a replay listing, a conference page.</div>`
       + `<div id="wc-results"><div class="obj-empty">Type at least 2 characters.</div></div></div>`;
   }
+  if (_bxTab === 'guided') return _rawbHtml();
   if (_bxTab === 'patterns') {
     const keys = WC_PATTERNS_BY_KIND[kind] || WC_PATTERNS_BY_KIND.hybrid;
     // Parametric patterns can't be plain toggles (they carry a value), so they get
@@ -4879,6 +5083,9 @@ function _bxRenderDetail() {
     if (_bxSearchQ.length >= 2) _wcRunSearch(_bxSearchQ);
   } else if (_bxTab === 'browse' && _bxBrowseNode) {
     _wcLoadBrowse(_bxBrowseNode);
+  } else if (_bxTab === 'guided') {
+    _rawbWire();
+    document.getElementById('rawb-content')?.focus();
   }
 }
 
@@ -4942,6 +5149,9 @@ function wireDataEditor() {
     const lb = e.target.closest('[data-bx-label]');
     if (lb) { editBxLabel(Number(lb.dataset.bxLabel), lb); return; }
     // ── list / raw ──
+    if (e.target.closest('[data-rawb-insert]')) { _rawbInsert(); return; }
+    const rt = e.target.closest('[data-rawb-type]');
+    if (rt) { _rawbSetType(rt.dataset.rawbType); return; }
     const vw = e.target.closest('[data-wc-view]');
     if (vw) { setRawMode(vw.dataset.wcView === 'raw'); return; }
     // ── add-content tabs & panels ──
@@ -4990,6 +5200,7 @@ function wireDataEditor() {
     }
   };
   _wcWireSearchInput();
+  _rawbWire();
   // Auto-size the raw-mode textarea to its content (grows/shrinks as you type).
   const ta = document.getElementById('bx-data');
   if (ta) {

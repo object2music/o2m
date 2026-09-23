@@ -1924,6 +1924,21 @@
                   line-height: 1.45; padding: 6px 0 10px; }
   .wc-hint-warn svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 2px; }
   #wc-search-input { margin-bottom: 8px; }
+  /* Add content › Guided. Built from the pieces the other panels already use —
+     chips from Smart patterns, full-width fields from Search, the preview is a
+     .bx-line from the content list — so only the spacing is its own. */
+  .rawb-group { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .12em;
+    font-size: 10px; color: var(--muted); margin: 4px 0 6px; }
+  .rawb-in { margin-bottom: 6px; }
+  .rawb-when { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; color: var(--muted); }
+  .rawb-when > svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .rawb-when .wc-hint { padding: 0; }
+  #rawb-preview { margin-bottom: 8px; }
+  #rawb-preview .wc-hint-warn { padding: 2px 0; }
+  .rawb-foot { display: flex; justify-content: flex-end; }
+  .rawb-settings { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .rawb-settings .rawb-when { margin-bottom: 0; }
+  #rawb-insert:disabled { opacity: .4; cursor: default; border-color: var(--border); }
   /* Result rows add content on click — no per-row action menu here. */
   #bx-add-panel .tl-item { cursor: copy; }
   #bx-add-panel .tl-info { display: none; }
