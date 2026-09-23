@@ -2741,6 +2741,11 @@ async function renderPlaylistEditor(uri, boxId = 'td-playlists') {
     const inPls = await fetch(API + '/track_playlists?uri=' + encodeURIComponent(uri)).then(r => r.json());
     if (Array.isArray(inPls)) inPls.forEach(p => inSet.add(p.id));
   } catch(e) {}
+  // The box may have moved on to another track while we waited. Without this, the
+  // previous track's answer landing last repainted the picker — and its checkboxes
+  // carry THEIR uri, so ticking a playlist under the playing track added the one
+  // before it. `_plBoxes` holds what the box is meant to show now.
+  if (_plBoxes.get(boxId) !== uri) return;
   const esc = s => String(s).replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
   const active = pls.filter(p => inSet.has(p.id));
   const labelText = active.length ? active.map(p => p.name || p.id).join(', ') : '—';
@@ -3074,8 +3079,10 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
              ? { energy: info.energy, valence: info.valence } : null;
       p.draw();
     },
-    async save(patch, okMsg) {
-      const uri = getUri();
+    // `uri` is the track the edit STARTED on. Reading getUri() at save time sent
+    // a value set on one track to whichever track the panel had moved on to by
+    // the time the input blurred or the drag ended.
+    async save(patch, okMsg, uri = getUri()) {
       if (!uri) return false;
       try {
         const r = await fetch(API + '/track_features', {
@@ -3090,13 +3097,13 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       } catch (e) { setFeedback('Save error'); return false; }
     },
     // Persist the current dot position and keep the big matrix in sync.
-    async saveEV(okMsg) {
-      const uri = getUri();
-      if (!uri || !p.ev) return;
-      const d = await p.save({ energy: p.ev.energy, valence: p.ev.valence }, okMsg);
+    async saveEV(okMsg, uri = getUri(), ev = p.ev) {
+      if (!uri || !ev) return;
+      const d = await p.save({ energy: ev.energy, valence: ev.valence }, okMsg, uri);
       if (d) {
-        matrixFeatures[uri] = { ...p.ev };
-        if (d.mood) p.set('mood', d.mood);   // backend derives mood from e/v
+        matrixFeatures[uri] = { ...ev };
+        // Only paint the panel if it still shows that track.
+        if (d.mood && getUri() === uri) p.set('mood', d.mood);   // backend derives mood from e/v
       }
     },
   };
@@ -3107,7 +3114,7 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
 function initTrackPanelMatrix(p) {
   const canvas = p.canvas();
   if (!canvas) return;
-  let active = false;
+  let active = false, dragUri = null;
   const apply = e => {
     p.ev = _matrixEVFromEvent(canvas, e, TD_PAD);
     p.set('energy',  fmtEV(p.ev.energy));
@@ -3116,13 +3123,21 @@ function initTrackPanelMatrix(p) {
   };
   canvas.addEventListener('pointerdown', e => {
     if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-    active = true; try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    if (!p.getUri()) return;
+    active = true; dragUri = p.getUri();
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
     apply(e);
   });
-  canvas.addEventListener('pointermove', e => { if (active) { e.preventDefault(); apply(e); } });
+  canvas.addEventListener('pointermove', e => {
+    if (!active) return;
+    // The panel switched tracks under the finger: this drag belongs to the old
+    // one, and neither the new track's dot nor its values may take it.
+    if (p.getUri() !== dragUri) { active = false; return; }
+    e.preventDefault(); apply(e);
+  });
   canvas.addEventListener('pointerup', () => {
     if (!active) return; active = false;
-    if (editUnlocked) p.saveEV('Energy / valence saved');
+    if (editUnlocked && p.getUri() === dragUri) p.saveEV('Energy / valence saved', dragUri);
   });
   new ResizeObserver(() => p.draw()).observe(canvas);
 }
@@ -3130,10 +3145,12 @@ function initTrackPanelMatrix(p) {
 /* Click-to-edit an Energy/Valence cell (0–10) — identical in both panels. */
 function editTrackPanelNumber(p, kind) {
   if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-  if (!p.getUri()) return;
+  const uri = p.getUri();
+  if (!uri) return;
   const dd = p.el(kind);
   if (!dd || dd.querySelector('input')) return;
   const cur = p.ev ? p.ev[kind] : null;
+  const ev0 = p.ev;   // the values of THIS track, for the axis not being edited
   dd.innerHTML = '<input class="td-edit-input" type="number" min="0" max="10" step="1" value="'
     + (cur != null ? Math.round(cur * 10) : 5) + '">';
   const inp = dd.querySelector('input'); inp.focus(); inp.select();
@@ -3144,14 +3161,17 @@ function editTrackPanelNumber(p, kind) {
     // Assign textContent directly here: it must replace the live input.
     if (isNaN(v)) { dd.textContent = fmtEV(cur); return; }
     v = Math.min(10, Math.max(0, v)) / 10;
-    const base = p.ev || { energy: 0.5, valence: 0.5 };
-    p.ev = { energy: kind === 'energy' ? v : base.energy,
-             valence: kind === 'valence' ? v : base.valence };
-    dd.textContent = fmtEV(v);
-    p.set(kind === 'energy' ? 'valence' : 'energy',
-          fmtEV(kind === 'energy' ? p.ev.valence : p.ev.energy));
-    p.draw();
-    await p.saveEV();
+    const base = ev0 || { energy: 0.5, valence: 0.5 };
+    const ev = { energy: kind === 'energy' ? v : base.energy,
+                 valence: kind === 'valence' ? v : base.valence };
+    if (p.getUri() === uri) {
+      p.ev = ev;
+      dd.textContent = fmtEV(v);
+      p.set(kind === 'energy' ? 'valence' : 'energy',
+            fmtEV(kind === 'energy' ? ev.valence : ev.energy));
+      p.draw();
+    }
+    await p.saveEV(undefined, uri, ev);
   };
   inp.addEventListener('blur', commit);
   inp.addEventListener('keydown', e => {
@@ -3163,7 +3183,8 @@ function editTrackPanelNumber(p, kind) {
 /* Click-to-edit the Mood cell — identical in both panels. */
 function editTrackPanelMood(p) {
   if (!editUnlocked) { setFeedback('Enable editing first'); return; }
-  if (!p.getUri()) return;
+  const uri = p.getUri();
+  if (!uri) return;
   const dd = p.el('mood');
   if (!dd || dd.querySelector('select')) return;
   const cur = (dd.textContent || '').trim().toLowerCase();
@@ -3176,7 +3197,7 @@ function editTrackPanelMood(p) {
   const commit = async () => {
     if (done) return; done = true;
     dd.textContent = sel.value || '—';   // direct → replaces the live select
-    await p.save({ mood: sel.value });
+    await p.save({ mood: sel.value }, undefined, uri);
   };
   sel.addEventListener('change', commit);
   sel.addEventListener('blur', commit);
@@ -3190,8 +3211,12 @@ function wireTrackPanelEdits(p) {
 }
 
 // The two instances. The now-playing column follows the playing track; the modal
-// follows whichever track was opened in it.
-const tdPanel  = makeTrackPanel({ cellId: k => 'td-' + k, canvasId: 'td-matrix', playlistsId: 'td-playlists', lifecycleId: 'td-lifecycle', listClass: 'td-list', body: () => document.querySelector('#track-details .td-body'), getUri: () => matrixCurUri });
+// follows whichever track was opened in it. The column's uri is `detailsUri` — the
+// track whose info it RENDERED — and not `matrixCurUri`, which moves on its own
+// clock (the tracklist poll) while the panel is still loading the new track or
+// still showing the old one: every write from the panel (mood, rating, status)
+// must go to the track the reader is looking at.
+const tdPanel  = makeTrackPanel({ cellId: k => 'td-' + k, canvasId: 'td-matrix', playlistsId: 'td-playlists', lifecycleId: 'td-lifecycle', listClass: 'td-list', body: () => document.querySelector('#track-details .td-body'), getUri: () => detailsUri });
 const objPanel = makeTrackPanel({ cellId: k => 'obj-td-' + k, canvasId: 'obj-tmatrix', playlistsId: 'obj-playlists', lifecycleId: 'obj-lifecycle', listClass: 'obj-dl', body: () => document.getElementById('obj-body'), getUri: () => objTMatrixUri });
 
 // Desktop only: match the details column width to the (square) cover on the left.
@@ -3742,6 +3767,7 @@ async function renderTrackObj(uri, seed) {
   objSetActionUris([uri], uri);
   openObjPanel();
   objLoading();
+  const seq = _objViewSeq;
   let info = {}, tr = null, cover = '';
   try {
     const [i, look, cov] = await Promise.all([
@@ -3751,6 +3777,10 @@ async function renderTrackObj(uri, seed) {
     ]);
     info = i || {}; tr = look; cover = cov;
   } catch (e) {}
+  // Another track (or album, artist…) was opened while this one loaded: its view
+  // owns the modal now. Rendering this late answer would put track A's panel —
+  // and A's uri behind every edit in it — under what the reader just asked for.
+  if (seq !== _objViewSeq) return;
   const name = (tr && tr.name) || seed?.name || 'Track';
   const artists = (tr && tr.artists) || [];
   const artist = artistsText(artists) || seed?.artist || '';
@@ -4080,7 +4110,10 @@ function objSetHead(kind, title, sub) {
   if (si && searchMode && document.activeElement !== si) si.value = title || '';
 }
 function objBody()  { return document.getElementById('obj-body'); }
-function objLoading(msg) { objBody().innerHTML = `<div class="obj-loading">${msg || 'Loading…'}</div>`; }
+// Bumped by every view that starts loading into the modal, so a slow answer can
+// tell it has been superseded (see renderTrackObj).
+let _objViewSeq = 0;
+function objLoading(msg) { _objViewSeq++; objBody().innerHTML = `<div class="obj-loading">${msg || 'Loading…'}</div>`; }
 
 /* ── Modal navigation history (prev/next within the object modal) ──
    Search → open an artist → Back returns to the search results; Forward returns
@@ -6175,6 +6208,7 @@ async function fetchAndRenderTrackTags(uri) {
 
   try {
     const tags = await fetch(API + '/track_tags?uri=' + encodeURIComponent(uri)).then(r => r.json());
+    if (lastTagsUri !== uri) return;   // a later track took the row while we waited
     tags.slice(0, 12).forEach(({name}) => {
       // A button, not a span: it is an action, so it gets keyboard focus and a role
       // for free rather than a click handler bolted onto inert text.
