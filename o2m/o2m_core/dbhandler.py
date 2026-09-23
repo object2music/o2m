@@ -1805,6 +1805,14 @@ class DatabaseHandler():
         except Exception:
             return False
 
+    def is_artist_followed_local(self, artist_id):
+        """True if the artist row is marked followed (local mirror)."""
+        try:
+            a = Artist.get_or_none(Artist.id == artist_id)
+            return bool(a and a.followed)
+        except Exception:
+            return False
+
     def reconcile_saved_albums(self, seen_ids):
         """Clear `saved` on every album Spotify no longer lists, and say which.
 
@@ -2473,6 +2481,18 @@ class DatabaseHandler():
             # Reset the row so warmup re-runs cleanly.
             self.set_cache_meta(key, 0)
             return 0, None
+
+    def get_cache_meta_prefixed(self, prefix):
+        """{key-without-prefix: bool(value_int)} for every CacheMeta key under *prefix*."""
+        try:
+            return {r.key[len(prefix):]: bool(r.value_int)
+                    for r in CacheMeta.select().where(CacheMeta.key.startswith(prefix))}
+        except Exception as e:
+            self.log.error(f"get_cache_meta_prefixed({prefix}): {e}")
+            return {}
+
+    def delete_cache_meta(self, key):
+        CacheMeta.delete().where(CacheMeta.key == key).execute()
 
     def set_cache_meta(self, key, value_int):
         """Upsert a CacheMeta entry with current timestamp."""

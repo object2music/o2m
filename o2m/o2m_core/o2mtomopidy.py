@@ -6,7 +6,7 @@ from urllib import parse, error as url_error
 
 import o2m_core.util as util
 from o2m_core.dbhandler import DatabaseHandler, Track, Stats_Raw, Box
-from o2m_core.spotifyhandler import SpotifyHandler
+from o2m_core.spotifyhandler import SpotifyHandler, SpotifyRateLimited
 from o2m_core import radiofrance as rf
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
@@ -3715,6 +3715,13 @@ class O2mToMopidy:
                             stat.liked = 1
                             stat.liked_at = datetime.datetime.now(datetime.timezone.utc)
                             print(f"favorites sync: liked {uri} on Spotify")
+                        except SpotifyRateLimited:
+                            # Not a refusal, a "not now": like it here and let the
+                            # queue reach Spotify when the quota is back.
+                            self.spotifyHandler.queue_pending_like(uri, True)
+                            stat.liked = 1
+                            stat.liked_at = datetime.datetime.now(datetime.timezone.utc)
+                            print(f"favorites sync: Spotify rate-limited, like queued for {uri}")
                         except Exception as e:
                             # Never let a refused Spotify write break stat recording;
                             # the status still stands, the ♥ simply stays off.

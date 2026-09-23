@@ -2572,7 +2572,8 @@ async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
     if (!r.ok || d.error || d.ok === false) {
       setFeedback(String(d.error || 'Not saved (HTTP ' + r.status + ')').slice(0, 90)); return;
     }
-    setFeedback(add ? okAdd : okRemove);
+    setFeedback((add ? okAdd : okRemove)
+      + (d.spotify_pending ? ' — Spotify will follow when its quota is back' : ''));
   } catch (e) { setFeedback('Error'); }
 }
 const setAlbumInLibrary  = (uri, add) => _libToggle('/album_save',   'saved',    uri, add, 'Album added to library',  'Album removed from library');
@@ -3420,10 +3421,14 @@ async function commitRating(p) {
       else if (body.favorite) p.disliked = false;   // the server cleared it — the two are exclusive
       renderFav(p);
     }
-    setFeedback(target === 'dislike' ? (d.skipped ? 'Disliked — skipped'
-                                                  : 'Disliked — it will not come back')
+    // Spotify refusing for quota is not a refusal of the like: it is recorded here
+    // and replayed to Spotify later (spotify_pending) — say so rather than claim
+    // the Spotify library already has it.
+    const later = d.spotify_pending ? ' — Spotify will follow when its quota is back' : '';
+    setFeedback((target === 'dislike' ? (d.skipped ? 'Disliked — skipped'
+                                                   : 'Disliked — it will not come back')
               : target === 'like'    ? 'Added to favorites'
-              : from === 'like'      ? 'Removed from favorites' : 'Dislike removed');
+              : from === 'like'      ? 'Removed from favorites' : 'Dislike removed') + later);
     // The tracklist just lost a row (and possibly its current track), so the page's
     // view of what is playing is a moment out of date.
     if (target === 'dislike' && (d.removed || d.skipped)) setTimeout(refreshNowPlaying, 300);

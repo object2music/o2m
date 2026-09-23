@@ -3,6 +3,10 @@ from pathlib import Path
 import spotipy as spotipy
 import o2m_core.util as util
 
+class SpotifyRateLimited(Exception):
+    """Spotify refused for rate or quota (429), or the API is cooling down after one."""
+
+
 class SpotifyHandler:
     def __init__(self):
         self.spotipy_config = util.get_config_file("o2m.conf")["spotipy"]
@@ -1050,22 +1054,82 @@ class SpotifyHandler:
     def _track_id(self, track_uri):
         return str(track_uri).split(':')[-1]
 
-    def is_track_saved(self, track_uri):
-        """True/False si le morceau est dans les titres likés du compte serveur, None si erreur."""
+    def _live_check(self, what, call):
+        """A live library-state read (is it saved / followed?): None while the API
+        is cooling down, and a 429 STARTS the cooldown. These run on every track
+        change and every menu opened, so without it a rate limit is met again on
+        each of them instead of being waited out."""
+        if self.sp is None or self._is_rate_limited():
+            return None
         try:
-            return bool(self.sp.current_user_saved_tracks_contains([self._track_id(track_uri)])[0])
+            return bool(call())
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            else:
+                print(f"{what} error: {e}")
+            return None
         except Exception as e:
-            print(f"is_track_saved error: {e}")
+            print(f"{what} error: {e}")
             return None
 
+    def is_track_saved(self, track_uri):
+        """True/False if the track is in the account's liked tracks, None when unknown."""
+        return self._live_check('is_track_saved', lambda:
+            self.sp.current_user_saved_tracks_contains([self._track_id(track_uri)])[0])
+
     def set_track_saved(self, track_uri, saved):
-        """Ajoute/retire le morceau des titres likés du compte serveur."""
+        """Add/remove the track from the account's liked tracks.
+
+        Raises SpotifyRateLimited when Spotify refuses for quota or rate — the one
+        refusal the caller can defer rather than report (see queue_pending_like)."""
+        if self._is_rate_limited():
+            raise SpotifyRateLimited('Spotify API is cooling down after a 429')
         tid = [self._track_id(track_uri)]
-        if saved:
-            self.sp.current_user_saved_tracks_add(tid)
-        else:
-            self.sp.current_user_saved_tracks_delete(tid)
+        try:
+            if saved:
+                self.sp.current_user_saved_tracks_add(tid)
+            else:
+                self.sp.current_user_saved_tracks_delete(tid)
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+                raise SpotifyRateLimited(str(e)) from e
+            raise
         return True
+
+    # ── Likes Spotify refused for quota, replayed later ──────────────────────
+    # Kept in CacheMeta (key = prefix + uri, value_int = 1 save / 0 unsave), not in
+    # a file: o2m_0 and o2m_1 share the database, and the liked-tracks warmup of
+    # EITHER must see a pending like, or its reconciliation would clear it.
+    PENDING_LIKE_PREFIX = 'spotify_pending_like:'
+
+    def queue_pending_like(self, track_uri, saved):
+        if self._db:
+            self._db.set_cache_meta(self.PENDING_LIKE_PREFIX + track_uri, 1 if saved else 0)
+
+    def pending_likes(self):
+        """{uri: bool} of the likes waiting for Spotify."""
+        return self._db.get_cache_meta_prefixed(self.PENDING_LIKE_PREFIX) if self._db else {}
+
+    def flush_pending_likes(self):
+        """Replay the queued likes. Stops at the first rate limit; returns how many
+        went through. The local flag was written when the heart was clicked, so
+        this only brings Spotify up to it."""
+        pending = self.pending_likes()
+        done = 0
+        for uri, saved in pending.items():
+            try:
+                self.set_track_saved(uri, saved)
+            except SpotifyRateLimited:
+                break
+            except Exception as e:
+                print(f"flush_pending_likes: {uri}: {e} — dropped")
+            self._db.delete_cache_meta(self.PENDING_LIKE_PREFIX + uri)
+            done += 1
+        if done:
+            print(f"flush_pending_likes: {done}/{len(pending)} replayed to Spotify")
+        return done
 
     def set_album_saved(self, album_uri, saved=True):
         """Add/remove an album from the user's saved albums (Spotify library)."""
@@ -1077,13 +1141,9 @@ class SpotifyHandler:
         return True
 
     def is_album_saved(self, album_uri):
-        """True/False if the album is in the user's saved albums, None on error."""
-        try:
-            return bool(self.sp.current_user_saved_albums_contains(
-                albums=[album_uri.rsplit(':', 1)[1]])[0])
-        except Exception as e:
-            print(f"is_album_saved error: {e}")
-            return None
+        """True/False if the album is in the user's saved albums, None when unknown."""
+        return self._live_check('is_album_saved', lambda:
+            self.sp.current_user_saved_albums_contains(albums=[album_uri.rsplit(':', 1)[1]])[0])
 
     def set_artist_followed(self, artist_uri, followed=True):
         """Follow/unfollow an artist on the user's account."""
@@ -1095,13 +1155,9 @@ class SpotifyHandler:
         return True
 
     def is_artist_followed(self, artist_uri):
-        """True/False if the user follows the artist, None on error."""
-        try:
-            return bool(self.sp.current_user_following_artists(
-                ids=[artist_uri.rsplit(':', 1)[1]])[0])
-        except Exception as e:
-            print(f"is_artist_followed error: {e}")
-            return None
+        """True/False if the user follows the artist, None when unknown."""
+        return self._live_check('is_artist_followed', lambda:
+            self.sp.current_user_following_artists(ids=[artist_uri.rsplit(':', 1)[1]])[0])
 
 ################### PLAYLISTS #############################
 
@@ -1673,6 +1729,10 @@ class SpotifyHandler:
         if self._is_rate_limited():
             return
         print("warmup: syncing liked tracks…")
+        # Replay first: what was liked here during a quota outage then IS in the
+        # set this sweep reads. Whatever is still pending is protected below.
+        self.flush_pending_likes()
+        pending = self.pending_likes()
         count = 0
         liked_uris = set()
         complete = False
@@ -1685,6 +1745,10 @@ class SpotifyHandler:
                     track = item.get('track')
                     if track and track.get('uri'):
                         self._cache_track(track)
+                        # Unliked here while Spotify was refusing: not re-liked by
+                        # the mirror before the unsave has been replayed.
+                        if pending.get(track['uri']) is False:
+                            continue
                         liked_uris.add(track['uri'])
                         if self._db:
                             self._db.mark_track_liked(track['uri'], item.get('added_at'))
@@ -1706,6 +1770,8 @@ class SpotifyHandler:
         # from the freshly-synced set. Only after a COMPLETE fetch, and never from
         # an empty set (guarded in reconcile_liked) so a glitch can't wipe all likes.
         if complete and self._db:
+            # A like still waiting for Spotify is not "absent from Spotify".
+            liked_uris |= {u for u, v in pending.items() if v}
             cleared = self._db.reconcile_liked(liked_uris)
             if cleared:
                 print(f"warmup: cleared {cleared} stale like(s) un-liked on Spotify")
@@ -2385,7 +2451,7 @@ class SpotifyHandler:
         for entity_type, method in [
             ('liked',           self.warmup_liked_tracks),
             ('albums',          self.warmup_saved_albums),
-            ('artists',         self.get_all_followed_artists),   # already pages + caches
+            ('artists',         self.sync_followed_artists),      # already pages + caches
             ('playlist_tracks', self.cache_all_playlists),
             ('genres',            self.warmup_artist_genres),       # 30/run via Last.fm; repeats until all done
             ('spotify_features',  lambda: self.warmup_spotify_features(batch_size=100, max_batches=5)),  # up to 500/startup via Spotify
@@ -2674,17 +2740,36 @@ class SpotifyHandler:
         return tracks_uris[:limit]
     
     def get_all_followed_artists(self):
+        """The followed artists' ids — from the DB mirror, not from Spotify.
+
+        This used to page the whole of /me/following on EVERY call, and it is called
+        on every end-of-track recommendation and every fill that draws from the
+        library: three Web API requests and a full reconciliation per track, for a
+        list that changes when someone follows an artist. On 2026-09-23 that is what
+        exhausted the account's quota (429 QUOTA_EXCEEDED on every /me endpoint),
+        which in turn made the heart fail. The mirror is kept by the warmup
+        (sync_followed_artists); Spotify is only asked here when it is empty."""
+        if self._db:
+            cached = self._db.get_followed_artist_ids()
+            if cached:
+                return cached
         if self._is_rate_limited():
-            if self._db:
-                cached = self._db.get_followed_artist_ids()
-                if cached:
-                    print(f"get_all_followed_artists: rate-limited, using {len(cached)} cached followed artists")
-                    return cached
-                print("get_all_followed_artists: rate-limited, followed cache empty")
             return []
+        return self.sync_followed_artists()
+
+    def sync_followed_artists(self):
+        """Page the whole of /me/following into the DB mirror and reconcile it.
+        For the warmup and /api/warmup_library only — see get_all_followed_artists."""
+        if self._is_rate_limited():
+            return self._db.get_followed_artist_ids() if self._db else []
         all_followed = []
         total = None
-        response = self.sp.current_user_followed_artists(limit=50)
+        try:
+            response = self.sp.current_user_followed_artists(limit=50)
+        except spotipy.SpotifyException as e:
+            if e.http_status == 429:
+                self._on_rate_limit(e)
+            return self._db.get_followed_artist_ids() if self._db else []
         if response:
             total = (response.get('artists') or {}).get('total')
         while response:
@@ -2700,10 +2785,16 @@ class SpotifyHandler:
                 if self._db:
                     self._db.mark_artist_followed(artist['id'])
             if page.get('next'):
-                response = self.sp.next(page)
+                try:
+                    response = self.sp.next(page)
+                except spotipy.SpotifyException as e:
+                    # A partial sweep must never reach the reconciliation below.
+                    if e.http_status == 429:
+                        self._on_rate_limit(e)
+                    return self._db.get_followed_artist_ids() if self._db else all_followed
             else:
                 break
-        print(f"get_all_followed_artists: cached {len(all_followed)} followed artists")
+        print(f"sync_followed_artists: cached {len(all_followed)} followed artists")
         self._reconcile_library('artists', set(all_followed), total)
         return all_followed
     

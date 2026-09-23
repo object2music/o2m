@@ -4,7 +4,7 @@ from mopidyapi import MopidyAPI
 from o2m_core import util
 from o2m_core import virtualbox
 from o2m_core.o2mtomopidy import O2mToMopidy
-from o2m_core.spotifyhandler import SpotifyHandler
+from o2m_core.spotifyhandler import SpotifyHandler, SpotifyRateLimited
 from time import sleep
 
 from flask import Flask, request, session, redirect
@@ -271,6 +271,20 @@ if __name__ == "__main__":
             sleep(3600)  # re-check hourly
 
     threading.Thread(target=_popularity_scheduler, daemon=True).start()
+
+    # Likes Spotify refused for quota (see /api/track_favorite) are replayed here.
+    # Every 15 min is plenty: the pause after a 429 is an hour when Spotify names
+    # no Retry-After, and set_track_saved returns at once while it lasts.
+    def _pending_likes_flusher():
+        sleep(60)
+        while True:
+            try:
+                o2mHandler.spotifyHandler.flush_pending_likes()
+            except Exception as e:
+                print(f"pending likes flush error: {e}")
+            sleep(900)
+
+    threading.Thread(target=_pending_likes_flusher, daemon=True).start()
 
     # Radio now-playing watcher (stream title for all radios + auto-save on FIP).
     try:
@@ -1541,7 +1555,7 @@ if __name__ == "__main__":
         try:
             db.set_cache_meta('warmup_albums_at', 0)
             sp.warmup_saved_albums()
-            sp.get_all_followed_artists()
+            sp.sync_followed_artists()
         except Exception as e:
             return jsonify({'error': str(e)}), 500
         after_a = set(db.get_saved_album_ids())
@@ -1864,7 +1878,15 @@ if __name__ == "__main__":
         uri = (o2mHandler.get_spotify_uri(request.args.get('uri')) or '').strip()
         if not uri or not uri.startswith('spotify:track:'):
             return jsonify({'saved': None})
+        # Answered from the DB mirror, which the warmups keep (liked tracks, saved
+        # albums, followed artists — each reconciled on a complete sweep). This
+        # runs on every track change and every menu opened; asking Spotify each
+        # time is what spent the account's quota on 2026-09-23. `live=1` still
+        # asks Spotify, for a caller that needs the account's own word.
+        live = request.args.get('live') in ('1', 'true')
         try:
+            if not live:
+                return jsonify({'saved': o2mHandler.dbHandler.is_track_liked_local(uri)})
             return jsonify({'saved': o2mHandler.spotifyHandler.is_track_saved(uri)})
         except Exception as e:
             return jsonify({'saved': None, 'error': str(e)})
@@ -1891,10 +1913,20 @@ if __name__ == "__main__":
         # /api/track_playlist, which had it right from the start.
         # A track that is not a Spotify one (a podcast episode, a local file, a web
         # page item) has no other side: there the local flag IS the library.
+        #
+        # One refusal is not an answer about the track: a rate or quota limit
+        # (429) says nothing about whether it may be liked, only "not now". Then
+        # the like is recorded here and queued, and flush_pending_likes brings
+        # Spotify up to it when the quota is back — the liked-tracks warmup knows
+        # the queue, so it neither clears nor re-likes a pending row meanwhile.
         if uri.startswith('spotify:track:'):
+            sph = o2mHandler.spotifyHandler
             try:
-                o2mHandler.spotifyHandler.set_track_saved(uri, favorite)
+                sph.set_track_saved(uri, favorite)
                 result['liked_spotify'] = favorite
+            except SpotifyRateLimited:
+                sph.queue_pending_like(uri, favorite)
+                result['spotify_pending'] = True
             except Exception as e:
                 return jsonify({'ok': False, 'uri': uri,
                                 'error': f'Spotify refused: {e}'}), 502
@@ -1943,6 +1975,9 @@ if __name__ == "__main__":
             try:
                 o2mHandler.spotifyHandler.set_track_saved(uri, False)
                 result['liked_spotify'] = False
+            except SpotifyRateLimited:
+                o2mHandler.spotifyHandler.queue_pending_like(uri, False)
+                result['spotify_pending'] = True
             except Exception as e:
                 result['spotify_error'] = str(e)
         try:
@@ -1998,7 +2033,10 @@ if __name__ == "__main__":
         uri = (request.args.get('uri') or '').strip()
         if not uri.startswith('spotify:album:'):
             return jsonify({'saved': None})
+        live = request.args.get('live') in ('1', 'true')   # see /api/track_saved
         try:
+            if not live:
+                return jsonify({'saved': o2mHandler.dbHandler.is_album_saved_local(uri.rsplit(':', 1)[1])})
             return jsonify({'saved': o2mHandler.spotifyHandler.is_album_saved(uri)})
         except Exception as e:
             return jsonify({'saved': None, 'error': str(e)})
@@ -2043,7 +2081,10 @@ if __name__ == "__main__":
         uri = (request.args.get('uri') or '').strip()
         if not uri.startswith('spotify:artist:'):
             return jsonify({'followed': None})
+        live = request.args.get('live') in ('1', 'true')   # see /api/track_saved
         try:
+            if not live:
+                return jsonify({'followed': o2mHandler.dbHandler.is_artist_followed_local(uri.rsplit(':', 1)[1])})
             return jsonify({'followed': o2mHandler.spotifyHandler.is_artist_followed(uri)})
         except Exception as e:
             return jsonify({'followed': None, 'error': str(e)})
