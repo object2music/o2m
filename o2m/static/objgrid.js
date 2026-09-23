@@ -59,6 +59,7 @@ const OBJGRID = (() => {
     active: new Map(),      // object uri → {kind, name}
     activeBoxes: new Set(), // box uid
     busy: new Set(),
+    pending: new Set(),     // tile keys being turned ON, not yet answered
   };
 
   /* ── DOM ───────────────────────────────────────────────────────────────── */
@@ -303,7 +304,7 @@ const OBJGRID = (() => {
     if (!split) return;
     let on = 0, off = 0;
     grid.querySelectorAll('.og-tile').forEach(t => {
-      if (t.classList.contains('active')) on++; else off++;
+      if (t.classList.contains('active') || t.classList.contains('og-pending')) on++; else off++;
     });
     split.hidden = !(on && off);
   }
@@ -356,6 +357,24 @@ const OBJGRID = (() => {
     if (!key || state.busy.has(key)) return;
     state.busy.add(key);
     if (el) el.disabled = true;
+    /* Say it before doing it. Filling takes seconds (a tag or an artist is
+       drawn, scored and resolved), and a tile that only pulses where it was
+       tapped reads as "nothing happened" — the answer then moves it to the head
+       of the grid long after the gesture. So an activation moves the tile FIRST,
+       to the very head (top left), pulsing, and the request leaves only once
+       that move has been seen. Turning off stays where it is: the tile is
+       already at the head, among what is on. */
+    const turningOn = kind === 'box' ? !state.activeBoxes.has(uid) : !state.active.has(uri);
+    if (turningOn && MOSAICS.includes(state.mode)) {
+      state.pending.add(key);
+      paint();
+      if (!reducedMotion()) await new Promise(r => setTimeout(r, 360));   // the FLIP's .34s
+      // After the move, not during it: mid-FLIP the tile still wears the
+      // transform that draws it at its OLD place, and that is where
+      // scrollIntoView would go. Tapped deep in a shelf, the head may be
+      // off screen — this brings it back.
+      scrollTo(tileEl({ uid, uri }));
+    }
     try {
       if (kind === 'box') await toggleBoxTile(uid, name);
       else await toggleObject(uri, name);
@@ -371,6 +390,9 @@ const OBJGRID = (() => {
     } finally {
       state.busy.delete(key);
       if (el) el.disabled = false;
+      // Settled either way: on, it stays at the head as an active tile; refused,
+      // it drops back into its place in the listing.
+      if (state.pending.delete(key)) paint();
     }
   }
 
@@ -417,13 +439,17 @@ const OBJGRID = (() => {
        measuring is what forces a layout flush, and this runs on a 10s poll that
        usually has nothing to report. Both strings are in DOM order, so they
        compare directly. */
-    const sig = ts => ts.filter(isOn).map(tileKey).join('|');
-    const sigNow = ts => ts.filter(t => t.classList.contains('active')).map(tileKey).join('|');
+    const isPending = t => state.pending.has(tileKey(t));
+    const sig = ts => ts.filter(t => isOn(t) || isPending(t))
+      .map(t => tileKey(t) + (isPending(t) ? '*' : '')).join('|');
+    const sigNow = ts => ts.filter(t => t.classList.contains('active') || t.classList.contains('og-pending'))
+      .map(t => tileKey(t) + (t.classList.contains('og-pending') ? '*' : '')).join('|');
     const before = (tiles.length && sig(tiles) !== sigNow(tiles) && !reducedMotion())
       ? new Map(tiles.map(t => [tileKey(t), t.getBoundingClientRect()])) : null;
 
     tiles.forEach(t => {
       const on = isOn(t);
+      t.classList.toggle('og-pending', isPending(t));
       t.classList.toggle('active', on);
       t.setAttribute('aria-pressed', String(on));
     });
@@ -485,10 +511,10 @@ const OBJGRID = (() => {
     // Resolved before the toggle, not after: it is what pulses while the fill
     // runs, so a random pick looks exactly like a tap on the same tile.
     const el = tileEl(pick);
-    // Shown only where it will STAY. In a mosaic the winner leaves this spot the
-    // instant it comes on — what is active moves to the head of the grid — so
-    // scrolling to it would be scrolling to where it is about to no longer be.
-    // The list does not reorder, so there it is still the right thing to do.
+    // Shown only where it will STAY. In a mosaic the winner leaves this spot at
+    // once — toggle() moves it to the head of the grid and scrolls THERE — so
+    // scrolling to it here would be scrolling to where it is about to no longer
+    // be. The list does not reorder, so there it is still the right thing to do.
     if (pick.el) scrollTo(pick.el);
     if (btn) btn.disabled = true;
     try {

@@ -132,6 +132,9 @@
 /* What is on comes to the head of the grid, and drops back into place in the
    listing when it is released. */
 .og-tile.active { order: 0; }
+/* Being turned on: first of all (top left), before the server has answered —
+   see toggle() in objgrid.js. It pulses through :disabled below. */
+.og-tile.og-pending { order: -1; }
 /* The line between the two groups. Full width, so what follows starts a new row;
    hidden by syncSplit when one side of it is empty. */
 .og-split {
