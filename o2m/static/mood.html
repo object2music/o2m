@@ -2124,7 +2124,9 @@ function initMediaSession() {
   const setH = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch(e) {} };
   setH('play',          async () => {
     if (OFF.on) { offTogglePlay(); return; }
-    await rpc('core.playback.resume');   setTimeout(refreshNowPlaying, 300); });
+    // Through the server's play_or_resume, like the on-screen button: a bare
+    // resume() does nothing when Mopidy sits at 'paused' with no current track.
+    await fetch(API + '/toogle_play');   setTimeout(refreshNowPlaying, 300); });
   setH('pause',         async () => {
     if (OFF.on) { offTogglePlay(); return; }
     await rpc('core.playback.pause');    setTimeout(refreshNowPlaying, 300); });

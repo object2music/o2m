@@ -2817,22 +2817,27 @@ class O2mToMopidy:
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
         print(f"play_or_resume: state={state}")
-        if state == "stopped":
-            current_tl_track = self.mopidyHandler.playback.get_current_tl_track()
-            if current_tl_track is None:
-                current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
-                print(f"play_or_resume: no current track, tracklist size={len(current_tracks)}")
-                if len(current_tracks) > 0:
-                    self.mopidyHandler.playback.play(tlid=current_tracks[0].tlid)
-                    print(f"play_or_resume: playing tlid={current_tracks[0].tlid}")
-            else:
-                self.mopidyHandler.playback.play()
-                print(f"play_or_resume: resuming current track")
+        if state not in ("stopped", "paused"):
+            print(f"play_or_resume: already playing or unknown state, no action")
+            return
+        # Nothing loaded means nothing to resume, whatever the state says. Mopidy
+        # can sit at 'paused' with no current track — its paused track was removed
+        # from under it (a box deactivated, the tracklist cleared) — and resume()
+        # then does nothing at all: the box fills, the page shows a tracklist, and
+        # the room stays silent. Only the 'stopped' branch used to check.
+        current_tl_track = self.mopidyHandler.playback.get_current_tl_track()
+        if current_tl_track is None:
+            current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
+            print(f"play_or_resume: no current track, tracklist size={len(current_tracks)}")
+            if len(current_tracks) > 0:
+                self.mopidyHandler.playback.play(tlid=current_tracks[0].tlid)
+                print(f"play_or_resume: playing tlid={current_tracks[0].tlid}")
         elif state == "paused":
             self.mopidyHandler.playback.resume()
             print(f"play_or_resume: resuming from pause")
         else:
-            print(f"play_or_resume: already playing or unknown state, no action")
+            self.mopidyHandler.playback.play()
+            print(f"play_or_resume: resuming current track")
 
     def apply_mood_settings(self):
         """Apply a mood / discover-level change coming from the interface.
