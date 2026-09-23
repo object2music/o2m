@@ -1504,7 +1504,7 @@ class DatabaseHandler():
             print(f"get_genres_with_counts error: {e}")
             return []
 
-    def get_top_tags(self, limit=300, min_tracks=20):
+    def get_top_tags(self, limit=300, min_tracks=20, min_artists=3):
         """The tags worth offering as something to put on: [{name, count}], most
         tracks first. Counted in TRACKS rather than artists (get_genres_with_counts)
         because a tag is activated for what it will play, and one prolific artist
@@ -1514,15 +1514,22 @@ class DatabaseHandler():
         stops at trackartist on purpose: going on to `track` to drop unnamed rows
         took 8.5 s against 0.44 s, for a count that only orders a list. Tags the
         scoring already treats as noise ("favorites", "seen live", nationalities…)
-        are left out — nobody activates "awesome"."""
+        are left out — nobody activates "awesome".
+
+        So are tags carried by fewer than `min_artists` artists. A tag one artist
+        carries IS that artist, already on the Artists shelf — and that is where
+        the junk lives: 169 of 439 tags here were single-artist, among them "the",
+        "of", "and", artist names ("serge gainsbourg") and private labels
+        ("cooljazzgdchill"). Three artists keeps 204, with no list to maintain."""
         try:
             noise = set(_GENRE_NOISE) | {t.tag for t in TagFeature.select(TagFeature.tag).where(TagFeature.is_noise == 1)}
             cnt = fn.COUNT(TrackArtist.track_uri.distinct())
+            n_artists = fn.COUNT(ArtistGenre.artist_id.distinct())
             rows = (Genre.select(Genre.name, cnt.alias('cnt'))
                     .join(ArtistGenre, on=(Genre.id == ArtistGenre.genre_id))
                     .join(TrackArtist, on=(TrackArtist.artist_id == ArtistGenre.artist_id))
                     .group_by(Genre.id)
-                    .having(cnt >= min_tracks)
+                    .having((cnt >= min_tracks) & (n_artists >= min_artists))
                     .order_by(cnt.desc())
                     .limit(limit + len(noise))
                     .namedtuples())
