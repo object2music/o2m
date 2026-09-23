@@ -392,7 +392,7 @@ const OBJGRID = (() => {
       // transform that draws it at its OLD place, and that is where
       // scrollIntoView would go. Tapped deep in a shelf, the head may be
       // off screen — this brings it back.
-      scrollTo(tileEl({ uid, uri }));
+      scrollToHead(tileEl({ uid, uri }));
     }
     boxFillStart();   // the dials pulse and wait with the tile (see mood.html)
     try {
@@ -559,6 +559,28 @@ const OBJGRID = (() => {
      you looking for it. Only where the winner holds its place; see pickRandom. */
   function scrollTo(el) {
     try { el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {}
+  }
+
+  /* Bring the head of the mosaic — where a tile being turned on has just moved —
+     to the top of what can be SEEN. 'nearest' stopped as soon as the tile touched
+     the scroller's edge, and on desktop that edge is under the column header, the
+     toolbar and the filter, all sticky: the tile came to rest behind them, short
+     of where the chosen ones start. So its scroll margin is set to the bottom of
+     the lowest bar actually pinned — each one's sticky `top` plus its height —
+     and it is aligned to the start. On a phone nothing is sticky there, and only
+     the breathing gap remains. */
+  function scrollToHead(el) {
+    if (!el) return;
+    let cover = 0;
+    [document.getElementById('boxes-panel-label'), document.getElementById('auto-bar'),
+     document.querySelector('.og-tools')].forEach(b => {
+      if (!b) return;
+      const cs = getComputedStyle(b);
+      if (cs.position !== 'sticky') return;
+      cover = Math.max(cover, (parseFloat(cs.top) || 0) + b.getBoundingClientRect().height);
+    });
+    el.style.scrollMarginTop = Math.round(cover + 8) + 'px';
+    try { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
   }
 
   /* ── Counts ────────────────────────────────────────────────────────────── */
