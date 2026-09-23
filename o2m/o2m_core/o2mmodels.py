@@ -613,6 +613,41 @@ def _migration_v25(migrator):
         print(f"[DB] v25 disliked default: {e}")
 
 
+def _migration_v26(migrator):
+    """Relax `username` to NULL DEFAULT NULL on track and stats_raw, where a
+    legacy schema made it NOT NULL with no default.
+
+    The model has always declared it `null=True`, and a database created by
+    create_tables has it nullable. The shared o2m_0/o2m_1 database does not:
+    `track` IS the 2023 `stats` table, renamed by migrate_cache.sql, and kept
+    its `varchar(255) NOT NULL`. Under STRICT_TRANS_TABLES every INSERT that
+    omits the column is rejected — and every metadata upsert
+    (`Track.insert(...).on_conflict(...)`, used by save_track_metadata,
+    upsert_episodes, the like/dislike and mood writes) omits it, even when the
+    row exists, because MySQL checks the INSERT half first. A stale-cached track
+    therefore could not have its play recorded, and a box removed while it was
+    playing failed halfway.
+
+    Relaxing a constraint is additive in the sense that matters: an older image
+    reads and writes the column exactly as before. The type is kept; only
+    columns that are actually NOT NULL are touched, so this is a no-op on a
+    database created by the current code. SQLite is skipped (no MODIFY, and its
+    tables come from create_tables)."""
+    if isinstance(db, SqliteDatabase):
+        return
+    for table in ('track', 'stats_raw'):
+        try:
+            row = db.execute_sql(
+                "SELECT column_type, is_nullable FROM information_schema.columns "
+                "WHERE table_schema = DATABASE() AND table_name = %s AND column_name = 'username'",
+                (table,)).fetchone()
+            if row and row[1] == 'NO':
+                db.execute_sql(f"ALTER TABLE `{table}` MODIFY `username` {row[0]} NULL DEFAULT NULL")
+                print(f"[DB] v26 {table}.username relaxed to NULL ({row[0]})")
+        except Exception as e:
+            print(f"[DB] v26 {table}.username: {e}")
+
+
 def _migration_v23(migrator):
     db.create_tables([OfflineRequest], safe=True)
 
@@ -659,7 +694,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -687,6 +722,7 @@ _MIGRATIONS = [
     (23, "offline_request_table", _migration_v23),
     (24, "track_disliked_columns", _migration_v24),
     (25, "track_disliked_sql_default", _migration_v25),
+    (26, "username_nullable", _migration_v26),
 ]
 
 
