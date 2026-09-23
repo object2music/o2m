@@ -2099,8 +2099,11 @@
   /* Filling the queue takes seconds. Moving a dial meanwhile fires a second,
      concurrent rebuild: part of the queue is dropped and part is not, and the
      result is longer than either would have been. The dials say so and stop
-     accepting input for the duration — same pulse as the actuators. */
-  body.mix-busy .dial-wrap { pointer-events: none; animation: basic-pulse 1s ease-in-out infinite; }
+     accepting input for the duration — same pulse as the actuators. The Full
+     view's mood matrix is the same control drawn as a plane, so it waits too:
+     it had been left out, and dragging it mid-fill queued exactly that race. */
+  body.mix-busy .dial-wrap,
+  body.mix-busy #mood-matrix { pointer-events: none; animation: basic-pulse 1s ease-in-out infinite; }
   /* Playback status line above the actuators: animated eq (freezes when paused
      via body.is-paused) + track/box counts + network dot. */
   #basic-status {

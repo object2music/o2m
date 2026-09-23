@@ -394,6 +394,7 @@ const OBJGRID = (() => {
       // off screen — this brings it back.
       scrollTo(tileEl({ uid, uri }));
     }
+    boxFillStart();   // the dials pulse and wait with the tile (see mood.html)
     try {
       if (kind === 'box') await toggleBoxTile(uid, name);
       else await toggleObject(uri, name);
@@ -407,6 +408,7 @@ const OBJGRID = (() => {
     } catch (e) {
       setFeedback('Activation error');
     } finally {
+      boxFillEnd();
       state.busy.delete(key);
       if (el) el.disabled = false;
       // Settled either way: on, it stays at the head as an active tile; refused,

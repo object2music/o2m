@@ -489,7 +489,10 @@ let mixBusy = false;
 function setMixBusy(on, lockTiles = false) {
   mixBusy = !!on;
   document.body.classList.toggle('mix-busy', mixBusy);
-  if (mixBusy) clearTimeout(applyTimer);   // drop a change debounced just before
+  // Drop a change debounced just before — and release its dirty flag with it:
+  // the apply that would have cleared it will now never run, and a stuck flag
+  // freezes the dials against every later refresh.
+  if (mixBusy) { clearTimeout(applyTimer); _moodDirty = false; }
   document.querySelectorAll('#basic-all').forEach(b => { b.disabled = mixBusy; });
   // lockTiles: a rebuild that REPLACES the whole queue (dial change, auto-mix start)
   // parks the category tiles too — a category toggled meanwhile would be half in,
@@ -6097,6 +6100,7 @@ async function refreshBoxStates() {
 
 async function toggleBox(uid, btn) {
   btn.disabled = true;
+  boxFillStart();
   try {
     /* `/api/box` fills the tracklist before it answers, so its reply describes a
        settled state — no need to wait 200ms and guess afterwards. It can also
@@ -6115,7 +6119,22 @@ async function toggleBox(uid, btn) {
     setTimeout(refreshNowPlaying, 800);
     setTimeout(refreshNowPlaying, 3000);
   } catch(e) { setFeedback('Box error'); }
-  finally { btn.disabled = false; }
+  finally { btn.disabled = false; boxFillEnd(); }
+}
+/* A box or an object being filled holds the dials the way a dial apply does: it
+   pulses, and a mood gesture made meanwhile would race the fill it is part of.
+   Counted, because two tiles can fill at once and the first one to answer must
+   not release the second; and it releases only a lock it took itself, so it
+   never cuts short an apply or a Basic fill that was already running. */
+let _boxFills = 0, _boxFillOwnsLock = false;
+function boxFillStart() {
+  if (_boxFills++ === 0 && !mixBusy) { _boxFillOwnsLock = true; setMixBusy(true); }
+}
+function boxFillEnd() {
+  if (_boxFills > 0 && --_boxFills === 0 && _boxFillOwnsLock) {
+    _boxFillOwnsLock = false;
+    setMixBusy(false);
+  }
 }
 
 /* ── Track tags bar ── */
