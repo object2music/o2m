@@ -1906,6 +1906,48 @@ async function fetchTracklistMeta(tracks) {
   }
 }
 
+/* ── Meta lines everywhere, filled lazily ─────────────────────────────────────
+   Every list that shows tracks (search, a tag, a playlist, an album, a podcast)
+   renders the same row, but each fed it whatever its own endpoint returned, so
+   some rows carried the status · popularity · mood · source line and others a
+   bare title. Rather than make a dozen callers fetch, any `.tl-status[data-uri]`
+   that enters the page is watched and filled from the one cache the tracklist
+   uses — when it becomes visible, so a 200-track tag costs what is on screen.
+   Cached HTML restored by the modal's back/forward goes through the same path. */
+const _metaInflight = new Map();   // uri → pending fetchMeta, so two rows share one request
+function _fetchMetaShared(uri) {
+  if (!_metaInflight.has(uri))
+    _metaInflight.set(uri, fetchMeta(uri).finally(() => _metaInflight.delete(uri)));
+  return _metaInflight.get(uri);
+}
+function _paintMetaRow(el, m) {
+  el.className = trackMetaClass(m);
+  el.innerHTML = trackMetaHTML(m);
+  el.title = trackMetaText(m);
+}
+function _hydrateMetaRow(el) {
+  const uri = el.dataset.uri;
+  if (!uri) return;
+  const c = getCachedMeta(uri);
+  if (c) { _paintMetaRow(el, c); return; }
+  _fetchMetaShared(uri).then(m => { if (m && el.dataset.uri === uri) _paintMetaRow(el, m); }).catch(() => {});
+}
+const _metaIO = ('IntersectionObserver' in window)
+  ? new IntersectionObserver(entries => {
+      for (const e of entries) if (e.isIntersecting) { _metaIO.unobserve(e.target); _hydrateMetaRow(e.target); }
+    }, { rootMargin: '300px' })
+  : null;
+function _watchMetaRows(node) {
+  const els = node.matches?.('.tl-status[data-uri]') ? [node]
+            : [...(node.querySelectorAll?.('.tl-status[data-uri]') || [])];
+  for (const el of els) {
+    if (_metaIO) _metaIO.observe(el); else _hydrateMetaRow(el);
+  }
+}
+new MutationObserver(muts => {
+  for (const mu of muts) for (const n of mu.addedNodes) if (n.nodeType === 1) _watchMetaRows(n);
+}).observe(document.body, { childList: true, subtree: true });
+
 async function refreshVolume() {
   const r = await rpc('core.mixer.get_volume');
   const vol = r?.result ?? null;
@@ -4251,8 +4293,14 @@ async function objCover(uri) {
 function objRenderTracks(tracks, kind = '', placeholder = false) {
   if (!tracks.length) return '<div class="obj-empty">No tracks.</div>';
   return '<div class="obj-tracks">' + tracks.map((t, i) => {
-    // One renderer for every list — see trackMetaHTML.
-    const statusHtml = trackMetaHTML(t) ? trackMetaRowHTML(t) : '';
+    // One renderer for every list — see trackMetaHTML. The line is ALWAYS there
+    // for a track, keyed by its uri, and filled from /api/track_info when it
+    // scrolls into view (see the meta-row observer): what a list's own endpoint
+    // happened to carry — everything for a search, nothing for a playlist or a
+    // podcast — no longer decides whether a row says what the track is. A radio
+    // has no such facts.
+    const statusHtml = (t.uri && kind !== 'radio') ? trackMetaRowHTML(t, t.uri)
+                     : (trackMetaHTML(t) ? trackMetaRowHTML(t) : '');
     const inner = trackRowInnerHTML({
       indexLabel: String(i + 1).padStart(2, '0'),
       name: t.name,
