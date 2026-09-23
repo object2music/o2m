@@ -258,3 +258,34 @@ def is_directive(payload):
     """True for a line the pre-pass owns, so the dispatch loop can skip it."""
     p = (payload or '').strip()
     return bool(_DL_RE.match(p) or _MOOD_RE.match(p))
+
+
+# Lines whose DRAW reads the mood and the discover level: the AUTO mixes
+# (_mood_pick), a tag, and — through _expand_pick — a Spotify artist, album or
+# playlist on the smart path, which is the default when option_sort is unset.
+_MOOD_DRIVEN_RE = re.compile(r'^(?:auto[a-z_]*:|tag:)')
+_SMART_SPOTIFY_RE = re.compile(r'^spotify:(?:artist|album|playlist):')
+
+
+def depends_on_mood(data, option_sort=None, now=None):
+    """Does a dial change alter what this box would put in the tracklist?
+
+    That is the question a mood/DL gesture has to ask of each active box before
+    rebuilding it: a box of fixed content — an album in order, a radio, a feed —
+    comes back identical, and rebuilding it only stops the music for nothing.
+    Every box does draw a little from the DL at the margin (replacements,
+    recommendations); that is not what this answers.
+
+    Only lines that apply NOW count: a gated-off line is not in the tracklist,
+    and a rebuild would not put it there either. An explicit asc/desc/shuffle
+    sort takes the basic path, where Spotify objects are played whole."""
+    smart = (option_sort or 'smart') == 'smart'
+    for applies, payload in iter_lines(data or '', now):
+        if not applies or not payload or payload.startswith('#'):
+            continue
+        p = payload.strip()
+        if _MOOD_DRIVEN_RE.match(p):
+            return True
+        if smart and _SMART_SPOTIFY_RE.match(p):
+            return True
+    return False

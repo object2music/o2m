@@ -213,3 +213,31 @@ class TestBlocks(unittest.TestCase):
                       self._payloads('08:00-10:00 > infos:library\n', at(9)))
         self.assertNotIn('infos:library',
                          self._payloads('08:00-10:00 > infos:library\n', at(15)))
+
+
+class TestDependsOnMood(unittest.TestCase):
+    def test_auto_mixes_and_tags(self):
+        self.assertTrue(bd.depends_on_mood('auto:library'))
+        self.assertTrue(bd.depends_on_mood('auto_podcast:library'))
+        self.assertTrue(bd.depends_on_mood('tag:jazz'))
+
+    def test_smart_spotify_objects(self):
+        self.assertTrue(bd.depends_on_mood('spotify:artist:abc'))
+        self.assertTrue(bd.depends_on_mood('spotify:playlist:abc', 'smart'))
+        # An explicit order plays the object whole: nothing to redraw.
+        self.assertFalse(bd.depends_on_mood('spotify:album:abc', 'asc'))
+        self.assertFalse(bd.depends_on_mood('spotify:track:abc'))
+
+    def test_fixed_content(self):
+        self.assertFalse(bd.depends_on_mood('tunein:station:s24875'))
+        self.assertFalse(bd.depends_on_mood('podcasts:unfinished\ninfos:library'))
+        self.assertFalse(bd.depends_on_mood('mood:calm\ndl:3'))
+        self.assertFalse(bd.depends_on_mood('# auto:library'))
+        self.assertFalse(bd.depends_on_mood(''))
+
+    def test_only_lines_that_apply_now(self):
+        at9 = datetime.datetime(2026, 9, 23, 9, 0)
+        at20 = datetime.datetime(2026, 9, 23, 20, 0)
+        data = '08:00-10:00 > auto:library\ninfos:library'
+        self.assertTrue(bd.depends_on_mood(data, now=at9))
+        self.assertFalse(bd.depends_on_mood(data, now=at20))

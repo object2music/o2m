@@ -529,11 +529,17 @@ async function applyMood() {
   // actuator on, just save the values server-side — don't launch anything.
   const basicIdle = isBasic() && basicCats
     && !Object.values(basicCats).some(l => Array.isArray(l) && l.some(b => b.active));
-  // Non-auto mode (boxes playing, a queue in place): the gesture does not rebuild
-  // anything, but it is not lost either. Saved with apply:false, it becomes the
-  // newest intent server-side (note_ui_override), so the end-of-track
-  // recommendations follow it, and the dials keep the position they were given.
-  const saveOnly = basicIdle || !shouldApplyMood();
+  // With boxes on, the SERVER decides what a gesture rebuilds: only the boxes
+  // whose content depends on the mood or the DL (auto mixes, tags, smart artists,
+  // albums, playlists), keeping the track being played; the others stay as they
+  // are and follow the new values through their recommendations.
+  // With no box on and a queue in place (a track played by hand), a rebuild
+  // would START the auto mix over it — so that gesture is only saved
+  // (apply:false). Either way it becomes the newest intent server-side
+  // (note_ui_override) and the dials keep the position they were given.
+  const counts = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
+  const boxesOn = Object.values(counts).some(n => n > 0);
+  const saveOnly = basicIdle || (!shouldApplyMood() && !boxesOn);
   setFeedback(saveOnly ? 'Saving…' : 'Applying…');
   // The server rebuilds the queue for the duration of this call: dials, tiles, ALL
   // and Auto are parked meanwhile (same pulse as a tile fill), released in finally.
@@ -553,9 +559,12 @@ async function applyMood() {
       return;
     }
     setFeedback(d.status === 'boxes_active'
-      ? 'Boxes active — mood applied to recommendations (empty the boxes to rebuild)'
+      ? 'Mood saved — these boxes do not depend on it; the next recommendations follow it'
       : d.tracks_added > 0 ? `${d.tracks_added} tracks loaded` : 'No matching tracks');
-    moodSessionActive = true;   // we are now in a mood mix → dials are live
+    // A mood mix exists only when this gesture started one. With boxes on, it
+    // rebuilt (or kept) THEIR tracks, and calling that a mood session would
+    // switch the page into auto mode behind the boxes' back.
+    if (!boxesOn) moodSessionActive = true;
     setTimeout(refreshNowPlaying, 400);
     setTimeout(refreshBoxStates, 500);   // lights the server-activated auto box straight away
   } catch(e) { setFeedback('Network error'); }

@@ -1432,7 +1432,17 @@ overwrite the value. Treat it as "authoritative", not "curated by a human".
 - `GET /api/warmup_genres` — trigger background genre warmup
 - `GET /api/diag/genres` — synchronous genre diagnostic, returns JSON
 - `GET /api/mood` — current mood state + energy/valence distribution + pending count
-- `POST /api/mood` — set `energy`, `valence`, `genres` → triggers `apply_mood_settings()`
+- `POST /api/mood` — set `energy`, `valence`, `genres` → triggers `apply_mood_settings()`,
+  which rebuilds **only the active boxes whose content depends on the mood or the DL**
+  (`boxdirectives.depends_on_mood`: `auto*:`, `tag:`, and a Spotify artist / album /
+  playlist on the smart path — the default when `option_sort` is unset) and **keeps the
+  track being played**, so the change is heard from the next track. A box of fixed
+  content (an album in order, a radio, a feed) comes back identical, and rebuilding it
+  only cut the music. Every box draws a little from the DL at the margin
+  (replacements, recommendations); that is not what the rule answers. Cascade parents
+  are skipped (refilling one would include its children twice); each child is judged
+  on its own lines. `apply: false` only stores the values — the page sends it when no
+  box is on but a queue is (a rebuild would start the auto mix over it).
 - `GET /api/genres` — genre list with track counts
 - `GET /mood` — mood UI (served from `o2m/static/mood.html`)
 

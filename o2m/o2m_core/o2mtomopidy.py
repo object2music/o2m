@@ -2847,26 +2847,26 @@ class O2mToMopidy:
     def apply_mood_settings(self):
         """Apply a mood / discover-level change coming from the interface.
 
-        Only the boxes whose content DEPENDS on the mood are rebuilt: the music
-        ones (the auto mix and any other music-category box). Podcast, info and
-        radio boxes are left exactly as they are — an episode or a stream does not
-        depend on the mood, and rebuilding them (the previous "clear everything and
-        reload every active box") restarted the one being listened to and re-drew
-        their sources for nothing.
+        Only the boxes whose content DEPENDS on the mood or the discover level are
+        rebuilt (bdir.depends_on_mood): the AUTO mixes, a `tag:`, a Spotify artist,
+        album or playlist on the smart path. A box of fixed content — an album in
+        order, a radio, a feed, a bulletin — would come back identical, and
+        rebuilding it only stopped the music for nothing. It used to be all or
+        nothing: one `auto:` box active and EVERY music box was emptied and
+        refilled; none, and not even a tag box followed the dials.
 
-        - Music box(es) active with the auto session → their tracks are removed and
-          they are refilled with the new settings; everything else stays in place.
-          If a music track was playing, the first fresh one takes over; a podcast
-          or stream being listened to keeps playing.
-        - Music box(es) active WITHOUT the auto session (e.g. a single playlist
-          tapped in the Full view) → no rebuild (returns -1); the new mood biases
-          their future live recommendations.
-        - Only spoken/radio boxes active → nothing to rebuild (returns None): the
-          settings are stored for the next Music launch.
+        And the track being played is kept. The rest of a rebuilt box's tracks
+        are replaced; the new ones follow it, so the change is heard from the next
+        track on instead of cutting the one playing.
+
+        - Some active box depends on the mood → those boxes are refilled with the
+          new settings, everything else stays in place. Returns tracks added.
+        - Music box(es) active, none of them mood-driven → no rebuild (-1); the
+          new mood biases their future live recommendations.
+        - Only spoken/radio boxes active → nothing to rebuild (None): the settings
+          are stored for the next Music launch.
         - Nothing active → self-activate the auto box (DB 'auto:library' or a
           simulated fill).
-
-        Returns tracks added, -1 when skipped, None when nothing depended on the mood.
         """
         with self._box_ops_lock():
             if not self.activeboxs:
@@ -2884,34 +2884,43 @@ class O2mToMopidy:
                       f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
                 return max(0, added)
 
-            music_boxes = [b for b in self.activeboxs
-                           if self._box_category(getattr(b, 'data', ''), getattr(b, 'option_type', ''))
-                           in ('music', 'other')]
-            if not music_boxes:
-                print("apply_mood_settings: only spoken/radio boxes active → nothing to rebuild")
-                return None
-            if not any('auto:library' in (getattr(b, 'data', '') or '') for b in music_boxes):
-                print("apply_mood_settings: user music box(es) active (no auto) → no rebuild")
+            # Cascade parents (category None) are left out: refilling one would
+            # include its children a second time. Each child is in activeboxs
+            # itself and is judged on its own lines.
+            candidates = [b for b in self.activeboxs
+                          if self._box_category(getattr(b, 'data', ''), getattr(b, 'option_type', ''))
+                          in ('music', 'other')]
+            driven = [b for b in candidates
+                      if bdir.depends_on_mood(getattr(b, 'data', ''), getattr(b, 'option_sort', None))]
+            if not driven:
+                if not candidates:
+                    print("apply_mood_settings: only spoken/radio boxes active → nothing to rebuild")
+                    return None
+                print("apply_mood_settings: no active box depends on the mood → no rebuild")
                 return -1
 
-            music_uids = {b.uid for b in music_boxes}
+            driven_uids = {b.uid for b in driven}
             try:
                 before = {t.tlid for t in self.mopidyHandler.tracklist.get_tl_tracks()}
                 cur_tlid = self.mopidyHandler.playback.get_current_tlid()
             except Exception:
                 before, cur_tlid = set(), None
-            cur_was_music = cur_tlid is not None and \
-                (self._track_info.get(cur_tlid) or {}).get('box_id') in music_uids
 
-            # Remove the music boxes' tracks the way a deactivation does (the box
-            # itself stays active), then refill each with the new settings.
-            for b in music_boxes:
+            # Remove what those boxes had queued — except the track being played,
+            # which finishes. Done here rather than through box_action_remove: that
+            # is a DEACTIVATION, which stops the playing track and forgets the
+            # box's cascade lineage, and these boxes stay active.
+            stale = [t for t, info in self._track_info.items()
+                     if info.get('box_id') in driven_uids and t != cur_tlid and t in before]
+            if stale:
                 try:
-                    self.box_action_remove(b, b)
+                    self.mopidyHandler.tracklist.remove({"tlid": stale})
+                    for t in stale:
+                        self._track_info.pop(t, None)
                 except Exception as e:
-                    print(f"apply_mood_settings: remove {b.uid}: {e}")
+                    print(f"apply_mood_settings: remove: {e}")
             self.last_box_uid = None   # one_box_changed's NFC "same tag = next song" guard
-            for b in music_boxes:
+            for b in driven:
                 try:
                     self.box_action(b)
                 except Exception as e:
@@ -2922,19 +2931,10 @@ class O2mToMopidy:
             except Exception:
                 after = []
             fresh = [t for t in after if t.tlid not in before]
+            self._start_if_stopped()
 
-            # A music track was playing (removed above, so playback stopped or fell
-            # onto whatever was next) → the first fresh music track takes over. A
-            # podcast/stream being listened to is untouched. Not the top of the
-            # tracklist: that may be a kept podcast.
-            try:
-                if fresh and (cur_was_music or self.mopidyHandler.playback.get_state() == "stopped"):
-                    self.mopidyHandler.playback.play(tlid=fresh[0].tlid)
-            except Exception as e:
-                print(f"apply_mood_settings: play error: {e}")
-
-            print(f"apply_mood_settings: rebuilt {len(music_boxes)} music box(es), added {len(fresh)}, "
-                  f"kept {len(after) - len(fresh)} "
+            print(f"apply_mood_settings: rebuilt {len(driven)} of {len(candidates)} music box(es), "
+                  f"replaced {len(stale)}, added {len(fresh)}, kept {len(after) - len(fresh)} "
                   f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
             return len(fresh)
 
