@@ -1078,19 +1078,17 @@ class SpotifyHandler:
         return self._live_check('is_track_saved', lambda:
             self.sp.current_user_saved_tracks_contains([self._track_id(track_uri)])[0])
 
-    def set_track_saved(self, track_uri, saved):
-        """Add/remove the track from the account's liked tracks.
+    def _library_write(self, call):
+        """Run a write to the account's library (like, save, follow).
 
-        Raises SpotifyRateLimited when Spotify refuses for quota or rate — the one
-        refusal the caller can defer rather than report (see queue_pending_like)."""
+        Raises SpotifyRateLimited when Spotify refuses for quota or rate, or while
+        the API cools down after such a refusal — the one refusal a caller can
+        defer rather than report (see queue_pending_write). Any other refusal is
+        raised as is: that one IS an answer about the object."""
         if self._is_rate_limited():
             raise SpotifyRateLimited('Spotify API is cooling down after a 429')
-        tid = [self._track_id(track_uri)]
         try:
-            if saved:
-                self.sp.current_user_saved_tracks_add(tid)
-            else:
-                self.sp.current_user_saved_tracks_delete(tid)
+            call()
         except spotipy.SpotifyException as e:
             if e.http_status == 429:
                 self._on_rate_limit(e)
@@ -1098,47 +1096,65 @@ class SpotifyHandler:
             raise
         return True
 
-    # ── Likes Spotify refused for quota, replayed later ──────────────────────
-    # Kept in CacheMeta (key = prefix + uri, value_int = 1 save / 0 unsave), not in
-    # a file: o2m_0 and o2m_1 share the database, and the liked-tracks warmup of
-    # EITHER must see a pending like, or its reconciliation would clear it.
-    PENDING_LIKE_PREFIX = 'spotify_pending_like:'
+    def set_track_saved(self, track_uri, saved):
+        """Add/remove the track from the account's liked tracks."""
+        tid = [self._track_id(track_uri)]
+        return self._library_write(lambda: self.sp.current_user_saved_tracks_add(tid) if saved
+                                   else self.sp.current_user_saved_tracks_delete(tid))
 
-    def queue_pending_like(self, track_uri, saved):
+    # ── Library writes Spotify refused for quota, replayed later ─────────────
+    # A like (spotify:track:), a saved album (spotify:album:) or a followed artist
+    # (spotify:artist:), keyed by its uri — the uri says which. Kept in CacheMeta
+    # (key = prefix + uri, value_int = 1 on / 0 off), not in a file: o2m_0 and
+    # o2m_1 share the database, and the library warmups of EITHER must see a
+    # pending write, or their reconciliation would undo it. The prefix predates
+    # albums and artists and is kept so rows already queued are still read.
+    PENDING_PREFIX = 'spotify_pending_like:'
+
+    def queue_pending_write(self, uri, on):
         if self._db:
-            self._db.set_cache_meta(self.PENDING_LIKE_PREFIX + track_uri, 1 if saved else 0)
+            self._db.set_cache_meta(self.PENDING_PREFIX + uri, 1 if on else 0)
 
-    def pending_likes(self):
-        """{uri: bool} of the likes waiting for Spotify."""
-        return self._db.get_cache_meta_prefixed(self.PENDING_LIKE_PREFIX) if self._db else {}
+    def pending_writes(self, kind=None):
+        """{uri: bool} of the writes waiting for Spotify — of one kind
+        ('track' | 'album' | 'artist') when asked."""
+        rows = self._db.get_cache_meta_prefixed(self.PENDING_PREFIX) if self._db else {}
+        if kind:
+            rows = {u: v for u, v in rows.items() if u.startswith(f'spotify:{kind}:')}
+        return rows
 
-    def flush_pending_likes(self):
-        """Replay the queued likes. Stops at the first rate limit; returns how many
-        went through. The local flag was written when the heart was clicked, so
-        this only brings Spotify up to it."""
-        pending = self.pending_likes()
+    def pending_ids(self, kind):
+        """{spotify id: bool} for one kind — what the album/artist mirrors key on."""
+        return {u.rsplit(':', 1)[1]: v for u, v in self.pending_writes(kind).items()}
+
+    def flush_pending_writes(self):
+        """Replay the queued writes. Stops at the first rate limit; returns how
+        many went through. The local flag was written when the button was clicked,
+        so this only brings Spotify up to it."""
+        pending = self.pending_writes()
+        setters = {'track': self.set_track_saved, 'album': self.set_album_saved,
+                   'artist': self.set_artist_followed}
         done = 0
-        for uri, saved in pending.items():
+        for uri, on in pending.items():
+            fn = setters.get(uri.split(':')[1] if uri.count(':') >= 2 else '')
             try:
-                self.set_track_saved(uri, saved)
+                if fn:
+                    fn(uri, on)
             except SpotifyRateLimited:
                 break
             except Exception as e:
-                print(f"flush_pending_likes: {uri}: {e} — dropped")
-            self._db.delete_cache_meta(self.PENDING_LIKE_PREFIX + uri)
+                print(f"flush_pending_writes: {uri}: {e} — dropped")
+            self._db.delete_cache_meta(self.PENDING_PREFIX + uri)
             done += 1
         if done:
-            print(f"flush_pending_likes: {done}/{len(pending)} replayed to Spotify")
+            print(f"flush_pending_writes: {done}/{len(pending)} replayed to Spotify")
         return done
 
     def set_album_saved(self, album_uri, saved=True):
         """Add/remove an album from the user's saved albums (Spotify library)."""
         aid = [album_uri.rsplit(':', 1)[1]]
-        if saved:
-            self.sp.current_user_saved_albums_add(albums=aid)
-        else:
-            self.sp.current_user_saved_albums_delete(albums=aid)
-        return True
+        return self._library_write(lambda: self.sp.current_user_saved_albums_add(albums=aid) if saved
+                                   else self.sp.current_user_saved_albums_delete(albums=aid))
 
     def is_album_saved(self, album_uri):
         """True/False if the album is in the user's saved albums, None when unknown."""
@@ -1148,11 +1164,8 @@ class SpotifyHandler:
     def set_artist_followed(self, artist_uri, followed=True):
         """Follow/unfollow an artist on the user's account."""
         aid = [artist_uri.rsplit(':', 1)[1]]
-        if followed:
-            self.sp.user_follow_artists(ids=aid)
-        else:
-            self.sp.user_unfollow_artists(ids=aid)
-        return True
+        return self._library_write(lambda: self.sp.user_follow_artists(ids=aid) if followed
+                                   else self.sp.user_unfollow_artists(ids=aid))
 
     def is_artist_followed(self, artist_uri):
         """True/False if the user follows the artist, None when unknown."""
@@ -1731,8 +1744,8 @@ class SpotifyHandler:
         print("warmup: syncing liked tracks…")
         # Replay first: what was liked here during a quota outage then IS in the
         # set this sweep reads. Whatever is still pending is protected below.
-        self.flush_pending_likes()
-        pending = self.pending_likes()
+        self.flush_pending_writes()
+        pending = self.pending_writes('track')
         count = 0
         liked_uris = set()
         complete = False
@@ -1783,6 +1796,8 @@ class SpotifyHandler:
         if self._is_rate_limited():
             return
         print("warmup: syncing saved albums…")
+        self.flush_pending_writes()
+        pending = self.pending_ids('album')
         count = 0
         # What the sweep SAW, and what Spotify says there is to see. Both are
         # needed to unsave anything at the end: see the reconcile block below.
@@ -1800,7 +1815,9 @@ class SpotifyHandler:
                         continue
                     self._cache_album(album)
                     seen.add(album['id'])
-                    if self._db:
+                    # Unsaved here while Spotify was refusing: not re-saved by the
+                    # mirror before the unsave has been replayed.
+                    if self._db and pending.get(album['id']) is not False:
                         self._db.mark_album_saved(album['id'])
                     # cache tracks if not already fully fresh
                     if self._db and not self._db.is_album_track_cache_fresh(album['id']):
@@ -1859,6 +1876,9 @@ class SpotifyHandler:
             print(f"warmup: not reconciling {kind} — saw {len(seen)} of {total}, "
                   f"an incomplete sweep is not a shrunken library")
             return
+        # Saved or followed here while Spotify was refusing: not "gone from Spotify".
+        seen = set(seen) | {i for i, on in self.pending_ids(
+            'album' if kind == 'albums' else 'artist').items() if on}
         fn = (self._db.reconcile_saved_albums if kind == 'albums'
               else self._db.reconcile_followed_artists)
         try:
@@ -2762,6 +2782,8 @@ class SpotifyHandler:
         For the warmup and /api/warmup_library only — see get_all_followed_artists."""
         if self._is_rate_limited():
             return self._db.get_followed_artist_ids() if self._db else []
+        self.flush_pending_writes()
+        pending = self.pending_ids('artist')
         all_followed = []
         total = None
         try:
@@ -2782,8 +2804,8 @@ class SpotifyHandler:
                 all_followed.append(artist['id'])
                 # Full artist object includes genres — cache + mark followed
                 self._cache_artist(artist)
-                if self._db:
-                    self._db.mark_artist_followed(artist['id'])
+                if self._db and pending.get(artist['id']) is not False:
+                    self._db.mark_artist_followed(artist['id'])   # see warmup_saved_albums
             if page.get('next'):
                 try:
                     response = self.sp.next(page)

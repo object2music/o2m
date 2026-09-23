@@ -272,19 +272,20 @@ if __name__ == "__main__":
 
     threading.Thread(target=_popularity_scheduler, daemon=True).start()
 
-    # Likes Spotify refused for quota (see /api/track_favorite) are replayed here.
+    # Library writes Spotify refused for quota (likes, saved albums, followed
+    # artists — see /api/track_favorite) are replayed here.
     # Every 15 min is plenty: the pause after a 429 is an hour when Spotify names
     # no Retry-After, and set_track_saved returns at once while it lasts.
-    def _pending_likes_flusher():
+    def _pending_writes_flusher():
         sleep(60)
         while True:
             try:
-                o2mHandler.spotifyHandler.flush_pending_likes()
+                o2mHandler.spotifyHandler.flush_pending_writes()
             except Exception as e:
-                print(f"pending likes flush error: {e}")
+                print(f"pending writes flush error: {e}")
             sleep(900)
 
-    threading.Thread(target=_pending_likes_flusher, daemon=True).start()
+    threading.Thread(target=_pending_writes_flusher, daemon=True).start()
 
     # Radio now-playing watcher (stream title for all radios + auto-save on FIP).
     try:
@@ -1916,7 +1917,7 @@ if __name__ == "__main__":
         #
         # One refusal is not an answer about the track: a rate or quota limit
         # (429) says nothing about whether it may be liked, only "not now". Then
-        # the like is recorded here and queued, and flush_pending_likes brings
+        # the like is recorded here and queued, and flush_pending_writes brings
         # Spotify up to it when the quota is back — the liked-tracks warmup knows
         # the queue, so it neither clears nor re-likes a pending row meanwhile.
         if uri.startswith('spotify:track:'):
@@ -1925,7 +1926,7 @@ if __name__ == "__main__":
                 sph.set_track_saved(uri, favorite)
                 result['liked_spotify'] = favorite
             except SpotifyRateLimited:
-                sph.queue_pending_like(uri, favorite)
+                sph.queue_pending_write(uri, favorite)
                 result['spotify_pending'] = True
             except Exception as e:
                 return jsonify({'ok': False, 'uri': uri,
@@ -1976,7 +1977,7 @@ if __name__ == "__main__":
                 o2mHandler.spotifyHandler.set_track_saved(uri, False)
                 result['liked_spotify'] = False
             except SpotifyRateLimited:
-                o2mHandler.spotifyHandler.queue_pending_like(uri, False)
+                o2mHandler.spotifyHandler.queue_pending_write(uri, False)
                 result['spotify_pending'] = True
             except Exception as e:
                 result['spotify_error'] = str(e)
@@ -2009,13 +2010,17 @@ if __name__ == "__main__":
         # the two drift apart with nothing on screen to say so — the UI reported
         # "added to library" over a `*_spotify_error` nobody read. Same order as
         # /api/track_playlist, which had it right from the start.
+        # A rate or quota limit is a "not now", not a refusal: see /api/track_favorite.
         try:
             o2mHandler.spotifyHandler.set_album_saved(uri, saved)
             result['saved_spotify'] = saved
+        except SpotifyRateLimited:
+            o2mHandler.spotifyHandler.queue_pending_write(uri, saved)
+            result['spotify_pending'] = True
         except Exception as e:
             return jsonify({'ok': False, 'uri': uri,
                             'error': f'Spotify refused: {e}'}), 502
-        # Local DB marker — reached only once Spotify has accepted.
+        # Local DB marker — reached once Spotify has accepted or queued the write.
         try:
             aid = uri.rsplit(':', 1)[1]
             if saved:
@@ -2057,13 +2062,17 @@ if __name__ == "__main__":
         # the two drift apart with nothing on screen to say so — the UI reported
         # "added to library" over a `*_spotify_error` nobody read. Same order as
         # /api/track_playlist, which had it right from the start.
+        # A rate or quota limit is a "not now", not a refusal: see /api/track_favorite.
         try:
             o2mHandler.spotifyHandler.set_artist_followed(uri, followed)
             result['followed_spotify'] = followed
+        except SpotifyRateLimited:
+            o2mHandler.spotifyHandler.queue_pending_write(uri, followed)
+            result['spotify_pending'] = True
         except Exception as e:
             return jsonify({'ok': False, 'uri': uri,
                             'error': f'Spotify refused: {e}'}), 502
-        # Local DB marker — reached only once Spotify has accepted.
+        # Local DB marker — reached once Spotify has accepted or queued the write.
         try:
             aid = uri.rsplit(':', 1)[1]
             if followed:

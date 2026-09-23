@@ -3718,7 +3718,7 @@ class O2mToMopidy:
                         except SpotifyRateLimited:
                             # Not a refusal, a "not now": like it here and let the
                             # queue reach Spotify when the quota is back.
-                            self.spotifyHandler.queue_pending_like(uri, True)
+                            self.spotifyHandler.queue_pending_write(uri, True)
                             stat.liked = 1
                             stat.liked_at = datetime.datetime.now(datetime.timezone.utc)
                             print(f"favorites sync: Spotify rate-limited, like queued for {uri}")
