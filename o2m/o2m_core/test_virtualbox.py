@@ -38,6 +38,11 @@ class _FakeHandler:
     def box_action_remove(self, box, removed):
         self.removed.append(removed.uid)
 
+    def deactivate_box(self, box):
+        # Stands in for O2mToMopidy.deactivate_box, which toggle now calls.
+        self.activeboxs.remove(box)
+        self.box_action_remove(box, box)
+
     def note_box_activation(self):
         self.activations += 1
 

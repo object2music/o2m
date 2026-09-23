@@ -164,8 +164,7 @@ def toggle(handler, uri, mode='toogle', name=''):
     if mode == 'remove' or (mode == 'toogle' and active):
         if not active:
             return {'ok': True, 'active': False, 'kind': kind, 'uri': uri, 'action': 'none'}
-        handler.activeboxs.remove(box)
-        handler.box_action_remove(box, box)
+        handler.deactivate_box(box)
         return {'ok': True, 'active': False, 'kind': kind, 'uri': uri, 'action': 'removed'}
 
     if mode == 'add' or mode == 'toogle':

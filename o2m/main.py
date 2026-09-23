@@ -305,8 +305,7 @@ if __name__ == "__main__":
                 try: 
                     removedBox = next((x for x in o2mHandler.activeboxs if x.uid == box.uid), None)
                     print(f"removed box {removedBox}")
-                    o2mHandler.activeboxs.remove(box)
-                    o2mHandler.box_action_remove(box,removedBox)
+                    o2mHandler.deactivate_box(removedBox or box)
                     return "TAG removed"
                 except Exception as val_e: 
                     print(f"Erreur : {val_e}")
@@ -667,6 +666,9 @@ if __name__ == "__main__":
             r = virtualbox.toggle(o2mHandler, uri, mode=mode, name=name)
             return jsonify(r), (200 if r.get('ok') else 400)
         except Exception as e:
+            # Logged, not only returned: a 500 here once left 29 orphan tracks and
+            # the access log was the only trace of it.
+            import traceback; traceback.print_exc()
             return jsonify({'ok': False, 'error': str(e), 'uri': uri}), 500
 
     @api.route('/api/active_objects')

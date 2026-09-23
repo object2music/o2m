@@ -538,10 +538,18 @@ class O2mToMopidy:
                     next_tlid = current_tlid
 
                     if current_tlid in box_tlids:
-                        self.update_stat_track(
-                            self.mopidyHandler.playback.get_current_track(),
-                            self.mopidyHandler.playback.get_time_position()
-                        )
+                        # Recording the interrupted play is a courtesy; removing the
+                        # box's tracks is the job. A failed stat write used to abort
+                        # the whole removal, after the box had already left
+                        # activeboxs — its tracks then stayed in the tracklist owned
+                        # by a box nothing knew about any more.
+                        try:
+                            self.update_stat_track(
+                                self.mopidyHandler.playback.get_current_track(),
+                                self.mopidyHandler.playback.get_time_position()
+                            )
+                        except Exception as e:
+                            print(f"box_action_remove({removedBox.uid}): stat of the playing track not recorded: {e}")
                         self.mopidyHandler.playback.stop()
 
                         current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
@@ -560,6 +568,24 @@ class O2mToMopidy:
                 else:
                     print("no tracks registered for removed box")
                 
+
+    def deactivate_box(self, box):
+        """Take a box out of activeboxs and remove its tracks — or neither.
+
+        box_action_remove must run AFTER the box has left the list (with none
+        left it clears the tracklist instead of picking tracks out), so the two
+        steps cannot simply be swapped. What must not happen is the state
+        between them: a box forgotten while its tracks are still queued, owned by
+        a uid no deactivation will ever name again. So a failed removal puts the
+        box back, and the caller's error describes a box that is still active —
+        which is true, and can be retried."""
+        self.activeboxs.remove(box)
+        try:
+            self.box_action_remove(box, box)
+        except Exception:
+            if box not in self.activeboxs:
+                self.activeboxs.append(box)
+            raise
 
     """
     Daemon function called when change in active boxes
@@ -1570,8 +1596,7 @@ class O2mToMopidy:
                 try:
                     if b not in self.activeboxs:
                         continue   # already removed by a concurrent call in this same lock window
-                    self.activeboxs.remove(b)
-                    self.box_action_remove(b, b)
+                    self.deactivate_box(b)
                     removed += 1
                 except Exception as e:
                     print(f"meta_remove({cat}) on {b.uid}: {e}")
