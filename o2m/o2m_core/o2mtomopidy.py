@@ -1299,10 +1299,15 @@ class O2mToMopidy:
                 common = self._mood_pick(common, base_counts['common'], energy, valence, radius, discover_level)
                 self.add_tracks(active_box, common, base_counts['common'], "library","o2m:history")
 
+            # Incoming and News draw from the install's `incoming` / `new` boxes.
+            # An install may have neither (o2m_5 has only `library` boxes), and a
+            # None box raised inside this one try — which silently dropped every
+            # bucket after it: favourites, albums, playlists, news. So each is
+            # skipped when its box is missing, as the podcast bucket already was.
             #Incoming
-            if base_counts.get('incoming', 0) > 0:
+            box1 = self.dbHandler.get_box_by_option_type('incoming') if base_counts.get('incoming', 0) > 0 else None
+            if box1 is not None:
                 print(f"\nAUTO : Incoming {base_counts['incoming']} tracks\n")
-                box1 = self.dbHandler.get_box_by_option_type('incoming')
                 library_link = self.get_spotify_playlist_from_box(box1)
                 _plan = []
                 incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']),attribute_to=active_box,plan_out=_plan)
@@ -1364,9 +1369,9 @@ class O2mToMopidy:
                     self.add_tracks(active_box, uris=[u], max_results=1, force_option_type="library", library_link=link_by_uri.get(u, ''))
 
             #News
-            if base_counts.get('news', 0) > 0:
+            box1 = self.dbHandler.get_box_by_option_type('new') if base_counts.get('news', 0) > 0 else None
+            if box1 is not None:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
-                box1 = self.dbHandler.get_box_by_option_type('new')
                 _plan = []
                 news = self.tracklistappend_box(box1,_pool(base_counts['news']),attribute_to=active_box,plan_out=_plan)
                 self.apply_fill_plan(active_box, _plan)
