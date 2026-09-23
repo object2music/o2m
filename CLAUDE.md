@@ -94,7 +94,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Spoken content**: `PodcastChannel` (one row per show or feed — see the spoken-content section), `RfTaxonomy` (Radio France subject vocabulary), `EpisodeTaxonomy` (episode ↔ subject pivot).
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **26**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **27**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -106,7 +106,10 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   checks the INSERT half even when the row exists, so every metadata upsert failed:
   a play of a stale-cached track went unrecorded, and a box removed while such a track
   played failed halfway (29 orphan tracks, 2026-09-23). v26 relaxed it on `track` and
-  `stats_raw`. When a write fails only on o2m_0/o2m_1, compare
+  `stats_raw`. A database seeded from `samples/mysql/dump.sql` has its own variant:
+  `stats_raw.Id` a bare `int NOT NULL`, no AUTO_INCREMENT, no key — so logging a play
+  fails, and since a box activation logs FIRST, nothing could be played at all
+  (o2m_5, 2026-09-23). v27 makes it the auto-increment primary key. When a write fails only on one instance, compare
   `information_schema.columns` with a fresh instance's before reading the code.
 - **`dbhandler.py`** — `DatabaseHandler` class wrapping all DB queries for boxes and stats.
 - **`virtualbox.py`** — activating an OBJECT (an album, an artist) the way a box is

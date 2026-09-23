@@ -648,6 +648,48 @@ def _migration_v26(migrator):
             print(f"[DB] v26 {table}.username: {e}")
 
 
+def _migration_v27(migrator):
+    """Make `stats_raw.Id` the auto-increment primary key where a legacy schema
+    left it a bare `int NOT NULL`.
+
+    The model maps it as an AutoField and every database create_tables built has
+    it so. A database seeded from samples/mysql/dump.sql does not (o2m_5, found
+    2026-09-23): the dump creates the column with no AUTO_INCREMENT and no key,
+    so under STRICT_TRANS_TABLES every `Stats_Raw.create` is rejected ("Field
+    'Id' doesn't have a default value"). That is not only lost stats — logging
+    is the first thing a box activation does, so the exception aborted the fill
+    and nothing could be played at all.
+
+    Rows written before strict mode all carry Id 0; turning the column into an
+    AUTO_INCREMENT renumbers them 1..n (verified on a copy). A no-op where the
+    column already auto-increments, which is the shared o2m_0/o2m_1 database and
+    every fresh instance. SQLite is skipped (its tables come from create_tables)."""
+    if isinstance(db, SqliteDatabase):
+        return
+    try:
+        row = db.execute_sql(
+            "SELECT column_type, extra, column_key FROM information_schema.columns "
+            "WHERE table_schema = DATABASE() AND table_name = 'stats_raw' AND column_name = 'Id'"
+        ).fetchone()
+        if not row or 'auto_increment' in (row[1] or '').lower():
+            return
+        if row[2] == 'PRI':
+            db.execute_sql(f"ALTER TABLE stats_raw MODIFY `Id` {row[0]} NOT NULL AUTO_INCREMENT")
+        else:
+            other_pk = db.execute_sql(
+                "SELECT COUNT(*) FROM information_schema.table_constraints "
+                "WHERE table_schema = DATABASE() AND table_name = 'stats_raw' "
+                "AND constraint_type = 'PRIMARY KEY'").fetchone()[0]
+            if other_pk:
+                print("[DB] v27 stats_raw has a primary key on another column; left alone")
+                return
+            db.execute_sql(f"ALTER TABLE stats_raw MODIFY `Id` {row[0]} NOT NULL AUTO_INCREMENT, "
+                           "ADD PRIMARY KEY (`Id`)")
+        print("[DB] v27 stats_raw.Id is now the auto-increment primary key")
+    except Exception as e:
+        print(f"[DB] v27 stats_raw.Id: {e}")
+
+
 def _migration_v23(migrator):
     db.create_tables([OfflineRequest], safe=True)
 
@@ -694,7 +736,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -723,6 +765,7 @@ _MIGRATIONS = [
     (24, "track_disliked_columns", _migration_v24),
     (25, "track_disliked_sql_default", _migration_v25),
     (26, "username_nullable", _migration_v26),
+    (27, "stats_raw_id_auto_increment", _migration_v27),
 ]
 
 
