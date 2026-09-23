@@ -3220,14 +3220,23 @@ class O2mToMopidy:
         # follow the current mood matrix + discover_level (and the cooldown avoids
         # re-recommending what was just played/served). Context: an album box leans on
         # the artist + reco rather than re-serving the same album.
+        #
+        # Tags carry two roles. A SOURCE: library tracks sharing the seed's rarest
+        # tags (get_same_tag_tracks) — until then tags only reached a recommendation
+        # through the artist fallback of get_recommendations, scoring ten random
+        # artists by a raw count of shared tags. And a WEIGHT: _expand_pick is given
+        # the seed, so every candidate, whatever its source, is favoured by how
+        # close its tags are to the track just heard (selection.TAG_BONUS).
         n_fetch = max(6, limit * 4)
         pool = []
         if 'album' in data:
             pool += self.get_same_artist_tracks(track_uri, n_fetch) or []
+            pool += self.get_same_tag_tracks(track_uri, n_fetch) or []
             pool += self.get_spotify_reco(track_seed, n_fetch) or []
         else:
             pool += self.get_same_album_tracks(track_uri, n_fetch) or []
             pool += self.get_same_artist_tracks(track_uri, n_fetch) or []
+            pool += self.get_same_tag_tracks(track_uri, n_fetch) or []
             pool += self.get_spotify_reco(track_seed, n_fetch) or []
 
         # Dedup (keep order), drop the seed.
@@ -3242,7 +3251,7 @@ class O2mToMopidy:
         # Mood of the box the played track belongs to, not the session's — see
         # ambient_settings for why those two used to disagree.
         _e, _v, _ = self.ambient_settings(track_uri)
-        uris = self._expand_pick(candidates, limit, _e, _v, discover_level)
+        uris = self._expand_pick(candidates, limit, _e, _v, discover_level, tag_seed=track_uri)
 
         return uris
 
@@ -3479,7 +3488,7 @@ class O2mToMopidy:
                                    self._served_map(), datetime.datetime.utcnow(),
                                    time.time(), self._tunables())
 
-    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True):
+    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True, tag_seed=None):
         """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
         DL-controlled popularity target. Only invoked when the box's option_sort is
         'smart' (shuffle/asc/desc keep the basic legacy path).
@@ -3492,11 +3501,52 @@ class O2mToMopidy:
         pool = self._selection_pool(uris, exclude_hidden=exclude_hidden, label='_expand_pick')
         if pool is None:
             return list(uris[:min(n, len(uris))])
+        if tag_seed:
+            pool.tag_sim = self._tag_similarities(tag_seed, pool.uris)
         return selection.expand_pick(pool, n, energy, valence, discover_level,
                                      self._served_map(), datetime.datetime.utcnow(),
                                      time.time(), self._tunables(), on_debug=print)
 
 
+
+    def _seed_tags(self, track_uri):
+        """The seed track's tags and the idf table, or ({}, set()) when untagged."""
+        idf = self.dbHandler.get_tag_idf()
+        tags = self.dbHandler.get_tags_for_tracks([track_uri]).get(track_uri, set())
+        return idf, {t for t in tags if t in idf}
+
+    def _tag_similarities(self, seed_uri, uris):
+        """{uri: tag similarity to seed_uri} over the candidates — see
+        selection.tag_similarity. Empty when the seed carries no usable tag."""
+        try:
+            idf, seed = self._seed_tags(seed_uri)
+            if not seed:
+                return {}
+            cand = self.dbHandler.get_tags_for_tracks(uris)
+            return {u: selection.tag_similarity(seed, cand.get(u), idf) for u in uris if u in cand}
+        except Exception as e:
+            print(f"_tag_similarities({seed_uri}): {e}")
+            return {}
+
+    def get_same_tag_tracks(self, track_uri, limit, n_tags=3):
+        """Library tracks sharing the seed's most SPECIFIC tags.
+
+        The rarest `n_tags` of the seed's tags (highest idf — 'shoegaze' before
+        'rock'), and a random slice of each tag's tracks. DB only: no Last.fm, no
+        Spotify, so it answers even when both are down or rate-limited. The
+        weighting among them is left to _expand_pick's tag bonus."""
+        try:
+            idf, seed = self._seed_tags(track_uri)
+            if not seed:
+                return []
+            out = []
+            for tag in sorted(seed, key=lambda t: -idf[t])[:n_tags]:
+                pool = self.dbHandler.get_tag_track_uris(tag, cap=max(limit * 4, 40))
+                out += random.sample(pool, min(limit, len(pool)))
+            return out
+        except Exception as e:
+            print(f"get_same_tag_tracks({track_uri}): {e}")
+            return []
 
     def get_new_tracks_notread(self, limit):
         return self.dbHandler.get_uris_new_notread(limit)

@@ -68,6 +68,7 @@ class Pool:
     read_count: dict = field(default_factory=dict)  # uri -> lifetime play count
     seq: dict = field(default_factory=dict)         # uri -> stats_raw id of last play
     seq_tail: list = field(default_factory=list)    # recent music-play ids, ascending
+    tag_sim: dict = field(default_factory=dict)     # uri -> tag similarity to a seed, [0,1]
 
 
 def cooldown_factor(uri, pool, now, now_ts, served, tun):
@@ -205,7 +206,30 @@ def mood_pick(pool, n, energy, valence, radius, discover_level, served, now, now
 
 
 MOOD_BONUS = 0.15   # soft, features-only mood bonus in _expand_pick; unknown = neutral
+# Tag proximity to the track a recommendation follows. Heavier than the mood on
+# purpose: the tags come from Last.fm's human tagging of the artist and cover 97%
+# of artists, while energy/valence are inferred from those same tags plus a
+# fallback, and read as noisier in practice. Only set when there is a seed
+# (end-of-track and replacement recommendations) — elsewhere tag_sim is empty.
+TAG_BONUS = 0.25
 BAND_SIGMA = 0.15   # popularity-band spread of the 'band' variant
+
+
+def tag_similarity(seed_tags, cand_tags, idf):
+    """Weighted Jaccard between two tag sets, each tag weighted by its rarity.
+
+    Sharing 'shoegaze' says far more than sharing 'rock', so each tag counts for
+    its idf (log of artists / artists carrying it). Jaccard rather than coverage
+    of the seed: an artist tagged with forty things would otherwise match
+    everything. Tags absent from `idf` (noise, single-artist junk) weigh nothing.
+    Returns a value in [0,1]; 0 when either side has no weighted tag."""
+    w = lambda ts: {t: idf[t] for t in ts if idf.get(t, 0) > 0}
+    a, b = w(seed_tags or ()), w(cand_tags or ())
+    if not a or not b:
+        return 0.0
+    inter = sum(a[t] for t in a.keys() & b.keys())
+    union = sum(a.values()) + sum(v for t, v in b.items() if t not in a)
+    return inter / union if union > 0 else 0.0
 
 
 def expand_pick(pool, n, energy, valence, discover_level, served, now, now_ts,
@@ -226,6 +250,8 @@ def expand_pick(pool, n, energy, valence, discover_level, served, now, now_ts,
       - 'band'   (P2): one sample weighted by a Gaussian around a target
                    popularity P*(DL) (~p90 at DL0 -> ~p10 at DL10).
 
+    Tag proximity to a seed (pool.tag_sim, recommendations only) adds a bonus
+    heavier than the mood's; both only in the exploit share of 'hybrid'.
     Mood adds a small bonus only when features exist (unknown = neutral), and
     recently-played tracks are down-weighted by the cooldown. Excluding
     hidden/trash is the caller's job, when building the pool: a directly-tapped
@@ -250,8 +276,11 @@ def expand_pick(pool, n, energy, valence, discover_level, served, now, now_ts,
     def cd(u):
         return cooldown_factor(u, pool, now, now_ts, served, tun)
 
-    def aff(u):  # affinity = popularity + soft, distance-graded mood bonus
-        return pool.pop.get(u, 0.5) + MOOD_BONUS * mood_g(u)
+    def tag_g(u):  # tag proximity to the seed in [0,1]; 0 when unknown or no seed
+        return pool.tag_sim.get(u, 0.0)
+
+    def aff(u):  # affinity = popularity + soft mood bonus + tag-proximity bonus
+        return pool.pop.get(u, 0.5) + MOOD_BONUS * mood_g(u) + TAG_BONUS * tag_g(u)
 
     if mode == 'temp':
         k = (5 - discover_level) / 2.5  # +2 (favour top) .. 0 (uniform) .. -2 (favour obscure)
@@ -263,7 +292,7 @@ def expand_pick(pool, n, energy, valence, discover_level, served, now, now_ts,
         p90 = vals[int(0.90 * (len(vals) - 1))]
         target = p90 - (p90 - p10) * (discover_level / 10.0)  # DL0->top, DL10->bottom
         weights = {u: math.exp(-((pool.pop.get(u, 0.5) - target) ** 2) / (2 * BAND_SIGMA * BAND_SIGMA))
-                      * (1.0 + MOOD_BONUS * mood_g(u)) * cd(u) for u in uris}
+                      * (1.0 + MOOD_BONUS * mood_g(u) + TAG_BONUS * tag_g(u)) * cd(u) for u in uris}
         sel = sample_by_weight(uris, weights, m, rng=rng)
     else:  # 'hybrid' (P0): stochastic exploit + uniform explore
         n_explore = int(round(m * discover_level / 10.0))

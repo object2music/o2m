@@ -1538,6 +1538,58 @@ class DatabaseHandler():
             print(f"get_top_tags error: {e}")
             return []
 
+    _TAG_IDF_TTL = 3600
+    _tag_idf_memo = (0.0, {})
+
+    def get_tag_idf(self, min_artists=3):
+        """{tag: idf} — how much sharing a tag says, log(artists / artists carrying it).
+
+        Leaves out what get_top_tags leaves out, for the same reasons: the noise
+        tags, and tags fewer than `min_artists` artists carry (at one or two they
+        are mostly an artist's own name or a private label, and would make two
+        tracks of the same artist look like a strong tag match). Memoised an hour:
+        it is one grouped scan of artistgenre, and asked on every recommendation."""
+        import time as _time
+        at, memo = DatabaseHandler._tag_idf_memo
+        if memo and _time.time() - at < self._TAG_IDF_TTL:
+            return memo
+        try:
+            noise = set(_GENRE_NOISE) | {t.tag for t in TagFeature.select(TagFeature.tag)
+                                         .where(TagFeature.is_noise == 1)}
+            rows = list(db.execute_sql(
+                "SELECT g.name, COUNT(DISTINCT ag.artist_id) FROM genre g "
+                "JOIN artistgenre ag ON ag.genre_id = g.id GROUP BY g.id, g.name"))
+            n = db.execute_sql("SELECT COUNT(DISTINCT artist_id) FROM artistgenre").fetchone()[0] or 0
+            idf = {name: math.log(n / df) for name, df in rows
+                   if df >= min_artists and name not in noise and not _is_noise_genre(name) and n > df}
+        except Exception as e:
+            print(f"get_tag_idf error: {e}")
+            return memo
+        DatabaseHandler._tag_idf_memo = (_time.time(), idf)
+        return idf
+
+    def get_tags_for_tracks(self, uris):
+        """{uri: set of tag names} through every artist of each track, in one query.
+        (TrackGenre is empty — a tag reaches a track through its artist; see
+        search_by_genre.) A uri with no tagged artist is simply absent."""
+        uris = [u for u in dict.fromkeys(uris or []) if u]
+        out = {}
+        if not uris:
+            return out
+        try:
+            for i in range(0, len(uris), 500):
+                chunk = uris[i:i + 500]
+                marks = ','.join(['%s'] * len(chunk))
+                for uri, name in db.execute_sql(
+                        "SELECT ta.track_uri, g.name FROM trackartist ta "
+                        "JOIN artistgenre ag ON ag.artist_id = ta.artist_id "
+                        "JOIN genre g ON g.id = ag.genre_id "
+                        f"WHERE ta.track_uri IN ({marks})", chunk):
+                    out.setdefault(uri, set()).add(name)
+        except Exception as e:
+            print(f"get_tags_for_tracks error: {e}")
+        return out
+
     def get_tag_track_uris(self, name, cap=2000):
         """Every Spotify track carrying this tag, directly or through its artist —
         the candidate pool a `tag:` box line is drawn from.

@@ -429,3 +429,49 @@ class TestTunables(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestTagProximity(unittest.TestCase):
+    """Tags as a weight: selection.tag_similarity and the TAG_BONUS it feeds."""
+
+    IDF = {'rock': 0.2, 'shoegaze': 3.0, 'dream pop': 2.5, 'jazz': 1.0}
+
+    def test_a_rare_shared_tag_outweighs_a_common_one(self):
+        seed = {'rock', 'shoegaze'}
+        self.assertGreater(selection.tag_similarity(seed, {'shoegaze', 'jazz'}, self.IDF),
+                           selection.tag_similarity(seed, {'rock', 'jazz'}, self.IDF))
+
+    def test_bounds_and_unknowns(self):
+        seed = {'shoegaze', 'dream pop'}
+        self.assertEqual(selection.tag_similarity(seed, seed, self.IDF), 1.0)
+        self.assertEqual(selection.tag_similarity(seed, {'jazz'}, self.IDF), 0.0)
+        self.assertEqual(selection.tag_similarity(seed, None, self.IDF), 0.0)
+        # A tag outside the idf table (noise, single-artist junk) weighs nothing.
+        self.assertEqual(selection.tag_similarity({'myartistname'}, {'myartistname'}, self.IDF), 0.0)
+
+    def test_many_tags_do_not_match_everything(self):
+        seed = {'shoegaze'}
+        broad = set(self.IDF)
+        self.assertLess(selection.tag_similarity(seed, broad, self.IDF),
+                        selection.tag_similarity(seed, {'shoegaze'}, self.IDF))
+
+    def _counts(self, dl, runs=400):
+        uris = [f'u{i}' for i in range(20)]
+        pool = selection.Pool(uris=uris, pop={u: 0.5 for u in uris},
+                              tag_sim={'u0': 1.0, 'u1': 1.0})
+        rng = random.Random(11)
+        hits = 0
+        for _ in range(runs):
+            out = selection.expand_pick(pool, 2, None, None, dl, {}, NOW, NOW_TS,
+                                        selection.Tunables(), rng=rng)
+            hits += sum(1 for u in out if u in ('u0', 'u1'))
+        return hits / (runs * 2)
+
+    def test_close_tags_are_favoured_where_the_pick_exploits(self):
+        # Equal popularity, no mood: at DL0 the two tag-close tracks must come up
+        # clearly more often than their 2/20 fair share.
+        self.assertGreater(self._counts(0), 0.14)
+
+    def test_pure_exploration_ignores_the_bonus(self):
+        # DL10 is all explore — uniform by design, the bonus must not leak in.
+        self.assertAlmostEqual(self._counts(10), 0.10, delta=0.03)
