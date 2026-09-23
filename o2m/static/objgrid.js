@@ -30,6 +30,11 @@ const OBJGRID = (() => {
      other three are mosaics owned by this file. */
   const MODES = ['boxes', 'boxgrid', 'albums', 'artists'];
   const MOSAICS = ['boxgrid', 'albums', 'artists'];
+  /* Views whose tab is hidden for now (the code behind them stays). A hidden
+     view is never entered — a saved one falls back to the mosaic, or the column
+     would open on a view with no tab to leave it by. */
+  const HIDDEN = new Set(['boxes']);
+  const FALLBACK = 'boxgrid';
   const STORE_KEY = 'o2m-panel-mode';
   /* One request for a whole listing rather than a page at a time: the filter
      field below has to search what is NOT on screen to be worth anything, and
@@ -73,7 +78,7 @@ const OBJGRID = (() => {
       ['artists', ICON.user,     'Artists'],
     ].map(([m, icon, label]) =>
       `<button type="button" class="pm-tab" role="tab" data-panel-mode="${m}"`
-      + ` title="${label}" aria-label="${label}">${icon}</button>`).join('');
+      + ` title="${label}" aria-label="${label}"${HIDDEN.has(m) ? ' hidden' : ''}>${icon}</button>`).join('');
     bar.appendChild(seg);
 
     const rnd = document.createElement('button');
@@ -141,6 +146,7 @@ const OBJGRID = (() => {
 
   function setMode(mode) {
     if (!MODES.includes(mode)) mode = 'boxes';
+    if (HIDDEN.has(mode)) mode = FALLBACK;
     state.mode = mode;
     try { localStorage.setItem(STORE_KEY, mode); } catch (e) {}
 
