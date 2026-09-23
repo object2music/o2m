@@ -308,7 +308,16 @@ the same principle: **DL0 → popularity-dominant, DL10 → pure random.**
 Variant = `expand_pick_mode`: **`hybrid` (P0, default)** | `temp` (P1) | `band` (P2).
 - **P0 hybrid**: `n_explore = round(n·DL/10)` picks are uniform (cooldown-only, no
   popularity); the rest are exploit, sampled ∝ `affinity^exploit_sharpness(1.3)` where
-  `affinity = popularity + 0.15 mood-bonus`. DL0 → all exploit, DL10 → all explore.
+  `affinity = popularity + 0.15 mood-bonus (+ 0.25 tag-bonus)`. DL0 → all exploit, DL10 → all explore.
+  The **tag bonus** only exists when the pick has a SEED — the end-of-track and
+  replacement recommendations (`get_track_recommandation` passes `tag_seed`): it is
+  the candidate's tag proximity to the track just heard, a weighted Jaccard where each
+  tag counts for its idf (`selection.tag_similarity`, `DatabaseHandler.get_tag_idf`),
+  so sharing `new wave` says more than sharing `rock`. Heavier than the mood on
+  purpose: the tags are Last.fm's human tagging and cover 97% of artists, the mood is
+  inferred from them. The same function also draws a tag SOURCE —
+  `get_same_tag_tracks`, library tracks on the seed's three rarest tags, DB only —
+  beside same album, same artist and the similar-artist reco.
 - P1 `temp`: one sample ∝ `affinity^k`, `k=(5−DL)/2.5`. P2 `band`: Gaussian around a DL-set
   popularity target (p90 at DL0 → p10 at DL10).
 
