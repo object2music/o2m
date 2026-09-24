@@ -564,19 +564,18 @@
   .td-fav svg { width: 16px; height: 16px; display: block; }
   .td-fav.on { color: #e0245e; }
   body.edit-mode .td-fav { cursor: pointer; }
-  /* One mark, three states (see renderFav). Shape carries the state — outline,
-     filled, struck — and colour doubles it: the heart keeps its red, the struck
-     heart takes full foreground and NOT --accent, which is a pink two hues from
-     that red and reads as the same lit state at 16px. Unrated sits at --muted,
-     like every other unset control here. */
+  /* Two marks side by side (see renderFav): the heart (favorite) and the struck
+     heart (dislike). Unset, both sit at --muted like every other unset control
+     here; set, the heart takes its red and the struck heart the full foreground —
+     NOT --accent, a pink two hues from that red that reads as the same lit state
+     at 16px. */
+  .td-fav { gap: 10px; }
   .td-fav .tf-btn { color: var(--muted); display: inline-flex; }
-  .td-fav .tf-like { color: #e0245e; }
-  .td-fav .tf-dislike { color: var(--text); }
+  .td-fav .tf-like.on { color: #e0245e; }
+  .td-fav .tf-dislike.on { color: var(--text); }
   /* (.td-fav.on above stays for the radio panel, whose single heart is painted
      straight onto the cell with no .tf-btn inside it.)
-     A choice made and not yet written (the settle window a second tap lives in).
-     Softened rather than animated: it lasts 700ms and a pulse there reads as an
-     error, not as a pause. */
+     A write in flight: softened, not animated — it lasts a moment. */
   .td-fav.pending .tf-btn { opacity: .72; }
   .td-playlists { display: none; }
   /* Right-aligned like the "More" trigger it sits under: the panel body renders
@@ -803,15 +802,16 @@
   }
   #btn-snapcast svg { width: 18px; height: 18px; display: block; }
   #btn-snapcast.playing { color: var(--accent); }
-  /* The third stop of the cycle. Same accent — it is still "audio comes out
-     here" — with the pulse while a download pass runs. */
-  #btn-snapcast[data-target="offline"] { color: var(--accent); }
-  #btn-snapcast.busy { animation: off-pulse 1.2s ease-in-out infinite; }
-  /* A choice made and not yet applied — the window a second tap lives in. Same
-     softening as the rating cell's, and for the same reason: it lasts a moment and
-     a pulse there would read as an error rather than as a pause. `busy` keeps its
-     animation, so a download in progress still says so. */
-  #btn-snapcast.pending:not(.busy) { opacity: .72; }
+  /* Offline, beside it: its own toggle, accent when on, pulsing while a download
+     pass runs. */
+  #btn-offline {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    padding: 0 0 0 6px; display: flex; align-items: center; flex-shrink: 0;
+    transition: color .15s;
+  }
+  #btn-offline svg { width: 18px; height: 18px; display: block; }
+  #btn-offline.on { color: var(--accent); }
+  #btn-offline.busy { animation: off-pulse 1.2s ease-in-out infinite; }
 
   /* Network health lives in this glyph's colour (html[data-net], one probe), which
      is why there is no dot beside the status badge any more: the health of the link
@@ -821,8 +821,8 @@
      red network is about to be audible. Remote stays grey while all is well and
      only takes a colour when the probe found something worth warning about: grey
      there means "this device is not a speaker", and painting it green would answer
-     a question nobody asked. Offline is never tinted — it plays this device's own
-     files, so the network is irrelevant by definition, and the accent says so. */
+     a question nobody asked. While offline this glyph is not tinted — the device
+     plays its own files, so the network is irrelevant by definition. */
   html[data-net="green"]  #btn-snapcast[data-target="snapcast"] { color: #3fbf6f; }
   html[data-net="orange"] #btn-snapcast[data-target="snapcast"] { color: #f0a000; }
   html[data-net="red"]    #btn-snapcast[data-target="snapcast"] { color: #e0245e; }
@@ -1518,7 +1518,8 @@
       flex: 1 1 auto; width: auto; min-width: 0; padding: 0; margin-left: 4px; gap: 6px;
     }
     [data-theme="overprint"] #volume-val { display: none; }
-    [data-theme="overprint"] #btn-snapcast { flex-shrink: 0; }
+    [data-theme="overprint"] #btn-snapcast,
+    [data-theme="overprint"] #btn-offline { flex-shrink: 0; }
     [data-theme="overprint"] #progress-wrap { padding: 8px 0 2px; }
   }
 
@@ -2302,7 +2303,7 @@
     white-space: pre-line;   /* the values are written as several short lines */
   }
 
-  /* Used by #btn-snapcast while an offline download pass runs. */
+  /* Used by #btn-offline while a download pass runs. */
   @keyframes off-pulse { 50% { opacity: .25; } }
   /* A held row reads from its number, so nothing shifts when the badge appears. */
   .tl-item.has-offline .tl-num { color: var(--accent); }

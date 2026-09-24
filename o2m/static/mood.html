@@ -115,6 +115,7 @@
         <input type="range" id="volume-slider" min="0" max="100" value="50">
         <span id="volume-val">50%</span>
         <button id="btn-snapcast" title="Snapcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></button>
+        <button id="btn-offline" type="button" title="Offline" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 14.9A7 7 0 0 0 16 4a5 5 0 0 0-4.5-3A6 6 0 0 0 6 9"/><path d="M6 9a5 5 0 0 0 0 10h12"/><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/></svg></button>
       </div>
     </div>
 
@@ -2536,6 +2537,10 @@ async function copyLink(uri) {
    tlid is known (i.e. the row IS a tracklist entry — not a browse-only row from
    an album/artist/box listing); Copy link resolves smartly per uri kind. */
 function trackMenuItems(uri, tlid) {
+  // Offline, the rows are the LOCAL queue and their tlid is an index into it —
+  // handing either to Mopidy would act on whatever server track happens to carry
+  // that number. So the menu acts on the local player instead.
+  if (OFF.on) return offTrackMenuItems(uri);
   const items = [
     { label: 'Play next', icon: ICON_PLAYNEXT, action: () => playNext(uri) },
     { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => playNow(uri) },
@@ -2606,15 +2611,20 @@ async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
     }
     setFeedback((add ? okAdd : okRemove)
       + (d.spotify_pending ? ' — Spotify will follow when its quota is back' : ''));
+    return true;
   } catch (e) { setFeedback('Error'); }
+  return false;
 }
 const setAlbumInLibrary  = (uri, add) => _libToggle('/album_save',   'saved',    uri, add, 'Album added to library',  'Album removed from library');
 const setArtistInLibrary = (uri, add) => _libToggle('/artist_follow','followed', uri, add, 'Artist added to library', 'Artist removed from library');
 const setTrackFavorite   = (uri, add) => _libToggle('/track_favorite','favorite',uri, add, 'Added to favorites',      'Removed from favorites');
 // Same write from a row menu, where no panel state is held: the reply is the state.
 async function setTrackDislike(uri, down) {
-  await _libToggle('/track_dislike', 'disliked', uri, down,
-                   'Disliked — it will not come back', 'Dislike removed');
+  const ok = await _libToggle('/track_dislike', 'disliked', uri, down,
+                              'Disliked — it will not come back', 'Dislike removed');
+  // The server drops it from ITS tracklist; the local player's queue is ours to
+  // drop it from.
+  if (ok && down && OFF.on) offQueueRemove(uri);
   if (down) setTimeout(refreshNowPlaying, 300);   // it may have left the tracklist
   if (detailsUri === uri) renderTrackDetails(uri);
 }
@@ -2870,51 +2880,34 @@ async function togglePlaylistMembership(cb, uri) {
   finally { cb.disabled = false; }
 }
 
-/* ── Rating: ONE mark, three states, rotating ────────────────────────────────
-   The same heart in its three readings — outline (no opinion), filled (favorite),
-   struck through (disliked) — and a click walks the cycle in the order the states
-   form a scale: like → none → dislike → like. From "none", which is where a track
-   starts, the single tap lands on DISLIKE, which is the gesture this exists for.
-
-   The reason a rotation needs more than a click handler: each state is a WRITE
-   WITH CONSEQUENCES on the way through. Passing over "like" saves the track to the
-   Spotify library; passing over "dislike" skips the track that is playing and drops
-   it from the tracklist. A naive cycle would fire both to get from one pole to the
-   other. So a click only moves the mark; the write happens when the finger stops
-   (CYCLE_SETTLE_MS), and it is the ONE request that goes from the state the server
-   holds to the state finally chosen — intermediate states never leave the page. */
-// How long a rotating control waits, after the last tap, before it acts. Shared by
-// the two of them — the rating cycle here and the playback-target cycle on
-// #btn-snapcast — because it is one policy: a rotation whose states DO things must
-// not do them while the finger is still going round. Doubled from 700ms: 700 is
-// enough for a deliberate double tap and short for a hesitant one, and the cost of
-// waiting is nothing next to the cost of acting on a state nobody meant to stop on.
-const CYCLE_SETTLE_MS = 1400;
-const RATE_CYCLE = ['like', 'none', 'dislike'];
-const RATE_LABEL = { like: 'Favorite', none: 'No rating', dislike: 'Disliked' };
+/* ── Rating: two marks side by side ──────────────────────────────────────────
+   The heart (favorite) and the struck heart (dislike) are two toggles, each doing
+   exactly what it shows, at once. They were one mark rotating like → none →
+   dislike, and in use that was disorienting: the glyph said where you were, not
+   what the next tap would do, and each state is a write with consequences (a like
+   saves to the Spotify library, a dislike skips what is playing and drops it from
+   the tracklist). Two buttons need no settle window: a tap is one write. The two
+   stay mutually exclusive — the server clears the other flag. */
 
 // What the SERVER holds for this panel's track.
 function ratingOf(p) {
   if (p.disliked) return 'dislike';
   return (p.favLocal || p.favSpotify === true) ? 'like' : 'none';
 }
-// What the cell must draw: the pending choice while one is settling, else the server's.
-function ratingShown(p) { return p.rateWanted || ratingOf(p); }
 
 function renderFav(p) {
   const el = p && p.favEl();
   if (!el) return;
-  const st = ratingShown(p);
+  const st = ratingOf(p);
   const src = [p.favLocal ? 'local' : null, p.favSpotify === true ? 'Spotify' : null].filter(Boolean).join(' + ');
-  const next = RATE_CYCLE[(RATE_CYCLE.indexOf(st) + 1) % RATE_CYCLE.length];
-  const what = st === 'like' ? 'Favorite' + (src && !p.rateWanted ? ' (' + src + ')' : '')
-             : st === 'dislike' ? 'Disliked — never selected again'
-             : 'No rating';
-  el.innerHTML = `<span class="tf-btn tf-${st}" data-fav-act="cycle" title="${what}${
-      editUnlocked ? ' — click for ' + RATE_LABEL[next].toLowerCase() : ''}">${
-      st === 'dislike' ? ICON.heartOff : ICON.heart(st === 'like')}</span>`;
+  const hint = editUnlocked ? ' — click to toggle' : '';
+  const likeTitle = (st === 'like' ? 'Favorite' + (src ? ' (' + src + ')' : '') : 'Not a favorite') + hint;
+  const disTitle  = (st === 'dislike' ? 'Disliked — never selected again' : 'Dislike') + hint;
+  el.innerHTML =
+      `<span class="tf-btn tf-like${st === 'like' ? ' on' : ''}" data-fav-act="like" title="${likeTitle}">${ICON.heart(st === 'like')}</span>`
+    + `<span class="tf-btn tf-dislike${st === 'dislike' ? ' on' : ''}" data-fav-act="dislike" title="${disTitle}">${ICON.heartOff}</span>`;
   el.classList.toggle('on', st === 'like');  // the radio panel styles its single heart on the cell
-  el.classList.toggle('pending', !!p.rateWanted);
+  el.classList.toggle('pending', !!p.rateBusy);
 }
 
 /* ── Shared track-detail logic ────────────────────────────────────────────────
@@ -3087,7 +3080,7 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
     ev: null,                          // {energy, valence} shown by this panel
     favLocal: false, favSpotify: null, // per-panel favourite state (own uri)
     disliked: false,                   // per-panel rejection state (own uri)
-    rateWanted: null, rateUri: null, rateTimer: null,  // a cycle in flight (see cycleRating)
+    rateBusy: false,                   // a rating write in flight (see setRating)
     cellId, canvasId, playlistsId, lifecycleId, listClass, body, getUri,
     el:  kind => document.getElementById(cellId(kind)),
     favEl: () => document.getElementById(cellId('fav')),
@@ -3110,10 +3103,6 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       if (lc) lc.innerHTML = lifecycleScaleHTML(info);
       p.seed(getUri(), info);
       p.rewire();
-      // A pending choice belongs to the track it was made on, and commitRating
-      // reads the state it is moving FROM — so it has to run before that state is
-      // replaced by the new track's.
-      if (p.rateWanted) commitRating(p);
       p.favLocal = !!(info && info.liked); p.favSpotify = null;
       p.disliked = !!(info && info.disliked);
       renderFav(p);
@@ -3142,7 +3131,8 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       if (f && !f.dataset.wired) {
         f.dataset.wired = '1';
         f.addEventListener('click', ev => {
-          if (ev.target.closest('[data-fav-act]')) cycleRating(p);
+          const b = ev.target.closest('[data-fav-act]');
+          if (b) setRating(p, b.dataset.favAct);
         });
       }
     },
@@ -3395,43 +3385,26 @@ async function renderTrackDetails(uri) {
   if (_detailsReq === uri) panel?.classList.remove('switching');
 }
 
-/* One click = one step round the cycle, and nothing else. The write is deferred so
-   a double tap (none → like → dislike, or the way back) costs exactly one request
-   and never the side effects of the state it crossed. */
-function cycleRating(p) {
+/* One tap on the heart or on the struck heart: set that state, or clear it if it
+   is already the one held. 'like' and 'dislike' each clear the other server-side,
+   so only the target needs saying; going back to 'none' is undoing that flag. */
+async function setRating(p, which) {
   if (!editUnlocked) { setFeedback('Enable editing first'); return; }
   const uri = p.getUri();
-  if (!uri) return;
-  // A pending choice that belongs to another track (the panel followed a track
-  // change) is committed as it stands rather than continued from.
-  if (p.rateWanted && p.rateUri !== uri) commitRating(p);
-  const cur = ratingShown(p);
-  p.rateWanted = RATE_CYCLE[(RATE_CYCLE.indexOf(cur) + 1) % RATE_CYCLE.length];
-  p.rateUri = uri;
-  renderFav(p);
-  setFeedback(RATE_LABEL[p.rateWanted] + '…');
-  clearTimeout(p.rateTimer);
-  p.rateTimer = setTimeout(() => commitRating(p), CYCLE_SETTLE_MS);
-}
-
-/* The single write that takes the server from what it holds to what was chosen.
-   'like' and 'dislike' each clear the other server-side, so only the target needs
-   saying; going back to 'none' is undoing whichever flag is actually set. */
-async function commitRating(p) {
-  clearTimeout(p.rateTimer);
-  const target = p.rateWanted, uri = p.rateUri, from = ratingOf(p);
-  p.rateWanted = null; p.rateUri = null;
-  if (!target || !uri || target === from) { renderFav(p); return; }
+  if (!uri || p.rateBusy) return;
+  const from = ratingOf(p);
+  const target = which === from ? 'none' : which;
   let path, body;
   if (target === 'like')          { path = '/track_favorite'; body = { uri, favorite: true }; }
   else if (target === 'dislike')  { path = '/track_dislike';  body = { uri, disliked: true }; }
   else if (from === 'like')       { path = '/track_favorite'; body = { uri, favorite: false }; }
   else                            { path = '/track_dislike';  body = { uri, disliked: false }; }
+  p.rateBusy = true; renderFav(p);
   try {
     const r = await fetch(API + path, {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
-    if (r.status === 401) { setFeedback('Editing not authorized'); renderFav(p); return; }
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
     // `!r.ok` FIRST, and it is not belt and braces: a route that does not exist
     // answers 404 with an HTML page, so r.json() throws, the catch hands back {},
     // and without this the write reported "Disliked — it will not come back" over
@@ -3441,7 +3414,7 @@ async function commitRating(p) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.error || d.ok === false) {
       setFeedback(String(d.error || 'Not saved (HTTP ' + r.status + ')').slice(0, 90));
-      renderFav(p); return;
+      return;
     }
     // The panel may have moved on to another track while this was in flight; the
     // write still stands, only the cell must not be repainted with its answer.
@@ -3451,7 +3424,6 @@ async function commitRating(p) {
       else if (!uri.startsWith('spotify:track:')) p.favSpotify = null;
       if (path === '/track_dislike') { p.disliked = !!body.disliked; if (body.disliked) p.favLocal = false; }
       else if (body.favorite) p.disliked = false;   // the server cleared it — the two are exclusive
-      renderFav(p);
     }
     // Spotify refusing for quota is not a refusal of the like: it is recorded here
     // and replayed to Spotify later (spotify_pending) — say so rather than claim
@@ -3464,7 +3436,9 @@ async function commitRating(p) {
     // The tracklist just lost a row (and possibly its current track), so the page's
     // view of what is playing is a moment out of date.
     if (target === 'dislike' && (d.removed || d.skipped)) setTimeout(refreshNowPlaying, 300);
-  } catch (e) { setFeedback('Rating error'); renderFav(p); }
+    if (target === 'dislike' && OFF.on) offQueueRemove(uri);
+  } catch (e) { setFeedback('Rating error'); }
+  finally { p.rateBusy = false; renderFav(p); }
 }
 
 /* ── Édition : auth Spotify via proxy Iris (TEMPORAIRE — migrer en HTTPS) ── */
@@ -6417,7 +6391,7 @@ const OFF_QUOTA_KEY = 'o2m-offline-quota-mb';
 const OFF_INV_KEY   = 'o2m-offline-inv';
 const OFF_PLAYS_KEY = 'o2m-offline-plays';
 const OFF_POS_KEY   = 'o2m-offline-pos';
-const OFF_DEFAULT_QUOTA_MB = 1024;
+const OFF_DEFAULT_QUOTA_MB = 256;   // the lowest choice offered: a device opts into more
 const OFF_DB = 'o2m-offline', OFF_STORE = 'audio';
 
 const OFF = {
@@ -6429,6 +6403,7 @@ const OFF = {
   inv: null,            // uri -> metadata, lazily read from localStorage
   pending: new Map(),   // uri -> meta, waiting on spotdl
   downloading: false,
+  progress: null,       // {done, total} of the pass in progress
   loggedAt: -1,         // queue index whose play has already been recorded
   posAt: 0,             // last bookmark write, ms — throttles the checkpoint
   pass: new Set(),      // downloaded during the pass in progress — never evicted by it
@@ -6526,15 +6501,35 @@ async function offMakeRoom(bytes) {
 /* Returns 'ok' | 'quota' | 'fail' rather than a boolean: a full allowance is
    not a failed download, and the two call for different reactions — one stops
    the pass and asks the person a question, the other just moves on. */
+/* A download that stops receiving bytes is abandoned after OFF_STALL_MS. Not a
+   total timeout — an hour-long episode on a slow link legitimately takes minutes —
+   but a stalled one used to hold the whole pass (and the button's pulse) for ever,
+   since nothing else ever ended it. */
+const OFF_STALL_MS = 30000;
+async function offFetchBlob(url) {
+  const ctl = new AbortController();
+  let timer = setTimeout(() => ctl.abort(), OFF_STALL_MS);
+  const kick = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), OFF_STALL_MS); };
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) return null;
+    if (!r.body || !r.body.getReader) return await r.blob();
+    const reader = r.body.getReader(), chunks = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value); kick();
+    }
+    return new Blob(chunks, { type: r.headers.get('Content-Type') || '' });
+  } finally { clearTimeout(timer); }
+}
+
 async function offStore(meta) {
   const uri = meta.uri;
   if (!uri || offHas(uri)) return 'ok';
   let blob;
-  try {
-    const r = await fetch(API + '/audio?uri=' + encodeURIComponent(uri));
-    if (!r.ok) return 'fail';
-    blob = await r.blob();
-  } catch (e) { return 'fail'; }
+  try { blob = await offFetchBlob(API + '/audio?uri=' + encodeURIComponent(uri)); }
+  catch (e) { return 'fail'; }
   if (!blob || !blob.size) return 'fail';
   if (blob.size > offQuota()) return 'quota';
   if (!(await offMakeRoom(blob.size))) return 'quota';
@@ -6573,18 +6568,22 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
     if (!quiet) setFeedback('Everything in the tracklist is already on this device');
     return;
   }
-  OFF.downloading = true; offPaintToggle();
+  OFF.downloading = true;
+  OFF.progress = { done: 0, total: list.length };
+  offPaintToggle();
   OFF.pass = new Set();
   let got = 0, wait = 0, lost = 0, full = false;
   try {
     const r = await fetch(API + '/offline/plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uris: list.map(t => t.uri), retry_failed: retry }),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(OFF_STALL_MS) : undefined,
     });
     const plan = await r.json();
     const by = {};
     (plan.items || []).forEach(i => { by[i.uri] = i; });
     for (const t of list) {
+      OFF.progress.done++; offPaintToggle();
       const p = by[t.uri];
       if (!p) continue;
       if (p.state === 'pending') { OFF.pending.set(t.uri, t); wait++; continue; }
@@ -6602,7 +6601,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
     // No network, or the server is gone. Nothing to sync and nothing to report:
     // being unreachable is the situation this whole feature is for.
   }
-  OFF.downloading = false;
+  OFF.downloading = false; OFF.progress = null;
   offPaintToggle(); offRenderBadges();
   if (!quiet) {
     setFeedback(got + ' downloaded'
@@ -6735,6 +6734,72 @@ function offQueueAdd(t) {
                    album: t.album || '', length: t.length || 0 });
   offRenderQueue();
   if (OFF.i < 0 && OFF.queue.length === 1) offPlayAt(0);   // first arrival starts it
+}
+
+/* The row menu's actions, on the local queue. Keyed by uri, never by tlid: the
+   now-playing menu passes the SERVER's current tlid, which means nothing here. */
+function offQueueRemove(uri) {
+  const i = OFF.queue.findIndex(t => t.uri === uri);
+  if (i < 0) return false;
+  const wasCur = i === OFF.i;
+  if (wasCur) offLogPlay(false);               // what was heard of it still counts
+  OFF.queue.splice(i, 1);
+  if (i < OFF.i) OFF.i--;
+  if (wasCur) {
+    if (OFF.queue.length) {
+      OFF.i = i; OFF.loggedAt = i;             // already logged above: no second record
+      resetProgress();
+      offPlayAt(i);                            // wraps to the head past the end
+    } else {
+      OFF.i = -1;
+      if (OFF.el) { try { OFF.el.pause(); } catch (e) {} OFF.el.removeAttribute('src'); }
+      setFeedback('Nothing left on this device');
+    }
+  }
+  offRenderQueue();
+  return true;
+}
+// Brings a held track into the queue if it is not there yet; its index, or -1
+// when this device does not hold it.
+function offQueueEnsure(uri) {
+  let i = OFF.queue.findIndex(t => t.uri === uri);
+  if (i >= 0) return i;
+  const m = offInv()[uri];
+  if (!m) return -1;
+  OFF.queue.push({ uri, name: m.name || '', artist: m.artist || '',
+                   album: m.album || '', length: m.length || 0 });
+  return OFF.queue.length - 1;
+}
+function offQueuePlayNext(uri) {
+  const i = offQueueEnsure(uri);
+  if (i < 0) { setFeedback('Not on this device'); return; }
+  if (i !== OFF.i) {
+    const [t] = OFF.queue.splice(i, 1);
+    if (i < OFF.i) OFF.i--;
+    OFF.queue.splice(OFF.i + 1, 0, t);
+  }
+  offRenderQueue();
+  setFeedback('Added to play next');
+}
+function offQueuePlayNow(uri) {
+  const i = offQueueEnsure(uri);
+  if (i < 0) { setFeedback('Not on this device'); return; }
+  resetProgress();
+  offPlayAt(i);
+}
+function offTrackMenuItems(uri) {
+  const items = [
+    { label: 'Play next', icon: ICON_PLAYNEXT, action: () => offQueuePlayNext(uri) },
+    { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => offQueuePlayNow(uri) },
+  ];
+  if (OFF.queue.some(t => t.uri === uri))
+    items.push({ label: 'Remove', icon: ICON_REMOVE, action: () => { offQueueRemove(uri); setFeedback('Removed'); } });
+  // A dislike is a server write (it needs the network); the local queue follows
+  // only once the server has taken it.
+  if (!_isStreamUri(uri)) items.push({ label: 'Dislike', icon: ICON.heartOff, action: () => setTrackDislike(uri, true) });
+  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
+  items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
+  return items;
 }
 
 /* ── The local player ─────────────────────────────────────────────────────── */
@@ -6972,8 +7037,6 @@ function offStop() {
 function offToggle() { return OFF.on ? offStop() : offStart(); }
 
 function offInit() {
-  // No button of its own: offline is the third stop of the playback-target
-  // cycle on #btn-snapcast (see cyclePlaybackTarget).
   paintPlaybackTarget();
   offFlushPlays();                                   // a previous session's plays
   window.addEventListener('online', () => { offFlushPlays(); offSchedulePendingCheck(); });
@@ -7043,129 +7106,81 @@ function _snapStart() {
   setFeedback('Connecting…');
 }
 
-/* ── One control, three states ───────────────────────────────────────────────
-   Where the audio comes out is a single question with three answers, so it is
-   a single button cycling through them rather than two that can contradict
-   each other:
-
-     1. remote   — the server plays, this device is only a remote
-     2. snapcast — the server plays AND this device is a speaker
-     3. offline  — this device plays its own files, server out of the loop
-
-   They are mutually exclusive in fact (offStart already stops the Snapcast
-   stream), and two separate toggles made that exclusivity something the user
-   had to know rather than something the control expressed. Where Snapcast is
-   not configured the cycle is two states, not a dead button: offline has to
-   stay reachable. */
+/* ── Where the audio comes out: two toggles, side by side ────────────────────
+   Three situations — the server plays and this device is only a remote; the
+   server plays AND this device is a Snapcast speaker; this device plays its own
+   files — reached through two buttons rather than one rotating control. The
+   rotation was one control for one question, but in use it was disorienting: the
+   glyph said where you were, not where a tap would take you, and reaching a state
+   meant walking through the others. Two toggles each say one thing and do it at
+   once. They stay mutually exclusive: turning one on turns the other off
+   (offStart stops the Snapcast stream itself; turning Snapcast on leaves
+   offline first). */
 function playbackTarget() {
   if (OFF.on) return 'offline';
   return snapPlayer ? 'snapcast' : 'remote';
 }
 
-const TARGET_SVG = {
-  remote:   SNAP_SVG,
-  snapcast: SNAP_SVG,
-  offline:  OFF_SVG,
-};
-const TARGET_TITLE = {
-  remote:   'Playing on the server — tap to listen here',
-  snapcast: 'This device is a Snapcast speaker — tap to go offline',
-  offline:  'Playing this device\u2019s own files — tap to hand back to the server',
-};
-// While a choice is settling the glyph is ahead of the device, so the tooltip says
-// so rather than describing a state that is not reached yet.
-const TARGET_PENDING = {
-  remote:   'Handing playback back to the server…',
-  snapcast: 'Becoming a Snapcast speaker…',
-  offline:  'Switching to this device\u2019s own files…',
-};
-
-function paintPlaybackTarget() {
-  const btn = document.getElementById('btn-snapcast');
-  if (!btn) return;
-  const st = targetShown();
-  const settling = !!_targetWanted;
-  btn.innerHTML = TARGET_SVG[st];
-  btn.classList.toggle('playing', st !== 'remote');
-  btn.dataset.target = st;
-  btn.classList.toggle('busy', st === 'offline' && OFF.downloading);
-  btn.classList.toggle('pending', settling);
-  if (settling) {
-    btn.title = TARGET_PENDING[st];
-    btn.setAttribute('aria-label', btn.title);
-    return;
-  }
-  let title = TARGET_TITLE[st];
-  if (st !== 'offline') {
-    const n = Object.keys(offInv()).length;
-    if (n) title += ' (' + n + ' track' + (n === 1 ? '' : 's') + ' held here)';
-    // The colour says green/orange/red; the tooltip says how many ms that was.
-    // Without it the reading is a hue with nothing behind it — which is what the
-    // dot's own tooltip used to answer.
-    title += '\n' + netTitle;
-  }
-  btn.title = title;
-  btn.setAttribute('aria-label', title);
-}
-
 function snapAvailable() { return !!(snapWsUrl && window.SnapStream); }
 
-/* A rotation whose states ACT needs a pause before it acts — the same reason and
-   the same constant as the rating cycle. Passing over `snapcast` on the way to
-   `offline` would open a WebSocket and an AudioContext only to tear them down;
-   passing over `offline` would pause the server, stop the stream and build a
-   download queue for the half-second before the next tap. So a click only moves
-   the glyph, and the transition is applied when the finger stops: ONE transition,
-   from the state the device is really in to the state finally chosen. It also
-   makes `snapcast -> remote` reachable in two taps — stopping being a speaker
-   without going through offline, which the immediate cycle could not express. */
-let _targetWanted = null, _targetTimer = null;
-
-function targetShown() { return _targetWanted || playbackTarget(); }
-
-function nextPlaybackTarget(st) {
-  // No Snapcast configured: two stops rather than a dead middle one — offline has
-  // to stay reachable.
-  const order = snapAvailable() ? ['remote', 'snapcast', 'offline'] : ['remote', 'offline'];
-  const i = order.indexOf(st);
-  return order[(i + 1) % order.length];
+function paintPlaybackTarget() {
+  const st = playbackTarget();
+  const snap = document.getElementById('btn-snapcast');
+  if (snap) {
+    snap.classList.toggle('playing', st === 'snapcast');
+    // data-target drives the network-health colour (see the CSS): the offline
+    // state is never tinted, since the network is irrelevant to it.
+    snap.dataset.target = st;
+    const title = (st === 'snapcast' ? 'This device is a Snapcast speaker — tap to stop'
+                                     : 'Listen on this device (Snapcast)') + '\n' + netTitle;
+    snap.title = title;
+    snap.setAttribute('aria-label', title);
+    snap.setAttribute('aria-pressed', st === 'snapcast' ? 'true' : 'false');
+  }
+  const off = document.getElementById('btn-offline');
+  if (off) {
+    off.classList.toggle('on', OFF.on);
+    off.classList.toggle('busy', OFF.downloading);
+    const n = Object.keys(offInv()).length;
+    const held = n + ' track' + (n === 1 ? '' : 's') + ' held, ' + offSizeText(offUsed())
+               + ' of ' + offQuotaMB() + ' MB';
+    let title = OFF.on ? 'Offline: this device is playing its own files — tap to hand back to the server'
+                       : 'Offline: play this device\u2019s own files (' + held + ')';
+    // The pulse alone cannot tell a long pass from a stuck one; the count can.
+    if (OFF.progress) title += '\nDownloading ' + OFF.progress.done + ' / ' + OFF.progress.total;
+    off.title = title;
+    off.setAttribute('aria-label', title);
+    off.setAttribute('aria-pressed', OFF.on ? 'true' : 'false');
+  }
 }
 
-function cyclePlaybackTarget() {
-  _targetWanted = nextPlaybackTarget(targetShown());
+function toggleSnapcast() {
+  if (snapPlayer) {
+    _snapStop();
+    localStorage.setItem('snap-autoconnect', '0');  // an explicit stop (≠ "never decided")
+    setFeedback('Snapcast stopped');
+    return;
+  }
+  if (!snapWsUrl) { setFeedback('Snapcast not configured'); return; }
+  if (!window.SnapStream) { setFeedback('Snapcast module not loaded'); return; }
+  if (OFF.on) offStop();
+  _snapStart();
+  localStorage.setItem('snap-autoconnect', '1');
+}
+
+async function toggleOffline() {
+  try {
+    if (OFF.on) offStop();
+    else {
+      localStorage.setItem('snap-autoconnect', '0');   // offStart stops the stream
+      await offStart();
+    }
+  } catch (e) {
+    console.error('[offline]', e);
+    setFeedback('Could not switch playback');
+  }
   paintPlaybackTarget();
-  clearTimeout(_targetTimer);
-  // The apply is async and nothing awaits a timer, so a failure inside it would be
-  // an unhandled rejection with no user context at all. It gets said out loud.
-  _targetTimer = setTimeout(() => {
-    applyPlaybackTarget().catch(e => {
-      console.error('[playback-target]', e);
-      setFeedback('Could not switch playback');
-      paintPlaybackTarget();
-    });
-  }, CYCLE_SETTLE_MS);
 }
-
-async function applyPlaybackTarget() {
-  clearTimeout(_targetTimer);
-  const target = _targetWanted;
-  _targetWanted = null;
-  const from = playbackTarget();
-  // Back where it started: the whole point of the wait is that this costs nothing.
-  if (!target || target === from) { paintPlaybackTarget(); return; }
-  // Leave the state we are in, then enter the chosen one. offStart stops the
-  // Snapcast stream itself, so the only explicit stop is the one the old cycle
-  // never had to make.
-  if (from === 'offline') offStop();
-  localStorage.setItem('snap-autoconnect', target === 'snapcast' ? '1' : '0');
-  if (target === 'snapcast') _snapStart();
-  else if (target === 'offline') await offStart();
-  else _snapStop();
-  paintPlaybackTarget();
-}
-
-// Kept as the name the rest of the page (and habit) uses.
-function toggleSnapcast() { return cyclePlaybackTarget(); }
 
 /* The context is not there when the socket opens, and everything below follows
    from that. SnapStream builds its AudioContext in `setupAudioContext()`, which
@@ -7873,6 +7888,7 @@ async function init() {
   document.getElementById('cover-wrap')?.addEventListener('click', () =>
     document.getElementById('top-zone')?.classList.toggle('cover-lit'));
   document.getElementById('btn-snapcast')?.addEventListener('click', toggleSnapcast);
+  document.getElementById('btn-offline')?.addEventListener('click', toggleOffline);
   document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
   document.addEventListener('fullscreenchange', updateFsBtn);
   document.addEventListener('webkitfullscreenchange', updateFsBtn);
@@ -7884,9 +7900,9 @@ async function init() {
     mopidyWsUrl = cfg.mopidy_ws_url || null;
     backofficeUrl = cfg.backoffice_url || null;
   } catch(e) {}
-  // The button stays even with no Snapcast configured: it is the playback
-  // TARGET control, and offline is reachable through it. The cycle drops the
-  // middle state by itself (see cyclePlaybackTarget).
+  // No Snapcast button where the server has none configured (.env); offline has
+  // its own button and stays reachable.
+  if (!snapWsUrl) document.getElementById('btn-snapcast')?.remove();
   paintPlaybackTarget();
   const backofficeLink = document.getElementById('footer-backoffice');
   if (backofficeUrl) { backofficeLink.href = backofficeUrl; }

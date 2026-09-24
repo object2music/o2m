@@ -226,41 +226,27 @@ Spotify library.
 `POST /api/track_dislike` (`{uri, disliked}`, edit-locked like the heart) answers with
 `removed` / `skipped` so the client knows the tracklist moved under it.
 
-**In the interface** — the details panel's `Rating` row is **one mark in three
-readings**: the heart outlined (no opinion), filled (favourite) and struck through
-(Lucide `heart-off`, disliked). A click walks the cycle `like → none → dislike → like`,
-so from `none` — where every track starts — the single tap lands on DISLIKE, which is
-the gesture the feature exists for. Colour doubles the shape: the heart keeps its red,
-the struck heart takes the full foreground and **not** `--accent`, a pink two hues from
-that red that reads as the same lit state at 16px.
+**In the interface** — the details panel's `Rating` row holds **two marks side by
+side**: the heart (favourite) and the struck heart (Lucide `heart-off`, dislike). Each
+is a toggle and writes on the tap (`setRating`): tapping the mark already lit clears
+it, tapping the other one sets it — the server clears the opposite flag. Unset, both
+sit at `--muted`; set, the heart takes its red and the struck heart the full
+foreground — **not** `--accent`, a pink two hues from that red that reads as the same
+lit state at 16px.
 
-**A rotation needs more than a click handler, and that is the whole design.** Each
-state is a WRITE WITH CONSEQUENCES *on the way through*: crossing `like` saves the
-track to the Spotify library, crossing `dislike` skips what is playing and empties it
-out of the tracklist. A naive cycle fires both to get from one pole to the other. So a
-click only moves the mark; the write is deferred by `CYCLE_SETTLE_MS` (**1400ms**,
-restarted by each tap — the same constant governs the playback-target cycle, because it
-is one policy: a rotation whose states DO things must not do them while the finger is
-still going round) and is **the one request** that goes from the state the server holds
-to the state finally chosen — `like`/`dislike` say only their target (the server clears
-the other), `none` undoes whichever flag is actually set. Intermediate states never
-leave the page. A pending choice is committed early rather than dropped when the panel
-follows a track change, and `commitRating` reads the state it is moving FROM, so it
-runs before the new track's state replaces it.
+**It was one rotating mark for a few days, and that was reverted (2026-09-24).** A
+cycle `like → none → dislike`, with the write deferred until the finger stopped so
+that crossing a state would not fire its side effects. It worked as designed and was
+disorienting in use: the glyph said where you were, not what the next tap would do,
+and reaching a state meant walking through the others. Two toggles each say one thing
+and do it at once, which also removes the need for any settle window.
 
 A `Dislike` entry also sits in the track row menu next to `Remove`, which is the same
 gesture over one copy — a menu is a list of actions, not a state.
 
-**The cycle is neutral inside the settle window, and not beyond it.** Three taps back
-to the starting state before the settle expires send nothing at all (`target === from`).
-Once a step has been committed, walking the rest of the way round restores the DB
-state — `liked`, `disliked`, `popularity` all return to where they were — but not the
-world: `dislike` is not only an opinion, it is an ACT, and clearing it does not put
-the track back in the tracklist nor unskip what was skipped. A full turn through
-`like` also writes the Spotify library twice (save, then unsave): membership ends
-where it started, the library was still touched. This is inherent to a rotation whose
-states do things, not a defect of the implementation — the deferral is what keeps it
-out of the only window where it would be an accident rather than a decision.
+Clearing a dislike restores the DB state (`liked`, `disliked`, `popularity`) but not
+the world: a dislike is an ACT, and undoing it does not put the track back in the
+tracklist nor unskip what was skipped.
 
 ## Auto-Selection Algorithm (`o2m/o2m_core/o2mtomopidy.py`)
 
@@ -1059,37 +1045,28 @@ own copies and plays them through a plain `<audio>` element, server out of the l
 The control answers "do I still need a network", not "is there one" — which is why
 the network reading was folded INTO it rather than kept beside it.
 
-**One control, three states.** Where the audio comes out is a single question with three
-answers, so it is one button (`#btn-snapcast`, `cyclePlaybackTarget`) cycling through
-them: **remote** (the server plays, this device is only a remote) → **snapcast** (the
-server plays and this device is a speaker) → **offline** (this device plays its own
-files) → remote. They are mutually exclusive in fact — `offStart` stops the Snapcast
-stream — and two separate toggles made that exclusivity something the user had to know
-rather than something the control expressed. Where Snapcast is not configured the cycle
-has two stops rather than a dead button: offline must stay reachable, which is why the
-button is no longer removed when `snap_ws_url` is absent (`nextPlaybackTarget` drops the
-middle stop from the order rather than special-casing it inside the transition).
+**Two toggles, side by side.** Where the audio comes out has three answers — **remote**
+(the server plays, this device is only a remote), **snapcast** (the server plays and
+this device is a speaker), **offline** (this device plays its own files) — reached
+through two buttons in the volume row: `#btn-snapcast` (`toggleSnapcast`) and
+`#btn-offline` (`toggleOffline`). Both off is remote. They stay mutually exclusive:
+`offStart` stops the Snapcast stream itself, and turning Snapcast on leaves offline
+first. The Snapcast button is removed where `snap_ws_url` is absent; the offline one
+always stays. Both act on the tap.
 
-**The cycle acts when the finger stops, not on the tap** (`CYCLE_SETTLE_MS`, shared with
-the rating cycle — see that section for the reasoning). Each state here is expensive on
-the way through: crossing `snapcast` opens a WebSocket and an AudioContext only to tear
-them down, and crossing `offline` pauses the server, stops the stream and builds a
-download queue for the half-second before the next tap. So a click only moves the glyph
-(softened while it settles, its tooltip saying what it is becoming), and
-`applyPlaybackTarget` then makes **one** transition, from the state the device is really
-in to the state finally chosen — leaving the current state first (`offStop` when coming
-from offline; `offStart` stops the Snapcast stream itself). A side effect worth having:
-`snapcast → remote` becomes reachable in two taps, i.e. stopping being a speaker without
-passing through offline, which the immediate cycle could not express at all.
+For a few days they were ONE button cycling remote → snapcast → offline, with the
+transition deferred until the finger stopped; reverted on 2026-09-24 with the rating
+cycle, for the same reason — a rotating control whose glyph shows the current state
+and not the next was disorienting in use.
 
-**The glyph also carries network health, and the separate dot is gone.** One latency probe
+**The Snapcast glyph also carries network health, and the separate dot is gone.** One latency probe
 still publishes `html[data-net]` (green/orange/red, `netProbe`), but it now paints the
-button instead of a dot beside the status badge. The health of the link and where the audio
+Snapcast button instead of a dot beside the status badge. The health of the link and where the audio
 comes out are the same question asked twice, and two indicators made the reader correlate
 them. Connected takes the colour outright — the web stream holds ~1s of buffer, so red is
 about to be audible. **Remote** stays grey while all is well and colours only on orange/red:
 grey there means "this device is not a speaker", and a green tick would answer a question
-nobody asked. **Offline** is never tinted, the network being irrelevant to it by definition.
+nobody asked. While **offline** it is never tinted, the network being irrelevant then.
 The millisecond reading moved to the button's tooltip, under the state line. The probe also
 stopped being silenceable: it used to open with `if (!el) return;` on that dot, so any view
 without one killed the measurement outright.
@@ -1227,7 +1204,7 @@ Two consequences to keep in mind:
   swallows its own errors.
 
 ### Device side (`o2m/static/mood.html`)
-- **Quota** in Settings, per device (`localStorage`), default 1 GB. Eviction is LRU and
+- **Quota** in Settings, per device (`localStorage`), default 256 MB (the lowest choice). Eviction is LRU and
   protects both what is queued to play and what the pass in progress just downloaded —
   freeing space by deleting the track fetched a second ago is a loop, not a saving.
 - **Blobs in IndexedDB, not the Cache API**: Cache needs a secure context and the dev
@@ -1253,6 +1230,16 @@ Two consequences to keep in mind:
 - Plays are logged locally (same `> 0.05` artefact rule as the server) and flushed on
   reconnection. `'ended'` records the play and then skips, so the skip must not record the
   same index a second time — one index, one record (`OFF.loggedAt`).
+- **The row menu acts on the local queue** (`offTrackMenuItems`): offline, a row's
+  `tlid` is an index into `OFF.queue`, so handing it to Mopidy — as `Remove` used to —
+  removed whichever SERVER track carried that number. Play next / Play now / Remove
+  work on the queue by uri; Dislike is still the server write and, once it is taken,
+  also drops the track from the queue (the rating panel's dislike too).
+- **A download pass shows its progress and cannot hang.** The Offline button pulses
+  for the whole pass, which over a 99-item tracklist with hour-long episodes is many
+  minutes — its tooltip now reads `Downloading n / total`. Each file is abandoned
+  after 30s without a byte (`OFF_STALL_MS`, a stall timer rather than a total one):
+  a stalled fetch used to hold `OFF.downloading`, and with it every later pass, for ever.
 - The transport, the seek bar, the tracklist rows and the Mopidy event stream all check
   `OFF.on` and route to the local player; `refreshNowPlaying` returns early, since the
   server's state then describes a room nobody is listening to.
