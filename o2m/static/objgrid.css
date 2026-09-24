@@ -7,7 +7,7 @@
 /* ── The column toolbar: switcher left, die right ──────────────────────────── */
 
 /* Wrapping rather than overflowing: this row lives in a third of the screen. */
-#auto-bar { flex-wrap: wrap; row-gap: 6px; }
+#auto-bar { flex-wrap: wrap; row-gap: calc(6px * var(--ui)); }
 
 /* ── Desktop only: the toolbar and the filter stay put while the mosaic scrolls ──
    Picking a view or typing a filter is what you reach for AFTER scrolling a shelf
@@ -30,34 +30,34 @@
       visibly through the 12px gutters on either side. */
 @media (min-width: 700px) {
   #boxes-panel .panel-body {
-    --og-pad-x: 12px;    /* mirrors the desktop .panel-body padding */
-    --og-top: var(--og-label-h, 44px);
+    --og-pad-x: calc(12px * var(--ui));    /* mirrors the desktop .panel-body padding */
+    --og-top: var(--og-label-h, calc(44px * var(--ui)));
   }
   #auto-bar {
     position: sticky; top: var(--og-top, 0px); z-index: 5;
     background: var(--bg);
-    margin: 0 calc(-1 * var(--og-pad-x)) 6px;
-    padding: 0 var(--og-pad-x) 6px;
+    margin: 0 calc(-1 * var(--og-pad-x)) calc(6px * var(--ui));
+    padding: 0 var(--og-pad-x) calc(6px * var(--ui));
   }
   .og-tools {
     position: sticky; z-index: 4;   /* under the toolbar, which stacks above it */
-    top: calc(var(--og-top, 0px) + var(--og-bar-h, 34px));
+    top: calc(var(--og-top, 0px) + var(--og-bar-h, calc(34px * var(--ui))));
     background: var(--bg);
     margin: 0 calc(-1 * var(--og-pad-x));
-    padding: 0 var(--og-pad-x) 8px;
+    padding: 0 var(--og-pad-x) calc(8px * var(--ui));
   }
 }
 
-.pm-seg { display: flex; align-items: center; gap: 2px; }
+.pm-seg { display: flex; align-items: center; gap: calc(2px * var(--ui)); }
 .pm-tab {
   display: flex; align-items: center; justify-content: center;
-  width: 28px; height: 26px; padding: 0;
+  width: calc(28px * var(--ui)); height: calc(26px * var(--ui)); padding: 0;
   background: none; border: 1px solid transparent; border-radius: var(--r, 0);
   color: var(--muted); cursor: pointer;
   transition: color .15s, background .15s, border-color .15s;
 }
 .pm-tab[hidden] { display: none; }
-.pm-tab svg { width: 15px; height: 15px; }
+.pm-tab svg { width: calc(15px * var(--ui)); height: calc(15px * var(--ui)); }
 .pm-tab:hover { color: var(--text); }
 .pm-tab.active {
   color: var(--accent);
@@ -74,12 +74,12 @@
 .pm-random {
   display: flex; align-items: center; justify-content: center;
   margin-left: auto;
-  width: 28px; height: 26px; padding: 0;
+  width: calc(28px * var(--ui)); height: calc(26px * var(--ui)); padding: 0;
   border: 1px solid transparent; border-radius: var(--r, 0);
   background: none; color: var(--muted); cursor: pointer;
   transition: color .15s, background .15s;
 }
-.pm-random svg { width: 15px; height: 15px; display: block; }
+.pm-random svg { width: calc(15px * var(--ui)); height: calc(15px * var(--ui)); display: block; }
 .pm-random:hover { color: var(--text); }
 .pm-random:active { background: var(--accent-soft); }
 .pm-random:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
@@ -96,10 +96,10 @@
 
 /* The 8px under the field is padding, not a flex gap on the wrap: on desktop this
    box is sticky, and a gap sits outside it — a strip of tiles would scroll there. */
-.og-tools { display: flex; padding-bottom: 8px; }
+.og-tools { display: flex; padding-bottom: calc(8px * var(--ui)); }
 .og-filter {
-  width: 100%; padding: 6px 8px;
-  font: inherit; font-size: 13px;
+  width: 100%; padding: calc(6px * var(--ui)) calc(8px * var(--ui));
+  font: inherit; font-size: calc(13px * var(--ui));
   color: var(--text); background: var(--card);
   border: 1px solid var(--border-soft); border-radius: var(--r, 0);
 }
@@ -110,7 +110,7 @@
    looked the same twice; three on a phone and four on a desktop is a layout you
    can learn. The tile then takes whatever width that leaves. */
 .og-grid {
-  display: grid; gap: 8px;
+  display: grid; gap: calc(8px * var(--ui));
   grid-template-columns: repeat(3, 1fr);
   align-content: start;
 }
@@ -122,7 +122,7 @@
    which is what this `transform` transition is for; nothing here animates a
    layout property, which is what keeps it smooth with 248 tiles on screen. */
 .og-tile {
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: column; gap: calc(3px * var(--ui));
   padding: 0; border: none; background: none; text-align: left;
   color: var(--muted); cursor: pointer;
   order: 2;
@@ -139,7 +139,7 @@
    hidden by syncSplit when one side of it is empty. */
 .og-split {
   order: 1; grid-column: 1 / -1;
-  height: 0; margin: 2px 0 6px;
+  height: 0; margin: calc(2px * var(--ui)) 0 calc(6px * var(--ui));
   border-top: 1px solid var(--border-soft);
 }
 .og-split[hidden] { display: none; }
@@ -154,7 +154,7 @@
 }
 body.edit-mode .og-new { display: block; }
 .og-new .og-thumb { border-style: dashed; background: none; }
-.og-new-icon { display: block; width: 1em; height: 1em; margin-bottom: 4px; }
+.og-new-icon { display: block; width: 1em; height: 1em; margin-bottom: calc(4px * var(--ui)); }
 .og-new-icon svg { display: block; width: 100%; height: 100%; }
 .og-new:hover .og-new-art { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
@@ -184,8 +184,8 @@ body.edit-mode .og-new { display: block; }
 .og-art--text, .og-cap {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
   overflow: hidden;
-  padding: 8px; box-sizing: border-box;
-  font-size: 15px; font-weight: 700; line-height: 1.15;
+  padding: calc(8px * var(--ui)); box-sizing: border-box;
+  font-size: calc(15px * var(--ui)); font-weight: 700; line-height: 1.15;
   letter-spacing: -.01em; hyphens: auto; overflow-wrap: anywhere;
   color: var(--muted); transition: color .15s;
 }
@@ -194,7 +194,7 @@ body.edit-mode .og-new { display: block; }
    above wherever container queries are not there — the whole declaration drops. */
 @supports (container-type: inline-size) {
   .og-thumb { container-type: inline-size; }
-  .og-art--text, .og-cap { font-size: clamp(12px, 15cqw, 22px); }
+  .og-art--text, .og-cap { font-size: clamp(calc(12px * var(--ui)), 15cqw, calc(22px * var(--ui))); }
 }
 .og-art--text { width: 100%; height: 100%; }
 
@@ -244,10 +244,10 @@ body.edit-mode .og-new { display: block; }
 .og-mark {
   position: absolute; inset: auto 0 0 auto;
   display: none; align-items: center; justify-content: center;
-  width: 22px; height: 22px;
+  width: calc(22px * var(--ui)); height: calc(22px * var(--ui));
   background: var(--accent); color: var(--on-accent, #fff);
 }
-.og-mark svg { width: 14px; height: 14px; }
+.og-mark svg { width: calc(14px * var(--ui)); height: calc(14px * var(--ui)); }
 .og-tile.active .og-mark { display: flex; }
 
 /* Details. Hidden until the tile is hovered or focused — on a phone there is no
@@ -257,27 +257,27 @@ body.edit-mode .og-new { display: block; }
 .og-open {
   position: absolute; inset: 0 0 auto auto;
   display: flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px;
+  width: calc(22px * var(--ui)); height: calc(22px * var(--ui));
   background: var(--bg); color: var(--muted);
   opacity: 0; transition: opacity .15s;
 }
-.og-open svg { width: 14px; height: 14px; }
+.og-open svg { width: calc(14px * var(--ui)); height: calc(14px * var(--ui)); }
 .og-open:hover { color: var(--text); }
 .og-tile:hover .og-open, .og-tile:focus-within .og-open { opacity: .92; }
 @media (hover: none) { .og-open { opacity: .92; } }
 
 .og-name {
-  font-size: 12px; font-weight: 600; line-height: 1.25;
+  font-size: calc(12px * var(--ui)); font-weight: 600; line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .og-sub {
-  font-size: 11px; line-height: 1.2; color: var(--muted); opacity: .75;
+  font-size: calc(11px * var(--ui)); line-height: 1.2; color: var(--muted); opacity: .75;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .og-tile.active .og-name { color: var(--accent); }
 
 .og-empty {
   grid-column: 1 / -1;
-  padding: 14px 2px; font-size: 13px; color: var(--muted);
+  padding: calc(14px * var(--ui)) calc(2px * var(--ui)); font-size: calc(13px * var(--ui)); color: var(--muted);
 }
-.og-more { order: 3; padding-top: 4px; font-size: 11px; opacity: .7; }
+.og-more { order: 3; padding-top: calc(4px * var(--ui)); font-size: calc(11px * var(--ui)); opacity: .7; }

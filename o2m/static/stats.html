@@ -51,56 +51,56 @@
      ──────────────────────────────────────────────────────────────────────── */
 
   /* No :root here: every token comes from ds/o2m.css. */
-  body { min-height: 100vh; padding: var(--sp-5) var(--sp-4) 84px; }
+  body { min-height: 100vh; padding: var(--sp-5) var(--sp-4) calc(84px * var(--ui)); }
 
   /* Unified footer (shared look with the Mood page) */
   #site-footer {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 16px; background: var(--surface); border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: calc(12px * var(--ui));
+    padding: calc(10px * var(--ui)) calc(16px * var(--ui)); background: var(--surface); border-top: 1px solid var(--border);
   }
-  #site-footer .brand { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; }
-  .footer-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  #site-footer .brand { font-size: calc(12px * var(--ui)); font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+  .footer-nav { display: flex; align-items: center; gap: calc(6px * var(--ui)); flex-wrap: wrap; }
   .footer-link {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    display: inline-flex; align-items: center; gap: calc(6px * var(--ui)); font-size: calc(12px * var(--ui));
     color: var(--muted); text-decoration: none; background: transparent;
-    border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 11px;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: calc(6px * var(--ui)) calc(11px * var(--ui));
     cursor: pointer; font-family: inherit; line-height: 1;
   }
   .footer-link:hover { color: var(--text); border-color: var(--text); }
-  .footer-link svg { width: 15px; height: 15px; display: block; }
+  .footer-link svg { width: calc(15px * var(--ui)); height: calc(15px * var(--ui)); display: block; }
   #btn-snapcast.playing { color: var(--accent); border-color: var(--accent); }
   @media (max-width: 500px) { #site-footer .brand { display: none; } }
   h1 { font-family: var(--font-head); font-size: var(--t-h2); font-weight: 800;
-       text-transform: uppercase; margin-bottom: 4px; color: var(--text); }
-  .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 28px; }
+       text-transform: uppercase; margin-bottom: calc(4px * var(--ui)); color: var(--text); }
+  .subtitle { font-size: calc(12px * var(--ui)); color: var(--muted); margin-bottom: calc(28px * var(--ui)); }
   .subtitle a { color: var(--muted); text-decoration: none; }
   .subtitle a:hover { color: var(--text); }
 
-  .section { margin-bottom: 32px; }
+  .section { margin-bottom: calc(32px * var(--ui)); }
   .section-title {
     font-family: var(--font-mono); font-size: var(--t-label); text-transform: uppercase;
-    letter-spacing: .12em; color: var(--muted); margin-bottom: 12px;
+    letter-spacing: .12em; color: var(--muted); margin-bottom: calc(12px * var(--ui));
   }
-  .section-note { font-size: var(--t-label); color: var(--muted); margin: -6px 0 12px; }
+  .section-note { font-size: var(--t-label); color: var(--muted); margin: calc(-6px * var(--ui)) 0 calc(12px * var(--ui)); }
   .card {
     background: var(--surface); border-radius: var(--radius); padding: var(--sp-4);
     border: 1px solid var(--border);
   }
   .chart-wrap { position: relative; width: 100%; }
-  .chart-wrap canvas { max-height: 260px; }
-  .chart-wide canvas { max-height: 320px; }
+  .chart-wrap canvas { max-height: calc(260px * var(--ui)); }
+  .chart-wide canvas { max-height: calc(320px * var(--ui)); }
   /* Square scatter so Energy (x) and Valence (y) share the same pixel scale */
-  .scatter-wrap { max-width: 460px; margin: 0 auto; }
-  .scatter-wrap canvas { max-height: 460px; }
+  .scatter-wrap { max-width: calc(460px * var(--ui)); margin: 0 auto; }
+  .scatter-wrap canvas { max-height: calc(460px * var(--ui)); }
 
-  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: calc(12px * var(--ui)); }
   @media (max-width: 500px) { .two-col { grid-template-columns: 1fr; } }
 
   /* Comparative table */
   .table-scroll { overflow-x: auto; }
-  table.cmp { border-collapse: collapse; width: 100%; font-size: var(--t-body-s); min-width: 640px; }
-  table.cmp th, table.cmp td { padding: 8px 10px; text-align: right; white-space: nowrap; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: var(--t-body-s); min-width: calc(640px * var(--ui)); }
+  table.cmp th, table.cmp td { padding: calc(8px * var(--ui)) calc(10px * var(--ui)); text-align: right; white-space: nowrap; }
   table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
   table.cmp thead th {
     font-size: var(--t-label); text-transform: uppercase; letter-spacing: .04em;
@@ -108,45 +108,45 @@
   }
   table.cmp tbody td { border-bottom: 1px solid var(--border); }
   table.cmp tbody tr:last-child td { border-bottom: none; }
-  table.cmp tr.totals td { font-weight: 700; border-top: 2px solid var(--border); color: var(--text); }
+  table.cmp tr.totals td { font-weight: 700; border-top: calc(2px * var(--ui)) solid var(--border); color: var(--text); }
   /* Square, like the system's own marker (.o2m-badge::before). Identity is carried
      by the adjacent label, so the colour is only a discreet cue. */
-  .cat-dot { display: inline-block; width: 9px; height: 9px; border-radius: var(--radius);
-             background: var(--faint); margin-right: 7px; vertical-align: baseline; }
+  .cat-dot { display: inline-block; width: calc(9px * var(--ui)); height: calc(9px * var(--ui)); border-radius: var(--radius);
+             background: var(--faint); margin-right: calc(7px * var(--ui)); vertical-align: baseline; }
   .num-muted { color: var(--muted); }
 
   /* Playlist change log */
   table.cmp.log th, table.cmp.log td { text-align: left; }
   table.cmp.log td.when { color: var(--muted); font-variant-numeric: tabular-nums; }
-  table.cmp.log td.track { white-space: normal; max-width: 280px; }
+  table.cmp.log td.track { white-space: normal; max-width: calc(280px * var(--ui)); }
   .badge { display: inline-block; font-family: var(--font-mono); font-size: var(--t-label);
-           font-weight: 700; padding: 2px 8px; border-radius: var(--radius);
+           font-weight: 700; padding: calc(2px * var(--ui)) calc(8px * var(--ui)); border-radius: var(--radius);
            text-transform: uppercase; letter-spacing: .03em; }
   .badge.add    { background: var(--fill-2); color: var(--ok); }
   .badge.remove { background: var(--fill-1); color: var(--danger); }
-  .arrow { color: var(--muted); margin: 0 5px; }
+  .arrow { color: var(--muted); margin: 0 calc(5px * var(--ui)); }
   .otype { color: var(--text); }
 
   /* Pager */
-  .pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; }
+  .pager { display: flex; align-items: center; justify-content: center; gap: calc(12px * var(--ui)); margin-top: calc(12px * var(--ui)); }
   .pager button {
     background: var(--surface); color: var(--text); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 6px 12px; font: inherit; font-size: var(--t-body-s); cursor: pointer;
+    border-radius: var(--radius); padding: calc(6px * var(--ui)) calc(12px * var(--ui)); font: inherit; font-size: var(--t-body-s); cursor: pointer;
   }
   .pager button:hover:not(:disabled) { border-color: var(--text); }
   .pager button:disabled { opacity: .4; cursor: default; }
-  .pager .pager-info { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pager .pager-info { font-size: calc(12px * var(--ui)); color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* Mood bars */
-  .mood-list { display: flex; flex-direction: column; gap: 10px; }
-  .mood-row { display: flex; flex-direction: column; gap: 4px; }
+  .mood-list { display: flex; flex-direction: column; gap: calc(10px * var(--ui)); }
+  .mood-row { display: flex; flex-direction: column; gap: calc(4px * var(--ui)); }
   .mood-header { display: flex; justify-content: space-between; align-items: baseline; }
   .mood-label { font-size: var(--t-body-s); font-weight: 600; }
-  .mood-count { font-size: 12px; color: var(--muted); }
-  .mood-bar-bg { background: var(--track-bg); border-radius: var(--radius); height: 8px; overflow: hidden; }
+  .mood-count { font-size: calc(12px * var(--ui)); color: var(--muted); }
+  .mood-bar-bg { background: var(--track-bg); border-radius: var(--radius); height: calc(8px * var(--ui)); overflow: hidden; }
   .mood-bar-fill { height: 100%; border-radius: var(--radius); transition: width .5s; }
 
-  #error-msg { color: var(--accent); font-size: var(--t-body-s); margin-bottom: 16px; display: none; }
+  #error-msg { color: var(--accent); font-size: var(--t-body-s); margin-bottom: calc(16px * var(--ui)); display: none; }
 </style>
 </head>
 <body>
@@ -188,11 +188,11 @@
 <div class="section">
   <div class="two-col">
     <div class="card">
-      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">Provenance by category (track count)</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:calc(8px * var(--ui));">Provenance by category (track count)</div>
       <div class="chart-wrap"><canvas id="chart-provenance"></canvas></div>
     </div>
     <div class="card">
-      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">Popularity by category (avg read_end)</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:calc(8px * var(--ui));">Popularity by category (avg read_end)</div>
       <div class="chart-wrap"><canvas id="chart-popularity"></canvas></div>
     </div>
   </div>
@@ -235,11 +235,11 @@
   <div class="section-title">Total vs. complete plays distribution</div>
   <div class="two-col">
     <div class="card">
-      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">read_count</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:calc(8px * var(--ui));">read_count</div>
       <div class="chart-wrap"><canvas id="chart-read-count"></canvas></div>
     </div>
     <div class="card">
-      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:8px;">read_count_end</div>
+      <div style="font-size: var(--t-label);color:var(--muted);margin-bottom:calc(8px * var(--ui));">read_count_end</div>
       <div class="chart-wrap"><canvas id="chart-read-count-end"></canvas></div>
     </div>
   </div>

@@ -1523,6 +1523,43 @@ identifiers and comments in English. When editing a file that still has French
 comments, translate the ones you touch. (Chat/explanations to the user stay in the
 language the user writes in — this rule is about what lands in the codebase.)
 
+## Interface Scale: every length goes through `--ui`
+
+**Write every UI length as `calc(Npx * var(--ui))`, never a bare `Npx`.** `--ui`
+(`ds/o2m.css` `:root`, **1.1** since 2026-09-24) sizes type, icons, spacing and panels
+together — the +10% a browser zoom gave, which read better "almost everywhere". All
+the static pages (`mood.html` + `mood.css` + `objgrid.css`, `stats.html`,
+`tag_features.html`, `ds/o2m.css`) were converted at once, 844 values. A bare `px`
+added later simply stays at 100% and drifts from its neighbours.
+
+Deliberately NOT scaled: viewport units (`vh`/`vw`), media-query and container
+conditions (breakpoints are about the screen, not the type), and hairlines `<= 1px`.
+A canvas draws in plain numbers, so the mood matrix multiplies its fonts, marks and
+hit radius by `UI_SCALE`, read from `--ui` in `readThemeColors`.
+
+**Why not CSS `zoom`**, which would have been one line: measured in the three
+engines, `zoom` inflates `vh` in Chromium and Firefox (a 50vh block became 55vh, so
+full-height layouts overflow) and, in WebKit — every iPhone — hands back
+`getBoundingClientRect()` values in unzoomed space while the pointer stays in screen
+space, which breaks every drag that compares the two (the matrix, the dials). Scaling
+the lengths themselves keeps all measurement code exact: menus, tooltips, the mosaic
+FLIP and the hero-title fit measure the real rendering and needed no change.
+
+**Two rules that are easy to get wrong:**
+- **Inside an SVG, nothing multiplies by `--ui`** (`svg * { --ui: 1 }`): the `<svg>` box
+  is already scaled and its viewBox stretches everything drawn in it, text included. A
+  font-size that also scaled was applied twice (x1.21 against the arc) — the centre
+  labels of the Basic dials ran out of their dial.
+- **Scoping `--ui` locally is not enough on its own.** A custom property that uses
+  `var()` is computed where it is DECLARED — `--t-label`, `--sp-3` are finished lengths
+  from `:root`, at 1.1. A block kept at 100% therefore uses the class `.ui-100`
+  (`ds/o2m.css`), which resets `--ui` AND re-declares the tokens computed from it. The
+  Basic dials (`#basic-dials.ui-100`) are the one place that uses it: they were the
+  one thing that already read well, and are pixel-identical to before.
+
+The 100% sheets are kept in `backup/css-ui-100-2026-09-24/` (local copy) and at the
+git tag `css-ui-100`; setting `--ui: 1` also gives back the old sizes exactly.
+
 ## Icon Convention
 
 **Never use emoji as icons.** Use the project's chosen B&W icon set:

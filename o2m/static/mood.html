@@ -157,7 +157,7 @@
       <button class="basic-toggle" data-cat="radio" data-o2m-actuator="radio">Radio</button>
       <button id="basic-all" title="All on / all off" aria-label="All on / all off" data-o2m-actuator="all">All</button>
     </div>
-    <div id="basic-dials">
+    <div id="basic-dials" class="ui-100">
       <div class="dial-wrap">
         <div class="dial-label">Discovery</div>
         <!-- Same presentation as the Mood dial: wider viewBox, detent labels around
@@ -276,7 +276,7 @@
     <div id="tracklist-section">
       <div id="tracklist-label">
         <span>Tracklist</span>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:calc(8px * var(--ui));">
           <span id="tracklist-count"></span>
           <button id="btn-clear-tl" title="Clear tracklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
         </div>
@@ -3533,9 +3533,13 @@ let matrixMode     = 'move'; // 'move' | 'resize'
 
 /* Couleurs lues depuis les variables CSS du thème courant */
 let themeColors = {};
+// The interface scale (--ui in ds/o2m.css). The stylesheets scale every length
+// through it; a canvas draws in plain numbers, so its type and marks read it here.
+let UI_SCALE = 1;
 function readThemeColors() {
   const s = getComputedStyle(document.documentElement);
   const g = n => s.getPropertyValue(n).trim();
+  UI_SCALE = parseFloat(g('--ui')) || 1;
   themeColors = {
     bg: g('--mx-bg'),
     qCalm: g('--mx-q-calm'), qHappy: g('--mx-q-happy'),
@@ -3732,7 +3736,7 @@ function drawMoodMatrix(canvas, ev, pad) {
   ctx.beginPath(); ctx.moveTo(mx, pad); ctx.lineTo(mx, pad + inner);
   ctx.moveTo(pad, my); ctx.lineTo(pad + inner, my); ctx.stroke(); ctx.setLineDash([]);
   ctx.strokeStyle = themeColors.border; ctx.strokeRect(pad, pad, inner, inner);
-  ctx.fillStyle = themeColors.label; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.font = '700 9px ' + MX_FONT;
+  ctx.fillStyle = themeColors.label; ctx.textBaseline = 'middle'; ctx.textAlign = 'center'; ctx.font = `700 ${9 * UI_SCALE}px ` + MX_FONT;
   ctx.fillText('CALM', pad + inner * 0.25, pad + inner * 0.1);
   ctx.fillText('HAPPY', pad + inner * 0.75, pad + inner * 0.1);
   ctx.fillText('INTENSE', pad + inner * 0.25, pad + inner * 0.9);
@@ -3740,11 +3744,11 @@ function drawMoodMatrix(canvas, ev, pad) {
   if (ev) {
     const x = pad + ev.energy * inner, y = pad + (1 - ev.valence) * inner;
     const col = moodColor(ev.energy, ev.valence, 1);
-    ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fillStyle = themeColors.dotCore; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 7 * UI_SCALE, 0, Math.PI * 2); ctx.fillStyle = themeColors.dotCore; ctx.fill();
     ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.stroke();
-    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 4 * UI_SCALE, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
   } else {
-    ctx.fillStyle = themeColors.axis; ctx.font = '10px ' + MX_FONT;
+    ctx.fillStyle = themeColors.axis; ctx.font = `${10 * UI_SCALE}px ` + MX_FONT;
     ctx.fillText(editUnlocked ? 'tap to set' : 'no mood data', mx, my);
   }
   ctx.restore();
@@ -3941,7 +3945,7 @@ function drawMatrix(ts) {
   ctx.restore();
 
   /* Axis labels */
-  ctx.font = '11px ' + MX_FONT; ctx.fillStyle = themeColors.axis;
+  ctx.font = `${11 * UI_SCALE}px ` + MX_FONT; ctx.fillStyle = themeColors.axis;
   ctx.textAlign = 'left';   ctx.fillText('◀ Calm',  2, my + 4);
   ctx.textAlign = 'right';  ctx.fillText('Rapid ▶', W - 2, my + 4);
   ctx.textAlign = 'center';
@@ -3953,7 +3957,7 @@ function drawMatrix(ts) {
     const f = matrixFeatures[uri];
     if (!f || tlid === currentTlid) return;
     ctx.beginPath();
-    ctx.arc(ex(f.energy), vy(f.valence), 3, 0, Math.PI * 2);
+    ctx.arc(ex(f.energy), vy(f.valence), 3 * UI_SCALE, 0, Math.PI * 2);
     ctx.fillStyle = popularityColor(f.popularity);
     ctx.fill();
   });
@@ -3964,10 +3968,10 @@ function drawMatrix(ts) {
     const cx = ex(curF.energy), cy = vy(curF.valence);
     const pulse = (Math.sin(ts / 450) + 1) / 2;
     ctx.beginPath();
-    ctx.arc(cx, cy, 9 + pulse * 6, 0, Math.PI * 2);
+    ctx.arc(cx, cy, (9 + pulse * 6) * UI_SCALE, 0, Math.PI * 2);
     ctx.strokeStyle = accentColor(0.28 * (1 - pulse));
     ctx.lineWidth = 2; ctx.stroke();
-    ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(cx, cy, 7 * UI_SCALE, 0, Math.PI * 2);
     ctx.fillStyle = accentColor(0.45 + 0.55 * pulse);
     ctx.fill();
     ctx.strokeStyle = accentColor(1);
@@ -3988,10 +3992,10 @@ function drawMatrix(ts) {
   ctx.restore();
 
   /* Target dot */
-  ctx.beginPath(); ctx.arc(tx, ty, 11, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(tx, ty, 11 * UI_SCALE, 0, Math.PI * 2);
   ctx.fillStyle = themeColors.dotCore; ctx.fill();
   ctx.strokeStyle = moodColor(energy, valence, 1); ctx.lineWidth = 3; ctx.stroke();
-  ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(tx, ty, 5 * UI_SCALE, 0, Math.PI * 2);
   ctx.fillStyle = moodColor(energy, valence, 1); ctx.fill();
 
   ctx.restore();
@@ -4000,7 +4004,7 @@ function drawMatrix(ts) {
 function showMatrixTooltip(canvas, e) {
   const rect  = canvas.getBoundingClientRect();
   const inner = rect.width - 2 * PAD;
-  const HIT   = 10; // px hit radius
+  const HIT   = 10 * UI_SCALE; // px hit radius, scaled like the marks it hits
 
   // Build candidate list: tracklist dots + currently playing
   const candidates = matrixTlItems.map(item => {

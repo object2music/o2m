@@ -32,29 +32,29 @@
 <style>
   /* No :root here: every token comes from ds/o2m.css. */
   body { min-height: 100vh; }
-  header { background: var(--surface); padding: 12px 20px; display: flex;
-           align-items: center; gap: 16px; border-bottom: 1px solid var(--border); }
+  header { background: var(--surface); padding: calc(12px * var(--ui)) calc(20px * var(--ui)); display: flex;
+           align-items: center; gap: calc(16px * var(--ui)); border-bottom: 1px solid var(--border); }
   header h1 { font-family: var(--font-head); font-size: var(--t-h3); font-weight: 700; text-transform: uppercase; }
-  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
-  .filter-btn { padding: 4px 12px; border-radius: var(--radius); border: 1px solid var(--border-strong);
+  .filters { display: flex; gap: calc(8px * var(--ui)); flex-wrap: wrap; }
+  .filter-btn { padding: calc(4px * var(--ui)) calc(12px * var(--ui)); border-radius: var(--radius); border: 1px solid var(--border-strong);
                 background: transparent; color: var(--muted); cursor: pointer;
                 font-size: var(--t-body-s); transition: all .15s; }
   .filter-btn.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
   .stats { margin-left: auto; font-size: var(--t-body-s); color: var(--muted); white-space: nowrap; }
-  main { padding: 16px 20px; }
-  .toolbar { display: flex; gap: 10px; margin-bottom: 12px; align-items: center; }
+  main { padding: calc(16px * var(--ui)) calc(20px * var(--ui)); }
+  .toolbar { display: flex; gap: calc(10px * var(--ui)); margin-bottom: calc(12px * var(--ui)); align-items: center; }
   .search { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-            padding: 6px 10px; color: var(--text); width: 220px; font-size: var(--t-body-s); }
-  .add-btn { padding: 6px 14px; background: var(--accent); color: var(--on-accent); border: none;
+            padding: calc(6px * var(--ui)) calc(10px * var(--ui)); color: var(--text); width: calc(220px * var(--ui)); font-size: var(--t-body-s); }
+  .add-btn { padding: calc(6px * var(--ui)) calc(14px * var(--ui)); background: var(--accent); color: var(--on-accent); border: none;
              border-radius: var(--radius); cursor: pointer; font-size: var(--t-body-s); }
   table { width: 100%; border-collapse: collapse; }
-  th { background: var(--surface); padding: 8px 10px; text-align: left;
+  th { background: var(--surface); padding: calc(8px * var(--ui)) calc(10px * var(--ui)); text-align: left;
        font-size: var(--t-label); text-transform: uppercase; letter-spacing: .5px;
        color: var(--muted); position: sticky; top: 0; }
-  td { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+  td { padding: calc(6px * var(--ui)) calc(10px * var(--ui)); border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
   tr:hover td { background: var(--fill-1); }
   .tag-name { font-weight: 500; font-family: var(--font-mono); font-size: var(--t-body-s); }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius);
+  .badge { display: inline-block; padding: calc(2px * var(--ui)) calc(8px * var(--ui)); border-radius: var(--radius);
            font-size: var(--t-label); font-weight: 600; }
   /* --mood-* are bare "R,G,B" triplets: they drop straight into rgba()/rgb(),
      and therefore follow the theme. */
@@ -63,44 +63,44 @@
   .badge-dark      { background: rgba(var(--mood-dark), .2);      color: rgb(var(--mood-dark)); }
   .badge-happy     { background: rgba(var(--mood-happy), .2);     color: rgb(var(--mood-happy)); }
   .badge-noise     { background: var(--fill-2);                   color: var(--muted); }
-  .bar-wrap { display: flex; align-items: center; gap: 6px; min-width: 90px; }
+  .bar-wrap { display: flex; align-items: center; gap: calc(6px * var(--ui)); min-width: calc(90px * var(--ui)); }
   /* The system's dedicated pair for this energy / valence distinction. */
-  .bar { height: 6px; border-radius: var(--radius); background: var(--c-energy);
-         min-width: 2px; transition: width .2s; }
+  .bar { height: calc(6px * var(--ui)); border-radius: var(--radius); background: var(--c-energy);
+         min-width: calc(2px * var(--ui)); transition: width .2s; }
   .bar-valence { background: var(--c-valence); }
-  .bar-label { font-size: var(--t-label); color: var(--muted); width: 24px; text-align: right; }
-  .actions { display: flex; gap: 6px; }
-  .btn-edit, .btn-del { padding: 3px 8px; border-radius: var(--radius); border: none;
+  .bar-label { font-size: var(--t-label); color: var(--muted); width: calc(24px * var(--ui)); text-align: right; }
+  .actions { display: flex; gap: calc(6px * var(--ui)); }
+  .btn-edit, .btn-del { padding: calc(3px * var(--ui)) calc(8px * var(--ui)); border-radius: var(--radius); border: none;
                         cursor: pointer; font-size: var(--t-label); }
   .btn-edit { background: var(--fill-2); color: var(--text); }
   .btn-del  { background: var(--fill-1); color: var(--danger); }
-  .empty { text-align: center; padding: 40px; color: var(--muted); }
+  .empty { text-align: center; padding: calc(40px * var(--ui)); color: var(--muted); }
 
   /* Modal */
   .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
              z-index: 100; align-items: center; justify-content: center; }
   .overlay.open { display: flex; }
   .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-           padding: var(--sp-5); width: 380px; max-width: 95vw; }
+           padding: var(--sp-5); width: calc(380px * var(--ui)); max-width: 95vw; }
   .modal h2 { font-family: var(--font-head); font-size: var(--t-h3); text-transform: uppercase; margin-bottom: var(--sp-4); }
-  .field { margin-bottom: 14px; }
+  .field { margin-bottom: calc(14px * var(--ui)); }
   .field label { display: block; font-size: var(--t-label); color: var(--muted);
-                 text-transform: uppercase; margin-bottom: 4px; }
+                 text-transform: uppercase; margin-bottom: calc(4px * var(--ui)); }
   .field input, .field select { width: 100%; background: var(--bg);
-    border: 1px solid var(--border); border-radius: var(--radius); padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: calc(7px * var(--ui)) calc(10px * var(--ui));
     color: var(--text); font-size: var(--t-body-s); }
-  .range-row { display: flex; align-items: center; gap: 8px; }
+  .range-row { display: flex; align-items: center; gap: calc(8px * var(--ui)); }
   .range-row input[type=range] { flex: 1; accent-color: var(--accent); }
-  .range-val { width: 36px; text-align: right; font-size: var(--t-body-s); color: var(--muted); }
-  .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .range-val { width: calc(36px * var(--ui)); text-align: right; font-size: var(--t-body-s); color: var(--muted); }
+  .modal-btns { display: flex; gap: calc(10px * var(--ui)); justify-content: flex-end; margin-top: calc(18px * var(--ui)); }
   /* Deliberately not .o2m-btn: that class forces text-transform:uppercase and the
      labels are French ("ENREGISTRER"). Tokenise without changing the case. */
-  .modal-btns button { padding: 7px 16px; border-radius: var(--radius); border: none;
+  .modal-btns button { padding: calc(7px * var(--ui)) calc(16px * var(--ui)); border-radius: var(--radius); border: none;
                        cursor: pointer; font-size: var(--t-body-s); }
   .btn-cancel { background: var(--fill-2); color: var(--text); }
   .btn-save   { background: var(--accent); color: var(--on-accent); }
-  .noise-row  { display: flex; align-items: center; gap: 8px; }
-  .noise-row input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+  .noise-row  { display: flex; align-items: center; gap: calc(8px * var(--ui)); }
+  .noise-row input[type=checkbox] { accent-color: var(--accent); width: calc(16px * var(--ui)); height: calc(16px * var(--ui)); }
 </style>
 </head>
 <body>
