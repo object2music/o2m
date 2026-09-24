@@ -12,6 +12,7 @@ from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
 from o2m_core import selection
 from o2m_core import virtualbox as vbox
+from o2m_core.player import InertPlayer
 
 '''
 option_type 
@@ -86,6 +87,9 @@ class O2mToMopidy:
         # tomorrow. In both cases Mopidy reports back the uri it was handed,
         # and stats must land on the stable one.
         self._played_to_canonical = {}
+        # local_uris Mopidy refused to add (see _add_resolved): never substituted again
+        # in this process, so a missing file costs one retry, not one per fill.
+        self._local_refused = set()
         # 'web:' media uri → the page it was discovered on. The page is the
         # Referer an embed-only video needs, and it reaches the DB only once
         # the item is stored, so the fill that just found it answers first.
@@ -250,7 +254,7 @@ class O2mToMopidy:
         try:
             local = self.dbHandler.get_local_uri(uri)
             if local:
-                if not self._local_file_present(local):
+                if local in self._local_refused or not self._local_file_present(local):
                     return uri
                 self._played_to_canonical[local] = uri
                 return local
@@ -346,6 +350,43 @@ class O2mToMopidy:
         # fill intact — handing Mopidy an 'web:' uri it has no backend for would
         # lose the track just as surely, only without a word in the log.
         return [u for u in (self._resolve_uri(u) for u in uris) if u]
+
+    def _add_resolved(self, uris, at_position=None):
+        """tracklist.add of `uris` after substitution — and a second chance for
+        what a substitution broke.
+
+        A `local_uri` is a path as the server's Mopidy sees it (/app/Music/...).
+        An instance that reads the same database without holding those files —
+        the Raspberry Pi, which has no music volume, so _local_file_present
+        cannot check and trusts the row — handed Mopidy a path it could not
+        open. Mopidy then adds NOTHING for it, silently: on 2026-09-24 the Pi's
+        AUTO fill lost the whole incoming bucket this way (31 of the 104 tracks
+        of that playlist carry a local_uri) and queued 21 of 30.
+
+        So what Mopidy actually added is compared with what it was given; every
+        substituted uri that did not come back is re-added under its Spotify uri
+        (streamed rather than read from disk), and remembered as refused so the
+        next fill does not try it again."""
+        resolved = self._resolve_uris(uris)
+        if not resolved:
+            return []
+        kw = {'at_position': at_position} if at_position is not None else {}
+        added = self.mopidyHandler.tracklist.add(uris=resolved, **kw) or []
+        if isinstance(self.mopidyHandler, InertPlayer):
+            return added          # a resolution without mutation adds nothing by design
+        got = {t.track.uri for t in added}
+        retry = []
+        for u in resolved:
+            orig = self._played_to_canonical.get(u)
+            if orig and orig != u and u not in got:
+                self._local_refused.add(u)
+                self._played_to_canonical.pop(u, None)
+                retry.append(orig)
+        if retry:
+            print(f"add: {len(retry)} local file(s) refused by Mopidy — streaming them instead")
+            kw2 = {'at_position': at_position + len(added)} if at_position is not None else {}
+            added = list(added) + list(self.mopidyHandler.tracklist.add(uris=retry, **kw2) or [])
+        return added
 
     def get_spotify_uri(self, uri):
         """Canonicalize a local file URI back to its Spotify URI for stat recording."""
@@ -804,7 +845,7 @@ class O2mToMopidy:
                     current_index = 0 
                 
                 #Adding tracks trought mopidy handler
-                tltracks_added = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris))
+                tltracks_added = self._add_resolved(uris)
                 length = len(tltracks_added)
                 print (f"Lenght added {len(tltracks_added)}")
 
@@ -844,12 +885,7 @@ class O2mToMopidy:
                             _canon = self.get_spotify_uri(t.track.uri)
                             if self.dbHandler.stat_exists(_canon):
                                 stat = self.dbHandler.get_stat_by_uri(_canon)
-                                # When track skipped or too many counts we remove them
-                                if (stat.skipped_count > 0
-                                    or (stat.option_type == 'trash' or stat.option_type == 'hidden' or stat.option_type == 'library' or stat.option_type == 'incoming')
-                                    or self.threshold_playing_count_new(stat.read_count_end-1,self.discover_level) == True
-                                    #or (stat.option_type != 'new' and stat.option_type != '' and stat.option_type != 'trash' and stat.option_type != 'hidden')
-                                ): 
+                                if self._not_new_anymore(stat):
                                     uris_rem.append(t.track.uri)
                             #Removing double tracks in trackslit
                             #if t.track.uri in self.mopidyHandler.tracklist.get_tracks().uri:uris_rem.append(t.track.uri)
@@ -926,7 +962,7 @@ class O2mToMopidy:
 
                                     if len(uris) > 0 :
                                         index = self.mopidyHandler.tracklist.index(tlid=tlid)
-                                        slice3 = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris), at_position=index)
+                                        slice3 = self._add_resolved(uris, at_position=index)
                                         if slice3:
                                             slice4 = self.mopidyHandler.tracklist.remove({'tlid': [tlid]})
                                             if slice4: 
@@ -1083,6 +1119,28 @@ class O2mToMopidy:
         dropped = len(set(cands)) - len(pool)
         if dropped:
             print(f"AUTO bucket {option_type}: {dropped} playlist/album/artist uri(s) left out of the pool")
+        # A `new` add removes, AFTER the add, whatever is not new any more
+        # (already heard, skipped, promoted). Picked first and removed second, those
+        # tracks took a slot for nothing: the Pi's news bucket kept 0 of 3, then 1 of
+        # 3. The same rule is applied to the pool instead, so the pick only spends
+        # its slots on tracks that will stay. Plan tracks that bypass that filter
+        # (pre-filtered in the DB) are left alone, as add_tracks leaves them.
+        if option_type == 'new':
+            subject = [u for u in pool
+                       if not (planned.get(u) or {}).get('bypass_remove_filter')]
+            stale = set()
+            if subject:
+                try:
+                    for t in (Track.select(Track.uri, Track.skipped_count, Track.option_type,
+                                           Track.read_count_end)
+                              .where(Track.uri << subject)):
+                        if self._not_new_anymore(t):
+                            stale.add(t.uri)
+                except Exception as e:
+                    print(f"AUTO bucket new: pre-filter skipped ({e})")
+            if stale:
+                pool = [u for u in pool if u not in stale]
+                print(f"AUTO bucket new: {len(stale)} track(s) no longer new left out before the pick")
         picked = self._mood_pick(pool, n, energy, valence, radius, discover_level)
         # Plan tracks go in with their own classification, grouped so each group
         # is one add_tracks call; the rest go in as the bucket's.
@@ -1297,6 +1355,13 @@ class O2mToMopidy:
     def tracklistfill_auto(self,active_box,max_results=20,discover_level=5,mode='normal'):
         #box is the active box in memory and box1,2.. the database contents of boxes
         try:
+            # Measured, not summed from the buckets: what the fill really left in
+            # the tracklist, after every filter and every refusal (see the summary
+            # at the end).
+            try:
+                _len_at_start = self.mopidyHandler.tracklist.get_length()
+            except Exception:
+                _len_at_start = None
             print (f"DL AUTO : {discover_level}")
             #GO QUICKLY
             self.quicklaunch_auto(1,discover_level,active_box)
@@ -1431,7 +1496,16 @@ class O2mToMopidy:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
                 self._auto_bucket_from_box(active_box, box1, base_counts['news'], _pool(base_counts['news']),
                                            energy, valence, radius, discover_level, "new", "o2m:new")
-    
+
+            # One line to read a fill by: whether a shortfall is still a pattern
+            # decides whether a final top-up is worth having.
+            if _len_at_start is not None:
+                try:
+                    _queued = self.mopidyHandler.tracklist.get_length() - _len_at_start
+                    print(f"AUTO: {_queued} tracks queued for a target of {max_results}")
+                except Exception:
+                    pass
+
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
 
@@ -3121,7 +3195,7 @@ class O2mToMopidy:
     def add_tracks_after(self, uris):
         print("ADDING SONGS SILENTLY IN TRACKLIST")
         self.clear_tracklist_except_current_song()
-        self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris))
+        self._add_resolved(uris)
 
     def clear_tracklist_except_current_song(self):
         all_tracklist_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
@@ -3184,7 +3258,7 @@ class O2mToMopidy:
                         new_index = int(round(current_index+ ((tl_length - current_index) * (10 - discover_level) / 10))) #somewhere in the middle of the tracklist
 
                 if uris:
-                    slice = self.mopidyHandler.tracklist.add(uris=self._resolve_uris(uris), at_position=new_index)
+                    slice = self._add_resolved(uris, at_position=new_index)
                     # Updating box infos
                     # if 'box' in locals():
                     if slice:
@@ -4542,6 +4616,17 @@ class O2mToMopidy:
 
     #Threshold NEW : stopping playing and autofilling new tracks (add_tracks or autofill)
     #discover_level = 5 : read_count_end>=3
+    def _not_new_anymore(self, stat):
+        """Whether a track with this Track row no longer belongs in a `new` fill:
+        skipped once, already classified out of `new`, or played past the
+        promotion threshold. ONE definition, read by both places that apply it —
+        add_tracks' REMOVE filter (after the add) and the AUTO news bucket's pool
+        (before the pick, _auto_bucket_from_box) — so the two cannot drift."""
+        return bool(
+            (stat.skipped_count or 0) > 0
+            or stat.option_type in ('trash', 'hidden', 'library', 'incoming')
+            or self.threshold_playing_count_new((stat.read_count_end or 0) - 1, self.discover_level))
+
     def threshold_playing_count_new(self,read_count_end,discover_level):
         # Complete plays before a 'new' track is promoted (→ incoming / library).
         # Gentler slope (/4) so the "3 plays" plateau spans DL 5–8 instead of DL7

@@ -385,6 +385,19 @@ has a choice, and keep `n`. Two leaks let a bucket blow past `n`; one fill measu
   (`spotify:playlist|album|artist|user|show:`) are dropped from the pool. The cause —
   playlists left uncached — is fixed too (see the library mirror section); the filter
   stays as the net for the day a read fails.
+- **The news bucket removed what it had just picked.** A `new` add drops, AFTER the
+  add, whatever is not new any more (skipped, classified out of `new`, played past
+  the promotion threshold) — so those tracks took a slot for nothing: on the Pi the
+  bucket kept 0 of 3, then 1 of 3. The same rule (`_not_new_anymore`, one definition
+  read by both places) now filters the pool BEFORE the pick; plan tracks that bypass
+  the REMOVE filter are left alone, as add_tracks leaves them.
+
+Every fill ends with `AUTO: n tracks queued for a target of N`, measured on the
+tracklist rather than summed from the buckets. No top-up exists, on purpose: once the
+known losses are filtered before the pick (this section) or recovered after it
+(`_add_resolved`), what remains is a Spotify track Mopidy cannot load, or a bucket
+whose source is short (a missing box, a rate limit, little history at that hour).
+Whether that is still a pattern is what the line is for.
 
 ### A playlist named by a hidden box stays out of the AUTO mix
 The `playlists` source draws from every playlist of the Spotify library, and
@@ -1228,6 +1241,16 @@ Two consequences to keep in mind:
   turns a track that would have streamed from Spotify into a playback failure — and rows
   could already outlive their files before any of this, since `clear_local_track`
   swallows its own errors.
+- **An instance without the files is caught by Mopidy's answer, not by a check**
+  (`_add_resolved`, every `tracklist.add` of the core goes through it). The Raspberry
+  Pi reads the shared database, runs outside Docker with no music volume, so
+  `_local_file_present` cannot check and trusts the row — and Mopidy, handed
+  `file:///app/Music/…` that does not exist there, adds NOTHING, silently. Its AUTO
+  fill lost the whole incoming bucket that way (31 of the 104 tracks of that playlist
+  carry a `local_uri`) and queued 21 of 30 (2026-09-24). What Mopidy actually added is
+  now compared with what it was given: a substituted uri that did not come back is
+  re-added under its Spotify uri at the same place, and remembered
+  (`_local_refused`) so the next fill streams it straight away.
 
 ### Device side (`o2m/static/mood.html`)
 - **Quota** in Settings, per device (`localStorage`), default 256 MB (the lowest choice). Eviction is LRU and
