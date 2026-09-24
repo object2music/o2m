@@ -369,6 +369,32 @@ statement, guarded by a CacheMeta flag: 158ms the first time, 0.7ms after.
   `newrecent` is scoped to the library (`liked=1 OR album saved=1`) — browsed/lazy-filled
   albums are excluded.
 
+### A bucket drawn from another box holds its budget (`_auto_bucket_from_box`)
+`incoming`, `favorites` (its box half) and `news` read another box — the install's
+`incoming` / `favorites` / `new` box — with an oversampled budget (3×) so the mood pick
+has a choice, and keep `n`. Two leaks let a bucket blow past `n`; one fill measured on
+2026-09-24 asked 30 and queued 48:
+- **Plan patterns bypassed the pick.** `newnotcompleted:library`, `newrecent:library`,
+  `spotify:library`, `albums:spotify` describe their adds as a plan, and the plan was
+  applied as is — with the OVERSAMPLED budget: `newnotcompleted:library` alone put 18
+  tracks into a bucket of 6. Their tracks now join the one candidate pool; what the
+  pick keeps goes in with the plan's own `library_link` and `bypass_remove_filter`.
+- **A raw playlist uri competed as one track.** A playlist line whose content is not
+  cached returns its uri; in the pool it had a neutral weight like any unknown track,
+  and when drawn Mopidy expanded it whole (one pick → 73 tracks). Container uris
+  (`spotify:playlist|album|artist|user|show:`) are dropped from the pool. The cause —
+  playlists left uncached — is fixed too (see the library mirror section); the filter
+  stays as the net for the day a read fails.
+
+### A playlist named by a hidden box stays out of the AUTO mix
+The `playlists` source draws from every playlist of the Spotify library, and
+membership says nothing about intent: "Liv", named by a `hidden` box, surfaced in
+AUTO. `get_hidden_playlist_ids` (playlists named by a `hidden` or `trash` box,
+windows ignored, `#` lines skipped) is excluded on both paths — live and the
+rate-limited cache fallback. Note the classification gap it exposed: a hidden box
+marks a track `hidden` only when it is PLAYED from that box, so 88 of Liv's 149
+tracks still read `new` — and the anti-hidden filters read that status, not the box.
+
 ## Spoken Content: Podcasts, News, Radio France
 
 Spoken items (podcast episodes, news flashes) are `Track` rows like any other, but they
@@ -1335,6 +1361,24 @@ network error mid-paging leaves fewer, and fewer must never be read as a shrunke
 library; an empty set is refused outright. It logs what it clears rather than doing it
 silently. Runs on the warmup TTL, and on demand via **`GET /api/warmup_library`**,
 which is synchronous and answers with the ids it unsaved and unfollowed.
+
+**A playlist a box names is cached even when the Web API refuses it**
+(`cache_playlist_by_id`, 2026-09-24). The warmup only walks `current_user_playlists`,
+so a playlist out of the library listing — someone else's, one removed from the
+library, a Spotify-generated one — was cached only by the box path, and that path had
+no fallback: our application gets 403 on other people's content and 404 on Spotify's
+own, and the line then handed its RAW uri to the fill. 14 of the 17 playlists of the
+`new` box sat empty. Now: Web API first, Mopidy when it refuses (Mopidy's application
+reads them all — Discover Weekly came back with 30 tracks), directly Mopidy for a
+generated playlist (`is_dynamic_playlist`: owner `spotify` or id prefix `37i9dQZ`).
+Refresh horizon (`playlist_needs_refresh`): **daily** for a generated playlist or one
+whose last fetch found nothing, 7 days otherwise. Content read from the API or for a
+generated playlist REPLACES the cached one (`replace_playlist_tracks(prune=True)`),
+so a weekly playlist does not accumulate its past weeks; read from Mopidy for a
+playlist o2m may write to it is only added — Mopidy's view lags behind o2m's own
+writes, the same reason `cache_all_playlists` never reconciles against it. A row this
+path creates starts `in_library=False`; the listing corrects it. `save_playlist` now
+updates instead of `REPLACE`, which used to reset `in_library` on every re-cache.
 
 **Playlists are deliberately NOT done this way.** Absence from
 `current_user_playlists` proves nothing — a playlist you own but removed from your

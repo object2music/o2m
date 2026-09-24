@@ -8,6 +8,7 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 
 
 from o2m_core import virtualbox
+from o2m_core import boxdirectives
 from o2m_core.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
@@ -2224,8 +2225,100 @@ class DatabaseHandler():
             'storage':      'sp',
             'cached_at':    datetime.datetime.utcnow(),
         }
-        Playlist.insert(row).on_conflict_replace().execute()
+        # An update, not a REPLACE: REPLACE deletes and re-inserts the row, which
+        # silently put `in_library` back to its default on every re-cache — a
+        # playlist that had left the library came back as in it.
+        update_fields = {k: v for k, v in row.items() if k != 'id'}
+        Playlist.insert(row).on_conflict(action='update', update=update_fields).execute()
         return pl_id
+
+    def touch_playlist(self, playlist_id, name=None):
+        """Mark a playlist as just cached when its content came from somewhere
+        other than the Web API (Mopidy), which has no metadata dict to save.
+        Creates a minimal row if needed; never touches what it does not know."""
+        updates = {'cached_at': datetime.datetime.utcnow()}
+        # A row created here was met through a box line, not the library listing:
+        # it starts OUT of the library (the column's default says in), or the
+        # AUTO playlists source would draw from it when it falls back to the
+        # cache. The listing (set_playlists_in_library) corrects it if it is in.
+        row = {**updates, 'id': playlist_id, 'uri': f'spotify:playlist:{playlist_id}',
+               'storage': 'sp', 'in_library': False}
+        if name:
+            row['name'] = name
+        Playlist.insert(row).on_conflict(action='update', update=updates).execute()
+
+    def replace_playlist_tracks(self, playlist_id, uris, added_at=None, prune=True):
+        """Store `uris` as the cached content of a playlist, in that order; with
+        `prune`, drop the links that are no longer in it.
+
+        Appending alone was not enough for a playlist whose content is
+        regenerated (Discover Weekly, a daily mix): it would have accumulated
+        every past week. Pruning is the caller's call, because it is only safe
+        against a source that is current — the Web API, or Mopidy for a playlist
+        o2m never writes to. Mopidy's view of a playlist o2m DOES write to lags
+        behind (see cache_all_playlists), and pruning against it would drop a
+        track added a moment ago. Nothing happens on an empty list: a fetch that
+        found nothing is not proof the playlist is empty."""
+        uris = [u for u in dict.fromkeys(uris or []) if u]
+        if not uris:
+            return 0
+        with db.atomic():
+            if prune:
+                (PlaylistTrack.delete()
+                 .where((PlaylistTrack.playlist_id == playlist_id)
+                        & (PlaylistTrack.track_uri.not_in(uris)))
+                 .execute())
+            for position, u in enumerate(uris):
+                # added_at only when the source knows it (the Web API does, Mopidy
+                # does not): an existing link keeps the date it already had.
+                when = self._parse_added_at((added_at or {}).get(u))
+                update = {'position': position}
+                if when:
+                    update['added_at'] = when
+                PlaylistTrack.insert({'playlist_id': playlist_id, 'track_uri': u,
+                                      'position': position, 'added_at': when}).on_conflict(
+                    action='update', update=update).execute()
+        return len(uris)
+
+    def playlist_needs_refresh(self, playlist_id):
+        """True when a playlist's cached content should be fetched again.
+
+        Three horizons. A playlist with NO cached tracks is retried daily: its
+        last fetch failed, and a failure is not a verdict. A DYNAMIC playlist —
+        owned by Spotify, whose content is regenerated (Discover Weekly, the
+        daily mixes, editorial ones) — is refreshed daily too. Everything else
+        keeps the 7-day playlist TTL."""
+        try:
+            p = Playlist.get_by_id(playlist_id)
+        except Playlist.DoesNotExist:
+            return True
+        if p.cached_at is None:
+            return True
+        cached_at = p.cached_at
+        if isinstance(cached_at, (int, float)):
+            cached_at = datetime.datetime.utcfromtimestamp(cached_at)
+        age_days = (datetime.datetime.utcnow() - cached_at).total_seconds() / 86400
+        has_tracks = PlaylistTrack.select().where(PlaylistTrack.playlist_id == playlist_id).exists()
+        if not has_tracks or self.is_dynamic_playlist(playlist_id, p.owner_id):
+            return age_days >= 1
+        return age_days >= CACHE_TTL['playlist']
+
+    @staticmethod
+    def is_dynamic_playlist(playlist_id, owner_id=None):
+        """Owned by Spotify: its content is generated, not curated. `37i9dQZ` is
+        the prefix of every Spotify-generated id (editorial, Discover Weekly, the
+        mixes), and it is what identifies one when the owner is unknown — the
+        Web API answers 404 on them, so the owner often never reaches us."""
+        return (owner_id == 'spotify') or str(playlist_id or '').startswith('37i9dQZ')
+
+    @staticmethod
+    def _parse_added_at(value):
+        if isinstance(value, str):
+            try:
+                return datetime.datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
+            except Exception:
+                return None
+        return value
 
     def save_playlist_track(self, playlist_id, track_uri, position=0, added_at=None):
         """Link a track to a playlist (upsert)."""
@@ -2272,6 +2365,24 @@ class DatabaseHandler():
         except Exception as e:
             self.log.error(f"drop_playlist {playlist_id}: {e}")
             return 0
+
+    def get_hidden_playlist_ids(self):
+        """Ids of the Spotify playlists a `hidden` or `trash` box names.
+
+        Being in the account's library says nothing about whether a playlist is
+        meant to be mixed in: a box marked hidden is the statement that its
+        content is kept OUT of the general mix. The AUTO `playlists` source drew
+        from every library playlist regardless, so a hidden box's playlist
+        surfaced in the auto mix (observed with "Liv", 2026-09-24). Time windows
+        are ignored on purpose — a window says when the box plays a line, not
+        whether the box claims it — and so are `#`-disabled lines."""
+        ids = set()
+        for b in Box.select(Box.data).where(Box.option_type.in_(('hidden', 'trash'))):
+            for _applies, payload in boxdirectives.iter_lines(b.data or ''):
+                m = _re.match(r'spotify:playlist:([A-Za-z0-9]+)', payload or '')
+                if m:
+                    ids.add(m.group(1))
+        return ids
 
     def get_all_cached_playlist_ids(self, in_library_only=False):
         """Return IDs of all playlists that have at least one cached track.

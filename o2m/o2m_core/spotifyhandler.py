@@ -56,19 +56,19 @@ class SpotifyHandler:
             return uri.rsplit(':', 1)[-1] or None
         return None
 
-    def _playlist_items_via_mopidy(self, playlist_id):
+    def _playlist_items_via_mopidy(self, playlist_id, with_name=False):
         """Read a playlist's content through Mopidy, shaped like Web API entries so the
         regular caching path consumes them unchanged. Returns [] when unavailable.
 
         Mopidy exposes no `added_at`, so it comes back None — save_playlist_track keeps
         whatever it already had rather than inventing a date."""
         if not self._mopidy:
-            return []
+            return ([], None) if with_name else []
         try:
             playlist = self._mopidy.playlists.lookup(uri=f"spotify:playlist:{playlist_id}")
         except Exception as e:
             print(f"mopidy playlist lookup failed for {playlist_id}: {e}")
-            return []
+            return ([], None) if with_name else []
 
         items = []
         for track in (getattr(playlist, 'tracks', None) or []):
@@ -90,6 +90,8 @@ class SpotifyHandler:
             if album_id:
                 data['album'] = {'id': album_id, 'uri': album.uri, 'name': getattr(album, 'name', None)}
             items.append({'track': data, 'added_at': None})
+        if with_name:
+            return items, getattr(playlist, 'name', None)
         return items
 
     def _init_tag_features(self):
@@ -231,43 +233,73 @@ class SpotifyHandler:
     # ── cache write helpers ───────────────────────────────────────────────────
 
     def cache_playlist_by_id(self, playlist_id):
-        """Cache a playlist (metadata + tracks) by its Spotify ID.
-        Cache-first: does nothing if already fresh. Uses sp.playlist() (1 API call)
-        which embeds the first 100 tracks, avoiding a separate playlist_items call."""
+        """Refresh a playlist's cached content when it is due, from wherever it
+        can be read. Returns the cached uris (possibly unchanged, possibly []).
+
+        Due = DatabaseHandler.playlist_needs_refresh: daily for a playlist Spotify
+        generates (Discover Weekly, the mixes) or one whose last fetch found
+        nothing, weekly otherwise.
+
+        Web API first — it carries `added_at` and the metadata. Mopidy when the API
+        refuses: our application gets 403 on other people's playlists and 404 on
+        Spotify's own, while Mopidy, going through its own application, reads them
+        all. A Spotify-generated playlist goes to Mopidy directly, since the API
+        is certain to 404. This fallback is what the box path lacked: a playlist
+        the API refused stayed uncached, and a box line naming it handed its raw
+        uri to the fill — which, drawn inside the AUTO mix, queued the whole
+        playlist as if it were one track.
+
+        Read from the Web API or for a generated playlist, the content REPLACES
+        the cached one, so a regenerated playlist does not accumulate its past
+        weeks; read from Mopidy for a playlist o2m may write to, it is only added
+        (Mopidy's view lags behind o2m's own writes). A fetch that
+        found nothing never empties the cache; it only dates the attempt, so the
+        next one waits a day instead of happening on every fill."""
         if not self._db or not playlist_id:
-            return
-        if self._db.get_playlist(playlist_id):
-            return  # already fresh in cache
-        if self._is_rate_limited():
-            return
-        try:
-            pl_data = self.sp.playlist(playlist_id)
-            if not pl_data:
-                return
-            position = 0
-            tracks_page = pl_data.get('tracks') or pl_data.get('items')
-            while tracks_page:
-                for item in (tracks_page.get('items') or []):
-                    if self._is_rate_limited():
-                        return  # don't mark as cached — will be retried next time
-                    track = (item.get('track') or item.get('item')) if item else None
-                    if track and track.get('uri'):
-                        self._cache_track(track)
-                        self._db.save_playlist_track(
-                            playlist_id, track['uri'],
-                            position=position, added_at=item.get('added_at'))
-                        position += 1
-                if tracks_page.get('next'):
-                    tracks_page = self.sp.next(tracks_page)
-                else:
-                    break
-            # Only mark as cached once all pages are done
+            return []
+        if not self._db.playlist_needs_refresh(playlist_id):
+            return self._db.get_playlist_track_uris(playlist_id)
+        uris, added, pl_data, name = [], {}, None, None
+        if not self._db.is_dynamic_playlist(playlist_id) and not self._is_rate_limited():
+            try:
+                pl_data = self.sp.playlist(playlist_id)
+                page = (pl_data.get('tracks') or pl_data.get('items')) if pl_data else None
+                while page:
+                    for item in (page.get('items') or []):
+                        track = (item.get('track') or item.get('item')) if item else None
+                        if track and track.get('uri'):
+                            self._cache_track(track)
+                            uris.append(track['uri'])
+                            added[track['uri']] = item.get('added_at')
+                    page = self.sp.next(page) if page.get('next') else None
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                # A partial read would drop the tail of the playlist on replace.
+                uris, added = [], {}
+            except Exception as e:
+                print(f"cache_playlist_by_id({playlist_id}): Web API read failed: {e}")
+                uris, added = [], {}
+        # Whether the content came from the API. Not the same as having pl_data: a
+        # 403 on the content often arrives as a zero-entry page, not an exception.
+        from_api = bool(uris)
+        if not uris:
+            items, name = self._playlist_items_via_mopidy(playlist_id, with_name=True)
+            for item in items:
+                self._cache_track(item['track'])
+                uris.append(item['track']['uri'])
+            if uris:
+                print(f"playlist {name or playlist_id}: {len(uris)} tracks via mopidy")
+        if uris:
+            # Prune only against a current source: the Web API, or Mopidy for a
+            # generated playlist o2m never writes to (see replace_playlist_tracks).
+            prune = from_api or self._db.is_dynamic_playlist(playlist_id)
+            self._db.replace_playlist_tracks(playlist_id, uris, added, prune=prune)
+        if pl_data:
             self._db.save_playlist(pl_data)
-        except spotipy.SpotifyException as e:
-            if e.http_status == 429:
-                self._on_rate_limit(e)
-        except Exception:
-            pass
+        else:
+            self._db.touch_playlist(playlist_id, name=name)
+        return uris or self._db.get_playlist_track_uris(playlist_id)
 
     def _fetch_and_cache_playlist_tracks(self, playlist):
         """Fetch and cache tracks for a playlist.
@@ -1290,7 +1322,9 @@ class SpotifyHandler:
     def get_playlists_tracks(self,limit=1,discover_level=5):
         if self._is_rate_limited():
             if self._db:
-                cached_ids = self._db.get_all_cached_playlist_ids(in_library_only=True)
+                hidden = self._db.get_hidden_playlist_ids()
+                cached_ids = [i for i in self._db.get_all_cached_playlist_ids(in_library_only=True)
+                              if i not in hidden]
                 if cached_ids:
                     print(f"get_playlists_tracks: rate-limited, using {len(cached_ids)} cached playlists")
                     t_list, lib_link = [], []
@@ -1323,7 +1357,11 @@ class SpotifyHandler:
         playlists = playlists_response['items']
         
         # Filter out unwanted playlists (e.g., 'Trash')
-        playlists = [pl for pl in playlists if pl['name'] != 'Trash'] # and pl['name'] != 'Hidden' (if implemented)
+        # ... and the ones a hidden/trash box names: that box is the statement
+        # that its content stays out of the general mix.
+        hidden = self._db.get_hidden_playlist_ids() if self._db else set()
+        playlists = [pl for pl in playlists
+                     if pl and pl['name'] != 'Trash' and pl['id'] not in hidden]
 
         if not playlists:
             return ([], [])
@@ -1333,18 +1371,14 @@ class SpotifyHandler:
         
         for playlist in selected_playlists:
             try:
-                # cache-first: use cached tracks if playlist is fresh
-                tracks = None
-                if self._db and self._db.get_playlist(playlist['id']):
-                    tracks = self._db.get_playlist_track_uris(playlist['id'])
-
-                if not tracks:
+                # The same refresh a box line gets (cache_playlist_by_id): daily
+                # for a generated playlist, weekly otherwise, Mopidy when the Web
+                # API refuses, content replaced rather than appended.
+                if self._db:
+                    tracks = self.cache_playlist_by_id(playlist['id'])
+                    self._db.save_playlist(playlist)   # the listing's metadata
+                else:
                     tracks = self._fetch_and_cache_playlist_tracks(playlist)
-                    if tracks and self._db:
-                        self._db.save_playlist(playlist)
-                    elif self._db:
-                        # Truly inaccessible — save metadata only so we don't retry for 7 days
-                        self._db.save_playlist(playlist)
 
                 if tracks:
                     t_list.append(random.choice(tracks))

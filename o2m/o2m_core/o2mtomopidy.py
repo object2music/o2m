@@ -1042,6 +1042,61 @@ class O2mToMopidy:
     # which a fill enters. Swapping add_tracks for a recorder therefore makes a
     # whole fill read-only, whatever pattern it takes.
 
+    # A uri Mopidy expands into many tracks. Fine as a line of a box one taps
+    # (the whole album IS what was asked for), wrong as ONE candidate among the
+    # tracks of an AUTO bucket, where the budget counts uris.
+    _CONTAINER_URI_RE = re.compile(r'^spotify:(?:playlist|album|artist|user|show):')
+
+    def _auto_bucket_from_box(self, active_box, box1, n, pool_n, energy, valence, radius,
+                              discover_level, option_type, library_link):
+        """One AUTO bucket drawn from another box (incoming, favorites, news): at
+        most `n` tracks, whatever the lines of that box are.
+
+        Two leaks this closes, both measured on one fill that asked 30 and queued
+        48 (2026-09-24):
+
+        * The box is read with an oversampled budget (`pool_n`, 3x) so the mood
+          pick has a choice. But the patterns that describe their adds as a PLAN
+          (newnotcompleted:library, newrecent:library, spotify:library,
+          albums:spotify) were applied as such — with the oversampled budget and
+          no pick: `newnotcompleted:library` alone put 18 tracks into a bucket of
+          6. Their tracks now join the one candidate pool, and only what the
+          single pick keeps is added, with the plan's own library_link and
+          bypass_remove_filter (those tracks are pre-filtered in the DB, and the
+          REMOVE filter of a `new` add would otherwise drop them all).
+        * A playlist line whose content is not cached returns its raw uri. In the
+          pool it competes as one "track" of neutral weight, and when drawn Mopidy
+          expands it whole: one pick, 73 tracks. Container uris are dropped from
+          the pool; a playlist that cannot be read contributes nothing to this
+          fill rather than everything.
+        """
+        plan = []
+        uris = self.tracklistappend_box(box1, pool_n, attribute_to=active_box, plan_out=plan)
+        cands = [u for u in util.flatten_list(list(uris or [])) if isinstance(u, str) and u]
+        planned = {}
+        for entry in plan:
+            for u in util.flatten_list(list(entry.get('uris') or [])):
+                if isinstance(u, str) and u:
+                    planned.setdefault(u, entry)
+                    cands.append(u)
+        pool = [u for u in dict.fromkeys(cands) if not self._CONTAINER_URI_RE.match(u)]
+        dropped = len(set(cands)) - len(pool)
+        if dropped:
+            print(f"AUTO bucket {option_type}: {dropped} playlist/album/artist uri(s) left out of the pool")
+        picked = self._mood_pick(pool, n, energy, valence, radius, discover_level)
+        # Plan tracks go in with their own classification, grouped so each group
+        # is one add_tracks call; the rest go in as the bucket's.
+        groups = {}
+        for u in picked:
+            e = planned.get(u)
+            if e is not None:
+                groups.setdefault((e.get('library_link', ''), bool(e.get('bypass_remove_filter'))), []).append(u)
+        for (link, bypass), group in groups.items():
+            self.add_tracks(active_box, group, len(group), library_link=link, bypass_remove_filter=bypass)
+        rest = [u for u in picked if u not in planned]
+        if rest:
+            self.add_tracks(active_box, rest, len(rest), option_type, library_link)
+
     def apply_fill_plan(self, tag_box, plan):
         """Add what a plan_out fill described, each entry with its own flags.
 
@@ -1317,11 +1372,8 @@ class O2mToMopidy:
             if box1 is not None:
                 print(f"\nAUTO : Incoming {base_counts['incoming']} tracks\n")
                 library_link = self.get_spotify_playlist_from_box(box1)
-                _plan = []
-                incoming = self.tracklistappend_box(box1,_pool(base_counts['incoming']),attribute_to=active_box,plan_out=_plan)
-                self.apply_fill_plan(active_box, _plan)
-                incoming = self._mood_pick(incoming, base_counts['incoming'], energy, valence, radius, discover_level)
-                self.add_tracks(active_box, incoming, base_counts['incoming'], "incoming",library_link)
+                self._auto_bucket_from_box(active_box, box1, base_counts['incoming'], _pool(base_counts['incoming']),
+                                           energy, valence, radius, discover_level, "incoming", library_link)
 
             #Favorites
             if base_counts.get('favorites', 0) > 0:
@@ -1335,12 +1387,9 @@ class O2mToMopidy:
                     self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
                 #Using specific playlist (normaly elif)
                 if box1 != None:
-                    _plan = []
-                    fav= self.tracklistappend_box(box1,_pool(base_counts['favorites']),attribute_to=active_box,plan_out=_plan)
-                    self.apply_fill_plan(active_box, _plan)
-                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius, discover_level)
                     library_link = self.get_spotify_playlist_from_box(box1)
-                    self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
+                    self._auto_bucket_from_box(active_box, box1, base_counts['favorites'], _pool(base_counts['favorites']),
+                                               energy, valence, radius, discover_level, "favorites", library_link)
                 #if fav != None: self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
 
             #Podcasts (only in podcast mode)
@@ -1380,11 +1429,8 @@ class O2mToMopidy:
             box1 = self.dbHandler.get_box_by_option_type('new') if base_counts.get('news', 0) > 0 else None
             if box1 is not None:
                 print(f"\nAUTO : News {base_counts['news']} tracks\n")
-                _plan = []
-                news = self.tracklistappend_box(box1,_pool(base_counts['news']),attribute_to=active_box,plan_out=_plan)
-                self.apply_fill_plan(active_box, _plan)
-                news = self._mood_pick(news, base_counts['news'], energy, valence, radius, discover_level)
-                self.add_tracks(active_box, news, base_counts['news'], "new","o2m:new")
+                self._auto_bucket_from_box(active_box, box1, base_counts['news'], _pool(base_counts['news']),
+                                           energy, valence, radius, discover_level, "new", "o2m:new")
     
         except Exception as val_e: 
             print(f"Erreur : {val_e}")
