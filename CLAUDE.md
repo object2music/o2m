@@ -1247,6 +1247,13 @@ Two consequences to keep in mind:
   turns a track that would have streamed from Spotify into a playback failure — and rows
   could already outlive their files before any of this, since `clear_local_track`
   swallows its own errors.
+- **Mopidy's file backend must be ON (`FILE_ENABLED=TRUE` in `.env`), or no substitution
+  can ever play.** It was `FALSE` on every instance until 2026-09-24: Mopidy answered
+  `[]` to every `file://` uri, so each track holding a download silently vanished from
+  every fill — the whole local-cache substitution had been dead on the server, only
+  the device offline mode (`/api/audio`, which reads the file without Mopidy) used the
+  downloads. Turned on everywhere (`.env` backed up as `.env.bak-2026-09-24-file`,
+  then `docker compose up -d mopidy`, since a restart does not re-read `.env`).
 - **An instance without the files is caught by Mopidy's answer, not by a check**
   (`_add_resolved`, every `tracklist.add` of the core goes through it). The Raspberry
   Pi reads the shared database, runs outside Docker with no music volume, so
