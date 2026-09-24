@@ -1444,18 +1444,24 @@ class O2mToMopidy:
             if base_counts.get('favorites', 0) > 0:
                 print(f"\nAUTO : Fav {base_counts['favorites']} tracks\n")
                 box1 = self.dbHandler.get_box_by_option_type('favorites')
+                # Two sources, ONE budget. Each used to take the whole count, so the
+                # bucket served it twice (5 + 6 for a budget of 6, measured
+                # 2026-09-24). It is shared now — the liked tracks get the odd one —
+                # and a source that is missing leaves its share to the other.
+                n_fav = base_counts['favorites']
+                has_liked, has_box = self.username is not None, box1 is not None
+                n_liked = (n_fav + 1) // 2 if (has_liked and has_box) else (n_fav if has_liked else 0)
+                n_box = n_fav - n_liked if has_box else 0
                 #Using spotify favs
-                if self.username !=None:
-                    fav = self.spotifyHandler.get_library_favorite_tracks(_pool(base_counts['favorites']))
-                    fav = self._mood_pick(fav, base_counts['favorites'], energy, valence, radius, discover_level)
-                    library_link = 'o2m:favorites'
-                    self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
-                #Using specific playlist (normaly elif)
-                if box1 != None:
+                if n_liked > 0:
+                    fav = self.spotifyHandler.get_library_favorite_tracks(_pool(n_liked))
+                    fav = self._mood_pick(fav, n_liked, energy, valence, radius, discover_level)
+                    self.add_tracks(active_box, fav, n_liked, "favorites", 'o2m:favorites')
+                #Using the favorites box
+                if n_box > 0:
                     library_link = self.get_spotify_playlist_from_box(box1)
-                    self._auto_bucket_from_box(active_box, box1, base_counts['favorites'], _pool(base_counts['favorites']),
+                    self._auto_bucket_from_box(active_box, box1, n_box, _pool(n_box),
                                                energy, valence, radius, discover_level, "favorites", library_link)
-                #if fav != None: self.add_tracks(active_box, fav, base_counts['favorites'], "favorites",library_link)
 
             #Podcasts (only in podcast mode)
             if mode=='podcast' and base_counts.get('podcasts', 0) > 0:

@@ -392,6 +392,12 @@ has a choice, and keep `n`. Two leaks let a bucket blow past `n`; one fill measu
   read by both places) now filters the pool BEFORE the pick; plan tracks that bypass
   the REMOVE filter are left alone, as add_tracks leaves them.
 
+**Favorites has two sources and one budget.** The liked tracks (Spotify library) and
+the install's `favorites` box each took the whole count, so the bucket was served
+twice — 11 for a budget of 6 on o2m_1 (2026-09-24). The count is shared, the liked
+tracks taking the odd one (6 → 3 + 3), and a missing source leaves its share to the
+other.
+
 Every fill ends with `AUTO: n tracks queued for a target of N`, measured on the
 tracklist rather than summed from the buckets. No top-up exists, on purpose: once the
 known losses are filtered before the pick (this section) or recovered after it
