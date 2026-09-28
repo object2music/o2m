@@ -1254,6 +1254,20 @@ Two consequences to keep in mind:
   the device offline mode (`/api/audio`, which reads the file without Mopidy) used the
   downloads. Turned on everywhere (`.env` backed up as `.env.bak-2026-09-24-file`,
   then `docker compose up -d mopidy`, since a restart does not re-read `.env`).
+  **Turning it on made `file://` uris common in the page**, and exposed the two places
+  that did not expect them: `POST /api/track_playlist` handed the raw `file://` to
+  Spotify (a downloaded track could not be added to a playlist — "Big Iron"), and the
+  panel only asked for a track's Spotify saved state on `spotify:track:` uris. Both
+  now treat `file:` as the Spotify track it is. And `get_spotify_uri` no longer
+  depends on the in-memory map alone: a `file://` it does not know — every track of
+  Mopidy's restored tracklist after an o2m restart — is looked up by `Track.local_uri`
+  (unindexed, 42 ms, once per file per process; misses are cached too).
+  The **artwork** had the same blind spot: the page asks Mopidy for images under the
+  uri Mopidy knows, and its file backend has none — every local track showed a
+  generated cover. `coverLookupUri` asks for the images of the canonical Spotify uri
+  instead (through `/api/played_meta`, cached in `_playedMeta`). Still open: Mopidy
+  gives a file's artists and album with no uri, so on a local track they read as
+  plain text rather than links.
 - **An instance without the files is caught by Mopidy's answer, not by a check**
   (`_add_resolved`, every `tracklist.add` of the core goes through it). The Raspberry
   Pi reads the shared database, runs outside Docker with no music volume, so

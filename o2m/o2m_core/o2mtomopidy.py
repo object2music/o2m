@@ -389,10 +389,28 @@ class O2mToMopidy:
         return added
 
     def get_spotify_uri(self, uri):
-        """Canonicalize a local file URI back to its Spotify URI for stat recording."""
+        """Canonicalize a played uri (a downloaded file, a signed CDN url) back to
+        the uri the track is known by.
+
+        The map is filled at substitution time and lives in MEMORY: after an o2m
+        restart, the file:// tracks still sitting in Mopidy's restored tracklist
+        were unmappable — every panel action on them (playlist, heart, status)
+        addressed a uri the database and Spotify do not know. Since Mopidy's file
+        backend is on (2026-09-24) those tracks are common, so a file:// uri missing
+        from the map is looked up by `Track.local_uri` and remembered. (A signed
+        CDN url cannot be recovered that way: nothing in it names its page.)"""
         if not uri or uri.startswith('spotify:'):
             return uri
-        return self._played_to_canonical.get(uri, uri)
+        hit = self._played_to_canonical.get(uri)
+        if hit:
+            return hit
+        if uri.startswith('file:'):
+            # Remembered either way: a miss is cached as itself, so a file that is
+            # not a download is not searched for again on every panel refresh.
+            found = self.dbHandler.spotify_uri_for_local(uri) or uri
+            self._played_to_canonical[uri] = found
+            return found
+        return uri
 
 #TAG MANAGEMENT
     @property

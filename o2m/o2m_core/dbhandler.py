@@ -2487,6 +2487,15 @@ class DatabaseHandler():
         except Track.DoesNotExist:
             return None
 
+    def spotify_uri_for_local(self, local_uri):
+        """The spotify:track: uri whose download is `local_uri`, or None — the
+        reverse of get_local_uri, for when the in-memory map has been lost."""
+        try:
+            t = Track.get_or_none(Track.local_uri == local_uri)
+            return t.uri if t else None
+        except Exception:
+            return None
+
     def set_local_uri(self, spotify_uri, local_uri):
         """Store (or clear) the local file URI for a spotify:track: URI."""
         Track.insert({'uri': spotify_uri, 'local_uri': local_uri}).on_conflict(

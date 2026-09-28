@@ -2124,7 +2124,10 @@ if __name__ == "__main__":
     def api_track_playlist():
         from flask import jsonify
         data = request.get_json(silent=True) or {}
-        uri = (data.get('uri') or '').strip()
+        # The canonical uri, like every other track-scoped write: a track Mopidy plays
+        # from its download is reported as file://..., which Spotify cannot add to a
+        # playlist and the cache does not know ("Big Iron", 2026-09-24).
+        uri = (o2mHandler.get_spotify_uri((data.get('uri') or '').strip()) or '').strip()
         pid = (data.get('playlist_id') or '').strip()
         action = (data.get('action') or '').strip()
         if not uri or not pid or action not in ('add', 'remove'):

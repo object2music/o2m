@@ -3107,7 +3107,9 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       p.disliked = !!(info && info.disliked);
       renderFav(p);
       const uri = getUri();
-      if (uri && uri.startsWith('spotify:track:')) {
+      // A downloaded Spotify track plays as file://… — still a Spotify track, and
+      // /api/track_saved maps it back to its spotify: uri server-side.
+      if (uri && (uri.startsWith('spotify:track:') || uri.startsWith('file:'))) {
         fetch(API + '/track_saved?uri=' + encodeURIComponent(uri)).then(r => r.json())
           .then(d => {
             // The answer is about `uri`, not about whatever the panel shows when it
@@ -3421,7 +3423,7 @@ async function setRating(p, which) {
     if (p.getUri() === uri) {
       if ('liked_local' in d) p.favLocal = d.liked_local;
       if ('liked_spotify' in d) p.favSpotify = d.liked_spotify;
-      else if (!uri.startsWith('spotify:track:')) p.favSpotify = null;
+      else if (!uri.startsWith('spotify:track:') && !uri.startsWith('file:')) p.favSpotify = null;
       if (path === '/track_dislike') { p.disliked = !!body.disliked; if (body.disliked) p.favLocal = false; }
       else if (body.favorite) p.disliked = false;   // the server cleared it — the two are exclusive
     }
@@ -4295,8 +4297,9 @@ function objCoverHTML(url, seed) {
 
 async function objCover(uri) {
   try {
-    const r = await rpc('core.library.get_images', {uris: [uri]});
-    const imgs = r?.result?.[uri] || [];
+    const q = await coverLookupUri(uri);
+    const r = await rpc('core.library.get_images', {uris: [q]});
+    const imgs = r?.result?.[q] || [];
     const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
     return best ? imageUrl(best.uri || best) : '';
   } catch(e) { return ''; }
@@ -7436,10 +7439,26 @@ function setCoverSmooth(url) {
    track and by every lookup, so a skip to a prefetched track paints its cover with
    no round trip at all. Bounded; a failed lookup is not cached. */
 const coverUrlCache = new Map();
+/* The uri to ask Mopidy for artwork. A downloaded Spotify track plays as file://…
+   and Mopidy's file backend has no artwork for it, so every local track showed a
+   generated cover (since the file backend was turned on, 2026-09-24). Its Spotify
+   uri does have one: asked once through /api/played_meta, kept in _playedMeta. */
+async function coverLookupUri(uri) {
+  if (!uri || !uri.startsWith('file:')) return uri;
+  if (!_playedMeta.has(uri)) {
+    try {
+      const d = await fetch(API + '/played_meta?uri=' + encodeURIComponent(uri)).then(r => r.json());
+      _playedMeta.set(uri, (d && d[uri]) || null);
+    } catch (e) { return uri; }
+  }
+  const m = _playedMeta.get(uri);
+  return (m && m.uri) || uri;
+}
 async function resolveCoverUrl(uri) {
   if (coverUrlCache.has(uri)) return coverUrlCache.get(uri);
-  const r = await rpc('core.library.get_images', {uris: [uri]});
-  const imgs = r?.result?.[uri] || [];
+  const q = await coverLookupUri(uri);
+  const r = await rpc('core.library.get_images', {uris: [q]});
+  const imgs = r?.result?.[q] || [];
   const best = imgs.sort((a, b) => (b.width || 0) - (a.width || 0))[0];
   const url = best ? imageUrl(best.uri || best) : '';
   if (r && r.result) {
