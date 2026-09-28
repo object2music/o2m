@@ -1385,7 +1385,7 @@ if __name__ == "__main__":
         try:
             # _track_info is authoritative for current session: checked first so reco/replaced
             # tracks return the right option_type even before (or without) a DB stat entry.
-            info = next((v for v in o2mHandler._track_info.values() if v.get('uri') == uri), None)
+            _, info = o2mHandler.track_info_for_uri(uri)
 
             # read_end always comes from DB; default 0 if track not yet recorded
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
@@ -2176,7 +2176,7 @@ if __name__ == "__main__":
             return jsonify({})
         try:
             stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
-            info = next((v for v in o2mHandler._track_info.values() if v.get('uri') == uri), None)
+            _, info = o2mHandler.track_info_for_uri(uri)
             library = (info.get('library_display') if info else None) or (str(stat.in_library) if stat and stat.in_library else '')
             # Classification for display: the LIVE box context (_track_info) wins over
             # the stored stat — a stat can lag/mis-tag (e.g. a podcast served from an
@@ -3369,11 +3369,11 @@ with the house Premium account.</li>
                             #int(round(discover_level * 0.25))
                             #Pb with this library_link calc
                             library_link="o2m:reco_after_track"
-                            try: o2mHandler.add_reco_after_track_read(effective_uri,library_link,data)
+                            try: o2mHandler.add_reco_after_track_read(effective_uri,library_link,data,seed_tlid=tlid)
                             except Exception as val_e:
                                 print(f"Erreur : {val_e}")
                                 o2mHandler.spotifyHandler.init_token_sp()
-                                o2mHandler.add_reco_after_track_read(effective_uri,library_link,data)
+                                o2mHandler.add_reco_after_track_read(effective_uri,library_link,data,seed_tlid=tlid)
                         if option_type != 'hidden' and option_type != 'trash' :
                             print ("Adding raw stats")
                             o2mHandler.update_stat_raw(effective_uri)

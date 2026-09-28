@@ -3211,28 +3211,37 @@ class O2mToMopidy:
                 self.mopidyHandler.tracklist.remove({"tlid": [tlid]})
 
 #   SONGS RECOMMANDATION MANAGEMENT
-    def add_reco_after_track_read(self, track_uri, library_link='', data='', mode='add'):
-        if self.option_add_reco_after_track: 
+    def add_reco_after_track_read(self, track_uri, library_link='', data='', mode='add', seed_tlid=None):
+        if self.option_add_reco_after_track:
             #self.mopidyHandler.playback.pause()
             if "spotify:track" in track_uri:
-                
+
+                # A reco belongs to the box that served the track just heard, so that
+                # releasing that box takes the reco with it. Asked by the ENDED tlid:
+                # the current tlid, which this used to ask, is by now the NEXT track —
+                # a Bashung reco after a Bashung track from the Auto box was filed
+                # under the classical tag that happened to play next, and survived
+                # the Auto box. When the box that served the seed is no longer
+                # active, there is nothing to attach a reco to: none is added. A seed
+                # with no recorded owner (added from outside o2m) keeps the old
+                # fallback, mopidy_box.
+                if seed_tlid is not None and seed_tlid in self._track_info:
+                    target_box = self.get_active_box_by_tlid(seed_tlid)
+                    if target_box is None:
+                        print(f"reco: none after {track_uri}, its box "
+                              f"{self._track_info[seed_tlid].get('box_id')} is no longer active")
+                        return
+                else:
+                    target_box = self.get_active_box_for_playback(track_uri, None)
+
                 #Calculate init values
-                discover_level = self.calculate_discover_level(track_uri)
+                discover_level = self.ambient_settings(track_uri, seed_tlid)[2]
                 if discover_level < 10: 
                     new_type ='new'
                     limit = int(round(discover_level * 0.25)) #Fixing number of new tracks
                 else: 
                     new_type = 'new_mopidy' #If max discover level, infinite loop of recommandations
                     limit = 1 #Extreme mode : continusly autofill until next song is launched
-
-                # Identify the box tied to the currently playing track using tlid first, then uri
-                current_tlid = None
-                try:
-                    current_tlid = self.mopidyHandler.playback.get_current_tlid()
-                except Exception as e:
-                    print(f"Error getting current tlid: {e}")
-
-                target_box = self.get_active_box_for_playback(track_uri, current_tlid)
 
                 uris = self.get_track_recommandation(track_uri,discover_level,limit,data)
 
@@ -3680,10 +3689,27 @@ class O2mToMopidy:
     def get_newrecent_tracks(self, limit, days=60):
         return self.dbHandler.get_uris_newrecent(limit, days)
 
+    def track_info_for_uri(self, uri):
+        """The live entry (tlid, info) of a track in the tracklist, or (None, None).
+
+        Matched on the CANONICAL uri, because the two sides do not spell a track
+        the same way: _track_info records what Mopidy was handed (a download's
+        file://, a web: item's signed url), while every caller asks with the uri the
+        track is known by. Compared raw, a downloaded track was never found — its
+        details panel lost its Source, and a reco after it lost its box."""
+        if not uri:
+            return None, None
+        for tlid, info in list(self._track_info.items()):
+            played = info.get('uri')
+            if played == uri or (played and self.get_spotify_uri(played) == uri):
+                return tlid, info
+        return None, None
+
     def get_active_box_by_uri(self, uri):
         """Return the active box that owns a track with the given URI."""
         for info in self._track_info.values():
-            if info.get('uri') == uri:
+            played = info.get('uri')
+            if played == uri or (played and self.get_spotify_uri(played) == uri):
                 box_id = info.get('box_id')
                 for box in self.activeboxs:
                     if box.uid == box_id:
