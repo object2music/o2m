@@ -2354,3 +2354,75 @@
   .search-more { display: flex; justify-content: center; padding: calc(14px * var(--ui)) 0 calc(4px * var(--ui)); }
   .search-more button { cursor: pointer; }
   .search-section-label:first-child { margin-top: 0; }
+
+  /* ════════════ Phone header: compact ════════════
+     The +10% of --ui (2026-09-24) reads better almost everywhere, but not in the
+     phone header: it is fixed above an accordion that gets only what it leaves,
+     and it grew by a tenth in every direction at once. So on a phone the header
+     goes back to 100% and its rhythm is tightened on top of that — smaller
+     transport, one 8px step around the cover block, one gap value per step of
+     the playback stack instead of four near-equal ones.
+
+     The tokens are re-declared, not just --ui — same reason as .ui-100 in
+     ds/o2m.css: they are finished lengths computed at :root. Scoped to the
+     header's three children rather than #top-zone, whose details sheet is a
+     full-screen panel and keeps the page's scale. The wrappers are
+     display:contents in the standard themes, and custom properties inherit
+     through them all the same.
+
+     Declared last in the sheet on purpose: several rules below it at equal
+     specificity (the poster themes) would otherwise win. */
+  @media (max-width: 699px) {
+    #cover-col, #top-right, #hero-title {
+      --ui: 1;
+      --t-body-l: calc(17px * var(--ui)); --t-body: calc(15px * var(--ui));
+      --t-body-s: calc(13px * var(--ui)); --t-label: calc(11px * var(--ui));
+      --t-hero:       clamp(calc(26px * var(--ui)), 3.2vw, calc(44px * var(--ui)));
+      --t-hero-dense: clamp(calc(22px * var(--ui)), 2.4vw, calc(32px * var(--ui)));
+      --sp-1: calc(4px * var(--ui));  --sp-2: calc(8px * var(--ui));   --sp-3: calc(12px * var(--ui));
+      --sp-4: calc(16px * var(--ui)); --sp-5: calc(24px * var(--ui));
+      --line-2: calc(2px * var(--ui)); --line-3: calc(3px * var(--ui));
+    }
+    /* The playback stack's rhythm, for every theme (the poster themes read the
+       fallbacks of the same variables). Re-declared here, below #top-zone, so
+       they compute at the header's scale. */
+    #top-right {
+      --np-gap: calc(10px * var(--ui));        /* tags/title → progress */
+      --np-gap-tight: calc(6px * var(--ui));   /* progress → transport */
+      --np-gap-vol: calc(20px * var(--ui));    /* transport → volume */
+      --np-gap-end: calc(20px * var(--ui));    /* under the volume */
+    }
+
+    /* Transport: three equal 36px boxes (was 44 at 110% = 48). */
+    #controls .ctrl-btn.o2m-tbtn,
+    #controls #btn-play.o2m-tbtn--play { width: calc(36px * var(--ui)); height: calc(36px * var(--ui)); padding: 0; }
+    #controls .ctrl-btn.o2m-tbtn svg,
+    #controls #btn-play.o2m-tbtn--play svg { width: calc(18px * var(--ui)); height: calc(18px * var(--ui)); }
+    /* The details opener sits in the same corner as the transport's box size. */
+    #btn-details { width: calc(34px * var(--ui)); height: calc(34px * var(--ui)); }
+    #btn-details svg { width: calc(16px * var(--ui)); height: calc(16px * var(--ui)); }
+
+    /* Standard themes: one 8px step above and below the cover block, and one
+       12px gutter left and right that the cover, the tags and the transport share
+       (the cover sat at 10px, two off from everything under it). */
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #cover-col { padding: calc(8px * var(--ui)) calc(12px * var(--ui)); }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #cover-wrap { width: calc(72px * var(--ui)); height: calc(72px * var(--ui)); }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #status-line { padding-top: calc(8px * var(--ui)); margin-bottom: calc(4px * var(--ui)); }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #artist-album { padding-bottom: calc(8px * var(--ui)); font-size: var(--t-body); }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #btn-details { margin: calc(8px * var(--ui)) calc(12px * var(--ui)) 0 0; }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #track-tags-row { margin-top: 0; padding: 0 calc(12px * var(--ui)) calc(4px * var(--ui)); }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #progress-wrap { padding-left: calc(12px * var(--ui)); padding-right: calc(12px * var(--ui)); }
+
+    /* Poster themes: the same transport, gutter and steps. */
+    [data-theme="overprint"] #top-right,
+    [data-theme="invert"]    #top-right { padding: calc(8px * var(--ui)) calc(12px * var(--ui)); }
+    [data-theme="invert"]    #now-playing { padding: 0; }
+    /* #top-right already carries the 12px gutter here; the children's own side
+       padding stacked on it (28px for the meta and the progress, 24 for the
+       transport). */
+    [data-theme="invert"]    #progress-wrap { padding-left: 0; padding-right: 0; }
+    [data-theme="invert"]    #controls { padding-left: 0; padding-right: 0; }
+    [data-theme="invert"]    #artist-album { font-size: var(--t-body); }
+    [data-theme="overprint"] #controls { gap: calc(12px * var(--ui)); padding-top: calc(6px * var(--ui)); }
+    [data-theme="overprint"] #progress-wrap { padding: calc(6px * var(--ui)) 0 0; }
+  }
