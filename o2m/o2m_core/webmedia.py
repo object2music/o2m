@@ -206,6 +206,74 @@ def _youtube_uri(url):
         return ''
 
 
+# A channel address in each of the four spellings YouTube hands out. Only
+# /channel/ carries the id; the other three are names that the page resolves.
+_YT_CHANNEL_RE = re.compile(
+    r'youtube\.com/(?:channel/(UC[\w-]{22})|(@[^/?#\s]+|c/[^/?#\s]+|user/[^/?#\s]+))')
+_YT_CHANNEL_ID_RE = re.compile(
+    r'<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[\w-]{22})"'
+    r'|<meta itemprop="identifier" content="(UC[\w-]{22})"'
+    r'|"externalId":"(UC[\w-]{22})"')
+# Consent already answered ("reject all"), as yt_dlp sends it. Without it a
+# request from the EU is redirected to consent.youtube.com, a page that names
+# no channel — measured from the o2m container, while curl got through.
+_YT_CONSENT = {'SOCS': 'CAI'}
+_OG_TITLE_RE = re.compile(r'<meta property="og:title" content="([^"]*)"')
+
+
+def channel_uploads_uri(channel_id):
+    """The line that plays a channel's own videos, newest first.
+
+    Mopidy-YouTube reads no channel address — `yt:https://www.youtube.com/@x`
+    looks up to nothing — and its `yt:channel:<id>` plays the channel's
+    PLAYLISTS, which are curated and often someone else's videos. What a person
+    means by a channel is its uploads, and YouTube keeps those as a playlist
+    whose id is the channel's with `UC` turned into `UU`."""
+    return 'yt:playlist:UU' + channel_id[2:]
+
+
+def _channel_from_html(html):
+    """(channel id, channel name) from a channel page, or () when it has none."""
+    m = _YT_CHANNEL_ID_RE.search(html or '')
+    if not m:
+        return ()
+    t = _OG_TITLE_RE.search(html)
+    return next(g for g in m.groups() if g), unescape(t.group(1)).strip() if t else ''
+
+
+def youtube_channel(url):
+    """A YouTube channel address -> {'channel_id', 'uri', 'name'}, or {'error'}.
+
+    `/channel/UC…` answers on the spot; `@handle`, `/c/` and `/user/` need the
+    page, which states its own id — memoised like any page. A leading `yt:` or
+    `youtube:` is accepted, since that is how the address usually arrives: typed
+    into a box as though Mopidy-YouTube could read it."""
+    url = re.sub(r'^(?:yt|youtube):', '', (url or '').strip())
+    m = _YT_CHANNEL_RE.search(url)
+    if not m or not _on(url, _YOUTUBE):
+        return {'error': 'Not a YouTube channel address.'}
+    cid, name = m.group(1) or '', ''
+    if not cid:
+        try:
+            page = f'https://www.youtube.com/{m.group(2)}'
+            # None rather than ('', '') on a miss: _cached keeps only a truthy answer.
+            cid, name = _cached(('yt-channel', page),
+                                lambda: _channel_from_html(
+                                    _fetch(page, cookies=_YT_CONSENT)[1]) or None,
+                                _TTL_PAGE) or ('', '')
+        except requests.HTTPError as e:
+            if getattr(e.response, 'status_code', 0) == 404:
+                return {'error': 'No channel found at that address.'}
+            log.warning('youtube_channel %s: %s', url, e)
+            return {'error': 'YouTube could not be reached — try again.'}
+        except Exception as e:
+            log.warning('youtube_channel %s: %s', url, e)
+            return {'error': 'YouTube could not be reached — try again.'}
+        if not cid:
+            return {'error': 'No channel found at that address.'}
+    return {'channel_id': cid, 'uri': channel_uploads_uri(cid), 'name': name}
+
+
 # Query parameters that say how a player should behave, not what it should
 # play, plus the usual campaign tracking. They are what makes the SAME video
 # arrive under two spellings from two pages.
@@ -276,8 +344,8 @@ def classify(url, page=None):
     return ''
 
 
-def _fetch(url, timeout=None):
-    r = requests.get(url, timeout=timeout or TIMEOUT, allow_redirects=True,
+def _fetch(url, timeout=None, cookies=None):
+    r = requests.get(url, timeout=timeout or TIMEOUT, allow_redirects=True, cookies=cookies,
                      headers={'User-Agent': USER_AGENT,
                               'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
                               'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'},

@@ -515,7 +515,7 @@ dispatch branches against the picker).
 | `rf:show:<url>` | one Radio France show |
 | `http(s)://…` · `tunein:…` | a radio stream |
 | `local:…` · `m3u:…` · `file:…` | local files |
-| `yt:…` · `youtube:…` | YouTube |
+| `yt:…` · `youtube:…` | YouTube — a video, `yt:playlist:<id>`, or a channel's uploads as `yt:playlist:UU…` |
 | `box:<uid>` | **another box**, included whole (cascade) |
 | `web:<page url>` | **whatever media that web page holds** — experimental, see below |
 
@@ -541,6 +541,8 @@ dispatch branches against the picker).
 | `tag:<name>` | every track carrying that genre/tag (through its artist), drawn like an artist line — `_expand_pick`, from a random 2,000-track sample of the pool |
 | `meta_podcasts` · `meta_infos` · `meta_radios` | every source of that category, across all boxes |
 | `recommendation:…` | live Spotify recommendations (legacy; the API has since been restricted) |
+
+**A YouTube channel ADDRESS is not a line.** Mopidy-YouTube looks `yt:https://www.youtube.com/@x/videos` up to `[]`, and its `yt:channel:<UC id>` plays the channel's PLAYLISTS (curated, often other people's videos). A channel's own videos are the playlist whose id is the channel's with `UC` → `UU`. The Guided builder converts a pasted address to that line (`/channel/UC…` on the spot; an `@handle`, `/c/`, `/user/` through `GET /api/youtube_channel` → `webmedia.youtube_channel`, which reads the id off the page — with the `SOCS=CAI` consent cookie, or an EU request lands on consent.youtube.com). The dispatcher does not convert: a line typed raw stays what it says.
 
 There is **no `meta_music`**: `meta_fill` handles the `music` category, but
 `_META_PATTERNS` has no entry for it, so it cannot be written in a box. The BASIC view's

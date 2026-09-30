@@ -4885,6 +4885,36 @@ function _bxKind() {
 const _RAWB_SPOTIFY_URL = /open\.spotify\.com\/(?:intl-[\w-]+\/)?(track|album|artist|playlist)\/([A-Za-z0-9]+)/;
 const _RAWB_YT_ID = /(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/;
 const _RAWB_YT_LIST = /youtube\.com\/.*[?&]list=([\w-]+)/;
+const _RAWB_YT_CHANNEL = /youtube\.com\/(?:channel\/(UC[\w-]{22})|@[^/?#\s]+|c\/[^/?#\s]+|user\/[^/?#\s]+)/;
+/* A channel address, as the line that plays its uploads (`yt:playlist:UU…`).
+   Mopidy-YouTube looks a channel ADDRESS up to nothing, so pasted as is it is a
+   line that plays nothing. `/channel/UC…` converts on the spot; an @handle (or
+   /c/, /user/) names the channel without its id, and only the page holds it —
+   asked of the server, once per address. While the answer is on its way the
+   builder says so, then refreshes, and names the line after the channel. */
+const _rawbYtChannels = {};
+function _rawbYtChannel(url) {
+  const m = _RAWB_YT_CHANNEL.exec(url);
+  if (!m) return null;
+  if (m[1]) return 'yt:playlist:UU' + m[1].slice(2);
+  const hit = _rawbYtChannels[url];
+  if (hit && hit.uri) return hit.uri;
+  if (hit && hit.error) return { error: hit.error };
+  if (!hit) {
+    _rawbYtChannels[url] = { pending: true };
+    fetch(API + '/youtube_channel?url=' + encodeURIComponent(url)).then(r => r.json())
+      .catch(() => ({ error: 'The server could not be reached.' }))
+      .then(d => {
+        _rawbYtChannels[url] = d && d.uri ? d : { error: (d && d.error) || 'No channel found at that address.' };
+        const l = document.getElementById('rawb-label');
+        if (d && d.name && l && !l.value.trim() && (_bxRawB.content || '').includes(url)) {
+          l.value = _bxRawB.label = d.name;
+        }
+        _rawbRefresh();
+      });
+  }
+  return { error: 'Looking up the channel…', pending: true };
+}
 const _rawbIsUrl = s => /^https?:\/\/\S+$/i.test(s);
 function _rawbSpotify(kind) {
   return s => {
@@ -4919,11 +4949,16 @@ const RAWB_TYPES = [
     hint: 'O2M reads the page and plays what it holds — a film site, a replay listing.',
     build: s => { const u = s.replace(/^(?:web|xp):/, ''); return _rawbIsUrl(u) ? 'web:' + u : { error: 'Paste the page address (https://…).' }; } },
   { group: 'Sources', id: 'youtube', icon: ICON.globe, label: 'YouTube', ph: 'https://www.youtube.com/watch?v=…',
+    hint: 'A video, a playlist, or a channel — a channel plays its own videos, newest first.',
     build: s => {
-      if (/^(?:yt|youtube):\S+$/.test(s)) return s;
-      const v = _RAWB_YT_ID.exec(s); if (v) return 'yt:video:' + v[1];
-      const l = _RAWB_YT_LIST.exec(s); if (l) return 'yt:playlist:' + l[1];
-      return { error: 'Paste a YouTube video or playlist link.' };
+      // `yt:https://…` is how an address usually arrives, and Mopidy-YouTube
+      // reads a channel address that way as nothing: read the address inside.
+      const u = s.replace(/^(?:yt|youtube):(?=https?:)/, '');
+      if (/^(?:yt|youtube):\S+$/.test(u)) return u;
+      const v = _RAWB_YT_ID.exec(u); if (v) return 'yt:video:' + v[1];
+      const l = _RAWB_YT_LIST.exec(u); if (l) return 'yt:playlist:' + l[1];
+      const c = _rawbYtChannel(u); if (c) return c;
+      return { error: 'Paste a YouTube video, playlist or channel link.' };
     } },
   { group: 'Sources', id: 'local', icon: ICON.hardDrive, label: 'Local file', ph: 'local:… · m3u:… · file:…',
     build: s => /^(?:local|m3u|file):\S/.test(s) ? s : { error: 'Start with local:, m3u: or file:.' } },
@@ -4952,10 +4987,13 @@ const _rawbType = id => RAWB_TYPES.find(t => t.id === id) || RAWB_TYPES[0];
 function _rawbDetect(s) {
   // A bare http(s) link IS a valid line (a stream), which is exactly why it is
   // not trusted as one here: a pasted link is far more often a page or a share.
+  // YouTube first: `yt:https://…` IS a well-formed line and would pass as one,
+  // yet for a channel address Mopidy-YouTube plays nothing from it.
+  const yt = _rawbType('youtube').build(s);
+  if (typeof yt === 'string') return { line: yt, as: /^yt:playlist:UU/.test(yt) ? 'YouTube channel — its videos' : 'YouTube' };
+  if (yt.pending || _RAWB_YT_CHANNEL.test(s)) return yt;   // a channel that could not be read says why
   if (!_rawbIsUrl(s) && _bxIsDirective(s)) return { line: s, as: 'already a box line' };
   if (_RAWB_SPOTIFY_URL.test(s)) { const m = _RAWB_SPOTIFY_URL.exec(s); return { line: `spotify:${m[1]}:${m[2]}`, as: 'Spotify ' + m[1] }; }
-  const yt = _rawbType('youtube').build(s);
-  if (typeof yt === 'string') return { line: yt, as: 'YouTube' };
   if (!_rawbIsUrl(s)) return { error: 'Not recognised — choose its type above.' };
   if (/\.(?:xml|rss)(?:[?#]|$)|\/(?:feed|rss)(?:[/?#]|$)/i.test(s)) return { line: 'podcast+' + s, as: 'podcast feed' };
   if (/\.(?:mp3|aac|m3u8?|pls|ogg|opus)(?:[?#]|$)|\/(?:stream|live)(?:[/?#.]|$)|:\d{4,5}\//i.test(s)) return { line: s, as: 'radio stream' };
@@ -4968,16 +5006,16 @@ let _bxRawB = { type: 'auto', label: '', content: '', from: '', to: '' };
    the window in front of the line. Null line = nothing to insert, with `note`. */
 function _rawbCompose() {
   const b = _bxRawB, t = _rawbType(b.type), c = (b.content || '').trim();
-  let line, note = '', error = '';
+  let line, note = '', error = '', pending = false;
   if (!c) error = ' ';
-  else if (t.id === 'auto') { const d = _rawbDetect(c); if (d.error) error = d.error; else { line = d.line; note = 'Read as: ' + d.as; } }
-  else { const r = t.build(c); if (typeof r === 'string') line = r; else error = r.error; }
+  else if (t.id === 'auto') { const d = _rawbDetect(c); if (d.error) { error = d.error; pending = !!d.pending; } else { line = d.line; note = 'Read as: ' + d.as; } }
+  else { const r = t.build(c); if (typeof r === 'string') line = r; else { error = r.error; pending = !!r.pending; } }
   if (line && (b.from || b.to)) {
     if (!(b.from && b.to)) { error = 'A time window needs both a start and an end.'; line = null; }
     else line = `${b.from}-${b.to} > ${line}`;
   }
   const label = (b.label || '').trim().replace(/^#+\s*/, '');
-  return { text: line ? (label ? '#' + label + '\n' : '') + line : '', note, error: error.trim() };
+  return { text: line ? (label ? '#' + label + '\n' : '') + line : '', note, error: error.trim(), pending };
 }
 
 function _rawbHtml() {
@@ -5015,7 +5053,8 @@ function _rawbRefresh() {
   if (!out) return;
   const r = _rawbCompose();
   if (r.error) {
-    out.innerHTML = `<div class="wc-hint-warn">${objEsc(r.error)}</div>`;
+    // A lookup in flight is not a mistake: say it plainly, not in amber.
+    out.innerHTML = `<div class="${r.pending ? 'wc-hint' : 'wc-hint-warn'}">${objEsc(r.error)}</div>`;
   } else if (!r.text) {
     out.innerHTML = `<div class="bx-empty">Nothing yet.</div>`;
   } else {

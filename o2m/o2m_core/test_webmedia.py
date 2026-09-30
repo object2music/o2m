@@ -322,10 +322,6 @@ class TestUri(unittest.TestCase):
         self.assertIsNone(wm._expiry_of('https://example.org/none'))
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class TestPublishedDay(unittest.TestCase):
     """The date the details panel shows. Extractors disagree about which field
     they fill, and the three cases below are the three that were measured:
@@ -374,3 +370,52 @@ class TestLegacyPrefix(unittest.TestCase):
         self.assertTrue(wm.as_uri('https://vimeo.com/1').startswith('web:'))
         self.assertEqual(wm.classify('https://www.dailymotion.com/video/xa8g6ck'),
                          'web:https://www.dailymotion.com/video/xa8g6ck')
+
+
+# The head of youtube.com/@ethiqueettac/videos, cut to what states the channel.
+PAGE_CHANNEL = '''<html><head><title>Éthique et tac - YouTube</title>
+<link rel="canonical" href="https://www.youtube.com/channel/UCa7klG2eM9MHpOfOvxMQpGw">
+<meta property="og:title" content="&Eacute;thique et tac">
+<meta itemprop="identifier" content="UCa7klG2eM9MHpOfOvxMQpGw"></head></html>'''
+
+
+class TestYoutubeChannel(unittest.TestCase):
+    """A channel address becomes the playlist of its uploads: Mopidy-YouTube
+    looks `yt:https://www.youtube.com/@x/videos` up to nothing."""
+
+    def setUp(self):
+        wm._cache.clear()
+        self.fetched = []
+        self._fetch = wm._fetch
+        wm._fetch = lambda url, **kw: (self.fetched.append(url) or url, PAGE_CHANNEL)
+
+    def tearDown(self):
+        wm._fetch = self._fetch
+
+    def test_a_handle_is_read_from_its_page(self):
+        r = wm.youtube_channel('https://www.youtube.com/@ethiqueettac/videos')
+        self.assertEqual(r['uri'], 'yt:playlist:UUa7klG2eM9MHpOfOvxMQpGw')
+        self.assertEqual(r['name'], 'Éthique et tac')
+        self.assertEqual(self.fetched, ['https://www.youtube.com/@ethiqueettac'])
+
+    def test_the_yt_prefix_it_was_typed_with_is_accepted(self):
+        r = wm.youtube_channel('yt:https://www.youtube.com/@ethiqueettac/videos')
+        self.assertEqual(r['channel_id'], 'UCa7klG2eM9MHpOfOvxMQpGw')
+
+    def test_a_channel_id_needs_no_fetch(self):
+        r = wm.youtube_channel('https://www.youtube.com/channel/UCa7klG2eM9MHpOfOvxMQpGw/videos')
+        self.assertEqual(r['uri'], 'yt:playlist:UUa7klG2eM9MHpOfOvxMQpGw')
+        self.assertEqual(self.fetched, [])
+
+    def test_a_page_without_a_channel_is_an_error_and_is_not_remembered(self):
+        wm._fetch = lambda url, **kw: (url, '<html></html>')
+        self.assertIn('error', wm.youtube_channel('https://www.youtube.com/@nobody'))
+        self.assertEqual(wm._cache, {})
+
+    def test_a_video_or_a_lookalike_host_is_not_a_channel(self):
+        self.assertIn('error', wm.youtube_channel('https://www.youtube.com/watch?v=dQw4w9WgXcQ'))
+        self.assertIn('error', wm.youtube_channel('https://notyoutube.com/@x'))
+
+
+if __name__ == '__main__':
+    unittest.main()

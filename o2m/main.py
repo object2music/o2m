@@ -867,6 +867,15 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'name': '', 'episodes': [], 'error': str(e)})
 
+    @api.route('/api/youtube_channel')
+    def api_youtube_channel():
+        """A YouTube channel address -> the box line that plays its uploads.
+        The box editor asks, because only the channel page knows the id behind
+        an @handle and a browser cannot read that page itself (CORS)."""
+        from flask import jsonify
+        from o2m_core import webmedia
+        return jsonify(webmedia.youtube_channel(request.args.get('url', '')))
+
     @api.route('/api/warmup_podcasts')
     def api_warmup_podcasts():
         """Manual trigger for the podcast catalogue refresh."""
