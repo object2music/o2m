@@ -719,6 +719,18 @@ class DatabaseHandler():
             username=username,
         )
 
+    def playlist_log_has(self, track_uri, playlist_uri, action):
+        """Whether the audit log records this action on this track in this playlist."""
+        try:
+            return (PlaylistLog.select(PlaylistLog.track_uri)
+                    .where((PlaylistLog.track_uri == track_uri)
+                           & (PlaylistLog.playlist_uri == playlist_uri)
+                           & (PlaylistLog.action == action))
+                    .limit(1).count() > 0)
+        except Exception as e:
+            print(f"playlist_log_has error: {e}")
+            return False
+
     def get_favorite_rows(self, spoken=False, limit=50, offset=0):
         """Favourites in the browser's row shape, music or spoken.
 

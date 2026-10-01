@@ -405,6 +405,24 @@ known losses are filtered before the pick (this section) or recovered after it
 whose source is short (a missing box, a rate limit, little history at that hour).
 Whether that is still a pattern is what the line is for.
 
+### Incoming: one way in, one way out
+A `new` track that crosses `threshold_playing_count_new` goes to the `incoming` box's
+playlist and **only there** (`_incoming_playlist`), then leaves the `new` inboxes
+(ToListen, Shazam — `_remove_from_new_playlists`). Promotion used to try the playlist
+the track was last played FROM first: that was a reco, the history or someone else's
+playlist, so the add failed (161 promotions to Incoming against 2 real adds,
+May–Sept 2026), or one of ours already holding it, and `'already in'` set `library`
+silently while the track stayed in its inbox.
+
+Filing Incoming is a manual job; skips act only at the margin
+(`threshold_leave_incoming`: ≥ 2 skips and ≥ one skip per two complete plays — 5 of
+107 members on the day it shipped). `_leave_incoming` fires whatever the skip was
+played from (the old path removed only from the playlist the track was PLAYED from,
+so a track served by a reco never left), only if the track is really IN the playlist
+(a manual tidy-up leaves the status at `incoming`), and ends at status `trash` + the
+trash playlist. **No loop**: a track whose log shows a `remove` from Incoming is not
+promoted again (`DatabaseHandler.playlist_log_has`).
+
 ### A playlist named by a hidden box stays out of the AUTO mix
 The `playlists` source draws from every playlist of the Spotify library, and
 membership says nothing about intent: "Liv", named by a `hidden` box, surfaced in

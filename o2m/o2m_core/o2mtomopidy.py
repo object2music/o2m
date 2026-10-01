@@ -4013,65 +4013,37 @@ class O2mToMopidy:
 
         #Add / remove the track to playlist(s) if played above/below discover level
         if self.option_autofill_playlists and (fix == False):
-            uri = []
-            uri.append(track.uri)
+            # The canonical uri, not track.uri: a downloaded track plays as file://,
+            # which no Spotify playlist accepts.
+            uri = [uri]
             _from_option_type = stat.option_type
             _track_name = getattr(track, 'name', None)
 
             #TRACK FINISHED
             if track_finished == True :
                 print("Finished : autofill and remove activated")
-                #NEW > INCOMING : Adding to incoming if "new track" played many times
+                # NEW > INCOMING, and only there. Promotion used to try the playlist
+                # the track was last played from first (library_link): that playlist
+                # was a reco, the history or someone else's playlist, so the add
+                # failed and Incoming took it — 161 times against 2 real adds — or it
+                # was one of ours already holding the track, and 'already in' flipped
+                # the status to 'library' silently, leaving the track in its inbox.
+                # Incoming is the one place a promoted track waits to be filed.
                 if stat.option_type == 'new' and self.threshold_playing_count_new(stat.read_count_end,self.discover_level)==True :
-                    if library_link !='':
-                        print(f"Autofilling Library : {library_link}")
-                        result = self.autofill_spotify_playlist(library_link,uri)
-                        if result: stat.option_type = 'library'
-                        if result and result != 'already in': self._log_playlist_change(uri[0], library_link, 'add', _from_option_type, 'library', _track_name)
+                    incoming = self._incoming_playlist()
+                    # No loop: a track that already LEFT Incoming (skipped out, see
+                    # threshold_leave_incoming) is not let back in by a few more plays.
+                    if incoming and not self.dbHandler.playlist_log_has(uri[0], incoming, 'remove'):
+                        print(f"Autofilling Incoming : {incoming}")
+                        result3 = self.autofill_spotify_playlist(incoming, uri)
+                        if result3: stat.option_type = 'incoming'
+                        if result3 and result3 != 'already in': self._log_playlist_change(uri[0], incoming, 'add', _from_option_type, 'incoming', _track_name)
 
-                    if stat.option_type != 'library' :
-                        box_incoming = self.dbHandler.get_box_by_option_type('incoming')
-                        print(f"Autofilling Incoming : {box_incoming}")
-                        if box_incoming:
-                            if 'spotify:playlist' in box_incoming.data:
-                                result3 = self.autofill_spotify_playlist(box_incoming.data,uri)
-                                if result3: stat.option_type = 'incoming'
-                                if result3 and result3 != 'already in': self._log_playlist_change(uri[0], box_incoming.data, 'add', _from_option_type, 'incoming', _track_name)
-                            if 'm3u' in box_incoming.data :
-                                playlist = self.mopidyHandler.playlists.lookup(box_incoming.data)
-                                #for track in playlist.tracks:
-                                #    if 'spotify:playlist' in track.uri :
-                                #        result = self.autofill_spotify_playlist(track.uri,uri)
-                                #        if result: stat.option_type = 'favorites'
-                                if 'spotify:playlist' in playlist.tracks[0].uri :
-                                    result4 = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
-                                    if result4: stat.option_type = 'incoming'
-                                    if result4 and result4 != 'already in': self._log_playlist_change(uri[0], playlist.tracks[0].uri, 'add', _from_option_type, 'incoming', _track_name)
-
-                        '''for box in self.activeboxs:
-                            #Need to loop on the playlists IN the box/card
-                            discover_level_box = self.get_option_for_box(box, "option_discover_level")
-                            if box.option_type == 'library' and self.threshold_playing_count_new(stat.read_count_end,discover_level_box)==True :
-                                if 'spotify:playlist' in box.data :
-                                    result = self.autofill_spotify_playlist(box.data,uri)
-                                    if result: stat.option_type = 'library'
-                                if 'm3u' in box.data :
-                                    playlist = self.mopidyHandler.playlists.lookup(box.data)
-                                    #for track in playlist.tracks:
-                                    #    if 'spotify:playlist' in track.uri :
-                                    #        result = self.autofill_spotify_playlist(track.uri,uri)
-                                    #        if result: stat.option_type = 'library'
-                                    if 'spotify:playlist' in playlist.tracks[0].uri :
-                                        result = self.autofill_spotify_playlist(playlist.tracks[0].uri,uri)
-                                        if result: stat.option_type = 'library'
-                        '''
-
-                    # Transfer, not duplicate: a track promoted out of 'new' →
-                    # incoming/library is removed from the 'new' box's editable
-                    # playlist(s) (skip the one just added to in the library case;
-                    # non-editable/Spotify-owned playlists fail silently and are ignored).
-                    if _from_option_type == 'new' and stat.option_type in ('incoming', 'library'):
-                        self._remove_from_new_playlists(uri, library_link if stat.option_type == 'library' else None, _from_option_type, _track_name)
+                    # Transfer, not duplicate: a track promoted out of 'new' is
+                    # removed from the 'new' box's editable inbox playlists
+                    # (non-editable/Spotify-owned playlists fail silently).
+                    if _from_option_type == 'new' and stat.option_type == 'incoming':
+                        self._remove_from_new_playlists(uri, None, _from_option_type, _track_name)
 
                 #NORMAL > FAVORITES : Adding any track to favorites if played many times
                 if self.threshold_adding_favorites(stat,self.discover_level)==True :
@@ -4100,6 +4072,12 @@ class O2mToMopidy:
 
             #TRACK SKIPPED
             else:
+                # INCOMING > out, whichever box or reco the skip happened in: the old
+                # path only removed a track from the playlist it was PLAYED from, so
+                # an Incoming track skipped while served by a reco never left.
+                if stat.option_type == 'incoming' and self.threshold_leave_incoming(stat):
+                    self._leave_incoming(stat, uri, _from_option_type, _track_name)
+
                 #Remove track from playlist if skipped many times
                 if self.threshold_remove_track_playlist(stat,self.discover_level)==True and library_link !='':
                     print (f"0. Trying to Trash track {stat.uri} from {library_link}")
@@ -4307,6 +4285,53 @@ class O2mToMopidy:
         """The canonical 'new' editable playlist uri for the ADD (ToListen perso)."""
         box = self._new_target_box()
         return self.get_spotify_playlist_from_box(box) if box else ''
+
+    def _incoming_playlist(self):
+        """The Spotify playlist behind the install's `incoming` box ('' if none):
+        a spotify:playlist line, or the first entry of an m3u holding one."""
+        box = self.dbHandler.get_box_by_option_type('incoming')
+        if not box:
+            return ''
+        link = self.get_spotify_playlist_from_box(box)
+        if link:
+            return link
+        if 'm3u' in (box.data or ''):
+            try:
+                playlist = self.mopidyHandler.playlists.lookup(box.data.strip())
+                if playlist and playlist.tracks and 'spotify:playlist' in playlist.tracks[0].uri:
+                    return playlist.tracks[0].uri
+            except Exception as e:
+                print(f"_incoming_playlist m3u lookup error: {e}")
+        return ''
+
+    def _leave_incoming(self, stat, uri, from_type, track_name):
+        """Skipped out of Incoming: removed from it, copied to the trash playlist,
+        status 'trash'. Only when the track is really IN Incoming — its status says
+        'incoming' long after a manual tidy-up moved it elsewhere, and that tidy-up
+        is the user's answer, not something a skip should overrule."""
+        incoming = self._incoming_playlist()
+        if not incoming or 'spotify:track' not in uri[0]:
+            return
+        try:
+            inside = self.spotifyHandler.is_track_in_playlist(
+                self.username, uri[0].split(':')[2], incoming.split(':')[2])
+        except Exception:
+            inside = False
+        if not inside:
+            return
+        if not self.remove_spotify_playlist(incoming, uri):
+            return
+        print(f"Leaving Incoming (skipped): {stat.uri}")
+        # 'trash', not back to 'new': a track returned to 'new' could be promoted
+        # straight back (the log guard at promotion stops that too).
+        stat.option_type = 'trash'
+        self._log_playlist_change(uri[0], incoming, 'remove', from_type, 'trash', track_name)
+        box_trash = self.dbHandler.get_box_by_option_type('trash')
+        trash = self.get_spotify_playlist_from_box(box_trash) if box_trash else ''
+        if trash:
+            result = self.autofill_spotify_playlist(trash, uri)
+            if result and result != 'already in':
+                self._log_playlist_change(uri[0], trash, 'add', from_type, 'trash', track_name)
 
     def _remove_from_new_playlists(self, uri, exclude_uri, from_type, track_name):
         """Transfer, not duplicate: remove a promoted track from EVERY discovery-'new'
@@ -4706,6 +4731,17 @@ class O2mToMopidy:
             result=True
         return result
 
+    #Threshold INCOMING : leaving Incoming on skips (see _leave_incoming)
+    def threshold_leave_incoming(self, stat):
+        """At least two skips, and at least one skip for every two complete plays.
+        Meant to act at the margin — filing Incoming is a manual job. Relative to
+        the completions, so a track that earned its promotion (3+ full plays) is
+        not thrown out by two skips in a row; two skips against two completions is
+        enough. Unlike the old rule it ignores read_end averages, which flagged a
+        track with zero skips. Checked on a skip, after skipped_count moved."""
+        skips = stat.skipped_count or 0
+        return skips >= 2 and 2 * skips >= (stat.read_count_end or 0)
+
     #Threshold TRACK PLAYLIST : removing a track from a playlist if too many skip
     #discover_level = 5 et read_count_end=0 : skipped_count_end >=5 // and (stat.read_count_end == 0)
     #if (float(stat.skipped_count) > ((11-discover_level)*(stat.read_count_end+1)*0.7)) : 
@@ -4714,8 +4750,6 @@ class O2mToMopidy:
         result = False
         if stat.option_type=="library":
             if (stat.read_end < self.avg_stats['library']['read_end']) and (stat.read_count >= self.avg_stats['library']['read_count']): result=True
-        elif stat.option_type=="incoming":
-            if (stat.read_end < self.avg_stats['incoming']['read_end']) and (stat.read_count >= self.avg_stats['incoming']['read_count']): result=True
         elif stat.option_type=="hidden":
             if (stat.read_end < self.avg_stats['hidden']['read_end']) and (stat.read_count >= self.avg_stats['hidden']['read_count']): result=True
         return result
