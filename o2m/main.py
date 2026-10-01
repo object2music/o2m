@@ -3341,6 +3341,9 @@ with the house Premium account.</li>
                 # Direct lookup from _track_info — no index arithmetic, no parallel lists
                 tlid = event.tl_track.tlid
                 info = o2mHandler._track_info.get(tlid, {})
+                # An 'ended' caused by o2m stopping the track itself is not a skip.
+                interrupted = (event.event == "track_playback_ended"
+                               and o2mHandler.consume_interrupted(tlid))
                 option_type = info.get('option_type', 'new_mopidy')
                 library_link = info.get('library_link', '')
                 data = ''
@@ -3426,11 +3429,11 @@ with the house Premium account.</li>
                 if (event.event == "track_playback_ended") or o2mHandler._is_spoken_uri(effective_uri):
                     
                     try:
-                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri)
+                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri,interrupted=interrupted)
                     except Exception as val_e:
                         print(f"Erreur : {val_e}")
                         o2mHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve
-                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri)
+                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri,interrupted=interrupted)
 
                 if "tunein" in effective_uri:
                     if option_type != 'hidden': o2mHandler.update_stat_raw(effective_uri)

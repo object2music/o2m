@@ -423,6 +423,23 @@ so a track served by a reco never left), only if the track is really IN the play
 trash playlist. **No loop**: a track whose log shows a `remove` from Incoming is not
 promoted again (`DatabaseHandler.playlist_log_has`).
 
+### Library tracks leave their playlist only on clear rejection
+`threshold_remove_track_playlist` (library / hidden): ≥ 3 skips and skips ≥ 2× complete
+plays, **never a liked track**; the track is removed from the playlist it was played
+from only if that playlist really holds it (`_track_in_playlist` — the event's
+fallback `library_link` is the box's FIRST playlist), copied to the trash playlist,
+and the promotion's log guard keeps it from coming round again. The old rule compared
+lifetime completion with the category average: 327 library tracks one skip from the
+trash, 17 liked; it trashed tracks with 15 complete plays. Replayed over the 26
+non-Incoming trashings of May–Sept 2026, the new rule keeps 7 and spares 19.
+
+**o2m stopping a track is not a skip.** Deactivating a box while one of its tracks
+played counted TWO skips (an explicit stat write, then the `ended` event its `stop()`
+emits); clearing the tracklist counted one. `_mark_interrupted` flags the tlid before
+o2m stops it, `consume_interrupted` turns that one `ended` event into
+`update_stat_track(interrupted=True)`: no play, no skip, only a spoken item's
+bookmark. Skips recorded before 2026-10-01 are inflated by it.
+
 ### A playlist named by a hidden box stays out of the AUTO mix
 The `playlists` source draws from every playlist of the Spotify library, and
 membership says nothing about intent: "Liv", named by a `hidden` box, surfaced in

@@ -70,6 +70,9 @@ class O2mToMopidy:
         # Replaces the parallel box.tlids / box.uris / box.option_types / box.library_link lists.
         # {tlid: {'uri': str, 'option_type': str, 'library_link': str, 'box_id': str}}
         self._track_info = {}
+        # tlids whose playback o2m itself cut short (a box deactivated, the
+        # tracklist cleared): their 'ended' event is not a listener's skip.
+        self._interrupted_tlids = set()
         # (owner box uid, uri) → the box LINE that drew it ('tag:jazz',
         # 'spotify:artist:…'). tracklistappend_box returns one flat uri list per
         # box, so add_tracks used to GUESS the source from the box's first
@@ -603,18 +606,11 @@ class O2mToMopidy:
                     next_tlid = current_tlid
 
                     if current_tlid in box_tlids:
-                        # Recording the interrupted play is a courtesy; removing the
-                        # box's tracks is the job. A failed stat write used to abort
-                        # the whole removal, after the box had already left
-                        # activeboxs — its tracks then stayed in the tracklist owned
-                        # by a box nothing knew about any more.
-                        try:
-                            self.update_stat_track(
-                                self.mopidyHandler.playback.get_current_track(),
-                                self.mopidyHandler.playback.get_time_position()
-                            )
-                        except Exception as e:
-                            print(f"box_action_remove({removedBox.uid}): stat of the playing track not recorded: {e}")
+                        # o2m is cutting this track short, not the listener: the
+                        # 'ended' event the stop() below emits must not count as a
+                        # skip. It used to count TWICE — an explicit stat write here,
+                        # then the event — and skips feed the trash thresholds.
+                        self._mark_interrupted()
                         self.mopidyHandler.playback.stop()
 
                         current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
@@ -2871,10 +2867,28 @@ class O2mToMopidy:
         except Exception as e:
             print(f"check_active_boxes_health: reload error: {e}")
 
+    def _mark_interrupted(self):
+        """Flag the current track as stopped by o2m (see _interrupted_tlids)."""
+        try:
+            if self.mopidyHandler.playback.get_state() != 'stopped':
+                tlid = self.mopidyHandler.playback.get_current_tlid()
+                if tlid is not None:
+                    self._interrupted_tlids.add(tlid)
+        except Exception as e:
+            print(f"_mark_interrupted: {e}")
+
+    def consume_interrupted(self, tlid):
+        """Whether this tlid's 'ended' event comes from an o2m interruption (once)."""
+        if tlid in self._interrupted_tlids:
+            self._interrupted_tlids.discard(tlid)
+            return True
+        return False
+
     def starting_mode(self,clear=False,start=False,uid=None):
         #Cleaning 
         if clear == True:
             print("Clearing tracklist and active boxs")
+            self._mark_interrupted()
             self.mopidyHandler.playback.stop()
             self.mopidyHandler.tracklist.clear()
             self._track_info.clear()
@@ -3839,7 +3853,7 @@ class O2mToMopidy:
             print(f"playlist log error: {e}")
 
     # Update tracks stat when finished, skipped or system stopped (if possible)
-    def update_stat_track(self, track, pos=0, option_type='', library_link='', fix=False, uri_override=None):
+    def update_stat_track(self, track, pos=0, option_type='', library_link='', fix=False, uri_override=None, interrupted=False):
         # Populate metadata cache from Mopidy track object (no API call)
         self.spotifyHandler.cache_track_from_mopidy(track)
 
@@ -3905,6 +3919,15 @@ class O2mToMopidy:
             if (rate < 0.05) : 
                 print (f"No Stat : skip artefact {rate}")
                 return None
+
+        # Stopped by o2m (a box deactivated, the tracklist cleared): not a play and
+        # not a skip — nobody chose to stop listening. Only a spoken item's
+        # bookmark is kept, so it still resumes where it was cut.
+        if interrupted:
+            if self._is_spoken_uri(uri):
+                stat.read_position = pos
+                stat.save()
+            return None
 
         if fix==False:
             stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
@@ -4033,7 +4056,11 @@ class O2mToMopidy:
                     incoming = self._incoming_playlist()
                     # No loop: a track that already LEFT Incoming (skipped out, see
                     # threshold_leave_incoming) is not let back in by a few more plays.
-                    if incoming and not self.dbHandler.playlist_log_has(uri[0], incoming, 'remove'):
+                    # Nor one the trash playlist took (a library track skipped out:
+                    # 'Dahomey Dance' went round to the trash three times).
+                    trash = self._trash_playlist()
+                    if (incoming and not self.dbHandler.playlist_log_has(uri[0], incoming, 'remove')
+                            and not (trash and self.dbHandler.playlist_log_has(uri[0], trash, 'add'))):
                         print(f"Autofilling Incoming : {incoming}")
                         result3 = self.autofill_spotify_playlist(incoming, uri)
                         if result3: stat.option_type = 'incoming'
@@ -4079,38 +4106,30 @@ class O2mToMopidy:
                     self._leave_incoming(stat, uri, _from_option_type, _track_name)
 
                 #Remove track from playlist if skipped many times
-                if self.threshold_remove_track_playlist(stat,self.discover_level)==True and library_link !='':
-                    print (f"0. Trying to Trash track {stat.uri} from {library_link}")
-                    #Adding to trash
-                    box_trash = self.dbHandler.get_box_by_option_type('trash')
-                    if box_trash:
-                        if 'spotify:playlist' in box_trash.data:
-                            print (f"1. Putting in Trash track {stat.uri}")
-                            result = self.autofill_spotify_playlist(box_trash.data,uri)
-                            if result and result != 'already in': self._log_playlist_change(uri[0], box_trash.data, 'add', _from_option_type, 'trash', _track_name)
-
-                            #If trashed, let's trash it really
-                            if result:
-                                print (f"2. Putting in Trash track {stat.uri}")
-                                #self.spotifyHandler.remove_tracks_playlist(library_link, uri)
-                                result2 = self.remove_spotify_playlist(library_link,uri)
-                                if result2:
-                                    stat.option_type = 'new'
-                                    self._log_playlist_change(uri[0], library_link, 'remove', _from_option_type, 'new', _track_name)
-                                    print (f"3. Track trashed {stat.uri} from {library_link}")
-                                #stat.option_type = 'trash'
-
-                        '''
-                        if 'm3u' in box_trash.data :
-                            playlist = self.mopidyHandler.playlists.lookup(box_trash.data)
-                            for track in playlist.tracks:
-                                if 'spotify:playlist' in track.uri :
-                                    result = self.autofill_spotify_playlist(box_trash,uri)
-                                    if result:  
-                                        if (stat.option_type == "incoming"): 
-                                            #self.spotifyHandler.remove_tracks_playlist(track.uri, uri)
-                                        stat.option_type = 'trash'
-                        '''
+                # library_link is where the track was played FROM — and when the
+                # event knows nothing better, main.py falls back to the first
+                # playlist of the box, which need not hold the track at all. A
+                # removal from a playlist the track is not in still "succeeds"
+                # (Spotify returns a snapshot), and used to log a removal that never
+                # happened and reset the status. So: only a playlist that holds it.
+                _link = (library_link or '').strip()
+                if (self.threshold_remove_track_playlist(stat,self.discover_level)==True
+                        and _link.startswith('spotify:playlist:')
+                        and self._track_in_playlist(uri[0], _link)):
+                    print (f"0. Trying to Trash track {stat.uri} from {_link}")
+                    trash = self._trash_playlist()
+                    if trash:
+                        result = self.autofill_spotify_playlist(trash,uri)
+                        if result and result != 'already in': self._log_playlist_change(uri[0], trash, 'add', _from_option_type, 'trash', _track_name)
+                        #If trashed, let's trash it really
+                        if result:
+                            result2 = self.remove_spotify_playlist(_link,uri)
+                            if result2:
+                                # Back to 'new'; the promotion's log guard keeps it
+                                # from coming round again.
+                                stat.option_type = 'new'
+                                self._log_playlist_change(uri[0], _link, 'remove', _from_option_type, 'new', _track_name)
+                                print (f"Track trashed {stat.uri} from {_link}")
 
                 #Remove track from favorites if skipped many times
                 if self.threshold_removing_favorites(stat,self.discover_level)==True:
@@ -4304,6 +4323,22 @@ class O2mToMopidy:
                 print(f"_incoming_playlist m3u lookup error: {e}")
         return ''
 
+    def _track_in_playlist(self, track_uri, playlist_uri):
+        """Whether a Spotify playlist really holds this track (live read; False on
+        any doubt, so a removal is never attempted blind)."""
+        try:
+            if 'spotify:track:' not in track_uri or 'spotify:playlist:' not in playlist_uri:
+                return False
+            return bool(self.spotifyHandler.is_track_in_playlist(
+                self.username, track_uri.split(':')[2], playlist_uri.strip().split(':')[2]))
+        except Exception:
+            return False
+
+    def _trash_playlist(self):
+        """The Spotify playlist behind the install's `trash` box ('' if none)."""
+        box = self.dbHandler.get_box_by_option_type('trash')
+        return self.get_spotify_playlist_from_box(box) if box else ''
+
     def _leave_incoming(self, stat, uri, from_type, track_name):
         """Skipped out of Incoming: removed from it, copied to the trash playlist,
         status 'trash'. Only when the track is really IN Incoming — its status says
@@ -4312,12 +4347,7 @@ class O2mToMopidy:
         incoming = self._incoming_playlist()
         if not incoming or 'spotify:track' not in uri[0]:
             return
-        try:
-            inside = self.spotifyHandler.is_track_in_playlist(
-                self.username, uri[0].split(':')[2], incoming.split(':')[2])
-        except Exception:
-            inside = False
-        if not inside:
+        if not self._track_in_playlist(uri[0], incoming):
             return
         if not self.remove_spotify_playlist(incoming, uri):
             return
@@ -4326,8 +4356,7 @@ class O2mToMopidy:
         # straight back (the log guard at promotion stops that too).
         stat.option_type = 'trash'
         self._log_playlist_change(uri[0], incoming, 'remove', from_type, 'trash', track_name)
-        box_trash = self.dbHandler.get_box_by_option_type('trash')
-        trash = self.get_spotify_playlist_from_box(box_trash) if box_trash else ''
+        trash = self._trash_playlist()
         if trash:
             result = self.autofill_spotify_playlist(trash, uri)
             if result and result != 'already in':
@@ -4743,16 +4772,22 @@ class O2mToMopidy:
         return skips >= 2 and 2 * skips >= (stat.read_count_end or 0)
 
     #Threshold TRACK PLAYLIST : removing a track from a playlist if too many skip
-    #discover_level = 5 et read_count_end=0 : skipped_count_end >=5 // and (stat.read_count_end == 0)
-    #if (float(stat.skipped_count) > ((11-discover_level)*(stat.read_count_end+1)*0.7)) : 
-    #if (float(stat.skipped_count) > ((5)*(stat.read_count_end + 1)*0.7)) : 
     def threshold_remove_track_playlist(self,stat,discover_level):
-        result = False
-        if stat.option_type=="library":
-            if (stat.read_end < self.avg_stats['library']['read_end']) and (stat.read_count >= self.avg_stats['library']['read_count']): result=True
-        elif stat.option_type=="hidden":
-            if (stat.read_end < self.avg_stats['hidden']['read_end']) and (stat.read_count >= self.avg_stats['hidden']['read_count']): result=True
-        return result
+        """A library/hidden track leaves the playlist it was played from (and goes
+        to the trash playlist) when skips clearly dominate: at least 3, and at
+        least twice its complete plays. Never a liked track.
+
+        It used to compare the track's lifetime completion with the category
+        AVERAGE (read_end < avg, read_count >= avg): half the library sits below
+        an average by construction, so 327 tracks were one skip from the trash —
+        17 of them liked, 110 played to the end 5 times or more — and it trashed
+        'Au revoir mon amour' (15 complete plays) and 'Ginger Bread' (liked).
+        Replayed over the 26 non-Incoming trashings logged May–Sept 2026, this
+        rule keeps 7 (all clear rejections) and spares the other 19."""
+        if stat.option_type not in ("library", "hidden") or stat.liked:
+            return False
+        skips = stat.skipped_count or 0
+        return skips >= 3 and skips >= 2 * (stat.read_count_end or 0)
 
 #   MISC FUNCTIONS
     # Appelle ou rappelle la fonction de recommandation pour allonger la tracklist et poursuivre la lecture de manière transparente
