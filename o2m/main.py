@@ -2431,6 +2431,34 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/basic_all')
+    def api_basic_all():
+        """The Basic view's ALL button, server-side, for callers with no page — the
+        IR remote's centre key (irexec → curl). Same rule as toggleBasicAll: any
+        category on → everything off; nothing on → every category on, in a random
+        order (a fixed one always opened on music), then playback started.
+        Categories with no box are left out, as the button leaves them out."""
+        from flask import jsonify
+        import random
+        try:
+            cats = {c: b for c, b in o2mHandler.get_basic_categories().items()
+                    if c in ('music', 'podcast', 'info', 'radio') and b}
+            active_uids = {b.uid for b in o2mHandler.activeboxs}
+            on = [c for c, boxes in cats.items() if any(b['uid'] in active_uids for b in boxes)]
+            order = list(cats)
+            random.shuffle(order)
+            if on:
+                for c in order:
+                    if c in on:
+                        o2mHandler.meta_remove(c)
+                return jsonify({'ok': True, 'action': 'off', 'cats': on})
+            for c in order:
+                o2mHandler.meta_fill(c)
+            o2mHandler.play_or_resume()
+            return jsonify({'ok': True, 'action': 'on', 'cats': order})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/event', methods=['POST'])
     def api_event():
         """Playback event pushed in-process by the Mopidy-O2M extension.
