@@ -34,8 +34,8 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 (popularity scoring), `test_boxdirectives.py` (time windows, mood/dl directives),
 `test_player_port.py` (the player port's anti-drift check), `test_selection.py`
 (the samplers and the anti-repeat cooldown), `test_webmedia.py`
-(the `web:` page reader) and `test_virtualbox.py` (activating an album or an artist
-as a box). Run from the repo root (package-prefixed, since they import
+(the `web:` page reader), `test_virtualbox.py` (activating an album or an artist
+as a box) and `test_fairlock.py` (the box lock's arrival-order queue). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -1576,8 +1576,8 @@ overwrite the value. Treat it as "authoritative", not "curated by a human".
 A mood change during a fill races it (part of the queue dropped, part not). The page
 used to be the only guard (`mixBusy`), and it only knows the fills IT started: a tag,
 the IR remote (`/api/basic_all`), another device or the watchdog's reload left every
-other interface live. Measured: a remote ALL takes ~35 s, past the box lock's 30 s
-timeout, after which a waiting request runs anyway.
+other interface live. Measured: a remote ALL takes ~35 s, past the box lock's old
+30 s timeout, after which a waiting request ran anyway.
 
 - **The server counts fills** (`O2mToMopidy.filling()` / `is_filling()`): `/api/box`,
   `/api/object_toggle`, `/api/basic_toggle`, `/api/basic_all`, the mood apply and the
@@ -1588,6 +1588,16 @@ timeout, after which a waiting request runs anyway.
   the one non-idempotent request: `trigger(key)` drops a repeat of the same key while
   it is in flight or within 1 s of its end (an IR key held down, an NFC double read).
   Explicit `add`/`remove` are not guarded — they state the wanted state.
+- **Boxes put down meanwhile WAIT, in arrival order** (`o2m_core/fairlock.py`). The
+  lock was an `RLock` bounded at 30 s: no order among waiters, and past 30 s a tag put
+  down behind an ALL ran alongside it. It is now a FIFO reentrant lock; the bound
+  (`_box_lock_timeout`, 600 s) is only a net against a wedged op and logs `NOT
+  ACQUIRED` when reached. `capture_fill` keeps 30 s (`_capture_lock_timeout`): its
+  caller is a screen waiting, it refuses instead. Measured: three tags put down 1, 2
+  and 3 s into an ALL finished at 39.7, 45.3 and 50.8 s, in that order, all active.
+- **The watchdog stands down during a fill** (`check_active_boxes_health`): "active
+  box + empty tracklist" is what the first seconds of any fill look like, and its
+  reload would have queued behind the fill and added the same boxes again.
 - **Two flags in the page, on purpose.** `mixBusy` locks on the click, with no round
   trip — a gesture made here must answer at once. `serverBusy` follows the server:
   read by `refreshActive`, asked on every `tracklist_changed` (how a foreign fill

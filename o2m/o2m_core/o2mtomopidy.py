@@ -12,6 +12,7 @@ from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
 from o2m_core import selection
 from o2m_core import virtualbox as vbox
+from o2m_core.fairlock import FairRLock
 from o2m_core.player import InertPlayer
 
 '''
@@ -82,8 +83,18 @@ class O2mToMopidy:
         # Serialize box add/remove/reload ops (Flask HTTP threads + mopidy-event thread). RLock
         # is reentrant so a cascade (box: include) re-enters on the same thread without deadlock,
         # and the `with` release is exception-safe (a failed load no longer wedges the mutex).
-        self._box_lock = threading.RLock()
-        self._box_lock_timeout = 30  # seconds; on timeout we proceed rather than hang forever
+        # FAIR: waiters are served in arrival order, so boxes put down one after
+        # another fill in that order (an RLock promises no order at all).
+        self._box_lock = FairRLock()
+        # A box waiting its turn WAITS: a remote ALL alone takes ~35s, and the old
+        # 30s bound let a tag put down meanwhile run alongside it — the concurrent
+        # mutation of activeboxs this lock exists to prevent. The bound left is a
+        # safety net against a wedged op (a Mopidy call that never returns), not
+        # a queueing policy; reaching it is a bug, and logged as one.
+        self._box_lock_timeout = 600
+        # capture_fill answers a resolution request (Mopidy browsing a box) and
+        # refuses rather than wait: that caller is waiting on a screen.
+        self._capture_lock_timeout = 30
         # How many fills are running right now, whoever asked (a page, an NFC tag,
         # the IR remote, the watchdog). The pages only know the fills THEY started,
         # so this is what lets every interface hold its dials during the others —
@@ -574,13 +585,14 @@ class O2mToMopidy:
     @contextlib.contextmanager
     def _box_ops_lock(self):
         """Reentrant, exception-safe mutex around box add/remove/reload. Bounded acquire so a
-        stuck/slow op can't wedge everything — the old self.queue polling waited up to 120s and,
-        worse, never released on exception (a failed load left it stuck, so the next remove hung
-        the full 120s). On timeout we proceed without the lock rather than hang forever, matching
-        the old 'eventually run it' behaviour."""
+        wedged op can't block everything for ever — the old self.queue polling waited up to
+        120s and, worse, never released on exception (a failed load left it stuck, so the next
+        remove hung the full 120s). Waiters queue in arrival order; the bound
+        (`_box_lock_timeout`) is only a safety net, past which we proceed without the lock."""
         acquired = self._box_lock.acquire(timeout=self._box_lock_timeout)
         if not acquired:
-            print(f"box lock: not acquired within {self._box_lock_timeout}s — proceeding anyway")
+            print(f"box lock: NOT ACQUIRED within {self._box_lock_timeout}s — a box op is wedged; "
+                  f"proceeding anyway ({self._box_lock.waiting()} still queued)")
         try:
             yield
         finally:
@@ -1253,7 +1265,7 @@ class O2mToMopidy:
         silently dropped. If the lock cannot be had, this refuses.
         """
         captured = []
-        wait = self._box_lock_timeout if timeout is None else timeout
+        wait = self._capture_lock_timeout if timeout is None else timeout
         if not self._box_lock.acquire(timeout=wait):
             raise RuntimeError(f"capture_fill: box lock not acquired within {wait}s")
         real_add_tracks = self.add_tracks
@@ -2901,6 +2913,11 @@ class O2mToMopidy:
         attempt (15s) — the cheap emptiness check itself always runs, so a
         healthy poll never suppresses the next, actually-empty one."""
         if not self.activeboxs:
+            return
+        # A fill in progress is an empty tracklist with an active box by
+        # definition: its first box is in activeboxs before its first track lands.
+        # Reloading then would queue behind it and add the same boxes twice.
+        if self.is_filling():
             return
         try:
             length = self.mopidyHandler.tracklist.get_length()
