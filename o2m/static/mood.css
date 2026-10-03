@@ -973,11 +973,15 @@
     :root[data-theme="overprint"] #top-zone { height: auto; }
     :root[data-theme="overprint"] #track-details { height: var(--ovp-w); }
 
-    /* The three columns are exactly equal thirds (flex-basis 0 + equal grow). */
-    #boxes-panel { flex: 1 1 0; border-top: none; border-right: 1px solid var(--border);
+    /* The three columns are exactly equal thirds (flex-basis 0 + equal grow).
+       Order on screen: Boxes · Tracklist · Mood — the tracklist sits beside what
+       fills it, the settings go to the edge. Set with `order`, not in the markup:
+       the phone accordion keeps its own order (Boxes · Mood · Tracklist). The
+       separator is the right border of the first two, so it follows the order. */
+    #boxes-panel { order: 1; flex: 1 1 0; border-top: none; border-right: 1px solid var(--border);
                    padding: 0; min-width: 0; }
-    #left-panel  { flex: 1 1 0; border-right: 1px solid var(--border); min-width: 0; }
-    #tracklist-col { flex: 1 1 0; min-width: 0; }
+    #tracklist-col { order: 2; flex: 1 1 0; border-right: 1px solid var(--border); min-width: 0; }
+    #left-panel  { order: 3; flex: 1 1 0; min-width: 0; }
     /* En-têtes de colonnes : alignés (même top/left) et statiques au scroll */
     #boxes-panel-label, #settings-label, #tracklist-label {
       position: sticky; top: 0; z-index: 6; background: var(--bg);
