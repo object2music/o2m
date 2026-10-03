@@ -459,7 +459,7 @@ function makeDraggable(id, onChange) {
     return Math.min(Math.max(deg, 0), 270) / 270;
   }
   svg.addEventListener('pointerdown', e => {
-    if (mixBusy) return;
+    if (mixBusy || serverBusy) return;
     active = true; svg.setPointerCapture(e.pointerId);
     const v = v01fromEvent(e); setDial(id, v); onChange(v);
   });
@@ -489,17 +489,47 @@ function shouldApplyMood() {
 let mixBusy = false;
 function setMixBusy(on, lockTiles = false) {
   mixBusy = !!on;
-  document.body.classList.toggle('mix-busy', mixBusy);
+  if (!mixBusy) {
+    _localReleasedAt = performance.now();
+    // The server still said busy during our own fill: ask now rather than pulse
+    // on until the next poll — releasing a gesture made here must feel instant.
+    if (serverBusy && typeof OBJGRID !== 'undefined') OBJGRID.refreshActive();
+  }
+  paintBusy();
   // Drop a change debounced just before — and release its dirty flag with it:
   // the apply that would have cleared it will now never run, and a stuck flag
   // freezes the dials against every later refresh.
   if (mixBusy) { clearTimeout(applyTimer); _moodDirty = false; }
-  document.querySelectorAll('#basic-all').forEach(b => { b.disabled = mixBusy; });
   // lockTiles: a rebuild that REPLACES the whole queue (dial change, auto-mix start)
   // parks the category tiles too — a category toggled meanwhile would be half in,
   // half out of the new queue. A single tile's own fill does not (queue instead).
   if (lockTiles || !mixBusy)
     document.querySelectorAll('#basic-toggles .basic-toggle').forEach(b => { b.disabled = mixBusy; });
+}
+
+/* A fill some OTHER caller is running — an NFC tag, the IR remote, another
+   device, the server's own watchdog. mixBusy only knows the fills this page
+   started; this one comes from the server (`busy` in /api/active_objects) and
+   holds the same controls. Two flags rather than one on purpose: a gesture made
+   here locks at once from mixBusy, with no round trip, and this one only
+   follows the server. While it is on, the server is asked again every second,
+   so the dials come back as soon as the fill is over. */
+let serverBusy = false, _serverBusyTimer = null, _localReleasedAt = 0;
+function setServerBusy(on, askedAt = performance.now()) {
+  on = !!on;
+  // An answer to a request sent during OUR fill, landing after we released it,
+  // describes that fill — not a new one. Taking it would pulse the dials again.
+  if (on && askedAt < _localReleasedAt) return;
+  clearTimeout(_serverBusyTimer);
+  if (on) _serverBusyTimer = setTimeout(() => OBJGRID.refreshActive(), 1000);
+  if (on === serverBusy) return;
+  serverBusy = on;
+  paintBusy();
+}
+function paintBusy() {
+  const busy = mixBusy || serverBusy;
+  document.body.classList.toggle('mix-busy', busy);
+  document.querySelectorAll('#basic-all').forEach(b => { b.disabled = busy; });
 }
 
 /* True from the moment a dial moves until its value has actually been applied.
@@ -526,6 +556,8 @@ function scheduleApply() {
 
 async function applyMood() {
   if (mixBusy) { _moodDirty = false; return; }   // a fill is in flight — its result would be half-replaced
+  // Someone else's fill: the gesture is kept and sent once it is over.
+  if (serverBusy) { applyTimer = setTimeout(applyMood, 1000); return; }
   // Basic view: the dials are settings, the actuators are the switches. With no
   // actuator on, just save the values server-side — don't launch anything.
   const basicIdle = isBasic() && basicCats
@@ -545,6 +577,7 @@ async function applyMood() {
   // The server rebuilds the queue for the duration of this call: dials, tiles, ALL
   // and Auto are parked meanwhile (same pulse as a tile fill), released in finally.
   setMixBusy(true, true);
+  let retry = false;
   try {
     const body = { energy: appState.energy, valence: appState.valence,
                    discover_level: appState.dl, genres: appState.genres };
@@ -553,6 +586,11 @@ async function applyMood() {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
     });
+    if (r.status === 409) {   // a fill started elsewhere before the poll could tell us
+      retry = true;
+      setFeedback('Waiting for the current fill…');
+      return;
+    }
     const d = await r.json();
     if (d.status === 'settings_saved') {
       setFeedback(basicIdle ? 'Settings saved — turn Music on to start'
@@ -573,7 +611,8 @@ async function applyMood() {
     setMixBusy(false);
     // Released here rather than on the happy path: a flag left set would freeze the
     // dials against every later refresh — a worse failure than the race it guards.
-    _moodDirty = false;
+    _moodDirty = retry;
+    if (retry) { setServerBusy(true); applyTimer = setTimeout(applyMood, 1000); }
     if (isBasic()) refreshBasicToggles();   // tiles were parked (skipped by the sync): catch up now
   }
 }
@@ -737,7 +776,7 @@ function shuffledCats() {
 
 let _allRunning = false;
 async function toggleBasicAll(btn) {
-  if (!basicCats || mixBusy || _catDraining) return;
+  if (!basicCats || mixBusy || serverBusy || _catDraining) return;
   const cats = shuffledCats();
   const tileOn = c => !!document.querySelector(`.basic-toggle[data-cat="${c}"]`)?.classList.contains('on');
   // Read from the tiles, like everything else: the user is acting on what is shown.
@@ -8246,7 +8285,12 @@ async function updateProgress() {          // one-off network resync (not a 1s l
 let _tlChangeTimer = null;
 function scheduleTracklistRefresh() {
   clearTimeout(_tlChangeTimer);
-  _tlChangeTimer = setTimeout(refreshNowPlaying, 300);
+  _tlChangeTimer = setTimeout(() => {
+    refreshNowPlaying();
+    // A tracklist moving under us is how a fill started elsewhere shows up first:
+    // ask whether one is running instead of waiting for the 10s poll.
+    if (typeof OBJGRID !== 'undefined') OBJGRID.refreshActive();
+  }, 300);
 }
 
 function onMopidyEvent(m) {

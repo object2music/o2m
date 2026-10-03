@@ -508,10 +508,13 @@ const OBJGRID = (() => {
   /* One call for the whole column — objects AND boxes — and the only place the
      active state is read. Everything that changes it ends here. */
   async function refreshActive() {
+    const askedAt = performance.now();
     try {
       const d = await fetch(API + '/active_objects').then(r => r.json());
       state.active = new Map(((d && d.items) || []).map(o => [o.uri, o]));
       state.activeBoxes = new Set((d && d.boxes) || []);
+      // A fill running server-side, whoever started it (see setServerBusy).
+      if (typeof setServerBusy === 'function') setServerBusy(!!(d && d.busy), askedAt);
     } catch (e) { return; }
     paint();
   }

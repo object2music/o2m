@@ -84,6 +84,15 @@ class O2mToMopidy:
         # and the `with` release is exception-safe (a failed load no longer wedges the mutex).
         self._box_lock = threading.RLock()
         self._box_lock_timeout = 30  # seconds; on timeout we proceed rather than hang forever
+        # How many fills are running right now, whoever asked (a page, an NFC tag,
+        # the IR remote, the watchdog). The pages only know the fills THEY started,
+        # so this is what lets every interface hold its dials during the others —
+        # and what lets POST /api/mood refuse instead of racing them.
+        self._fills = 0
+        self._fills_mutex = threading.Lock()
+        # Trigger key → monotonic time it was last seen in flight or finished.
+        # Swallows the repeats of a remote key held down and NFC double reads.
+        self._triggers = {}
         # PLAYED uri → the uri o2m keeps history under. Two things need it, for
         # the same reason: a downloaded Spotify track is played from file://,
         # and an 'web:' media is played from a signed CDN url that is worthless
@@ -577,6 +586,49 @@ class O2mToMopidy:
         finally:
             if acquired:
                 self._box_lock.release()
+
+    @contextlib.contextmanager
+    def filling(self):
+        """Mark a fill (or a removal) as running for the time of the block.
+        Counted, since fills from different callers overlap."""
+        with self._fills_mutex:
+            self._fills += 1
+        try:
+            yield
+        finally:
+            with self._fills_mutex:
+                self._fills -= 1
+
+    def is_filling(self):
+        return self._fills > 0
+
+    @contextlib.contextmanager
+    def trigger(self, key, quiet=1.0):
+        """Run a TOGGLE trigger once. Yields False — do nothing — when the same
+        key is still in flight, or finished less than `quiet` seconds ago.
+
+        A toggle is the one request that is not idempotent: an IR key held down
+        repeats every ~100ms and a tag can be read twice, and the second copy of
+        "toggle" undoes the first — a box on, then off again mid-fill. Explicit
+        add/remove needs no guard; they say the state they want."""
+        now = time.monotonic()
+        with self._fills_mutex:
+            last = self._triggers.get(key)
+            busy = last is not None and (last == float('inf') or now - last < quiet)
+            if not busy:
+                self._triggers[key] = float('inf')    # in flight
+                if len(self._triggers) > 256:         # forget long-finished keys
+                    self._triggers = {k: t for k, t in self._triggers.items()
+                                      if t == float('inf') or now - t < quiet}
+        if busy:
+            print(f"trigger {key}: repeat ignored")
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            with self._fills_mutex:
+                self._triggers[key] = time.monotonic()
 
     def box_action_remove(self,box,removedBox):
         # A box that is no longer active can neither inherit nor be inherited from.
@@ -2863,7 +2915,8 @@ class O2mToMopidy:
         print(f"check_active_boxes_health: {len(self.activeboxs)} active box(es) but empty "
               f"tracklist (mopidy restarted independently?) — auto-refilling")
         try:
-            self.reload_active_boxes()
+            with self.filling():
+                self.reload_active_boxes()
         except Exception as e:
             print(f"check_active_boxes_health: reload error: {e}")
 

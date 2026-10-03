@@ -1,4 +1,4 @@
-import logging, subprocess, os, spotipy, json, threading, requests
+import logging, subprocess, os, spotipy, json, threading, requests, contextlib
 
 from mopidyapi import MopidyAPI
 from o2m_core import util
@@ -302,46 +302,52 @@ if __name__ == "__main__":
         if option_type!='':
             box = o2mHandler.dbHandler.get_box_by_option_type(option_type)
         #print (f"ACTIVE TAGS : {o2mHandler.activeboxs}")
-        
+        if box is None:
+            return "no TAG"
+        # The decision (is it on?) and the action are taken under the same lock:
+        # read outside it, two requests close together both saw "off" and both
+        # added. A toggle repeated while the first is still running is dropped.
+        with o2mHandler.trigger('box:' + box.uid) if mode == 'toogle' else contextlib.nullcontext(True) as go:
+            if not go:
+                return "No action"
+            with o2mHandler._box_ops_lock(), o2mHandler.filling():
+                return _box_action_decided(box, mode)
+
+    def _box_action_decided(box, mode):
         #Active Toogle  Add     Remove
-        #yes     Remove  Not     Remove  
+        #yes     Remove  Not     Remove
         #no      Add     Add     Not
-        
-        if box != None:
-            action = 'No'
-            #PRESENT
-            if box in o2mHandler.activeboxs: 
-                if mode == 'toogle' or mode == 'remove': action = 'remove'
-            #ABSENT
-            else:
-                if mode == 'toogle' or mode == 'add': action = 'add'
+        action = 'No'
+        #PRESENT
+        if box in o2mHandler.activeboxs:
+            if mode == 'toogle' or mode == 'remove': action = 'remove'
+        #ABSENT
+        else:
+            if mode == 'toogle' or mode == 'add': action = 'add'
 
-            if action == 'remove':
-                try: 
-                    removedBox = next((x for x in o2mHandler.activeboxs if x.uid == box.uid), None)
-                    print(f"removed box {removedBox}")
-                    o2mHandler.deactivate_box(removedBox or box)
-                    return "TAG removed"
-                except Exception as val_e: 
-                    print(f"Erreur : {val_e}")
-                    return(val_e)
+        if action == 'remove':
+            try:
+                removedBox = next((x for x in o2mHandler.activeboxs if x.uid == box.uid), None)
+                print(f"removed box {removedBox}")
+                o2mHandler.deactivate_box(removedBox or box)
+                return "TAG removed"
+            except Exception as val_e:
+                print(f"Erreur : {val_e}")
+                return(val_e)
 
-            if action == 'add':
-                try:
-                    o2mHandler.activeboxs.append(box)  #adding box to list
-                    print(f"added box {box}") 
-                    o2mHandler.note_box_activation()   # newest intent: outranks the dials
-                    o2mHandler.box_action(box)
-                    #box.add_count()  # Incrémente le compteur de contacts pour ce box
-                    return "TAG added"
-                except Exception as val_e: 
-                    print(f"Erreur : {val_e}")
-                    return(val_e)
-            
-            if action == 'No':
-                return ("No action")
-                
-        else: return "no TAG"
+        if action == 'add':
+            try:
+                o2mHandler.activeboxs.append(box)  #adding box to list
+                print(f"added box {box}")
+                o2mHandler.note_box_activation()   # newest intent: outranks the dials
+                o2mHandler.box_action(box)
+                #box.add_count()  # Incrémente le compteur de contacts pour ce box
+                return "TAG added"
+            except Exception as val_e:
+                print(f"Erreur : {val_e}")
+                return(val_e)
+
+        return "No action"
 
     # ─── Édition : auth par identité Spotify (proxy Iris public, TEMPORAIRE — migrer en HTTPS) ───
     import functools
@@ -678,7 +684,15 @@ if __name__ == "__main__":
         # have to look up what the mosaic just displayed.
         name = (request.args.get('name') or '').strip()
         try:
-            r = virtualbox.toggle(o2mHandler, uri, mode=mode, name=name)
+            # Same guards as /api/box: one lock around the decision and the fill,
+            # and a toggle repeated while the first runs is dropped.
+            with o2mHandler.trigger('obj:' + uri) if mode == 'toogle' else contextlib.nullcontext(True) as go:
+                if not go:
+                    return jsonify({'ok': True, 'uri': uri, 'action': 'none',
+                                    'active': virtualbox.find_active(o2mHandler, uri) is not None,
+                                    'kind': virtualbox.kind_of(uri)})
+                with o2mHandler._box_ops_lock(), o2mHandler.filling():
+                    r = virtualbox.toggle(o2mHandler, uri, mode=mode, name=name)
             return jsonify(r), (200 if r.get('ok') else 400)
         except Exception as e:
             # Logged, not only returned: a 500 here once left 29 orphan tracks and
@@ -695,8 +709,11 @@ if __name__ == "__main__":
         refresh."""
         from flask import jsonify
         try:
+            # `busy`: a fill is running, whoever started it — the page holds its
+            # dials while it is true, which it cannot know from its own requests.
             return jsonify({'items': virtualbox.active_objects(o2mHandler),
-                            'boxes': virtualbox.active_box_uids(o2mHandler)})
+                            'boxes': virtualbox.active_box_uids(o2mHandler),
+                            'busy': o2mHandler.is_filling()})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -1754,6 +1771,11 @@ if __name__ == "__main__":
     def api_mood_post():
         from flask import jsonify, request as req
         data = req.get_json(silent=True) or {}
+        # A fill is running (another page, a tag, the remote): refuse rather than
+        # race it. Checked before anything is stored — the fill in progress reads
+        # these values, and the page re-sends the gesture once the fill is over.
+        if o2mHandler.is_filling():
+            return jsonify({'status': 'busy'}), 409
         if 'energy' in data:
             o2mHandler.mood_energy = float(data['energy'])
         if 'valence' in data:
@@ -1774,7 +1796,8 @@ if __name__ == "__main__":
         # that the next Music launch will use.
         if data.get('apply') is False:
             return jsonify({'status': 'settings_saved', 'tracks_added': 0})
-        added = o2mHandler.apply_mood_settings()
+        with o2mHandler.filling():
+            added = o2mHandler.apply_mood_settings()
         if added is None:
             # Only podcast/info/radio boxes are active: nothing depends on the mood,
             # the settings are stored for the next Music launch.
@@ -2425,9 +2448,10 @@ if __name__ == "__main__":
         if cat not in ('music', 'podcast', 'info', 'radio'):
             return jsonify({'error': 'cat must be music|podcast|info|radio'}), 400
         try:
-            if mode == 'remove':
-                return jsonify({'ok': True, 'removed': o2mHandler.meta_remove(cat)})
-            return jsonify({'ok': True, 'gained': o2mHandler.meta_fill(cat)})
+            with o2mHandler.filling():
+                if mode == 'remove':
+                    return jsonify({'ok': True, 'removed': o2mHandler.meta_remove(cat)})
+                return jsonify({'ok': True, 'gained': o2mHandler.meta_fill(cat)})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -2440,22 +2464,30 @@ if __name__ == "__main__":
         Categories with no box are left out, as the button leaves them out."""
         from flask import jsonify
         import random
+        # The whole sequence is ONE operation: the on/off decision and every
+        # category under a single hold of the box lock, so nothing interleaves
+        # between two categories. A remote key held down repeats; only the first
+        # press counts.
         try:
-            cats = {c: b for c, b in o2mHandler.get_basic_categories().items()
-                    if c in ('music', 'podcast', 'info', 'radio') and b}
-            active_uids = {b.uid for b in o2mHandler.activeboxs}
-            on = [c for c, boxes in cats.items() if any(b['uid'] in active_uids for b in boxes)]
-            order = list(cats)
-            random.shuffle(order)
-            if on:
-                for c in order:
-                    if c in on:
-                        o2mHandler.meta_remove(c)
-                return jsonify({'ok': True, 'action': 'off', 'cats': on})
-            for c in order:
-                o2mHandler.meta_fill(c)
-            o2mHandler.play_or_resume()
-            return jsonify({'ok': True, 'action': 'on', 'cats': order})
+            with o2mHandler.trigger('basic_all') as go:
+                if not go:
+                    return jsonify({'ok': True, 'action': 'ignored', 'reason': 'repeat'})
+                with o2mHandler._box_ops_lock(), o2mHandler.filling():
+                    cats = {c: b for c, b in o2mHandler.get_basic_categories().items()
+                            if c in ('music', 'podcast', 'info', 'radio') and b}
+                    active_uids = {b.uid for b in o2mHandler.activeboxs}
+                    on = [c for c, boxes in cats.items() if any(b['uid'] in active_uids for b in boxes)]
+                    order = list(cats)
+                    random.shuffle(order)
+                    if on:
+                        for c in order:
+                            if c in on:
+                                o2mHandler.meta_remove(c)
+                        return jsonify({'ok': True, 'action': 'off', 'cats': on})
+                    for c in order:
+                        o2mHandler.meta_fill(c)
+                    o2mHandler.play_or_resume()
+                    return jsonify({'ok': True, 'action': 'on', 'cats': order})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 

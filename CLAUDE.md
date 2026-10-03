@@ -1570,6 +1570,31 @@ overwrite the value. Treat it as "authoritative", not "curated by a human".
   are skipped (refilling one would include its children twice); each child is judged
   on its own lines. `apply: false` only stores the values — the page sends it when no
   box is on but a queue is (a rebuild would start the auto mix over it).
+  **It answers `409 {status:'busy'}` while any fill runs**, stored nothing — see below.
+
+### Who holds the dials during a fill
+A mood change during a fill races it (part of the queue dropped, part not). The page
+used to be the only guard (`mixBusy`), and it only knows the fills IT started: a tag,
+the IR remote (`/api/basic_all`), another device or the watchdog's reload left every
+other interface live. Measured: a remote ALL takes ~35 s, past the box lock's 30 s
+timeout, after which a waiting request runs anyway.
+
+- **The server counts fills** (`O2mToMopidy.filling()` / `is_filling()`): `/api/box`,
+  `/api/object_toggle`, `/api/basic_toggle`, `/api/basic_all`, the mood apply and the
+  watchdog reload. `POST /api/mood` refuses while it is non-zero; `/api/active_objects`
+  reports it as `busy`.
+- **Decision and action under one lock.** Those endpoints used to read "is it on?"
+  outside the lock, so two requests close together both saw "off". And a TOGGLE is
+  the one non-idempotent request: `trigger(key)` drops a repeat of the same key while
+  it is in flight or within 1 s of its end (an IR key held down, an NFC double read).
+  Explicit `add`/`remove` are not guarded — they state the wanted state.
+- **Two flags in the page, on purpose.** `mixBusy` locks on the click, with no round
+  trip — a gesture made here must answer at once. `serverBusy` follows the server:
+  read by `refreshActive`, asked on every `tracklist_changed` (how a foreign fill
+  shows first) and every second while it lasts. A dial gesture caught by it, or by a
+  409, is kept and re-sent when the fill ends rather than dropped. Measured: a remote
+  ALL locks the page at 0.8 s and releases it 0.4 s after the server finishes; a local
+  toggle locks in the same tick and releases with its answer.
 - `GET /api/genres` — genre list with track counts
 - `GET /mood` — mood UI (served from `o2m/static/mood.html`)
 
