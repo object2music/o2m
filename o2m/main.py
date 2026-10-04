@@ -679,7 +679,17 @@ if __name__ == "__main__":
     @api.route('/api/box_favorites')
     def api_box_favorites():
         boxes = o2mHandler.dbHandler.get_boxes_pinned()
-        #boxes = json.dumps(boxes)
+        # `kind`: what the box IS, in the actuators' words — auto, library,
+        # podcast, info, radio — read by the same classification as the Basic
+        # view, so the mosaic's generated cover and the actuators cannot
+        # disagree about a box. Anything not auto/podcast/info/radio (a playlist,
+        # a cascade of them) is library.
+        kinds = {'music': 'auto', 'podcast': 'podcast', 'info': 'info', 'radio': 'radio'}
+        for b in boxes:
+            try:
+                b['kind'] = kinds.get(o2mHandler._box_category(b.get('data'), b.get('option_type')), 'library')
+            except Exception:
+                b['kind'] = 'library'
         return (boxes)
 
     # ── Activating an OBJECT (album, artist) the way a box is activated ──

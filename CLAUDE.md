@@ -936,16 +936,19 @@ Other points worth knowing:
   from Basic, leaving Music nothing to drive. The mood apply therefore excludes
   cascades by asking `_is_cascade`, no longer by their category being None.
   Verified across the 148 boxes: exactly those two change category.
-- **One box with a picture gives a picture to every box** (`backfillBoxImages` in
+- **One box with a picture gives a cover to every box** (`backfillBoxImages` in
   `objgrid.js`). Half a shelf of photos and half of bare names read as two kinds of
-  object, so once ANY pinned box has an `image_url`, each one without shows the
-  theme's background picture (`.og-art--bg`, `--og-fallback` in `objgrid.css`);
-  while none has, the mosaic stays all text. **One picture for all of them**: a
-  first version drew one of the four waves per box and the shelf got louder than
-  the photos it was meant to match. Bulletin takes the wave of the logo pair chosen
-  in Settings (`data-mark`, violet-lime by default), the orange-accent themes
-  orange-violet, Mono the same drained to grey. In CSS so it follows a theme or logo
-  change without a re-render. Display only — nothing is written to the box.
+  object, so once ANY pinned box has an `image_url`, each one without gets a
+  **generated cover from the design system** (`O2M.cover`, `ds/o2m-marks.js`): drawn
+  with the theme's ring ramps, it takes the theme's colours everywhere, Mono's black
+  and red included. Its **shape says what the box is**, after the actuator glyphs —
+  `kind` from `/api/box_favorites`, computed by `_box_category` so the mosaic and the
+  actuators classify alike: auto → `core` (the bullseye: the mix is the mark),
+  library → `sequence` (the system's shape for lists; `graph` left the square empty
+  under the name), podcast → `pills` (the capsule), info → `dots`, radio → `arcs`
+  (the wave). While no box has a picture, the mosaic stays all text. The Basic
+  view's wave pictures were tried first, one per box then one per theme: louder
+  than the photos they sat beside. Display only — nothing is written to the box.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
   cannot see them — an album called *Autobahn* does not light the live mode.
 

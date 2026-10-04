@@ -176,15 +176,22 @@ const OBJGRID = (() => {
 
   /* A shelf where some boxes wear a picture and the others none reads as two
      kinds of object. So as soon as ONE box has a picture of its own, every box
-     without one shows the theme's background picture; when none has, the mosaic
-     stays all text, as before. ONE picture for all of them, not one each: four
-     wave patterns drawn per box made the shelf louder than the pictures it was
-     meant to match. Which one is the theme's call (`--og-fallback` in
-     objgrid.css), so it follows a theme or logo change with no re-render.
+     without one gets a generated cover from the design system (O2M.cover) — the
+     theme's own marks, drawn with its ring ramps, so they take the theme's
+     colours in every theme, Mono's black and red included. The SHAPE says what
+     the box is, after the actuator glyphs: auto is the full bullseye (the mix is
+     the mark itself), library the sequence (the design system's shape for lists:
+     four discs in a row — the graph it has for playlists was tried and its small
+     nodes left the square empty under the name), podcast
+     the pills (the glyph's capsule), info the dots (dispatches), radio the arcs
+     (the wave). When no box has a picture the mosaic stays all text.
+     The waves of the Basic background were tried first, one per box and then
+     one per theme: louder than the photos they were meant to sit beside.
      Display only: nothing is written to the box. */
+  const KIND_COVER = { auto: 'core', library: 'sequence', podcast: 'pills', info: 'dots', radio: 'arcs' };
   function backfillBoxImages(rows) {
     if (!rows.some(r => r.image)) return;
-    rows.forEach(r => { if (!r.image) r.fallback = true; });
+    rows.forEach(r => { if (!r.image) r.cover = KIND_COVER[r.kind] || 'sequence'; });
   }
 
   async function load(mode) {
@@ -201,7 +208,7 @@ const OBJGRID = (() => {
         state.rows[mode] = (d || []).map(b => ({
           uri: 'box:' + b.uid, uid: b.uid,
           name: b.description || b.uid, sub: '',
-          image: b.image_url || '',
+          image: b.image_url || '', kind: b.kind || 'library',
         }));
         backfillBoxImages(state.rows[mode]);
         state.more[mode] = false;
@@ -240,8 +247,8 @@ const OBJGRID = (() => {
     const art = row.image
       ? `<img class="og-art" src="${objEsc(row.image)}" alt="" loading="lazy" decoding="async">`
         + (kind === 'box' ? cap : '')
-      : row.fallback
-        ? `<span class="og-art og-art--bg"></span>` + cap
+      : row.cover && typeof O2M !== 'undefined'
+        ? `<span class="og-art og-art--mark">${O2M.cover(row.cover)}</span>` + cap
         : `<span class="og-art og-art--text">${objEsc(name)}</span>`;
     return `<button type="button" class="og-tile${active ? ' active' : ''}`
       + `${named ? ' og-tile--named' : ''}"`
