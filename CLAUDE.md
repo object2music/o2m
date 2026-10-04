@@ -927,6 +927,13 @@ Other points worth knowing:
   from Basic, leaving Music nothing to drive. The mood apply therefore excludes
   cascades by asking `_is_cascade`, no longer by their category being None.
   Verified across the 148 boxes: exactly those two change category.
+- **One box with a picture gives a picture to every box** (`backfillBoxImages` in
+  `objgrid.js`). Half a shelf of photos and half of bare names read as two kinds of
+  object, so once ANY pinned box has an `image_url`, each one without gets one of the
+  Basic view's background pictures (`BASIC_BGS`, `/static/basic-bg/`); while none
+  has, the mosaic stays all text. The pick is a hash of the uid, not a draw per
+  render, so filtering or switching views does not reshuffle the shelf. Display
+  only — nothing is written to the box.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
   cannot see them — an album called *Autobahn* does not light the live mode.
 

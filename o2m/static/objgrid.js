@@ -174,14 +174,30 @@ const OBJGRID = (() => {
     else render();
   }
 
+  /* A shelf where some boxes wear a picture and the others none reads as two
+     kinds of object. So as soon as ONE box has a picture of its own, every box
+     without one is given one of the Basic view's background pictures; when none
+     has, the mosaic stays all text, as before. The pick looks random but is a
+     hash of the uid, so a box keeps the same picture from one render to the
+     next — typing in the filter or switching views must not reshuffle the shelf.
+     Display only: nothing is written to the box. */
+  function backfillBoxImages(rows) {
+    const bgs = (typeof BASIC_BGS !== 'undefined' && BASIC_BGS) || [];
+    if (!bgs.length || !rows.some(r => r.image)) return;
+    rows.forEach(r => {
+      if (r.image) return;
+      let h = 0;
+      for (const ch of String(r.uid)) h = (h * 31 + ch.charCodeAt(0)) | 0;
+      r.image = '/static/basic-bg/' + bgs[Math.abs(h) % bgs.length];
+    });
+  }
+
   async function load(mode) {
     const grid = document.getElementById('obj-grid');
     if (grid) grid.innerHTML = '<div class="og-empty">Loading…</div>';
     try {
       if (mode === 'boxgrid') {
-        // The pinned boxes, in the shape the tiles read. None of them carries an
-        // image today, so every box tile falls to its generated cover — which is
-        // deterministic on the uid, so a box keeps the same face.
+        // The pinned boxes, in the shape the tiles read.
         const d = await fetch(API + '/box_favorites').then(r => r.json());
         // No `sub`: a box's option_type is an internal lifecycle word, and with
         // the name now set inside the square it would be the tile's only caption
@@ -192,6 +208,7 @@ const OBJGRID = (() => {
           name: b.description || b.uid, sub: '',
           image: b.image_url || '',
         }));
+        backfillBoxImages(state.rows[mode]);
         state.more[mode] = false;
       } else {
         const d = await fetch(`${API}/library_browse?kind=${mode}&limit=${PAGE}`).then(r => r.json());
