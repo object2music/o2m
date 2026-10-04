@@ -1777,6 +1777,15 @@
   select.bx-input { width: auto; }
   .bx-data { width: 100%; resize: vertical; font-size: var(--t-body); line-height: 1.7;
     min-height: calc(220px * var(--ui)); max-height: 60vh; overflow-y: auto; padding: calc(8px * var(--ui)) calc(10px * var(--ui)); }
+  /* Line syntax help under a box's content. */
+  .bx-syntax { margin-top: calc(10px * var(--ui)); font-size: calc(12px * var(--ui)); color: var(--muted); }
+  .bx-syntax summary { cursor: pointer; color: var(--text); }
+  .bx-syntax dl { margin: calc(6px * var(--ui)) 0 0; }
+  .bx-syntax dt { color: var(--text); margin-top: calc(8px * var(--ui)); }
+  .bx-syntax dd { margin: calc(2px * var(--ui)) 0 0; line-height: 1.5; }
+  .bx-syntax code, .bx-syntax pre { font-family: var(--font-mono); color: var(--text); }
+  .bx-syntax pre { margin: calc(4px * var(--ui)) 0; padding: calc(6px * var(--ui)) calc(8px * var(--ui));
+    background: var(--card); border: 1px solid var(--border); white-space: pre; overflow-x: auto; }
   /* The box picture: the mosaic's own square as preview, its actions beside it. */
   .bx-img-field { flex-direction: column; align-items: stretch; gap: calc(6px * var(--ui)); }
   .bx-img-field .obj-field-label { flex: 0 0 auto; }

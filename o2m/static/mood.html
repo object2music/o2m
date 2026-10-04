@@ -5338,8 +5338,21 @@ function renderDataEditor(items) {
     + `<div class="wc-body${_bxTab && !_bxRawMode ? ' has-detail' : ''}">`
     +   `<div class="wc-main"><div id="bx-rows">${_bxRowsHtml(items || [])}</div>${addSection}</div>`
     +   `<div class="wc-detail" id="bx-add-panel">${_bxDetailHtml()}</div>`
-    + `</div></div>`;
+    + `</div>${BX_SYNTAX_HELP}</div>`;
 }
+
+/* What a box's lines can say, in the editor itself — the time windows above all,
+   whose block form was nowhere written down where boxes are edited. Mirrors
+   boxdirectives.py; kept short on purpose, CLAUDE.md has the reference. */
+const BX_SYNTAX_HELP = `<details class="bx-syntax"><summary>Line syntax</summary>`
+  + `<dl>`
+  + `<dt>One line, one source</dt><dd>A Spotify link, a feed, a stream, <code>box:&lt;uid&gt;</code> (another box, whole), or a smart pattern such as <code>auto:library</code>.</dd>`
+  + `<dt>Labels and switches</dt><dd><code>#Morning</code> on the line before names it; <code>#</code> in front of a line turns it off.</dd>`
+  + `<dt>Settings</dt><dd><code>mood:calm</code> (calm · intense · normy · happy · energetic) or <code>mood:0.3,0.8</code> (energy, ambiance) · <code>dl:0</code> to <code>dl:10</code> (discovery). Read before the box fills, wherever they sit.</dd>`
+  + `<dt>Only at some hours — one line</dt><dd><pre>08:00-10:00 &gt; infos:library</pre></dd>`
+  + `<dt>Only at some hours — several lines</dt><dd><pre>18:00-09:00 &gt; {\n  mood:calm\n  box:04463DD2204B80\n}</pre>The brace may also go alone on the next line. Local time; the start is included, the end is not; an end before the start runs past midnight (18:00-09:00 is the evening and the night).</dd>`
+  + `<dt>Everything at once</dt><dd>A box holding only <code>meta_all</code> is the ALL button: putting it down switches everything on, again switches everything off.</dd>`
+  + `</dl></details>`;
 
 /* Shell of the active panel. Result lists are filled in asynchronously by the
    loaders, so opening a panel is instant. */

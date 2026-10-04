@@ -91,6 +91,26 @@ class TestReadDirectives(unittest.TestCase):
         self.assertIsNone(bd.read_directives('#dl:7').get('dl'))
 
 
+class TestBraceOnItsOwnLine(unittest.TestCase):
+    DATA = ("#Morning\n18:00-09:00 >\n{\nmood:0.25,0.5\nbox:a\n}\n"
+            "09:00-18:00 >\n{\nmood:normy\nbox:b\n}\nauto:library")
+
+    def _on(self, data, h):
+        return [p for ok, p in bd.iter_lines(data, at(h)) if ok and p and not p.startswith('#')]
+
+    def test_block_opens_on_next_line(self):
+        self.assertEqual(self._on(self.DATA, 20), ['mood:0.25,0.5', 'box:a', 'auto:library'])
+        self.assertEqual(self._on(self.DATA, 12), ['mood:normy', 'box:b', 'auto:library'])
+
+    def test_directives_follow_the_window(self):
+        self.assertEqual(bd.read_directives(self.DATA, at(20))['energy'], 0.25)
+        self.assertEqual(bd.read_directives(self.DATA, at(12)), bd.read_directives('mood:normy', at(12)))
+
+    def test_strays_are_dropped(self):
+        self.assertEqual(self._on('{\nauto:library\n}', 12), ['auto:library'])
+        self.assertEqual(self._on('08:00-10:00 >\nauto:library', 12), ['auto:library'])
+
+
 class TestIsAllTrigger(unittest.TestCase):
     def test_only_meta_all(self):
         self.assertTrue(bd.is_all_trigger('meta_all'))

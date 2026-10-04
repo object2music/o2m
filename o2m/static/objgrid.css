@@ -263,8 +263,8 @@ body.edit-mode .og-new { display: block; }
    it is the frame that answers: an accent border, the image lifted out of its
    dimmed rest state, and a tick in the corner for anyone who does not read the
    border as a state. */
-.og-tile img.og-art { opacity: .78; transition: opacity .15s, filter .2s; }
-.og-tile:hover img.og-art { opacity: 1; }
+.og-tile img.og-art, .og-art--bg { opacity: .78; transition: opacity .15s, filter .2s; }
+.og-tile:hover img.og-art, .og-tile:hover .og-art--bg { opacity: 1; }
 .og-tile.active { color: var(--text); }
 .og-tile.active .og-thumb { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 /* Loaded → the cover drops its colour. The frame and the tick say WHICH tiles are
@@ -272,7 +272,21 @@ body.edit-mode .og-new { display: block; }
    a shelf of covers, and it is the page's own register — the interface is black
    and white, the artwork is the only colour in it, so spending that colour is
    what "this one is in the tracklist" costs. */
-.og-tile.active img.og-art { opacity: 1; filter: grayscale(1); }
+.og-tile.active img.og-art, .og-tile.active .og-art--bg { opacity: 1; filter: grayscale(1); }
+
+/* The picture a box without one borrows once any box has one (objgrid.js,
+   backfillBoxImages) — one per theme, the wave that matches it: Bulletin takes
+   the pair of the logo chosen in Settings (violet-lime by default, the pair the
+   default picture was made for); the orange-accent themes take orange-violet;
+   Mono takes it too, drained to grey, since a colour picture is the one thing a
+   black-and-white theme cannot hold. */
+:root { --og-fallback: url('basic-bg/wave-orange-violet.jpg'); }
+[data-theme="creme"], [data-theme="bulletin"] { --og-fallback: url('basic-bg/wave-violet-lime.jpg'); }
+[data-theme="creme"][data-mark="orange-violet"], [data-theme="bulletin"][data-mark="orange-violet"] { --og-fallback: url('basic-bg/wave-orange-violet.jpg'); }
+[data-theme="creme"][data-mark="lime-pink"], [data-theme="bulletin"][data-mark="lime-pink"] { --og-fallback: url('basic-bg/wave-lime-pink.jpg'); }
+[data-theme="creme"][data-mark="orange-lime"], [data-theme="bulletin"][data-mark="orange-lime"] { --og-fallback: url('basic-bg/wave-orange-lime.jpg'); }
+.og-art--bg { background: var(--og-fallback) center / cover no-repeat; }
+[data-theme="mono"] .og-art--bg { filter: grayscale(1); }
 
 .og-mark {
   position: absolute; inset: auto 0 0 auto;

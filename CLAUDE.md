@@ -650,7 +650,16 @@ Or as a **block**, opened by a window followed by a brace and closed by one:
     auto:library          <- outside the block again
 
 Repeating the same window on six lines is where a typo lives, and the lines of a morning
-belong together. An inline window on a line *inside* a block wins for that line, and an
+belong together.
+
+**The brace may also sit alone on the next line**, which is how most people write a
+block (`18:00-09:00 >` then `{`). That form used to open nothing — the window gated an
+empty payload, `{` was read as a stray line, and the whole block applied at every hour:
+the install's "Auto music" played its evening and its daytime includes together, its
+two moods overwriting each other (found 2026-10-04). A window line with nothing after
+it is now the head of a block when a `{` follows; a lone `{` or a bare window is
+dropped. `_iter_windows` is the one walk both `iter_lines` and `_is_gated` read. The
+box editor shows this syntax under the content (`BX_SYNTAX_HELP`, "Line syntax"). An inline window on a line *inside* a block wins for that line, and an
 unclosed block runs to the end of the data — the forgiving reading.
 
 **The delimiters are explicit, and that is the whole point.** A first version used
@@ -929,11 +938,14 @@ Other points worth knowing:
   Verified across the 148 boxes: exactly those two change category.
 - **One box with a picture gives a picture to every box** (`backfillBoxImages` in
   `objgrid.js`). Half a shelf of photos and half of bare names read as two kinds of
-  object, so once ANY pinned box has an `image_url`, each one without gets one of the
-  Basic view's background pictures (`BASIC_BGS`, `/static/basic-bg/`); while none
-  has, the mosaic stays all text. The pick is a hash of the uid, not a draw per
-  render, so filtering or switching views does not reshuffle the shelf. Display
-  only — nothing is written to the box.
+  object, so once ANY pinned box has an `image_url`, each one without shows the
+  theme's background picture (`.og-art--bg`, `--og-fallback` in `objgrid.css`);
+  while none has, the mosaic stays all text. **One picture for all of them**: a
+  first version drew one of the four waves per box and the shelf got louder than
+  the photos it was meant to match. Bulletin takes the wave of the logo pair chosen
+  in Settings (`data-mark`, violet-lime by default), the orange-accent themes
+  orange-violet, Mono the same drained to grey. In CSS so it follows a theme or logo
+  change without a re-render. Display only — nothing is written to the box.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
   cannot see them — an album called *Autobahn* does not light the live mode.
 

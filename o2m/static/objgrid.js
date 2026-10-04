@@ -176,20 +176,15 @@ const OBJGRID = (() => {
 
   /* A shelf where some boxes wear a picture and the others none reads as two
      kinds of object. So as soon as ONE box has a picture of its own, every box
-     without one is given one of the Basic view's background pictures; when none
-     has, the mosaic stays all text, as before. The pick looks random but is a
-     hash of the uid, so a box keeps the same picture from one render to the
-     next — typing in the filter or switching views must not reshuffle the shelf.
+     without one shows the theme's background picture; when none has, the mosaic
+     stays all text, as before. ONE picture for all of them, not one each: four
+     wave patterns drawn per box made the shelf louder than the pictures it was
+     meant to match. Which one is the theme's call (`--og-fallback` in
+     objgrid.css), so it follows a theme or logo change with no re-render.
      Display only: nothing is written to the box. */
   function backfillBoxImages(rows) {
-    const bgs = (typeof BASIC_BGS !== 'undefined' && BASIC_BGS) || [];
-    if (!bgs.length || !rows.some(r => r.image)) return;
-    rows.forEach(r => {
-      if (r.image) return;
-      let h = 0;
-      for (const ch of String(r.uid)) h = (h * 31 + ch.charCodeAt(0)) | 0;
-      r.image = '/static/basic-bg/' + bgs[Math.abs(h) % bgs.length];
-    });
+    if (!rows.some(r => r.image)) return;
+    rows.forEach(r => { if (!r.image) r.fallback = true; });
   }
 
   async function load(mode) {
@@ -241,10 +236,13 @@ const OBJGRID = (() => {
        way the caption below is dropped rather than printed twice, and the full
        name lives on the tile's `title` for the ones the square has to clip. */
     const named = !row.image || kind === 'box';
+    const cap = `<span class="og-cap"><span class="og-cap-txt">${objEsc(name)}</span></span>`;
     const art = row.image
       ? `<img class="og-art" src="${objEsc(row.image)}" alt="" loading="lazy" decoding="async">`
-        + (kind === 'box' ? `<span class="og-cap"><span class="og-cap-txt">${objEsc(name)}</span></span>` : '')
-      : `<span class="og-art og-art--text">${objEsc(name)}</span>`;
+        + (kind === 'box' ? cap : '')
+      : row.fallback
+        ? `<span class="og-art og-art--bg"></span>` + cap
+        : `<span class="og-art og-art--text">${objEsc(name)}</span>`;
     return `<button type="button" class="og-tile${active ? ' active' : ''}`
       + `${named ? ' og-tile--named' : ''}"`
       + ` data-uri="${objEsc(row.uri)}" data-kind="${objEsc(kind)}"`

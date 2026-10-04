@@ -160,25 +160,61 @@ def iter_lines(data, now=None):
     statement should be the one that counts. An unclosed block simply runs to the
     end of the data, which is the forgiving reading.
     """
+    for window, payload in _iter_windows(data):
+        yield window_matches(window, now), payload
+
+
+def _iter_windows(data):
+    """Yield (window, payload) for every content line, the window being the
+    line's own (inline) or its block's — None when the line is ungated. The one
+    walk over a box's lines; iter_lines and _is_gated both read it, so the two
+    cannot disagree about what a block covers.
+
+    The opening brace may sit on the window's line (`08:00-10:00 > {`) or alone
+    on the next one, as most people write a block:
+
+        18:00-09:00 >
+        {
+          mood:calm
+        }
+
+    That second form used to open nothing: the window line gated an empty
+    payload, the `{` was read as a stray line, and everything meant for the
+    block applied at every hour (the install's 'Auto music', 2026-10-04). A
+    window line with nothing after it is only ever the head of a block, so it is
+    read as one when a `{` follows; a lone `{` with no window before it, and a
+    bare window not followed by one, are dropped rather than played."""
     block = None
+    head = None           # a bare 'HH:MM-HH:MM >' waiting for its '{'
     for raw in (data or '').splitlines():
         line = (raw or '').strip()
         if not line:
             continue
         if line == '}':
             block = None
+            head = None
+            continue
+        if line == '{':
+            if head is not None:
+                block = head
+            head = None
             continue
 
         m = _BLOCK_RE.match(line)
         if m:
             window, _ = split_condition(m.group(1) + ' > x')
             block = window
+            head = None
             continue
 
         window, payload = split_condition(line)
+        if window is not None and not payload:
+            head = window
+            continue
+        head = None
         if window is None:
             window = block
-        yield window_matches(window, now), payload
+        yield window, payload
 
 
 def parse_mood(value):
@@ -200,20 +236,9 @@ def parse_mood(value):
 def _is_gated(data, payload, now=None):
     """Was this payload under a window, inline or by block? A gated statement beats
     an ungated one, so the pre-pass has to tell them apart."""
-    block = False
-    for raw in (data or '').splitlines():
-        line = (raw or '').strip()
-        if not line:
-            continue
-        if line == '}':
-            block = False
-            continue
-        if _BLOCK_RE.match(line):
-            block = True
-            continue
-        w, p = split_condition(line)
+    for w, p in _iter_windows(data):
         if p == payload:
-            return w is not None or block
+            return w is not None
     return False
 
 
