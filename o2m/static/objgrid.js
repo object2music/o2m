@@ -179,19 +179,18 @@ const OBJGRID = (() => {
      without one gets a generated cover from the design system (O2M.cover) — the
      theme's own marks, drawn with its ring ramps, so they take the theme's
      colours in every theme, Mono's black and red included. The SHAPE says what
-     the box is, after the actuator glyphs: auto is the full bullseye (the mix is
-     the mark itself), library the sequence (the design system's shape for lists:
-     four discs in a row — the graph it has for playlists was tried and its small
-     nodes left the square empty under the name), podcast
+     the box is, after the actuator glyphs: auto and library are the full
+     bullseye, the mark itself (the design system's `graph` left the square empty
+     under the name, and its four-disc `sequence` was hard to read), podcast
      the pills (the glyph's capsule), info the dots (dispatches), radio the arcs
      (the wave). When no box has a picture the mosaic stays all text.
      The waves of the Basic background were tried first, one per box and then
      one per theme: louder than the photos they were meant to sit beside.
      Display only: nothing is written to the box. */
-  const KIND_COVER = { auto: 'core', library: 'sequence', podcast: 'pills', info: 'dots', radio: 'arcs' };
+  const KIND_COVER = { auto: 'core', library: 'core', podcast: 'pills', info: 'dots', radio: 'arcs' };
   function backfillBoxImages(rows) {
     if (!rows.some(r => r.image)) return;
-    rows.forEach(r => { if (!r.image) r.cover = KIND_COVER[r.kind] || 'sequence'; });
+    rows.forEach(r => { if (!r.image) r.cover = KIND_COVER[r.kind] || 'core'; });
   }
 
   async function load(mode) {
@@ -208,7 +207,10 @@ const OBJGRID = (() => {
         state.rows[mode] = (d || []).map(b => ({
           uri: 'box:' + b.uid, uid: b.uid,
           name: b.description || b.uid, sub: '',
-          image: b.image_url || '', kind: b.kind || 'library',
+          // `kind` comes from the server; an instance that predates it still
+          // sends option_type, which is enough for podcast and info.
+          image: b.image_url || '',
+          kind: b.kind || ({ podcast: 'podcast', info: 'info' })[b.option_type] || 'library',
         }));
         backfillBoxImages(state.rows[mode]);
         state.more[mode] = false;

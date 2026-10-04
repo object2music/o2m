@@ -943,10 +943,11 @@ Other points worth knowing:
   with the theme's ring ramps, it takes the theme's colours everywhere, Mono's black
   and red included. Its **shape says what the box is**, after the actuator glyphs —
   `kind` from `/api/box_favorites`, computed by `_box_category` so the mosaic and the
-  actuators classify alike: auto → `core` (the bullseye: the mix is the mark),
-  library → `sequence` (the system's shape for lists; `graph` left the square empty
-  under the name), podcast → `pills` (the capsule), info → `dots`, radio → `arcs`
-  (the wave). While no box has a picture, the mosaic stays all text. The Basic
+  actuators classify alike: auto and library → `core` (the bullseye, the mark
+  itself — `graph` left the square empty under the name, the four discs of
+  `sequence` were hard to read), podcast → `pills` (the capsule), info → `dots`,
+  radio → `arcs` (the wave). The page falls back to `option_type` for podcast and
+  info when an instance does not send `kind` yet. While no box has a picture, the mosaic stays all text. The Basic
   view's wave pictures were tried first, one per box then one per theme: louder
   than the photos they sat beside. Display only — nothing is written to the box.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
