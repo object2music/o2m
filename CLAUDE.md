@@ -863,10 +863,15 @@ Other points worth knowing:
   picture, and dulling every picture to get there; at 88% the picture was gone. The
   band leaves the picture at full strength wherever the name is not. **Its opacity is
   per theme, and measured** (`--cap-band` / `--cap-ink` in `objgrid.css`): each
-  ground needs a different one to hold the ink at ≥ 6:1 over the worst pixel a
-  picture can put behind it (white, mid grey, black) — dark .72, bulletin .72,
-  bulletin2 .76 (lavender, not white), mono a black bar at .62 with white ink,
-  overprint white paper at .60, invert .66. The ink on a picture is the theme's full
+  ground is set as light as keeps the ink at AA (≥ 4.5:1) over the worst pixel a
+  picture can put behind it (white, mid grey, black) — dark .62, bulletin .62,
+  bulletin2 .66 (lavender, not white), mono a black bar at .54 with white ink,
+  overprint white paper at .48, invert .58. A first pass held 6:1 at .60–.76 and
+  read as blocks laid on the picture. The band runs in **from the tile's left
+  edge**, its left padding being the cover's 8px so the letters start where the
+  text cover's do, and the caption's line height (1.3) is what lets each line's
+  band carry vertical padding and still only TOUCH the next: two translucent bands
+  that overlap draw a darker stripe. The ink on a picture is the theme's full
   `--text`, not the text cover's `--muted`, which falls to 2.5:1 over a white picture
   — the one place the two covers differ in colour. **Active**, the band takes the
   accent with an ink that holds on it (`--cap-band-on` / `--cap-ink-on`), which is
