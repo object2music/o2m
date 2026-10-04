@@ -176,21 +176,17 @@ const OBJGRID = (() => {
 
   /* A shelf where some boxes wear a picture and the others none reads as two
      kinds of object. So as soon as ONE box has a picture of its own, every box
-     without one gets a generated cover from the design system (O2M.cover) — the
-     theme's own marks, drawn with its ring ramps, so they take the theme's
-     colours in every theme, Mono's black and red included. The SHAPE says what
-     the box is, after the actuator glyphs: auto and library are the full
-     bullseye, the mark itself (the design system's `graph` left the square empty
-     under the name, and its four-disc `sequence` was hard to read), podcast
-     the pills (the glyph's capsule), info the dots (dispatches), radio the arcs
-     (the wave). When no box has a picture the mosaic stays all text.
-     The waves of the Basic background were tried first, one per box and then
-     one per theme: louder than the photos they were meant to sit beside.
+     without one gets the design system's `dots` cover (O2M.cover), drawn with the
+     theme's ring ramps so it takes the theme's colours everywhere, and faded well
+     back (objgrid.css) so it reads as a texture under the name, not a picture.
+     When no box has a picture the mosaic stays all text.
+     Tried before, all louder than the photos they sat beside: the Basic view's
+     waves (one per box, then one per theme), then one cover shape per box kind
+     (bullseye, pills, arcs, four discs). Only the dots sat quietly enough.
      Display only: nothing is written to the box. */
-  const KIND_COVER = { auto: 'core', library: 'core', podcast: 'pills', info: 'dots', radio: 'arcs' };
   function backfillBoxImages(rows) {
     if (!rows.some(r => r.image)) return;
-    rows.forEach(r => { if (!r.image) r.cover = KIND_COVER[r.kind] || 'core'; });
+    rows.forEach(r => { if (!r.image) r.cover = 'dots'; });
   }
 
   async function load(mode) {

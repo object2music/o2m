@@ -936,20 +936,18 @@ Other points worth knowing:
   from Basic, leaving Music nothing to drive. The mood apply therefore excludes
   cascades by asking `_is_cascade`, no longer by their category being None.
   Verified across the 148 boxes: exactly those two change category.
-- **One box with a picture gives a cover to every box** (`backfillBoxImages` in
+- **One box with a picture gives a texture to every box** (`backfillBoxImages` in
   `objgrid.js`). Half a shelf of photos and half of bare names read as two kinds of
-  object, so once ANY pinned box has an `image_url`, each one without gets a
-  **generated cover from the design system** (`O2M.cover`, `ds/o2m-marks.js`): drawn
-  with the theme's ring ramps, it takes the theme's colours everywhere, Mono's black
-  and red included. Its **shape says what the box is**, after the actuator glyphs —
-  `kind` from `/api/box_favorites`, computed by `_box_category` so the mosaic and the
-  actuators classify alike: auto and library → `core` (the bullseye, the mark
-  itself — `graph` left the square empty under the name, the four discs of
-  `sequence` were hard to read), podcast → `pills` (the capsule), info → `dots`,
-  radio → `arcs` (the wave). The page falls back to `option_type` for podcast and
-  info when an instance does not send `kind` yet. While no box has a picture, the mosaic stays all text. The Basic
-  view's wave pictures were tried first, one per box then one per theme: louder
-  than the photos they sat beside. Display only — nothing is written to the box.
+  object, so once ANY pinned box has an `image_url`, each one without gets the design
+  system's **`dots` cover** (`O2M.cover`, `ds/o2m-marks.js`), drawn with the theme's
+  ring ramps so it takes the theme's colours everywhere, at **35% opacity** (50% on
+  hover/active) — a texture under the name, not a picture. While no box has a
+  picture, the mosaic stays all text. **Tried first, all louder than the photos
+  beside them** (2026-10-04): the Basic view's waves, one per box then one per
+  theme; then one cover shape per box kind (bullseye, pills, arcs, four discs) —
+  only the dots sat quietly enough. `/api/box_favorites` still carries `kind`
+  (auto · library · podcast · info · radio, from `_box_category`), unused by the
+  covers now. Display only — nothing is written to the box.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
   cannot see them — an album called *Autobahn* does not light the live mode.
 

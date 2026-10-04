@@ -277,6 +277,10 @@ body.edit-mode .og-new { display: block; }
 /* The cover a box without a picture gets once any box has one (objgrid.js,
    backfillBoxImages): a design-system mark, its colours from the theme's ramps. */
 .og-art--mark svg { width: 100%; height: 100%; }
+/* A texture, not a picture: well back at rest, a little forward on hover. */
+.og-tile .og-art--mark { opacity: .35; }
+.og-tile:hover .og-art--mark { opacity: .5; }
+.og-tile.active .og-art--mark { opacity: .5; }
 
 .og-mark {
   position: absolute; inset: auto 0 0 auto;
