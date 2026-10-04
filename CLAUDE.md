@@ -1518,6 +1518,9 @@ unfollowed, 248 albums and 102 artists kept.
 
 Tracks carry three enrichment fields (added via DB migrations v5/v6):
 - `mood` TEXT — categorical: `calm`, `energetic`, `dark`, `happy`, or `_` (sentinel = tried, no data)
+  — `dark` is **shown as "Intense"** everywhere in the interface (matrix quadrant and
+  axis, mood editor, details panel, stats, tag_features); the stored value stays `dark`.
+  The theme named Dark is a palette, not this mood, and keeps its name.
 - `energy` FLOAT — 0.0 (sleep/ambient) → 1.0 (metal/hardcore)
 - `valence` FLOAT — 0.0 (dark/grief) → 1.0 (joyful/euphoric)
 

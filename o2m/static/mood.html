@@ -1663,10 +1663,13 @@ function trackMetaHTML(m) {
   // the reader to remember which axis was which, and the pair is already shown —
   // and edited — as a POSITION on the mood matrix, which is the form that needs no
   // legend. The mood word is what those two coordinates amount to in one glance.
-  if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(m.mood)}</span>`);
+  if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(moodWord(m.mood))}</span>`);
   if (m.source)           bits.push(`<span title="Source">${objEsc(m.source)}</span>`);
   return bits.join(' · ');
 }
+/* The mood category `dark` is shown as "intense", as the matrix quadrant and the
+   mood editor already name it. Display only: the stored value stays `dark`. */
+const moodWord = m => (m === 'dark' ? 'intense' : m);
 /* The same line as plain text — the row is one nowrap line and clips, so this is
    what the hover reveals. */
 function trackMetaText(m) {
@@ -1674,7 +1677,7 @@ function trackMetaText(m) {
   const bits = [];
   if (m.option_type)        bits.push(m.option_type);
   if (m.popularity != null) bits.push('popularity ' + fmtEV(m.popularity));
-  if (m.mood)               bits.push('mood ' + m.mood);
+  if (m.mood)               bits.push('mood ' + moodWord(m.mood));
   if (m.source)             bits.push('source ' + m.source);
   return bits.join(' · ');
 }
@@ -2976,7 +2979,7 @@ const TRACK_FIELDS = [
   ['Audio',      'audio',      i => i.local ? 'File on the server' : 'Streamed'],
   ['Energy',     'energy',     i => fmtEV(i.energy)],
   ['Valence',    'valence',    i => fmtEV(i.valence)],
-  ['Mood',       'mood',       i => i.mood || '—'],
+  ['Mood',       'mood',       i => moodWord(i.mood) || '—'],
   ['Popularity', 'popularity', i => fmtEV(i.popularity)],
   ['Plays',      'plays',      i => (i.read_count_end ?? 0) + ''],
   // Spoken content only: when an episode was published is the one genuinely
@@ -3992,7 +3995,7 @@ function drawMatrix(ts) {
   ctx.textAlign = 'right';  ctx.fillText('Rapid ▶', W - 2, my + 4);
   ctx.textAlign = 'center';
   ctx.fillText('▲ Bright', mx, 12);
-  ctx.fillText('▼ Dark',   mx, PAD + inner + PAD - 2);
+  ctx.fillText('▼ Intense', mx, PAD + inner + PAD - 2);
 
   /* Tracklist dots — color correlated to popularity (darker = more popular) */
   matrixTlItems.forEach(({ uri, tlid }) => {

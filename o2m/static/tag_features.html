@@ -146,7 +146,7 @@
         <option value="">— aucun —</option>
         <option value="calm">calm</option>
         <option value="energetic">energetic</option>
-        <option value="dark">dark</option>
+        <option value="dark">intense</option>
         <option value="happy">happy</option>
       </select>
     </div>
@@ -206,7 +206,7 @@ function render() {
   tbody.innerHTML = rows.map(t => {
     const moodBadge = t.is_noise
       ? '<span class="badge badge-noise">noise</span>'
-      : t.mood ? `<span class="badge badge-${t.mood}">${t.mood}</span>` : dash;
+      : t.mood ? `<span class="badge badge-${t.mood}">${t.mood === 'dark' ? 'intense' : t.mood}</span>` : dash;
     const eVal = t.energy != null ? Math.round(t.energy * 100) : null;
     const vVal = t.valence != null ? Math.round(t.valence * 100) : null;
     // Width in % (not px as before: a value of 1.0 gave a 100px bar, which never
