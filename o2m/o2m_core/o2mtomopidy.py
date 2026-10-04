@@ -1552,15 +1552,24 @@ class O2mToMopidy:
                     self.add_tracks(active_box, _pods, base_counts['podcasts'], "podcast","o2m:podcast")
             
             #Albums/Artists
+            # A container uri drawn here hands Mopidy the whole thing: an artist put
+            # 1,769 tracks in a bucket of 4 (Pi, 2026-10-04, DL0 — the DL is passed
+            # as `unit`, and unit=0 used to mean "the artist's uri"), and add_tracks
+            # wrote a stat row for each before slicing — 2m20s holding the fill
+            # flag, so every mood change on every screen was refused meanwhile.
+            # The sources return tracks only now; this is the same net as
+            # _auto_bucket_from_box, for the day one does not.
             if base_counts.get('albums_artists', 0) > 0:
                 if (random.choice([1,2])) == 1:
                     print(f"\nAUTO : Albums {base_counts['albums_artists']} tracks\n")
                     aa = self.spotifyHandler.get_my_albums_tracks(_pool(base_counts['albums_artists']),discover_level)
+                    aa = [u for u in (aa or []) if not self._CONTAINER_URI_RE.match(u)]
                     aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius, discover_level)
                     self.add_tracks(active_box, aa, base_counts['albums_artists'], "library","spotify:album")
                 else:
                     print(f"\nAUTO : Artists {base_counts['albums_artists']} tracks\n")
                     aa = self.spotifyHandler.get_my_artists_tracks(_pool(base_counts['albums_artists']),discover_level)
+                    aa = [u for u in (aa or []) if not self._CONTAINER_URI_RE.match(u)]
                     aa = self._mood_pick(aa, base_counts['albums_artists'], energy, valence, radius, discover_level)
                     self.add_tracks(active_box, aa, base_counts['albums_artists'], "library","spotify:artist")
 
@@ -2115,7 +2124,12 @@ class O2mToMopidy:
                         if (random.choice([1,2])) == 1:
                             uris, source = self.spotifyHandler.get_my_albums_tracks(1, 0, return_source=True)
                         else:
+                            # An artist is a body of work, not a record: its pool is
+                            # drawn from like a spotify:artist: line, not played in order.
                             uris, source = self.spotifyHandler.get_my_artists_tracks(1, 0, return_source=True)
+                            if uris:
+                                uris = self._expand_pick(uris, remaining, energy, valence, discover_level,
+                                                         exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash')))
                         if uris:
                             _plan_or_add(uris, remaining, library_link=source or '')
 

@@ -2867,17 +2867,20 @@ class SpotifyHandler:
                     artist = random.choice(artists)
                     artist_uri = 'spotify:artist:' + artist
                     # top-tracks endpoint restricted since Nov 2024 — use albums instead
-                    tracks = self.get_artist_all_tracks(artist, limit=unit if unit > 0 else 10)
-                    if tracks and unit != 0:
-                        for j in range(unit):
-                            track = random.choice(tracks)
-                            t_list.append(track)
-                            if return_pairs:
-                                pairs.append((track, artist_uri))
-                    else:
-                        t_list.append('spotify:artist:'+artist)
-                        if return_pairs:
-                            pairs.append(('spotify:artist:'+artist, artist_uri))
+                    tracks = self.get_artist_all_tracks(artist, limit=unit if unit > 0 else 50)
+                    # Tracks, never the artist's own uri. That uri used to stand in
+                    # for "no tracks" and for unit=0, and Mopidy resolves it to the
+                    # whole discography: the AUTO mix passes the discover level as
+                    # `unit`, so at DL0 every artist drawn put 1,769 tracks in a
+                    # bucket of 4 and held the fill for minutes (Pi, 2026-10-04).
+                    # unit=0 now means what it means for albums — a pool of the
+                    # artist's tracks (up to 50, at random) for the caller to pick from.
+                    if not tracks:
+                        continue
+                    chosen = tracks if unit == 0 else [random.choice(tracks) for _ in range(unit)]
+                    t_list.extend(chosen)
+                    if return_pairs:
+                        pairs.extend((t, artist_uri) for t in chosen)
             '''total = self.sp.current_user_followed_artists()['artists']['total']
             if int(total) < limit: limit = int(total)
             if total>0:
