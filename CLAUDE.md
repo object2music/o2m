@@ -851,35 +851,31 @@ Other points worth knowing:
   so the whole boxes mosaic was a wall of abstract marks under 12px captions. A box
   tile also shows no `sub`: `option_type` is an internal lifecycle word that would
   read as the tile's subtitle.
-- **One type, one size, one alignment, in both cases.** Two box tiles side by side,
-  one with a picture and one without, have to read as the same object, so everything
-  typographic is declared once for `.og-art--text, .og-cap` and the overlay fills the
-  same box — same 8px padding, same four-line clamp, same top-left start. It is
+- **One type, one size, one alignment, one colour, in both cases.** Two box tiles
+  side by side, one with a picture and one without, have to read as the same object,
+  so everything typographic — colours included: muted at rest, text on hover, accent
+  when active — is declared once for `.og-art--text, .og-cap`, and the overlay fills
+  the same box: same 8px start, same four-line clamp, same top-left start. It is
   **sized against the TILE** (`cqw` with a fixed fallback), so the same name holds at
   three per row on a phone and four in a third of a desktop.
-- **Over a picture, a band under each line of the name — not a veil over the
-  square** (`.og-cap-txt`, an inline box with `box-decoration-break: clone`). A 45%
-  tint over the whole square came first and was the wrong trade: weak over a busy
-  picture, and dulling every picture to get there; at 88% the picture was gone. The
-  band leaves the picture at full strength wherever the name is not. **Its opacity is
-  per theme, and measured** (`--cap-band` / `--cap-ink` in `objgrid.css`): each
-  ground is set as light as keeps the ink at AA (≥ 4.5:1) over the worst pixel a
-  picture can put behind it (white, mid grey, black) — dark .62, bulletin .62,
-  bulletin2 .66 (lavender, not white), mono a black bar at .54 with white ink,
-  overprint white paper at .48, invert .58. A first pass held 6:1 at .60–.76 and
-  read as blocks laid on the picture. The band runs in **from the tile's left
-  edge**, its left padding being the cover's 8px so the letters start where the
-  text cover's do, and the caption's line height (1.3) is what lets each line's
-  band carry vertical padding and still only TOUCH the next: two translucent bands
-  that overlap draw a darker stripe. The ink on a picture is the theme's full
-  `--text`, not the text cover's `--muted`, which falls to 2.5:1 over a white picture
-  — the one place the two covers differ in colour. **Active**, the band takes the
-  accent with an ink that holds on it (`--cap-band-on` / `--cap-ink-on`), which is
-  not always `--on-accent`: Bulletin's pink carries neither white (3.4:1) nor its
-  violet ink (4.0:1), so its band is the violet ink and the pink stays in the frame;
-  Mono's accent is its ink, so it takes the red signal; Invert's accent follows the
-  cover and black holds on the default (5.9:1) where white does not. **No halo**
-  behind the glyphs, which was tried and reads as a second mark on top of the first.
+- **Over a picture, two layers of the theme's own ground** (`var(--sheet-bg,
+  var(--bg))`, `--sheet-bg` being there for the `bulletin2` skin whose `--bg` is
+  translucent): a light **veil** over the whole square (35%, which also lifts the
+  picture as the first version's 45% veil did), and a **band** under each line of
+  the name (`.og-cap-txt`, inline with `box-decoration-break: clone`), run in from
+  the tile's left edge, at `--cap-alpha` (52%, bulletin2 56%, Mono/Overprint 58%).
+  The caption line height (1.3) lets each line's band carry vertical padding and
+  only TOUCH the next — overlapping translucent bands draw a darker stripe. The band
+  must be the ground: the ink is the text cover's, chosen for that ground (a black
+  bar in Mono would swallow its near-black accent).
+  **Known and accepted** with the same colours: muted ink is a mid tone, so over the
+  worst pixel a picture can put under it (white in a dark theme, black in a light
+  one) no translucent band holds AA — 2–3.5:1 in dark and Bulletin, ~1.5:1 in
+  Mono/Overprint, whose muted grey is 2.8:1 on its own plain ground already. A pass
+  that gave the caption its own ink (full `--text`, an accent band when active)
+  held 4.5–6:1 everywhere and was dropped (2026-10-04) because a box then read
+  differently with and without a picture; raise `--cap-alpha` before reaching for
+  that again. **No halo** behind the glyphs — tried, it reads as a second mark.
 - **The details eye moved to the top RIGHT.** It never hides on touch, and a named
   tile sets its name from the top-left corner — it was sitting on the first word of
   every box in the mosaic.
