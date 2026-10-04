@@ -3,6 +3,7 @@ import logging, subprocess, os, spotipy, json, threading, requests, contextlib
 from mopidyapi import MopidyAPI
 from o2m_core import util
 from o2m_core import virtualbox
+from o2m_core import boxdirectives as bdir
 from o2m_core.o2mtomopidy import O2mToMopidy
 from o2m_core.spotifyhandler import SpotifyHandler, SpotifyRateLimited
 from time import sleep
@@ -308,6 +309,14 @@ if __name__ == "__main__":
         #print (f"ACTIVE TAGS : {o2mHandler.activeboxs}")
         if box is None:
             return "no TAG"
+        # A box holding only `meta_all` is the ALL button as an object: putting it
+        # down toggles ALL rather than the box (which would hold nothing of its
+        # own, so taking it off again could never switch anything off). An
+        # explicit remove leaves it alone — that is also what deleting the box
+        # sends, and deleting a card must not silence the room.
+        if mode in ('toogle', 'add') and bdir.is_all_trigger(box.data):
+            r = o2mHandler.toggle_all('toggle' if mode == 'toogle' else 'on')
+            return f"ALL {r.get('action')}"
         # The decision (is it on?) and the action are taken under the same lock:
         # read outside it, two requests close together both saw "off" and both
         # added. A toggle repeated while the first is still running is dropped.
@@ -2506,31 +2515,8 @@ if __name__ == "__main__":
         order (a fixed one always opened on music), then playback started.
         Categories with no box are left out, as the button leaves them out."""
         from flask import jsonify
-        import random
-        # The whole sequence is ONE operation: the on/off decision and every
-        # category under a single hold of the box lock, so nothing interleaves
-        # between two categories. A remote key held down repeats; only the first
-        # press counts.
         try:
-            with o2mHandler.trigger('basic_all') as go:
-                if not go:
-                    return jsonify({'ok': True, 'action': 'ignored', 'reason': 'repeat'})
-                with o2mHandler._box_ops_lock(), o2mHandler.filling():
-                    cats = {c: b for c, b in o2mHandler.get_basic_categories().items()
-                            if c in ('music', 'podcast', 'info', 'radio') and b}
-                    active_uids = {b.uid for b in o2mHandler.activeboxs}
-                    on = [c for c, boxes in cats.items() if any(b['uid'] in active_uids for b in boxes)]
-                    order = list(cats)
-                    random.shuffle(order)
-                    if on:
-                        for c in order:
-                            if c in on:
-                                o2mHandler.meta_remove(c)
-                        return jsonify({'ok': True, 'action': 'off', 'cats': on})
-                    for c in order:
-                        o2mHandler.meta_fill(c)
-                    o2mHandler.play_or_resume()
-                    return jsonify({'ok': True, 'action': 'on', 'cats': order})
+            return jsonify(o2mHandler.toggle_all('toggle'))
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 

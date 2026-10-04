@@ -91,6 +91,26 @@ class TestReadDirectives(unittest.TestCase):
         self.assertIsNone(bd.read_directives('#dl:7').get('dl'))
 
 
+class TestIsAllTrigger(unittest.TestCase):
+    def test_only_meta_all(self):
+        self.assertTrue(bd.is_all_trigger('meta_all'))
+        self.assertTrue(bd.is_all_trigger('  meta_all  \n'))
+
+    def test_labels_and_directives_are_not_content(self):
+        self.assertTrue(bd.is_all_trigger('# Tout\nmeta_all\nmood:calm\ndl:3'))
+
+    def test_mixed_box_is_a_box(self):
+        self.assertFalse(bd.is_all_trigger('meta_all\nauto:library'))
+        self.assertFalse(bd.is_all_trigger('meta_podcasts'))
+        self.assertFalse(bd.is_all_trigger(''))
+        self.assertFalse(bd.is_all_trigger('#meta_all'))
+
+    def test_window(self):
+        data = '08:00-10:00 > meta_all'
+        self.assertTrue(bd.is_all_trigger(data, now=at(9)))
+        self.assertFalse(bd.is_all_trigger(data, now=at(12)))
+
+
 class TestIsDirective(unittest.TestCase):
     def test_recognises_its_own(self):
         self.assertTrue(bd.is_directive('dl:5'))

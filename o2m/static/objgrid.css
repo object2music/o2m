@@ -181,13 +181,22 @@ body.edit-mode .og-new { display: block; }
    tiles side by side, one with a picture and one without, have to read as the same
    object. So everything typographic is declared ONCE here, and the only difference
    between the two is the veil the overlay needs. */
+/* The ink of a box name. The theme's `--muted` everywhere it carries a name, but
+   Mono and Overprint's #9a9a9a is 2.8:1 on their white ground and Invert's #777
+   4.4:1 on its black — a name is the whole tile here, not a secondary line, so
+   those three take a grey that sits where the other themes' muted already does:
+   #707070 is 4.9:1 on white, #8f8f8f 6.0:1 on #0c0c0c (dark and Bulletin: 6.2
+   and 6.5). Scoped to the tiles: elsewhere muted keeps meaning "secondary". */
+:root { --og-ink: var(--muted); }
+[data-theme="mono"], [data-theme="overprint"] { --og-ink: #707070; }
+[data-theme="invert"] { --og-ink: #8f8f8f; }
 .og-art--text, .og-cap {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
   overflow: hidden;
   padding: calc(8px * var(--ui)); box-sizing: border-box;
   font-size: calc(15px * var(--ui)); font-weight: 700; line-height: 1.15;
   letter-spacing: -.01em; hyphens: auto; overflow-wrap: anywhere;
-  color: var(--muted); transition: color .15s;
+  color: var(--og-ink); transition: color .15s;
 }
 /* Sized against the TILE, not the viewport: the same name has to hold at three
    per row on a phone and four in a third of a desktop. Falls back to the 15px

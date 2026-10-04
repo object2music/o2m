@@ -577,13 +577,16 @@ dispatch branches against the picker).
 | `rf:sujet:<keyword>` | Radio France episodes matching a theme or tag, refilled dynamically |
 | `tag:<name>` | every track carrying that genre/tag (through its artist), drawn like an artist line — `_expand_pick`, from a random 2,000-track sample of the pool |
 | `meta_podcasts` · `meta_infos` · `meta_radios` | every source of that category, across all boxes |
+| `meta_all` | **ALL** — every category. A box holding ONLY this line (labels and directives aside) is a trigger: `/api/box` runs `toggle_all` for it instead of toggling the box, so an NFC card toggles everything on AND off, by the same rule as the Basic view's button and the remote's `/api/basic_all`. Mixed with other lines or included through `box:`, it only turns categories on, like the other `meta_` lines. An explicit `mode=remove` (also what deleting a box sends) leaves ALL alone |
 | `recommendation:…` | live Spotify recommendations (legacy; the API has since been restricted) |
 
 **A YouTube channel ADDRESS is not a line.** Mopidy-YouTube looks `yt:https://www.youtube.com/@x/videos` up to `[]`, and its `yt:channel:<UC id>` plays the channel's PLAYLISTS (curated, often other people's videos). A channel's own videos are the playlist whose id is the channel's with `UC` → `UU`. The Guided builder converts a pasted address to that line (`/channel/UC…` on the spot; an `@handle`, `/c/`, `/user/` through `GET /api/youtube_channel` → `webmedia.youtube_channel`, which reads the id off the page — with the `SOCS=CAI` consent cookie, or an EU request lands on consent.youtube.com). The dispatcher does not convert: a line typed raw stays what it says.
 
 There is **no `meta_music`**: `meta_fill` handles the `music` category, but
 `_META_PATTERNS` has no entry for it, so it cannot be written in a box. The BASIC view's
-ALL button is a UI action over the four categories, not a pattern.
+ALL as an object is `meta_all` above: `/api/basic_all` (the remote) and a `meta_all`
+box both go through `O2mToMopidy.toggle_all`. The page's own button applies the same
+rule client-side, category by category (`toggleBasicAll` → `/api/basic_toggle`).
 
 ### 3. Settings — read BEFORE the box is filled
 These force what the dials would otherwise decide (`o2m_core/boxdirectives.py`):
@@ -876,6 +879,10 @@ Other points worth knowing:
   held 4.5–6:1 everywhere and was dropped (2026-10-04) because a box then read
   differently with and without a picture; raise `--cap-alpha` before reaching for
   that again. **No halo** behind the glyphs — tried, it reads as a second mark.
+- **The name's ink is `--og-ink`**: the theme's `--muted`, except Mono/Overprint
+  (`#707070`, 4.9:1 on white — their muted is 2.8:1) and Invert (`#8f8f8f`, 6.0:1 —
+  its muted is 4.4:1), which sit where dark and Bulletin's muted already do (6.2,
+  6.5). Scoped to the tiles: elsewhere muted keeps meaning "secondary".
 - **The details eye moved to the top RIGHT.** It never hides on touch, and a named
   tile sets its name from the top-left corner — it was sitting on the first word of
   every box in the mosaic.

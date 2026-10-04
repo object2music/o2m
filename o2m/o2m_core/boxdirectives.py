@@ -260,6 +260,16 @@ def is_directive(payload):
     return bool(_DL_RE.match(p) or _MOOD_RE.match(p))
 
 
+def is_all_trigger(data, now=None):
+    """True when the only content a box holds right now is `meta_all`: the box is
+    then the ALL button as an object (an NFC card), not a box of its own — /api/box
+    toggles ALL for it instead of toggling the box. Labels (`#`) and directives
+    are not content; a line gated out of its window is not there."""
+    content = [p for ok, p in iter_lines(data, now)
+               if ok and p and not p.startswith('#') and not is_directive(p)]
+    return content == ['meta_all']
+
+
 # Lines whose DRAW reads the mood and the discover level: the AUTO mixes
 # (_mood_pick), a tag, and — through _expand_pick — a Spotify artist, album or
 # playlist on the smart path, which is the default when option_sort is unset.

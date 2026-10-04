@@ -1830,6 +1830,51 @@ class O2mToMopidy:
                     print(f"meta_remove({cat}) on {b.uid}: {e}")
             return removed
 
+    # The Basic view's ALL, in the core: the button, /api/basic_all (the IR
+    # remote) and a box holding only `meta_all` (an NFC card) are one gesture and
+    # must agree on what it does.
+    _ALL_CATS = ('music', 'podcast', 'info', 'radio')
+
+    def _all_categories(self):
+        """Categories that have at least one box, and those of them now on."""
+        cats = {c: b for c, b in self.get_basic_categories().items() if c in self._ALL_CATS and b}
+        active_uids = {b.uid for b in self.activeboxs}
+        on = [c for c, boxes in cats.items() if any(b['uid'] in active_uids for b in boxes)]
+        return cats, on
+
+    def all_on(self, max_results=None):
+        """Turn on every category not on yet, in a random order (a fixed one
+        always opened on music). Returns the categories turned on."""
+        with self._box_ops_lock():
+            cats, on = self._all_categories()
+            order = [c for c in cats if c not in on]
+            random.shuffle(order)
+            for c in order:
+                self.meta_fill(c, max_results)
+            return order
+
+    def toggle_all(self, mode='toggle'):
+        """ALL. `toggle`: any category on -> everything off; nothing on -> every
+        category on, then playback started. `on` / `off` state the wanted
+        result. Categories with no box are left out, as the button leaves them.
+        One operation under one hold of the box lock, and a toggle repeated
+        within a second (a remote key held down, a card read twice) is dropped."""
+        guard = self.trigger('basic_all') if mode == 'toggle' else contextlib.nullcontext(True)
+        with guard as go:
+            if not go:
+                return {'ok': True, 'action': 'ignored', 'reason': 'repeat'}
+            with self._box_ops_lock(), self.filling():
+                cats, on = self._all_categories()
+                if mode == 'off' or (mode == 'toggle' and on):
+                    order = list(on)
+                    random.shuffle(order)
+                    for c in order:
+                        self.meta_remove(c)
+                    return {'ok': True, 'action': 'off', 'cats': on}
+                turned = self.all_on()
+                self.play_or_resume()
+                return {'ok': True, 'action': 'on', 'cats': turned}
+
     def tracklistappend_box(self,box,max_results,attribute_to=None,plan_out=None):
         # attribute_to: the box that dynamically-added tracks (skip badge, box_id
         # in _track_info, and hence deactivation cleanup) get tagged under.
@@ -2040,6 +2085,14 @@ class O2mToMopidy:
                 # limit is reached. Music's equivalent is auto:library above.
                 elif content.strip() in self._META_PATTERNS:
                     self.meta_fill(self._META_PATTERNS[content.strip()], max_results)
+
+                # meta_all — every category at once. A box holding ONLY this line is
+                # a trigger and never gets here: /api/box runs toggle_all for it, so
+                # the card switches everything off as well as on. Mixed with other
+                # lines, or reached through a box: include, it only fills — like
+                # the other meta_ lines, it turns things on.
+                elif content.strip() == 'meta_all':
+                    self.all_on(max_results)
 
                 # auto:library testing (daily habits + library auto extract)
                 elif "auto_podcast:library" in content :

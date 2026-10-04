@@ -4843,6 +4843,7 @@ const BOX_KEYWORDS = {
   'meta_podcasts':         'All podcast sources',
   'meta_infos':            'All info sources',
   'meta_radios':           'All radio sources',
+  'meta_all':              'Everything (the ALL button: a box holding only this toggles it)',
   // Settings, not sources: read before the box is filled (see boxdirectives.py).
   'mood:calm':             'Force a mood (calm · intense · normy · happy · energetic)',
   'dl:5':                  'Force the discovery level (0-10)',
@@ -5031,7 +5032,7 @@ const WC_PATTERNS_BY_KIND = {
   info:    ['infos:library', 'meta_infos'],
   radio:   ['meta_radios'],
   hybrid:  ['auto:library', 'spotify:library', 'o2m:favorites', 'newrecent:library', 'now:library',
-            'herenow:library', 'podcasts:unfinished', 'meta_podcasts', 'infos:library', 'meta_infos', 'meta_radios'],
+            'herenow:library', 'podcasts:unfinished', 'meta_podcasts', 'infos:library', 'meta_infos', 'meta_radios', 'meta_all'],
 };
 
 /* Simple mode commits to one kind; advanced mode and the box editor build
