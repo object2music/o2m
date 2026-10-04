@@ -35,7 +35,8 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 `test_player_port.py` (the player port's anti-drift check), `test_selection.py`
 (the samplers and the anti-repeat cooldown), `test_webmedia.py`
 (the `web:` page reader), `test_virtualbox.py` (activating an album or an artist
-as a box) and `test_fairlock.py` (the box lock's arrival-order queue). Run from the repo root (package-prefixed, since they import
+as a box) and `test_fairlock.py` (the box lock's arrival-order queue) and `test_boximage.py` (what
+a box picture upload may be). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -93,8 +94,9 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Catalogue**: `Album`, `Artist`, `Genre`, `Playlist`, `TagFeature`, `CacheMeta`, and the N:N links `TrackArtist`, `AlbumArtist`, `ArtistGenre`, `TrackGenre`, `AlbumGenre`, `PlaylistTrack`, `AlbumTrack`.
   - **Spoken content**: `PodcastChannel` (one row per show or feed — see the spoken-content section), `RfTaxonomy` (Radio France subject vocabulary), `EpisodeTaxonomy` (episode ↔ subject pivot).
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
+  - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **27**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **28**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -896,6 +898,33 @@ Other points worth knowing:
   ever the number wanted.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
   cannot see them — an album called *Autobahn* does not light the live mode.
+
+## A box's picture: stored in the database, reduced by the browser
+
+`Box.image_url` (v13) could only point at a picture hosted elsewhere. A box can now
+carry a picture of its own — chosen, pasted or dropped in the box editor and the
+creation wizard (`bxImageField` in `mood.html`) — and **where it is stored is decided
+by who reads it**: o2m_0, o2m_1 and the Raspberry Pi share one database but not one
+disk (each instance has its own `./o2m`, the Pi no volume), so a file written beside
+one instance would show on that one only. The bytes therefore live in **`BoxImage`**
+(migration v28, `MEDIUMBLOB` — peewee's `BlobField` is a MySQL `BLOB`, capped at
+64 KB), and the box points at one through its ordinary `image_url`:
+`/api/box_image/<sha1>`. No column on `box`, so listing the boxes never drags the
+pictures along, and external addresses keep working.
+
+- **The server does no image work.** The browser downscales to 640 px and re-encodes
+  (WebP, else JPEG on a white ground), which also drops the EXIF and its GPS tag.
+  `o2m_core/boximage.py` only checks: JPEG, PNG or WebP by their first bytes (the
+  Content-Type is not trusted; SVG is refused — a document that can carry script, on
+  our own origin), at most 300 KB. No Pillow in the image, none needed.
+- **Addressed by content**: the same upload twice is one row, and a url never changes
+  meaning, so `GET /api/box_image/<sha1>` is served `immutable` with `nosniff`.
+  `POST /api/box_image` (the body is the picture) is edit-locked like `/api/box_edit`.
+- **Upload on pick, attach on Save.** The preview is the stored picture in the
+  mosaic's own square; a picture never saved (a cancelled edit, an abandoned wizard)
+  is deleted by `sweep_box_images` at startup once 24 h old and referenced by no box.
+- An instance that has not pulled this shows a broken picture for such a box: the url
+  is relative and answered by the instance serving the page.
 
 ## `web:<url>` — the media a web page holds (experimental)
 

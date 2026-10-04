@@ -8,6 +8,7 @@ from peewee import (
     TimestampField,
     FloatField,
     BooleanField,
+    BlobField,
     Model,
     OperationalError,
     MySQLDatabase,
@@ -422,6 +423,23 @@ class EpisodeTaxonomy(BaseModel):
         indexes = ((('track_uri', 'taxonomy_id'), True),)
 
 
+class MediumBlobField(BlobField):
+    """BLOB in MySQL stops at 64 KB, under a phone picture even downscaled.
+    MEDIUMBLOB holds 16 MB; SQLite takes the type name as it is."""
+    field_type = 'MEDIUMBLOB'
+
+
+class BoxImage(BaseModel):
+    """A picture uploaded for a box, addressed by the sha1 of its bytes — see
+    o2m_core/boximage.py. Kept out of `box` so listing the boxes never drags
+    the pictures along; a box points at one through its `image_url`."""
+    sha1       = CharField(primary_key=True, max_length=40)
+    mime       = CharField(max_length=32)
+    data       = MediumBlobField()
+    size       = IntegerField(default=0)
+    created_at = TimestampField(null=True, utc=True)
+
+
 # ─── Database versioning ───────────────────────────────────────────────────────
 #
 # SCHEMA_VERSION is the target version.  setup_database() applies every
@@ -690,6 +708,10 @@ def _migration_v27(migrator):
         print(f"[DB] v27 stats_raw.Id: {e}")
 
 
+def _migration_v28(migrator):
+    db.create_tables([BoxImage], safe=True)
+
+
 def _migration_v23(migrator):
     db.create_tables([OfflineRequest], safe=True)
 
@@ -736,7 +758,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -766,6 +788,7 @@ _MIGRATIONS = [
     (25, "track_disliked_sql_default", _migration_v25),
     (26, "username_nullable", _migration_v26),
     (27, "stats_raw_id_auto_increment", _migration_v27),
+    (28, "box_image_table", _migration_v28),
 ]
 
 

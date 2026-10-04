@@ -1777,6 +1777,18 @@
   select.bx-input { width: auto; }
   .bx-data { width: 100%; resize: vertical; font-size: var(--t-body); line-height: 1.7;
     min-height: calc(220px * var(--ui)); max-height: 60vh; overflow-y: auto; padding: calc(8px * var(--ui)) calc(10px * var(--ui)); }
+  /* The box picture: the mosaic's own square as preview, its actions beside it. */
+  .bx-img-field { flex-direction: column; align-items: stretch; gap: calc(6px * var(--ui)); }
+  .bx-img-field .obj-field-label { flex: 0 0 auto; }
+  .bx-img-row { display: flex; gap: calc(12px * var(--ui)); align-items: flex-start; }
+  .bx-img-tile { flex: 0 0 calc(104px * var(--ui)); width: calc(104px * var(--ui)); }
+  .bx-img-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: calc(6px * var(--ui)); }
+  .bx-img-btns { display: flex; gap: calc(6px * var(--ui)); flex-wrap: wrap; }
+  .bx-img-btns [hidden] { display: none; }
+  .bx-img-hint { font-size: calc(11px * var(--ui)); color: var(--muted); }
+  .bx-img-hint.warn { color: var(--warn); }
+  .bx-img-field.drop .og-thumb { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .bx-img-field.busy .bx-img-tile { animation: basic-pulse 1s ease-in-out infinite; }
   .obj-field input[type="checkbox"] { width: calc(16px * var(--ui)); height: calc(16px * var(--ui)); accent-color: var(--accent); cursor: pointer; }
   .obj-save-row { margin-top: calc(14px * var(--ui)); display: flex; align-items: center;
     justify-content: space-between; gap: calc(12px * var(--ui)); flex-wrap: wrap; }

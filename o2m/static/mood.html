@@ -1608,6 +1608,7 @@ const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor
 const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 const ICON_REMOVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_SHUFFLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>';
+const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
 const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -4570,9 +4571,134 @@ const BX_SORTS = [
 const bxSortSel = cur => `<select class="bx-input" id="bx-option_sort">`
   + BX_SORTS.map(([v, l]) => bxOpt(v, l, cur || '')).join('') + `</select>`;
 
+/* ── A box's picture ─────────────────────────────────────────────────────────
+   Either an address, as before, or a picture of one's own — chosen, pasted or
+   dropped. The browser does all the image work: it downscales to BX_IMG_MAX and
+   re-encodes (WebP, JPEG where WebP cannot be encoded), which also drops the
+   EXIF and its GPS tag, then POSTs the bytes; the server only checks and stores
+   them in the shared database (o2m_core/boximage.py) and answers a url, which
+   goes into the same `image_url` field the address did. The upload happens on
+   pick, so the preview is the real thing; Save is still what attaches it, and a
+   picture never saved is swept a day later. The preview is the mosaic's own
+   square (og-thumb/og-cap), so what is seen here is what the shelf will show. */
+const BX_IMG_MAX = 640;
+const BX_IMG_MAX_BYTES = 300 * 1024;   // boximage.MAX_BYTES
+
+function bxImageField(url, name) {
+  return `<div class="obj-field bx-img-field" id="bx-img-field">`
+    + `<label class="obj-field-label">Image</label>`
+    + `<div class="bx-img-row">`
+    +   `<span class="bx-img-tile" id="bx-img-tile">${_bxImageTile(url, name)}</span>`
+    +   `<div class="bx-img-side">`
+    +     `<div class="bx-img-btns">`
+    +       `<button type="button" class="bx-foot-btn" id="bx-img-pick">${ICON_IMAGE}<span>Choose picture</span></button>`
+    +       `<button type="button" class="bx-foot-btn ghost" id="bx-img-clear"${url ? '' : ' hidden'}>${ICON.x}<span>Remove</span></button>`
+    +     `</div>`
+    +     `<input class="bx-input bx-wide" type="url" id="bx-image_url" placeholder="or an address: https://…" value="${objEsc(url || '')}">`
+    +     `<div class="bx-img-hint" id="bx-img-hint">You can also paste or drop a picture here.</div>`
+    +   `</div>`
+    + `</div>`
+    + `<input type="file" accept="image/*" id="bx-img-file" hidden>`
+    + `</div>`;
+}
+
+function _bxImageTile(url, name) {
+  const n = objEsc(name || 'Box');
+  return `<span class="og-thumb">`
+    + (url ? `<img class="og-art" src="${objEsc(url)}" alt="">` + `<span class="og-cap">${n}</span>`
+           : `<span class="og-art og-art--text">${n}</span>`)
+    + `</span>`;
+}
+
+function wireBxImageField() {
+  const field = document.getElementById('bx-img-field');
+  if (!field) return;
+  const input = document.getElementById('bx-image_url');
+  const file  = document.getElementById('bx-img-file');
+  const nameOf = () => document.getElementById('bx-description')?.value
+    || (_bxHost === 'wizard' ? _boxDraft?.description : _boxEditInfo?.description) || '';
+  const repaint = () => {
+    const url = input.value.trim();
+    document.getElementById('bx-img-tile').innerHTML = _bxImageTile(url, nameOf());
+    document.getElementById('bx-img-clear').hidden = !url;
+  };
+  const hint = (t, warn) => {
+    const h = document.getElementById('bx-img-hint');
+    h.textContent = t; h.classList.toggle('warn', !!warn);
+  };
+  const take = async f => {
+    if (!f || !/^image\//.test(f.type || 'image/')) { hint('That is not a picture.', true); return; }
+    field.classList.add('busy'); hint('Preparing the picture…');
+    try {
+      const blob = await _bxImageEncode(f);
+      hint('Uploading…');
+      const r = await fetch(API + '/box_image', {
+        method: 'POST', headers: { 'Content-Type': blob.type }, body: blob,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.url) {
+        input.value = j.url; repaint();
+        hint(`Picture ready (${Math.round(j.size / 1024)} KB) — saved with the box.`);
+      } else if (j.error === 'edit_auth_required') hint('Editing not authorized.', true);
+      else if (j.error === 'too_large') hint('That picture is still too large once reduced.', true);
+      else hint('The picture could not be stored.', true);
+    } catch (e) {
+      hint('Could not read that picture.', true);
+    } finally {
+      field.classList.remove('busy');
+    }
+  };
+  document.getElementById('bx-img-pick').addEventListener('click', () => file.click());
+  file.addEventListener('change', () => { take(file.files[0]); file.value = ''; });
+  document.getElementById('bx-img-clear').addEventListener('click', () => {
+    input.value = ''; repaint(); hint('No picture — the name is the cover.');
+  });
+  input.addEventListener('change', repaint);
+  document.getElementById('bx-description')?.addEventListener('input', repaint);
+  field.addEventListener('paste', e => {
+    const f = [...(e.clipboardData?.files || [])].find(x => /^image\//.test(x.type));
+    if (f) { e.preventDefault(); take(f); }
+  });
+  field.addEventListener('dragover', e => { e.preventDefault(); field.classList.add('drop'); });
+  field.addEventListener('dragleave', () => field.classList.remove('drop'));
+  field.addEventListener('drop', e => {
+    e.preventDefault(); field.classList.remove('drop');
+    const f = [...(e.dataTransfer?.files || [])].find(x => /^image\//.test(x.type));
+    if (f) take(f); else hint('Drop a picture file.', true);
+  });
+}
+
+async function _bxImageEncode(file) {
+  const src = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, ko) => {
+      const i = new Image(); i.onload = () => ok(i); i.onerror = ko; i.src = src;
+    });
+    const scale = Math.min(1, BX_IMG_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width  = Math.max(1, Math.round(img.naturalWidth  * scale));
+    c.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    const ctx = c.getContext('2d');
+    const enc = (type, q) => new Promise(ok => c.toBlob(ok, type, q));
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    let blob = await enc('image/webp', .82);
+    if (!blob || blob.type !== 'image/webp') {
+      // JPEG has no alpha: a transparent PNG would come out black underneath.
+      ctx.globalCompositeOperation = 'destination-over';
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      blob = await enc('image/jpeg', .85);
+      if (blob && blob.size > BX_IMG_MAX_BYTES) blob = await enc('image/jpeg', .7);
+    }
+    if (!blob) throw new Error('encode');
+    return blob;
+  } finally {
+    URL.revokeObjectURL(src);
+  }
+}
+
 function renderBoxEditor(info) {
   return bxField('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(info.description || '')}">`)
-    + bxField('Image URL', `<input class="bx-input bx-wide" type="url" id="bx-image_url" placeholder="https://…" value="${objEsc(info.image_url || '')}">`)
+    + bxImageField(info.image_url, info.description)
     + bxField('Type', bxTypeSel(info.option_type))
     + bxField('Discover level', bxNum('option_discover_level', info.option_discover_level, 'min="0" max="10" step="1"'))
     + bxField('Sort', bxSortSel(info.option_sort))
@@ -4591,6 +4717,7 @@ function renderBoxEditor(info) {
 function wireBoxEditor(info) {
   document.getElementById('bx-save')?.addEventListener('click', saveBox);
   document.getElementById('bx-delete')?.addEventListener('click', armDeleteBox);
+  wireBxImageField();
   wireDataEditor();
   resolveDataItems();
 }
@@ -5828,7 +5955,7 @@ function renderWizardStep() {
       + bxField('Favorite', bxChk('favorite', d.favorite))
       + `<div class="wiz-hint">Favorite boxes are shown in the Boxes panel.</div>`
       + bxField('Public', bxChk('public', d.public))
-      + bxField('Image URL', `<input class="bx-input bx-wide" type="url" id="bx-image_url" placeholder="https://…" value="${objEsc(d.image_url)}">`);
+      + bxImageField(d.image_url, d.description);
   }
 
   const last = (d.step === 4);
@@ -5903,6 +6030,7 @@ function wireWizardStep() {
     _wizReadStep(); d.step++; renderWizardStep();
   });
   document.getElementById('wiz-create')?.addEventListener('click', createBoxSubmit);
+  wireBxImageField();
 
   if (step === 'mode') {
     document.querySelectorAll('#bx-wizard [data-wiz-mode]').forEach(card => card.addEventListener('click', () => {

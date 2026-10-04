@@ -244,6 +244,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"retire_finished_bookmarks error: {e}")
         try:
+            o2mHandler.dbHandler.sweep_box_images()
+        except Exception as e:
+            print(f"sweep_box_images error: {e}")
+        try:
             o2mHandler.dbHandler.merge_rfshow_into_channels()
         except Exception as e:
             print(f"merge_rfshow_into_channels error: {e}")
@@ -1270,6 +1274,45 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
         return jsonify({'ok': True, 'uid': uid, 'changed': changed})
+
+    @api.route('/api/box_image', methods=['POST'])
+    @require_edit_auth
+    def api_box_image_upload():
+        """Store a picture for a box; answers its url, to be saved as the box's
+        image_url. The body is the picture itself, already downscaled by the
+        browser — the server only checks it (o2m_core/boximage.py)."""
+        from flask import jsonify
+        from o2m_core import boximage
+        if (request.content_length or 0) > boximage.MAX_BYTES:
+            return jsonify({'error': 'too_large', 'max_bytes': boximage.MAX_BYTES}), 413
+        data = request.get_data(cache=False)
+        mime, reason = boximage.check(data)
+        if reason:
+            code = 413 if reason == 'too_large' else 400
+            return jsonify({'error': reason, 'max_bytes': boximage.MAX_BYTES}), code
+        try:
+            h = o2mHandler.dbHandler.save_box_image(data, mime)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({'ok': True, 'url': boximage.url_for(h), 'size': len(data), 'mime': mime})
+
+    @api.route('/api/box_image/<sha1>')
+    def api_box_image(sha1):
+        """A stored box picture. Its address is the hash of its bytes, so it
+        never changes and a device fetches it once."""
+        from flask import Response
+        from o2m_core import boximage
+        if not boximage.is_sha1(sha1):
+            return Response(status=404)
+        found = o2mHandler.dbHandler.get_box_image(sha1)
+        if not found:
+            return Response(status=404)
+        mime, data = found
+        return Response(data, mimetype=mime, headers={
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'ETag': f'"{sha1}"',
+            'X-Content-Type-Options': 'nosniff',
+        })
 
     @api.route('/api/box_new', methods=['POST'])
     @require_edit_auth

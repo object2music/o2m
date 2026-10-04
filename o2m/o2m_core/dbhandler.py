@@ -9,12 +9,13 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 
 from o2m_core import virtualbox
 from o2m_core import boxdirectives
+from o2m_core import boximage
 from o2m_core.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
-    RfTaxonomy, PodcastChannel, EpisodeTaxonomy, OfflineRequest,
+    RfTaxonomy, PodcastChannel, EpisodeTaxonomy, OfflineRequest, BoxImage,
     setup_database,
 )
 
@@ -899,6 +900,40 @@ class DatabaseHandler():
         except Exception as e:
             print(f"retire_finished_bookmarks: {e}")
             return 0
+
+    # ── Box pictures (o2m_core/boximage.py) ───────────────────────────────────
+
+    def save_box_image(self, data, mime):
+        """Store a checked picture and return its sha1. The same bytes twice
+        are one row: the second upload only finds the first."""
+        h = boximage.digest(data)
+        if not BoxImage.select(BoxImage.sha1).where(BoxImage.sha1 == h).exists():
+            BoxImage.insert({
+                'sha1': h, 'mime': mime, 'data': data, 'size': len(data),
+                'created_at': datetime.datetime.utcnow(),
+            }).on_conflict_ignore().execute()
+        return h
+
+    def get_box_image(self, sha1):
+        """(mime, bytes) or None."""
+        row = BoxImage.get_or_none(BoxImage.sha1 == sha1)
+        return (row.mime, bytes(row.data)) if row else None
+
+    def sweep_box_images(self):
+        """Delete the pictures no box points at any more, once past the grace
+        period (an upload happens before the box is saved — or created). The
+        references are read from every box, pinned or not, and a box that
+        refers to a picture keeps it whatever instance wrote it. Returns the
+        number deleted."""
+        used = boximage.referenced(
+            b.image_url for b in Box.select(Box.image_url).where(Box.image_url.is_null(False)))
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=boximage.ORPHAN_GRACE_HOURS)
+        q = BoxImage.select(BoxImage.sha1).where(BoxImage.created_at < cutoff)
+        stale = [r.sha1 for r in q if r.sha1 not in used]
+        if stale:
+            BoxImage.delete().where(BoxImage.sha1.in_(stale)).execute()
+            print(f"[box_image] swept {len(stale)} unreferenced picture(s)")
+        return len(stale)
 
     def recent_music_play_seq(self, limit=200):
         """Ids of the last `limit` MUSIC plays, ascending — the rotation ruler.
