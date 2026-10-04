@@ -200,28 +200,73 @@ body.edit-mode .og-new { display: block; }
 
 /* The overlay fills the same box as the text cover — same padding, same four
    lines, same top-left start — so the name sits in the same place on every tile.
-   What it adds is a VEIL and only a veil: a light tint over the whole square, in
-   the theme's own ground rather than a black gradient, because the text is
-   `--muted`/`--accent` like everywhere else and what stands behind it has to flip
-   with the theme too. `--sheet-bg` is there for the `bulletin2` skin, whose `--bg`
-   is deliberately translucent — mixing THAT with transparent would leave nothing
-   to read against; every other theme has no such token and falls back to `--bg`.
 
-   45%, a tint rather than a wash: at 88% the picture was gone and the tile might
-   as well have had none. No halo behind the glyphs — it was tried and it reads as
-   a second mark on top of the first. If 45% turns out not to carry a busy picture,
-   the next thing to try is a semi-transparent BAND behind the lines of text rather
-   than a stronger tint over everything. */
+   What makes it legible over a picture is a BAND under each line of the name
+   (`.og-cap-txt`, an inline box cloned on every line), not a veil over the whole
+   square: the picture keeps its full strength everywhere the name is not. A 45%
+   veil over everything was the first answer and it was the wrong trade — weak
+   over a busy picture, and dulling every picture to get there.
+
+   The band is a THEME decision, not one recipe with the theme's colours poured
+   in: the grounds go from near-black to white through a translucent lavender, so
+   the opacity that keeps the name readable differs from one to the next. Each
+   value below was MEASURED, as the ink against the band laid over the worst
+   pixel the picture can put behind it (pure white, mid grey or pure black):
+     dark      #15120E at .72, cream ink   — 6.5:1 worst
+     bulletin  #F8F7FD at .72, violet ink  — 6.4:1
+     bulletin2 #EEEBF8 at .76, violet ink  — 6.3:1  (its ground is lavender, not white)
+     mono      black at .62, WHITE ink     — 6.2:1  (raw B&W: the poster's black bar)
+     overprint white at .60, black ink     — 7.4:1  (editorial: paper over the picture)
+     invert    #0c0c0c at .66, white ink   — 6.4:1
+   The ink on a picture is the theme's full `--text`, not the `--muted` the text
+   cover uses: muted on a translucent band falls to 2.5:1 over a white picture.
+
+   Active, the band takes the accent and the ink the colour that holds on it —
+   which is not always `--on-accent`: Bulletin's pink carries white at 3.4:1 and
+   its violet ink at 4.0:1, so there the band is the violet ink and the pink stays
+   in the frame; Mono's accent is the ink itself, so it takes its red signal;
+   Invert's hero accent changes with the cover and black holds on the default
+   (5.9:1) where white does not (3.6:1). */
+:root {
+  --cap-band: rgba(21, 18, 14, .72); --cap-ink: #F3EEE3;
+  --cap-band-on: var(--accent); --cap-ink-on: var(--on-accent);
+}
+[data-theme="creme"], [data-theme="bulletin"] {
+  --cap-band: rgba(248, 247, 253, .72); --cap-ink: var(--text);
+  --cap-band-on: var(--text); --cap-ink-on: #FFFFFF;
+}
+[data-skin="bulletin2"] { --cap-band: rgba(238, 235, 248, .76); }
+[data-theme="mono"] {
+  --cap-band: rgba(0, 0, 0, .62); --cap-ink: #FFFFFF;
+  --cap-band-on: #ff3b00; --cap-ink-on: #000000;
+}
+[data-theme="overprint"] {
+  --cap-band: rgba(255, 255, 255, .60); --cap-ink: #000000;
+  --cap-band-on: var(--accent); --cap-ink-on: var(--on-accent);
+}
+[data-theme="invert"] {
+  --cap-band: rgba(12, 12, 12, .66); --cap-ink: #FFFFFF;
+  --cap-band-on: var(--accent); --cap-ink-on: #000000;
+}
 .og-cap {
   position: absolute; inset: 0;
-  background: var(--sheet-bg, var(--bg));
+  /* The band's own side padding is taken back here, so the letters start where
+     the text cover's do. */
+  padding-left: calc(8px * var(--ui) - .25em);
 }
-@supports (background: color-mix(in srgb, red 50%, transparent)) {
-  .og-cap { background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 45%, transparent); }
+.og-cap-txt {
+  background: var(--cap-band);
+  padding: 0 .25em;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
 
 .og-tile:hover .og-art--text, .og-tile:hover .og-cap { color: var(--text); }
 .og-tile.active .og-art--text, .og-tile.active .og-cap { color: var(--accent); }
+/* After the two rules above, which colour the text cover: on a picture the ink
+   is the band's, at rest, on hover and active alike. */
+.og-cap, .og-tile:hover .og-cap { color: var(--cap-ink); }
+.og-tile.active .og-cap { color: var(--cap-ink-on); }
+.og-tile.active .og-cap-txt { background: var(--cap-band-on); }
 
 /* Either way the square says the name, so the caption below would say it twice. */
 .og-tile--named .og-name { display: none; }

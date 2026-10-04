@@ -4605,7 +4605,7 @@ function bxImageField(url, name) {
 function _bxImageTile(url, name) {
   const n = objEsc(name || 'Box');
   return `<span class="og-thumb">`
-    + (url ? `<img class="og-art" src="${objEsc(url)}" alt="">` + `<span class="og-cap">${n}</span>`
+    + (url ? `<img class="og-art" src="${objEsc(url)}" alt="">` + `<span class="og-cap"><span class="og-cap-txt">${n}</span></span>`
            : `<span class="og-art og-art--text">${n}</span>`)
     + `</span>`;
 }

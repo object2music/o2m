@@ -225,7 +225,7 @@ const OBJGRID = (() => {
     const named = !row.image || kind === 'box';
     const art = row.image
       ? `<img class="og-art" src="${objEsc(row.image)}" alt="" loading="lazy" decoding="async">`
-        + (kind === 'box' ? `<span class="og-cap">${objEsc(name)}</span>` : '')
+        + (kind === 'box' ? `<span class="og-cap"><span class="og-cap-txt">${objEsc(name)}</span></span>` : '')
       : `<span class="og-art og-art--text">${objEsc(name)}</span>`;
     return `<button type="button" class="og-tile${active ? ' active' : ''}`
       + `${named ? ' og-tile--named' : ''}"`
