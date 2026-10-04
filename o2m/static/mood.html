@@ -727,6 +727,15 @@ function syncBasicFromNowPlaying() {
   refreshBasicToggles();                      // refetch /basic_boxes → box states + count
 }
 
+/* Is a category ON? The server's answer (`on`), read from the ACTIVE boxes —
+   a playlist box put down from the Full view, an album, the children of a
+   cascade all light the tile that would switch them off. The pinned boxes of a
+   category say what the tile can turn ON, not what is on. */
+function catOn(cat) {
+  if (basicCats && basicCats.on) return !!basicCats.on[cat];
+  return ((basicCats && basicCats[cat]) || []).some(b => b.active);
+}
+
 async function refreshBasicToggles() {
   if (!isBasic()) return;
   try {
@@ -737,8 +746,7 @@ async function refreshBasicToggles() {
       // A tile waiting in the queue, or the one currently filling, shows the state
       // the user asked for — the server's mid-flight truth would flip it back.
       if (btn.classList.contains('pending') || btn.disabled) return;
-      const boxes = basicCats[btn.dataset.cat] || [];
-      btn.classList.toggle('on', boxes.some(b => b.active));
+      btn.classList.toggle('on', catOn(btn.dataset.cat));
     });
     syncAllButton();
   } catch(e) {}
@@ -758,7 +766,7 @@ function syncAllButton() {
   const allBtn = document.getElementById('basic-all');
   if (!allBtn) return;
   const tiles = [...document.querySelectorAll('#basic-toggles .basic-toggle')]
-    .filter(t => ((basicCats && basicCats[t.dataset.cat]) || []).length);
+    .filter(t => ((basicCats && basicCats[t.dataset.cat]) || []).length || catOn(t.dataset.cat));
   allBtn.classList.toggle('on', tiles.length > 0 && tiles.every(t => t.classList.contains('on')));
 }
 
@@ -824,12 +832,14 @@ function requestBasicCat(btn) {
   if (_allRunning || !basicCats) return;
   const cat = btn.dataset.cat;
   const boxes = basicCats[cat] || [];
-  if (!boxes.length) { setFeedback('No ' + cat + ' box'); return; }
+  // With no box of its own a category can still be ON (something else lit it),
+  // and then the tile must be able to switch it off.
+  if (!boxes.length && !catOn(cat)) { setFeedback('No ' + cat + ' box'); return; }
   const qi = _catQueue.findIndex(q => q.cat === cat);
   if (qi >= 0) {                                    // second tap while waiting: cancel
     _catQueue.splice(qi, 1);
     btn.classList.remove('pending');
-    btn.classList.toggle('on', boxes.some(b => b.active));   // back to the server's truth
+    btn.classList.toggle('on', catOn(cat));   // back to the server's truth
     syncAllButton();
     setFeedback(_capCat(cat) + ' cancelled');
     return;
@@ -865,8 +875,8 @@ async function drainCatQueue() {
    toggle of the current server state (ALL). */
 async function toggleBasicCat(btn, wantOn) {
   const boxes = (basicCats && basicCats[btn.dataset.cat]) || [];
-  if (!boxes.length) { setFeedback('No ' + btn.dataset.cat + ' box'); return; }
-  const isOn = boxes.some(b => b.active);
+  const isOn = catOn(btn.dataset.cat);
+  if (!boxes.length && !isOn) { setFeedback('No ' + btn.dataset.cat + ' box'); return; }
   const turnOn = (wantOn == null) ? !isOn : wantOn;
   if (turnOn === isOn) { btn.classList.toggle('on', isOn); return; }   // already there — nothing to do
   btn.disabled = true;
@@ -6359,8 +6369,10 @@ function recomputeAutoBox() {
    interface says so. */
 function activeSummary() {
   const c = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
+  // A cascade's children are counted apart: putting down one object that
+  // includes four others is one gesture — "1 box (+4 included)", not "5 boxes".
   const n = c.box || 0;
-  const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}`];
+  const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}` + (c.included ? ` (+${c.included} included)` : '')];
   ['album', 'artist', 'playlist', 'tag'].forEach(k => {
     if (c[k]) parts.push(`${c[k]} ${c[k] === 1 ? k : k + 's'}`);
   });

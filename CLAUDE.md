@@ -908,10 +908,25 @@ Other points worth knowing:
   has no row, and a count that can only see what it renders is a count of the
   rendering. An album is still named an album: it fills the tracklist like a box but
   is not one, and this line is the only place the interface says so.
-  **Known reading**: a cascade counts its children, so putting down one object that
-  includes two others reads `3 boxes`. True of `activeboxs`, and not the same
-  sentence as "you put down one thing" — `_box_parent` knows the lineage if that is
-  ever the number wanted.
+  **A cascade's children are counted apart**: putting down one object that includes
+  four others reads `1 box (+4 included)`, not `5 boxes` — `/api/active_objects`
+  returns `included` (active boxes whose `_box_parent` is active,
+  `included_box_uids`), and `activeCounts` subtracts them.
+- **The four Basic actuators show what is ON, not what their own boxes are**
+  (`active_categories`, sent as `on` by `/api/basic_boxes`). A tile used to light
+  only when one of the PINNED boxes of its category was active, so on 2026-10-04 an
+  install playing a cascade of four playlists read Music off and Radio ON. Now every
+  active box lights the tile that would switch it off, `other` (a playlist box, an
+  album, a cascade's child) counting as music — the rule Music OFF already used to
+  sweep; `meta_remove` sweeps every live box of its category, and ALL reads the same
+  set. A tile with no box of its own but lit can still be switched off.
+  **Classification** (`_box_category`) ignores `#` lines and time-window prefixes
+  (`_content_lines`): a disabled `#http://…aac` left in a playlist box made it a
+  radio. An `auto:` line makes a box **music even when it also includes boxes** —
+  the install's only auto box gained time-windowed `box:` includes and had vanished
+  from Basic, leaving Music nothing to drive. The mood apply therefore excludes
+  cascades by asking `_is_cascade`, no longer by their category being None.
+  Verified across the 148 boxes: exactly those two change category.
 - Tiles are not `.box-btn`, so `recomputeAutoBox`'s `/auto/i` test on the label
   cannot see them — an album called *Autobahn* does not light the live mode.
 

@@ -726,6 +726,8 @@ if __name__ == "__main__":
             # dials while it is true, which it cannot know from its own requests.
             return jsonify({'items': virtualbox.active_objects(o2mHandler),
                             'boxes': virtualbox.active_box_uids(o2mHandler),
+                            # boxes an active cascade included: counted apart
+                            'included': o2mHandler.included_box_uids(),
                             'busy': o2mHandler.is_filling()})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -2484,6 +2486,10 @@ if __name__ == "__main__":
                                  'active': box['uid'] in active_uids, 'last_read': lr})
                 out[cat] = rows
             out['limit'] = o2mHandler.max_results   # fill target for multi-source categories
+            # What each actuator shows: read from the ACTIVE boxes, not from the
+            # pinned ones above (o2mHandler.active_categories).
+            on = o2mHandler.active_categories()
+            out['on'] = {c: c in on for c in ('music', 'podcast', 'info', 'radio')}
             return jsonify(out)
         except Exception as e:
             return jsonify({'error': str(e)}), 500

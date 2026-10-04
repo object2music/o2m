@@ -58,6 +58,7 @@ const OBJGRID = (() => {
     filter: '',
     active: new Map(),      // object uri → {kind, name}
     activeBoxes: new Set(), // box uid
+    included: new Set(),    // active box uids an active cascade brought in
     busy: new Set(),
     pending: new Set(),     // tile keys being turned ON, not yet answered
   };
@@ -513,6 +514,7 @@ const OBJGRID = (() => {
       const d = await fetch(API + '/active_objects').then(r => r.json());
       state.active = new Map(((d && d.items) || []).map(o => [o.uri, o]));
       state.activeBoxes = new Set((d && d.boxes) || []);
+      state.included = new Set((d && d.included) || []);
       // A fill running server-side, whoever started it (see setServerBusy).
       if (typeof setServerBusy === 'function') setServerBusy(!!(d && d.busy), askedAt);
     } catch (e) { return; }
@@ -610,7 +612,9 @@ const OBJGRID = (() => {
      box activated from an NFC tag may not be pinned, so it has no row to count,
      and a count that can only see what it renders is a count of the rendering. */
   function activeCounts() {
-    const out = { box: state.activeBoxes.size };
+    let included = 0;
+    state.activeBoxes.forEach(u => { if (state.included.has(u)) included++; });
+    const out = { box: state.activeBoxes.size - included, included };
     state.active.forEach(o => { out[o.kind] = (out[o.kind] || 0) + 1; });
     return out;
   }

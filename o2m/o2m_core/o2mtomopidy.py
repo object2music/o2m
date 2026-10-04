@@ -468,6 +468,12 @@ class O2mToMopidy:
         except Exception:
             pass
 
+    def included_box_uids(self):
+        """Active boxes that are there because an active cascade included them —
+        what the summary counts apart, since putting down one object that
+        includes four others is one gesture, not five."""
+        return [b.uid for b in list(self.activeboxs or []) if self._parent_box(b) is not None]
+
     def _parent_box(self, box, _seen=None):
         """The active box that included this one, if any. Guards against a cycle:
         two boxes can perfectly well include each other."""
@@ -1610,26 +1616,65 @@ class O2mToMopidy:
 
     _STREAM_RE = re.compile(r'https?://\S+\.(aac|mp3|m3u8)\b|icecast', re.I)
 
+    @staticmethod
+    def _content_lines(data):
+        """A box's lines as classification reads them: `#` lines dropped (a
+        disabled stream or include is not there), time windows stripped (a box's
+        category does not change with the hour), block braces gone."""
+        return [p.strip() for _, p in bdir.iter_lines(data or '')
+                if p and not p.strip().startswith('#')]
+
+    @classmethod
+    def _is_cascade(cls, data):
+        return any(l.startswith('box:') for l in cls._content_lines(data))
+
     def _box_category(self, data, option_type):
         """Classify any box (pinned or not) into a basic-view category, given its
-        data/option_type. None = cascade/meta scenario box (not a direct source
-        of any kind — leave it alone). 'other' = a direct, non-cascade box that
-        isn't podcast/info/radio (e.g. a plain library/new box) — not one of the
-        4 actuators' fill sources, but still swept up by Music OFF's catch-all
-        (see meta_remove) so it doesn't get orphaned once activated some other
-        way (Full view, NFC, cascade)."""
-        data = data or ''
-        if re.search(r'^\s*box:', data, re.M) or re.search(r'^\s*meta_', data, re.M):
-            return None
-        if re.search(r'^\s*auto:', data, re.M):
+        data/option_type. 'music' = an AUTO box (an `auto:` line) — even when it
+        also includes other boxes: a cascade that holds the auto mix IS the music
+        source, and excluding it left the Music actuator with nothing to drive
+        (the install's 'Auto music' gained time-windowed includes and vanished
+        from Basic). None = any other cascade or meta scenario box (not a direct
+        source of any kind — leave it alone). 'other' = a direct, non-cascade box
+        that isn't podcast/info/radio (e.g. a plain library/new box) — not one of
+        the 4 actuators' fill sources, but counted as music when the actuators
+        read what is ON, and swept up by Music OFF's catch-all (see meta_remove)
+        so it doesn't get orphaned once activated some other way (Full view, NFC,
+        cascade). Commented lines are ignored throughout: a '#http://…aac' left
+        in a playlist box used to make it a RADIO box."""
+        lines = self._content_lines(data)
+        if any(l.startswith('auto:') for l in lines):
             return 'music'
+        if any(l.startswith('box:') or l.startswith('meta_') for l in lines):
+            return None
         if option_type == 'podcast':
             return 'podcast'
         if option_type == 'info':
             return 'info'
-        if self._STREAM_RE.search(data):
+        if any(self._STREAM_RE.search(l) for l in lines):
             return 'radio'
         return 'other'
+
+    def _live_category(self, box):
+        """The actuator an ACTIVE box lights: its category, 'other' counting as
+        music — the same rule Music OFF already applied when sweeping."""
+        cat = self._box_category(getattr(box, 'data', ''), getattr(box, 'option_type', ''))
+        return 'music' if cat == 'other' else cat
+
+    def active_categories(self):
+        """Which of the four actuators are ON, read from what is actually active —
+        not from the pinned boxes of each category. A playlist box put down from
+        the Full view, an album, the children of a cascade: each lights the tile
+        that would switch it off. Internal boxes (`mopidy_box`, which joins as
+        soon as anything plays) light nothing."""
+        out = set()
+        for b in list(self.activeboxs or []):
+            if getattr(b, 'uid', None) in vbox.INTERNAL_UIDS:
+                continue
+            c = self._live_category(b)
+            if c in self._ALL_CATS:
+                out.add(c)
+        return out
 
     def get_basic_categories(self):
         """Pinned boxes grouped into the basic-view categories (direct sources only).
@@ -1815,10 +1860,11 @@ class O2mToMopidy:
         ever remove its tracks; they'd sit in the tracklist forever."""
         with self._box_ops_lock():
             uids = {b['uid'] for b in (self.get_basic_categories().get(cat) or [])}
-            if cat == 'music':
-                for b in self.activeboxs:
-                    if self._box_category(b.data, b.option_type) in ('music', 'other'):
-                        uids.add(b.uid)
+            # Every active box this actuator shows as ON, pinned or not — the tile
+            # must switch off exactly what lit it (active_categories).
+            for b in self.activeboxs:
+                if self._live_category(b) == cat:
+                    uids.add(b.uid)
             removed = 0
             for b in [x for x in self.activeboxs if x.uid in uids]:
                 try:
@@ -1836,10 +1882,11 @@ class O2mToMopidy:
     _ALL_CATS = ('music', 'podcast', 'info', 'radio')
 
     def _all_categories(self):
-        """Categories that have at least one box, and those of them now on."""
+        """Categories that have at least one box, and the categories now on — read
+        from what is active, like the tiles (active_categories): a category can be
+        on without a pinned box of its own."""
         cats = {c: b for c, b in self.get_basic_categories().items() if c in self._ALL_CATS and b}
-        active_uids = {b.uid for b in self.activeboxs}
-        on = [c for c, boxes in cats.items() if any(b['uid'] in active_uids for b in boxes)]
+        on = [c for c in self._ALL_CATS if c in self.active_categories()]
         return cats, on
 
     def all_on(self, max_results=None):
@@ -3201,12 +3248,14 @@ class O2mToMopidy:
                       f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
                 return max(0, added)
 
-            # Cascade parents (category None) are left out: refilling one would
-            # include its children a second time. Each child is in activeboxs
-            # itself and is judged on its own lines.
+            # Cascade parents are left out: refilling one would include its
+            # children a second time. Each child is in activeboxs itself and is
+            # judged on its own lines. Asked explicitly — a cascade holding the
+            # auto mix is category 'music' since the actuators were fixed.
             candidates = [b for b in self.activeboxs
                           if self._box_category(getattr(b, 'data', ''), getattr(b, 'option_type', ''))
-                          in ('music', 'other')]
+                          in ('music', 'other')
+                          and not self._is_cascade(getattr(b, 'data', ''))]
             driven = [b for b in candidates
                       if bdir.depends_on_mood(getattr(b, 'data', ''), getattr(b, 'option_sort', None))]
             if not driven:
