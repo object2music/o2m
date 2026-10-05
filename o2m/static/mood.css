@@ -2122,6 +2122,11 @@
     color: var(--accent); text-align: center; margin-top: calc(8px * var(--ui));
   }
   #basic-status .mood-forced-hint { margin: 0; }
+  /* In the Full view the hint is a child of the dials' flex row, where it sat as a
+     fourth column beside Discovery. It explains all three, so it takes a line of
+     its own under them. */
+  #dials { flex-wrap: wrap; }
+  #dials .mood-forced-hint { flex-basis: 100%; margin-top: calc(2px * var(--ui)); }
   /* Filling the queue takes seconds. Moving a dial meanwhile fires a second,
      concurrent rebuild: part of the queue is dropped and part is not, and the
      result is longer than either would have been. The dials say so and stop
