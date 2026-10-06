@@ -2149,6 +2149,11 @@
      picture even more so. All themes. */
   html.basic #basic-status { font-size: var(--t-body); letter-spacing: .06em; gap: calc(10px * var(--ui)); }
   @media (min-width: 700px) { html.basic #basic-status { gap: calc(12px * var(--ui)); } }
+  /* The two counts one step smaller: at body size "1 box (+2 included)" broke over
+     two lines on a phone and pushed the count to a second line too. "39 tracks"
+     never breaks. */
+  html.basic #bs-tracks, html.basic #bs-boxes { font-size: var(--t-body-s); letter-spacing: .04em; }
+  html.basic #bs-tracks { white-space: nowrap; }
   /* The Basic dials stay at their 100% size (class ui-100 in the markup): they
      were the one thing that read well before the +10% (2026-09-24). */
   #basic-dials { display: flex; justify-content: center; gap: calc(24px * var(--ui)); align-items: flex-start; }
