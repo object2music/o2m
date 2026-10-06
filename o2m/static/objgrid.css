@@ -107,14 +107,16 @@
 
 /* A FIXED count per row, not a minimum tile width. auto-fill kept the tile size
    steady and let the count drift with the column, which meant the mosaic never
-   looked the same twice; three on a phone and four on a desktop is a layout you
-   can learn. The tile then takes whatever width that leaves. */
+   looked the same twice; three on a phone and a tablet, four on a desktop, is a
+   layout you can learn. The tile then takes whatever width that leaves. A tablet
+   (700–1024px, the band mood.css already uses) gives the column a third of a
+   narrow screen, where four covers came out too small to read. */
 .og-grid {
   display: grid; gap: calc(8px * var(--ui));
   grid-template-columns: repeat(3, 1fr);
   align-content: start;
 }
-@media (min-width: 700px) { .og-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 1025px) { .og-grid { grid-template-columns: repeat(4, 1fr); } }
 
 /* `order`, not a reordered DOM: the markup stays in library order so the filter,
    the random pick and every lookup keep addressing the same elements — only the

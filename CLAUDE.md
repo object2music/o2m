@@ -898,7 +898,7 @@ Other points worth knowing:
 - `#boxes-wrap` and `#obj-grid-wrap` both carry an explicit `display`, which beats
   `[hidden]`'s UA rule — without the two `[hidden]` rules the mosaic renders *under*
   the boxes list instead of replacing it.
-- **A fixed count per row — three on a phone, four on a desktop — not a minimum tile
+- **A fixed count per row — three on a phone and a tablet (≤ 1024px), four on a desktop — not a minimum tile
   width.** `auto-fill` held the tile size steady and let the count drift with the
   column, so the mosaic never looked the same twice; the tile now takes whatever
   width the count leaves, which is also what makes the name-as-cover sizing
