@@ -50,3 +50,37 @@ class BoxBudget:
     def spent(self, n):
         """What the line just served actually added."""
         self.left = max(0, self.left - max(0, int(n or 0)))
+
+
+def split(weights, n):
+    """Share n places between sources by weight, every source with a positive
+    weight keeping at least one place when there are enough to go round.
+
+    The AUTO mix used to round each source on its own and hand the rounding error
+    to the last one. That was invisible at 30 tracks and wrong at 10, which is what
+    an auto:library line gets once it shares a box with two included boxes:
+    incoming (weight 0.3·DL) rounded to 0 up to DL 5, so a source the DL asked for
+    never came out. Here: the largest-remainder method (the sum is exactly n, and
+    nothing goes negative), then any positive source left at 0 takes one place from
+    the source holding the most. With fewer places than sources, the heaviest win.
+    A source of weight 0 stays at 0: that is the DL saying "none", not rounding.
+    """
+    n = max(0, int(n or 0))
+    keys = list(weights)
+    w = {k: max(0.0, float(weights[k] or 0)) for k in keys}
+    total = sum(w.values())
+    if n == 0 or total <= 0:
+        return {k: 0 for k in keys}
+    exact = {k: w[k] / total * n for k in keys}
+    out = {k: int(exact[k]) for k in keys}
+    by_rest = sorted(keys, key=lambda k: (exact[k] - out[k], w[k]), reverse=True)
+    for k in by_rest[:n - sum(out.values())]:
+        out[k] += 1
+    for k in sorted((k for k in keys if w[k] > 0 and out[k] == 0),
+                    key=lambda k: w[k], reverse=True):
+        donor = max(keys, key=lambda d: (out[d], -w[d]))
+        if out[donor] <= 1:
+            break   # fewer places than sources: the heaviest already hold them
+        out[donor] -= 1
+        out[k] = 1
+    return out

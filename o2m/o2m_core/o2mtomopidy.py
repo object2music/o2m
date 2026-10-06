@@ -1494,22 +1494,11 @@ class O2mToMopidy:
             if mode == 'podcast':
                 base_proportions['podcasts'] = 0.9 * discover_level
             
-            # Normalize proportions to sum to 1
-            total_proportion = sum(base_proportions.values())
-            if total_proportion > 0:
-                for key in base_proportions:
-                    base_proportions[key] /= total_proportion
-            
-            # Distribute max_results among categories, ensuring the sum is correct
-            base_counts = {}
-            remaining = max_results
-            for key, proportion in list(base_proportions.items())[:-1]:
-                count = int(round(proportion * max_results))
-                base_counts[key] = count
-                remaining -= count
-            
-            base_counts[list(base_proportions.keys())[-1]] = remaining
-            
+            # Largest remainder, every positive source kept at one place at least
+            # (boxbudget.split): rounding each source on its own dropped incoming
+            # to 0 up to DL 5 in a 10-track mix, and gave the rounding error to news.
+            base_counts = boxbudget.split(base_proportions, max_results)
+
             print(f"Track distribution: {base_counts} (total: {sum(base_counts.values())})")
 
             #ADD_TRACKS        
@@ -1543,7 +1532,10 @@ class O2mToMopidy:
                 # and a source that is missing leaves its share to the other.
                 n_fav = base_counts['favorites']
                 has_liked, has_box = self.username is not None, box1 is not None
-                n_liked = (n_fav + 1) // 2 if (has_liked and has_box) else (n_fav if has_liked else 0)
+                # The odd place goes to either half at random: given to the liked
+                # tracks every time, a 1-place bucket (a small mix, a high DL) never
+                # drew from the favorites box at all.
+                n_liked = (n_fav + random.randint(0, 1)) // 2 if (has_liked and has_box) else (n_fav if has_liked else 0)
                 n_box = n_fav - n_liked if has_box else 0
                 #Using spotify favs
                 if n_liked > 0:

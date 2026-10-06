@@ -278,7 +278,17 @@ normalised, so they always sum to the requested track count:
 | `podcasts` (when the box mixes them in) | `0.9·DL` | 0 → 9 |
 
 So DL0 is almost entirely favourites/common (the known), DL10 is dominated by news and
-incoming (the unknown). Within each source, tracks are drawn
+incoming (the unknown).
+
+**The split is largest-remainder, and every source the DL asks for keeps one place**
+(`boxbudget.split`). Each source used to be rounded on its own, with the rounding
+error handed to the last one (news). That was invisible at 30 tracks and wrong at 10,
+which is what `auto:library` gets once it shares its box with two included boxes:
+incoming rounded to 0 up to DL 5. A source of weight 0 (incoming and news at DL0)
+stays at 0, because that is the DL's choice, not rounding. With fewer places than
+sources, the heaviest win. Favorites splits its places between the liked tracks and
+the `favorites` box, and the odd place goes to either at random: given to the liked
+tracks every time, a 1-place bucket never drew from the box. Within each source, tracks are drawn
 by one of two weighted samplers (Efraimidis-Spirakis, `_sample_by_weight`). Both realise
 the same principle: **DL0 → popularity-dominant, DL10 → pure random.**
 
