@@ -707,8 +707,19 @@ its one place up front. Measured on o2m_1: "P Cool Pop Electro" (3 playlists + 2
   candidate pool the mood pick draws from, oversampled on purpose. Splitting it would
   only shrink the choice, so there (`attribute_to` is another box) every line still
   draws the full pool, and feeds and pages keep their old rolling budget.
-- **Known, older and separate**: switching a cascade parent off removes only ITS
-  tracks; the boxes it included stay active, with theirs.
+- **Switching a cascade off switches off what it switched on** (`deactivate_box`,
+  recursive). Until 2026-10-06 only the parent's own tracks left: "Auto music" off kept
+  its two included boxes and their 20 tracks. A box that was ALREADY on when the
+  cascade included it was put down on its own and stays (`_cascade_owned` records
+  the difference at include time).
+- **Mopidy keeps playing a track removed from the tracklist**, so a removal must
+  never leave one playing. `box_action_remove` stopped the current track only when
+  it saw it was the box's, reading it once, and two boxes switched off in the same
+  second read it before the `play()` the first had issued: the tracklist came out
+  empty with a track still playing. It also defaulted `next_tlid` to the removed
+  track, and replayed it when nothing followed. Now `next_tlid` defaults to none,
+  and `_stop_if_playing_outside_tracklist` checks after every removal: the track
+  that now stands where the removed one stood, or stop.
 
 **Two clocks, and they must not be confused.** Windows and the `infos:library` bulletin
 grid are read in LOCAL time (`boxdirectives.local_now`: the process timezone when the

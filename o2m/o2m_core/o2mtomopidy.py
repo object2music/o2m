@@ -155,6 +155,9 @@ class O2mToMopidy:
         self._box_parent = {}
         # child uid -> the share of its parent's budget it was filled with
         self._box_share = {}
+        # Children a cascade switched ON itself (not already active when it
+        # included them): switching the parent off switches these off too.
+        self._cascade_owned = set()
 
         # ── Radio now-playing + auto-save to library ─────────────────────────
         self._radio_np = None          # last known {title,artist,album,key,is_music,source} for the UI
@@ -658,6 +661,7 @@ class O2mToMopidy:
             if uid:
                 self._box_parent.pop(uid, None)
                 self._box_share.pop(uid, None)
+                self._cascade_owned.discard(uid)
                 for k, v in list(self._box_parent.items()):
                     if v == uid:
                         self._box_parent.pop(k, None)
@@ -673,12 +677,18 @@ class O2mToMopidy:
                         self.mopidyHandler.playback.get_time_position()
                     )'''
             else:
+                try:
+                    old_order = [t.tlid for t in (self.mopidyHandler.tracklist.get_tl_tracks() or [])]
+                except Exception:
+                    old_order = []
                 # Collect all tlids owned by this box from _track_info
                 box_tlids = [t for t, info in self._track_info.items() if info.get('box_id') == removedBox.uid]
                 if box_tlids:
                     current_tlid = self.mopidyHandler.playback.get_current_tlid()
                     last_tlindex = self.mopidyHandler.tracklist.index()
-                    next_tlid = current_tlid
+                    # Nothing by default: defaulting to current_tlid replayed the
+                    # very track just removed when nothing of another box followed.
+                    next_tlid = None
 
                     if current_tlid in box_tlids:
                         # o2m is cutting this track short, not the listener: the
@@ -703,6 +713,39 @@ class O2mToMopidy:
                         self.mopidyHandler.playback.play(tlid=next_tlid)
                 else:
                     print("no tracks registered for removed box")
+                self._stop_if_playing_outside_tracklist(old_order)
+
+    def _stop_if_playing_outside_tracklist(self, old_order=()):
+        """Mopidy keeps playing a track removed from the tracklist. The removal
+        above stops it when it sees the track is the box's — but it reads the
+        current track once, and a removal racing a play() it has just issued (two
+        boxes switched off in the same second) reads the one before: the tracklist
+        came out empty with a track still playing, which nothing in the interface
+        could stop any more. So check after the fact: still playing something the
+        tracklist no longer holds -> the track that now stands where it stood
+        (old_order: the tracklist before the removal), or stop past the end."""
+        try:
+            if self.mopidyHandler.playback.get_state() == 'stopped':
+                return
+            current = self.mopidyHandler.playback.get_current_tlid()
+            if current is None:
+                return
+            tlids = [t.tlid for t in (self.mopidyHandler.tracklist.get_tl_tracks() or [])]
+            if current in tlids:
+                return
+            old = list(old_order or [])
+            kept = set(tlids)
+            pos = (sum(1 for t in old[:old.index(current)] if t in kept)
+                   if current in old else len(tlids))
+            nxt = tlids[pos] if pos < len(tlids) else None
+            self._mark_interrupted()
+            self.mopidyHandler.playback.stop()
+            if nxt is not None:
+                self.mopidyHandler.playback.play(tlid=nxt)
+            print(f"tlid {current} played outside the tracklist: "
+                  f"{'moved on to tlid %s' % nxt if nxt is not None else 'stopped'}")
+        except Exception as e:
+            print(f"_stop_if_playing_outside_tracklist: {e}")
                 
 
     def deactivate_box(self, box):
@@ -715,6 +758,9 @@ class O2mToMopidy:
         a uid no deactivation will ever name again. So a failed removal puts the
         box back, and the caller's error describes a box that is still active —
         which is true, and can be retried."""
+        # Read before box_action_remove, which forgets the lineage.
+        children = [b for b in self.activeboxs
+                    if self._box_parent.get(b.uid) == box.uid and b.uid in self._cascade_owned]
         self.activeboxs.remove(box)
         try:
             self.box_action_remove(box, box)
@@ -722,6 +768,17 @@ class O2mToMopidy:
             if box not in self.activeboxs:
                 self.activeboxs.append(box)
             raise
+        # A cascade is one object: switching it off switches off the boxes it
+        # switched on (and theirs). It used to leave them playing — "Auto music"
+        # off kept its two included boxes and their 20 tracks. A box that was
+        # already on when the cascade included it was put down on its own, and
+        # stays.
+        for child in children:
+            if child in self.activeboxs:
+                try:
+                    self.deactivate_box(child)
+                except Exception as e:
+                    print(f"deactivate_box: included box {child.uid}: {e}")
 
     """
     Daemon function called when change in active boxes
@@ -2126,6 +2183,7 @@ class O2mToMopidy:
                     # grow and double-loaded on the next reload).
                     if not any(b.uid == sub_box.uid for b in self.activeboxs):
                         self.activeboxs.append(sub_box)  #adding box to list
+                        self._cascade_owned.add(sub_box.uid)
                     # During a full reload, load each box at most once per cycle so a cascade
                     # include + a direct reload don't double it.
                     seen = getattr(self, '_reload_seen', None)
