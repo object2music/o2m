@@ -11,6 +11,7 @@ from o2m_core import radiofrance as rf
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
 from o2m_core import selection
+from o2m_core import boxbudget
 from o2m_core import virtualbox as vbox
 from o2m_core.fairlock import FairRLock
 from o2m_core.player import InertPlayer
@@ -152,6 +153,8 @@ class O2mToMopidy:
         # end-of-track recommendations pick what to add next to a track belonging to
         # the child. A stack was empty by then and the inheritance silently vanished.
         self._box_parent = {}
+        # child uid -> the share of its parent's budget it was filled with
+        self._box_share = {}
 
         # ── Radio now-playing + auto-save to library ─────────────────────────
         self._radio_np = None          # last known {title,artist,album,key,is_music,source} for the UI
@@ -572,7 +575,7 @@ class O2mToMopidy:
             dl = self.discover_level
         return int(dl)
 
-    def box_action(self,box):
+    def box_action(self, box, max_results=None):
         if self.configO2M["discover"] == "true":
             try: 
                 self.active_boxs_changed()
@@ -582,7 +585,7 @@ class O2mToMopidy:
                 #self.active_boxs_changed()
         else:
             try: 
-                self.one_box_changed(box)
+                self.one_box_changed(box, max_results=max_results)
             except Exception as val_e: 
                 print(f"Erreur : {val_e}")
                 self.spotifyHandler.init_token_sp() #pb of expired token to resolve...
@@ -654,9 +657,11 @@ class O2mToMopidy:
             uid = getattr(removedBox, 'uid', None)
             if uid:
                 self._box_parent.pop(uid, None)
+                self._box_share.pop(uid, None)
                 for k, v in list(self._box_parent.items()):
                     if v == uid:
                         self._box_parent.pop(k, None)
+                        self._box_share.pop(k, None)
         except Exception:
             pass
         with self._box_ops_lock():
@@ -784,6 +789,10 @@ class O2mToMopidy:
                 self.update_stat_raw(uri)
 
                 # Variables
+                if max_results is None and self._parent_box(box) is not None:
+                    # A cascade's child rebuilt on its own (a mood change) keeps the
+                    # share its parent gave it, or it would come back at full quota.
+                    max_results = self._box_share.get(box.uid)
                 if max_results is None:
                     max_results = self.max_results
                     if box.option_max_results: max_results = box.option_max_results
@@ -1954,6 +1963,7 @@ class O2mToMopidy:
         # keeps the historic inline behaviour verbatim, so a caller not yet
         # migrated is untouched.
         _planned = [0]
+        _box_total = max_results   # the line loop rebinds max_results to each line's share
 
         def _plan_or_add(uris, remaining, library_link='', bypass_remove_filter=False):
             items = [u for u in (uris or []) if u]
@@ -1989,8 +1999,10 @@ class O2mToMopidy:
             # Budget consumed so far: what actually landed in the tracklist (the
             # historic measure) plus what has only been planned. One of the two
             # is always zero, so on the legacy path this is the old expression.
+            # Never more than this line's share, never more than what is left of
+            # the box's total.
             live = self.mopidyHandler.tracklist.get_length() - tl_length_at_start
-            return max(0, max_results - live - _planned[0])
+            return max(0, min(max_results, _box_total - live - _planned[0]))
         if max_results>0:
             
             # Discover level and mood — see effective_dl / effective_mood for the
@@ -2060,12 +2072,43 @@ class O2mToMopidy:
                 except Exception as e:
                     print(f"rf:sujet prefetch pool: {e}")
 
+            # ONE budget for the whole box, shared between its lines (boxbudget:
+            # without it the first playlist of a box took all of it, and a cascade
+            # queued one quota per included box on top of its own).
+            # Not when BORROWING another box's content (tracklistfill_auto reading
+            # the incoming / new box): that is a candidate pool the mood pick draws
+            # from, oversampled on purpose — splitting it would only shrink the
+            # choice. Feeds and pages keep their own rolling budget there, as before.
+            _sharing = attribute_to is None or attribute_to is box
+            if _sharing:
+                _pod_left = _web_left = 0   # the shared budget already splits them
+            _budget = boxbudget.BoxBudget(
+                max_results, [x for x in data if not bdir.is_directive(x)])
+            _open = None   # counts before the line being served, settled at the next
+
+            def _counts():
+                n = sum(len(x) if isinstance(x, list) else (1 if x else 0)
+                        for x in tracklist_uris)
+                return n + self.mopidyHandler.tracklist.get_length() + _planned[0]
+
             for content in data:
+                # Settle the previous line here rather than after its branch: several
+                # branches leave with `continue`.
+                if _open is not None:
+                    _budget.spent(_counts() - _open)
+                    _open = None
                 # Windows were already resolved above. Directives (dl:/mood:) were
                 # read by the pre-pass in effective_dl / effective_mood, so they must
                 # not fall through to the branches and be mistaken for content.
                 if bdir.is_directive(content):
                     continue
+                _share = _budget.take(content) if _sharing else None
+                if _share is not None:
+                    max_results = _share
+                    if max_results <= 0:
+                        print(f"box {box.uid}: budget spent, '{content.strip()[:60]}' skipped")
+                        continue
+                    _open = _counts()
 
                 # A tag: every track carrying it, drawn like an artist is — through
                 # _expand_pick (popularity, mood, cooldown), since a tag is a body of
@@ -2100,7 +2143,12 @@ class O2mToMopidy:
                         seen.add(sub_box.uid)
                     print(f"added box {sub_box}")
                     self.note_box_include(box, sub_box)
-                    self.box_action(sub_box)
+                    # The child fills with its SHARE of this box, not its own quota;
+                    # remembered so a later rebuild of the child alone (a mood change)
+                    # keeps it.
+                    if _sharing:
+                        self._box_share[sub_box.uid] = max_results
+                    self.box_action(sub_box, max_results=self._box_share.get(sub_box.uid))
                 
                 # Recommandation
                 elif "recommendation" in content:
@@ -2262,7 +2310,7 @@ class O2mToMopidy:
                             self.rf_show_episodes(rf_line[len('rf:show:'):], max_results))
                     elif rf_line.startswith(('rf:sujet:', 'rf:subject:')):
                         if rf_line in _rf_done:
-                            tracklist_uris.append(_rf_done[rf_line])
+                            tracklist_uris.append((_rf_done[rf_line] or [])[:max_results])
                         else:
                             value, _sep, stations = rf_line.split(':', 2)[2].partition('@')
                             picked = [rf.STATIONS.get(x.strip().lower(), x.strip().upper())
@@ -2320,7 +2368,7 @@ class O2mToMopidy:
                         else:
                             # Basic / cache-miss: legacy top + all tracks (may hit the API)
                             tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
-                            tracklist_uris.append(_from_line(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max_results - 10), content.strip()))  # all tracks of artist with no specific order
+                            tracklist_uris.append(_from_line(self.spotifyHandler.get_artist_all_tracks(media_parts[2], limit=max(1, max_results - 10)), content.strip()))  # all tracks of artist with no specific order
                     elif media_parts[1] == "album":
                         # Smart only: expand album sub-tracks from AlbumTrack and stochastically pick.
                         cached = self.dbHandler.get_album_tracks(media_parts[2]) if smart else None

@@ -35,7 +35,8 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 `test_player_port.py` (the player port's anti-drift check), `test_selection.py`
 (the samplers and the anti-repeat cooldown), `test_webmedia.py`
 (the `web:` page reader), `test_virtualbox.py` (activating an album or an artist
-as a box) and `test_fairlock.py` (the box lock's arrival-order queue) and `test_boximage.py` (what
+as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
+budget shared between its lines) and `test_boximage.py` (what
 a box picture upload may be). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
@@ -517,7 +518,8 @@ lists of the same patterns drift.
   bare feed url — the catalogue warmup classifies a whole feed at once and passes the
   latter.
 - **Budget sharing**: a box mixing several feeds shares its `max_results` between them in a
-  rolling fashion, so one prolific feed cannot crowd out the others.
+  rolling fashion, so one prolific feed cannot crowd out the others. Since 2026-10-06
+  that is the rule for every line of a box, not only feeds (see *One budget per box*).
 - **Rejection**: two early skips retire an episode from the resume pool; one
   **dislike** retires it immediately and everywhere — see the like/dislike section.
 - **Resume**: any spoken item resumes at its saved position (minus 10s) — and
@@ -675,11 +677,28 @@ block indentation left to trip a `startswith()`.
 Start inclusive, end exclusive; a window whose end is not after its start **wraps midnight**.
 The prefix is generic on purpose: gating the morning news is as useful as gating a mood.
 
-**A cascade multiplies content, and that is not a bug.** Each included box fills with its
-own `max_results`, added to the parent's: measured 11 → 17 → 21 tracks for one, two and
-three sources. A box gating two includes to the morning therefore serves noticeably more
-before 9am than after. Checked for accumulation across a mood change (remove-then-refill
-could have doubled a cascade): it does not — 17 → 17 → 17 over two successive changes.
+**One budget per box, shared between its lines** (`o2m_core/boxbudget.py`, since
+2026-10-06). Every line used to draw the box's full `max_results`, and both ways it
+went wrong were invisible. Three playlists made 90 candidates for 30 places, and
+`add_tracks` keeps the FIRST 30, before any shuffle, so the first playlist took the
+whole box and the others gave nothing. And an included box filled with its own quota
+on top of the parent's: a cascade served one quota per source (measured 11 → 17 → 21
+for one, two, three sources; "Auto music" about 90 for 30).
+
+Now each line that draws several items (playlist, album, artist, `tag:`, feed, `web:`,
+a pattern, `box:`) gets an equal share of what is left, and a shortfall rolls forward
+to the lines after it. A line naming ONE item (a track, an episode, a stream) reserves
+its one place up front. Measured on o2m_1: "P Cool Pop Electro" (3 playlists + 2 tags)
+6 / 6 / 6 / 6 / 6; "Auto music" in its evening window 31 for 30, where it was about 90.
+- **`box:` passes the share down** (`box_action(sub, max_results=share)`), and the
+  child fills its own lines within it. The share is remembered (`_box_share`), so a
+  child rebuilt alone by a mood change comes back at its share, not its full quota.
+- **Not when borrowing.** `tracklistfill_auto` reads the `incoming` / `new` box for a
+  candidate pool the mood pick draws from, oversampled on purpose. Splitting it would
+  only shrink the choice, so there (`attribute_to` is another box) every line still
+  draws the full pool, and feeds and pages keep their old rolling budget.
+- **Known, older and separate**: switching a cascade parent off removes only ITS
+  tracks; the boxes it included stay active, with theirs.
 
 **Two clocks, and they must not be confused.** Windows and the `infos:library` bulletin
 grid are read in LOCAL time (`boxdirectives.local_now`: the process timezone when the
