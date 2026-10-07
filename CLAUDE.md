@@ -938,11 +938,15 @@ Other points worth knowing:
 - `#boxes-wrap` and `#obj-grid-wrap` both carry an explicit `display`, which beats
   `[hidden]`'s UA rule — without the two `[hidden]` rules the mosaic renders *under*
   the boxes list instead of replacing it.
-- **A fixed count per row — three on a phone and a tablet (≤ 1024px), four on a desktop — not a minimum tile
+- **A fixed count per row — three, or four from 440px of GRID — not a minimum tile
   width.** `auto-fill` held the tile size steady and let the count drift with the
   column, so the mosaic never looked the same twice; the tile now takes whatever
   width the count leaves, which is also what makes the name-as-cover sizing
-  predictable.
+  predictable. **The switch reads the column's width (a container query on
+  `#obj-grid-wrap`), not the screen's**: the column is a third of the screen, so a
+  landscape tablet (1180px → ~370px of grid) and a small laptop are the same case,
+  and the 1025px screen breakpoint that stood there gave both four covers of ~90px,
+  smaller than a phone's three (~115px). Four starts around a 1440px screen.
 - **One sentence says what is active — `2 boxes · 1 album` — and both views show it
   character for character** (`activeSummary`, fed by `OBJGRID.activeCounts`). They
   used to count different things and neither said which, so they disagreed in three
