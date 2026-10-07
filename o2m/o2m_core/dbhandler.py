@@ -2813,27 +2813,41 @@ class DatabaseHandler():
     def _channel_ref(uri):
         """What a channel is known by, from any uri that names it or one of its
         episodes: 'podcast+<feed>[#guid]' → the feed (O2M's ?max_results= hint
-        dropped), 'web:<page>' → the page, anything else as it is."""
+        dropped), 'rf:show:<page>' and 'web:<page>' → the page, anything else
+        as it is."""
         ref = (uri or '').strip()
         if ref.startswith('podcast+'):
             ref = ref[len('podcast+'):].split('#', 1)[0]
             ref = _re.sub(r'[?&]max_results=\d+$', '', ref)
+        elif ref.startswith('rf:show:'):
+            ref = ref[len('rf:show:'):]
         elif ref.startswith(('web:', 'xp:')):
             ref = ref.split(':', 1)[1]
         return ref
 
     def _channels_for(self, uri):
         """Every PodcastChannel row that stands for this channel. Usually one, but
-        a Radio France show can be registered twice — under its show id (kind
-        'rf', the feed in feed_url) and under its feed (kind 'rss') — and a
+        a Radio France show can be registered twice — under its show id or page
+        (kind 'rf', the feed in feed_url) and under its feed (kind 'rss') — and a
         setting has to hold whichever of the two an episode resolves to."""
         ref = self._channel_ref(uri)
-        ids = set()
+        ids, feeds = set(), set()
         try:
             if ref:
-                for ch in PodcastChannel.select(PodcastChannel.id).where(
-                        (PodcastChannel.id == ref) | (PodcastChannel.feed_url == ref)):
+                # 'rf:show:<page>' names the show by its page: the row's id when
+                # the box path registered it, its url when the catalogue did.
+                for ch in PodcastChannel.select(PodcastChannel.id, PodcastChannel.feed_url).where(
+                        (PodcastChannel.id == ref) | (PodcastChannel.feed_url == ref)
+                        | (PodcastChannel.url == ref)):
                     ids.add(ch.id)
+                    if ch.feed_url:
+                        feeds.add(ch.feed_url)
+                # ...and the twin registered under the feed itself.
+                feeds.discard(ref)
+                if feeds:
+                    for ch in PodcastChannel.select(PodcastChannel.id).where(
+                            PodcastChannel.id.in_(list(feeds)) | PodcastChannel.feed_url.in_(list(feeds))):
+                        ids.add(ch.id)
             # An episode whose uri does not carry its feed (a 'web:' media, a bare
             # Radio France mp3) points at its channel through Track.channel_id.
             if uri and not ids:
@@ -2864,8 +2878,10 @@ class DatabaseHandler():
         seconds = max(0, int(seconds or 0)) or None
         ids = self._channels_for(uri)
         if not ids:
+            # Only a feed can be registered from its uri alone: a show page or a
+            # web page is not a feed, and a row claiming it is would be wrong.
             ref = self._channel_ref(uri)
-            if not ref.startswith('http'):
+            if not (uri or '').startswith('podcast+') or not ref.startswith('http'):
                 return []
             self.upsert_podcast_channel(ref, 'rss', title=title or '', url=ref, feed_url=ref)
             ids = [ref]

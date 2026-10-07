@@ -2778,12 +2778,16 @@ async function openPodcast(uri, seed) {
 
 /* The channel's pre-roll skip (PodcastChannel.ad_skip_s). Per channel and 0 by
    default: a per-host rule skipped 30 s of every Radio France show, ad or not.
-   Shown only for what the server can attach a setting to — a feed or a web page. */
+   Shown only for what the server can attach a setting to — a feed, a Radio France
+   show page or a web page. */
 async function channelAdSkipField(uri, name) {
   const row = document.getElementById('obj-adskip');
-  if (!row || !/^(podcast\+|web:|xp:)/.test(uri)) return;
+  if (!row || !/^(podcast\+|rf:show:|web:|xp:)/.test(uri)) return;
   const d = await _wcJson('/channel_settings?uri=' + encodeURIComponent(uri));
   if (!d || d.error || objCurrentUri !== uri) return;     // gone, or another object opened
+  // A show or page with no channel row yet has nowhere to keep it (only a feed
+  // can be registered from its uri alone): no field rather than one that fails.
+  if (!d.known && !uri.startsWith('podcast+')) return;
   const input = row.querySelector('input');
   let saved = d.ad_skip_s || 0;
   input.value = saved;
