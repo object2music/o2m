@@ -2809,6 +2809,69 @@ class DatabaseHandler():
         except Exception:
             return ''
 
+    @staticmethod
+    def _channel_ref(uri):
+        """What a channel is known by, from any uri that names it or one of its
+        episodes: 'podcast+<feed>[#guid]' → the feed (O2M's ?max_results= hint
+        dropped), 'web:<page>' → the page, anything else as it is."""
+        ref = (uri or '').strip()
+        if ref.startswith('podcast+'):
+            ref = ref[len('podcast+'):].split('#', 1)[0]
+            ref = _re.sub(r'[?&]max_results=\d+$', '', ref)
+        elif ref.startswith(('web:', 'xp:')):
+            ref = ref.split(':', 1)[1]
+        return ref
+
+    def _channels_for(self, uri):
+        """Every PodcastChannel row that stands for this channel. Usually one, but
+        a Radio France show can be registered twice — under its show id (kind
+        'rf', the feed in feed_url) and under its feed (kind 'rss') — and a
+        setting has to hold whichever of the two an episode resolves to."""
+        ref = self._channel_ref(uri)
+        ids = set()
+        try:
+            if ref:
+                for ch in PodcastChannel.select(PodcastChannel.id).where(
+                        (PodcastChannel.id == ref) | (PodcastChannel.feed_url == ref)):
+                    ids.add(ch.id)
+            # An episode whose uri does not carry its feed (a 'web:' media, a bare
+            # Radio France mp3) points at its channel through Track.channel_id.
+            if uri and not ids:
+                row = Track.select(Track.channel_id).where(Track.uri == uri).first()
+                if row and row.channel_id:
+                    ids.add(row.channel_id)
+        except Exception as e:
+            print(f"_channels_for error: {e}")
+        return sorted(ids)
+
+    def get_channel_ad_skip(self, uri):
+        """Seconds of pre-roll to skip for the channel of this uri (a channel or
+        one of its episodes). 0 when unset or unknown."""
+        ids = self._channels_for(uri)
+        if not ids:
+            return 0
+        try:
+            vals = [ch.ad_skip_s or 0 for ch in
+                    PodcastChannel.select(PodcastChannel.ad_skip_s).where(PodcastChannel.id.in_(ids))]
+            return max(vals) if vals else 0
+        except Exception:
+            return 0
+
+    def set_channel_ad_skip(self, uri, seconds, title=''):
+        """Store the pre-roll skip on every row standing for this channel. A feed
+        listed from a box but never registered gets its row here: the setting
+        must not depend on a warmup having happened to pass by."""
+        seconds = max(0, int(seconds or 0)) or None
+        ids = self._channels_for(uri)
+        if not ids:
+            ref = self._channel_ref(uri)
+            if not ref.startswith('http'):
+                return []
+            self.upsert_podcast_channel(ref, 'rss', title=title or '', url=ref, feed_url=ref)
+            ids = [ref]
+        PodcastChannel.update(ad_skip_s=seconds).where(PodcastChannel.id.in_(ids)).execute()
+        return ids
+
     def count_rf_shows(self):
         try:
             return PodcastChannel.select(PodcastChannel.id).where(PodcastChannel.kind == 'rf').count()

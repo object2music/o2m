@@ -4486,28 +4486,19 @@ class O2mToMopidy:
     # Pre-roll ads. Neither Radio France nor the BBC marks them: no chapters
     # (psc:/podcast:), no wording in the description, and itunes:duration already
     # includes the ad (measured: announced == actual, to the second). So this can
-    # only be a fixed skip per host — the value is a setting, not a detection.
-    _AD_SKIP_MS = {'radiofrance-podcast.net': 30000, 'proxycast.radiofrance.fr': 30000,
-                   'podcasts.files.bbci.co.uk': 30000}
-
+    # only be a fixed skip — and it is set PER CHANNEL (PodcastChannel.ad_skip_s,
+    # edited in the channel view), 0 by default. It was a per-host table (30 s for
+    # every radiofrance-podcast.net feed) and that was wrong both ways: some shows
+    # of a host carry no pre-roll and lost their first 30 s, others elsewhere have one.
     def ad_skip_ms(self, uri):
-        """Milliseconds of pre-roll to skip for this host, 0 if unknown.
-        Overridable in o2m.conf: podcast_ad_skip = host:ms, host:ms"""
+        """Milliseconds of pre-roll to skip for the channel of this episode, 0 if
+        none is set."""
         if not uri:
             return 0
-        table = dict(self._AD_SKIP_MS)
-        raw = (self.configO2M.get('podcast_ad_skip', '') or '').strip()
-        for part in raw.split(','):
-            if ':' in part:
-                host, _s, ms = part.rpartition(':')
-                try:
-                    table[host.strip()] = int(ms)
-                except Exception:
-                    pass
-        for host, ms in table.items():
-            if host and host in uri:
-                return max(0, ms)
-        return 0
+        try:
+            return max(0, int(self.dbHandler.get_channel_ad_skip(uri) or 0)) * 1000
+        except Exception:
+            return 0
 
     def _is_spoken_uri(self, uri):
         return bool(uri and self._SPOKEN_URI_RE.search(str(uri)))

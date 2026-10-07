@@ -408,6 +408,10 @@ class PodcastChannel(BaseModel):
     station    = CharField(null=True)
     image_url  = TextField(null=True)
     cached_at  = TimestampField(null=True, utc=True)
+    # Seconds of pre-roll to skip on a fresh start of one of its episodes. Set by
+    # hand per channel (the channel view): no feed marks its ads, and a per-HOST
+    # rule was wrong both ways — not every Radio France show carries one. NULL = 0.
+    ad_skip_s  = IntegerField(null=True)
 
 
 class EpisodeTaxonomy(BaseModel):
@@ -712,6 +716,11 @@ def _migration_v28(migrator):
     db.create_tables([BoxImage], safe=True)
 
 
+def _migration_v29(migrator):
+    # Nullable, so no SQL DEFAULT is needed: an older image's INSERT omits it.
+    _add_column_safe(migrator, 'podcastchannel', 'ad_skip_s', IntegerField(null=True))
+
+
 def _migration_v23(migrator):
     db.create_tables([OfflineRequest], safe=True)
 
@@ -758,7 +767,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -789,6 +798,7 @@ _MIGRATIONS = [
     (26, "username_nullable", _migration_v26),
     (27, "stats_raw_id_auto_increment", _migration_v27),
     (28, "box_image_table", _migration_v28),
+    (29, "podcastchannel_ad_skip_column", _migration_v29),
 ]
 
 

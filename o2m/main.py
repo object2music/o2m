@@ -940,6 +940,40 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/channel_settings')
+    def api_channel_settings():
+        """A channel's own settings — today only the pre-roll skip, in seconds.
+        ?uri= is the channel (podcast+<feed>, web:<page>) or one of its episodes."""
+        from flask import jsonify
+        uri = (request.args.get('uri') or '').strip()
+        if not uri:
+            return jsonify({'error': 'uri required'}), 400
+        db = o2mHandler.dbHandler
+        return jsonify({'uri': uri, 'ad_skip_s': db.get_channel_ad_skip(uri),
+                        'known': bool(db._channels_for(uri))})
+
+    @api.route('/api/channel_settings', methods=['POST'])
+    @require_edit_auth
+    def api_channel_settings_set():
+        """{uri, ad_skip_s, name?} — stores the pre-roll skip on the channel
+        (0 clears it). Applies from the next fresh start of one of its episodes."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        uri = (data.get('uri') or '').strip()
+        try:
+            secs = int(data.get('ad_skip_s') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'ad_skip_s must be a number of seconds'}), 400
+        if not uri or secs < 0 or secs > 600:
+            return jsonify({'error': 'uri and 0 <= ad_skip_s <= 600 required'}), 400
+        try:
+            ids = o2mHandler.dbHandler.set_channel_ad_skip(uri, secs, title=data.get('name') or '')
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        if not ids:
+            return jsonify({'error': 'unknown channel'}), 404
+        return jsonify({'ok': True, 'uri': uri, 'ad_skip_s': secs, 'channels': ids})
+
     @api.route('/api/directory')
     def api_directory():
         """External content directories for the box wizard — the local cache is

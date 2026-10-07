@@ -97,7 +97,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **28**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **29**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -544,9 +544,17 @@ lists of the same patterns drift.
   1,081 unfinished bookmarks preserved. It does NOT make a finished item eligible
   again — the pools read `read_count_end`, not the bookmark, so yesterday's
   bulletin still never comes back by itself; only an explicit play replays it.
-- **Pre-roll ads**: a fixed skip per host (30s for Radio France and BBC hosts, overridable
-  with `podcast_ad_skip = host:ms`), applied only on a fresh start. It cannot be detected:
-  no feed exposes chapters or ad markers, and `itunes:duration` already includes the ad.
+- **Pre-roll ads**: a fixed skip **per channel**, 0 by default —
+  `PodcastChannel.ad_skip_s` (migration **v29**), set in the channel view (`Skip
+  intro`, edit-locked, `GET/POST /api/channel_settings`). Applied only on a fresh
+  start, and server and offline player alike read it through `ad_skip_ms`. It was a
+  per-HOST table (30 s for every Radio France and BBC feed, `podcast_ad_skip` in
+  o2m.conf) until 2026-10-07, which was wrong both ways: not every show of a host
+  carries an ad. The setting is written on every row standing for the channel (a
+  Radio France show can exist under its show id AND its feed); an episode resolves
+  to its channel by the feed in its uri, else `Track.channel_id` (`web:`, bare RF
+  mp3). Ads cannot be detected: no feed exposes chapters or ad markers, and
+  `itunes:duration` already includes the ad.
 
 ## Box Data: the complete line reference
 

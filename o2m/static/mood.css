@@ -1749,6 +1749,14 @@
   .obj-meta { display: flex; flex-direction: column; gap: calc(4px * var(--ui)); font-size: var(--t-body-s);
     color: var(--muted); min-width: 0; }
   .obj-meta b { color: var(--text); font-weight: 600; }
+  .obj-setting { display: flex; align-items: center; gap: calc(6px * var(--ui)); margin-top: calc(2px * var(--ui)); }
+  .obj-setting[hidden] { display: none; }
+  .obj-num {
+    width: calc(56px * var(--ui)); padding: calc(2px * var(--ui)) calc(4px * var(--ui));
+    font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--border-soft); border-radius: var(--r, 0);
+  }
+  .obj-num:focus { outline: none; border-color: var(--accent); }
   .obj-src { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .1em;
     font-size: calc(9px * var(--ui)); color: var(--muted); margin-top: calc(3px * var(--ui)); }
   .obj-src-db { color: var(--accent); }

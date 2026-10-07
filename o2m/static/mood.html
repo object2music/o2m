@@ -2766,10 +2766,45 @@ async function openPodcast(uri, seed) {
     objSetActionUris(eps.map(e => e.uri).filter(Boolean), uri);
     const coverHtml = objCoverHTML(cover, uri);
     let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Podcast')}</b>`
-      + `<span>${eps.length} episode${eps.length === 1 ? '' : 's'}</span></div></div>`;
+      + `<span>${eps.length} episode${eps.length === 1 ? '' : 's'}</span>`
+      + `<label class="obj-setting" id="obj-adskip" hidden title="Seconds skipped at the start of each episode (pre-roll ad), on a fresh start only — never when resuming">`
+      + `Skip intro <input class="obj-num" type="number" min="0" max="600" step="5" inputmode="numeric"> s</label>`
+      + `</div></div>`;
     html += objRenderTracks(eps.map(t => ({ uri: t.uri, name: t.name, length: t.length, artists: [] })), 'track');
     objBody().innerHTML = html;
+    channelAdSkipField(uri, seed?.name || '');
   } catch (e) { objBody().innerHTML = '<div class="obj-empty">Could not load podcast.</div>'; }
+}
+
+/* The channel's pre-roll skip (PodcastChannel.ad_skip_s). Per channel and 0 by
+   default: a per-host rule skipped 30 s of every Radio France show, ad or not.
+   Shown only for what the server can attach a setting to — a feed or a web page. */
+async function channelAdSkipField(uri, name) {
+  const row = document.getElementById('obj-adskip');
+  if (!row || !/^(podcast\+|web:|xp:)/.test(uri)) return;
+  const d = await _wcJson('/channel_settings?uri=' + encodeURIComponent(uri));
+  if (!d || d.error || objCurrentUri !== uri) return;     // gone, or another object opened
+  const input = row.querySelector('input');
+  let saved = d.ad_skip_s || 0;
+  input.value = saved;
+  row.hidden = false;
+  input.addEventListener('change', async () => {
+    const v = Math.round(Number(input.value));
+    if (!Number.isFinite(v) || v < 0 || v > 600) { input.value = saved; setFeedback('Between 0 and 600 seconds'); return; }
+    if (v === saved) return;
+    if (!editUnlocked) { input.value = saved; setFeedback('Enable editing first'); return; }
+    try {
+      const r = await fetch(API + '/channel_settings', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ uri, ad_skip_s: v, name })
+      });
+      if (r.status === 401) { input.value = saved; setFeedback('Editing not authorized'); return; }
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.error) { input.value = saved; setFeedback(j.error || 'Could not save'); return; }
+      saved = v; input.value = v;
+      setFeedback(v ? `Episodes of this channel will skip their first ${v} s` : 'No intro skip for this channel');
+    } catch (e) { input.value = saved; setFeedback('Could not save'); }
+  });
 }
 
 // Playlist detail: resolve the playlist's tracks (mopidy lookup on the
