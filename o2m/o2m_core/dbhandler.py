@@ -1031,6 +1031,8 @@ class DatabaseHandler():
     # unreliable for podcasts (duration unknown → it stays ~0), so progress is measured
     # by read_position, NOT by proportion.
     PODCAST_RESUME_POS_MS = 120000   # 2 minutes
+    # What makes a video or a web-page item "long media", i.e. a podcast.
+    LONG_MEDIA_MS = 600000           # 10 minutes
 
     def get_uris_podcasts_notread(self, limit=15, discover_level=5):
         # Resume pool of UNFINISHED podcast/video episodes. Eligibility + ranking are
@@ -1045,13 +1047,25 @@ class DatabaseHandler():
         penalized_skips = Case(None, [(Track.read_position >= RES, 0)], Track.skipped_count)
         effective_recency = Track.last_read_date - (penalized_skips * skip_penalty)
         pool_size = min(max(limit, 1) * 4, 60)
+        # Two families of long spoken media. Episodes are long by nature; an
+        # info-typed one is a bulletin and goes through the news window instead.
+        episode = (((Track.uri % '%podcast+%')
+                    # Radio France OpenAPI episodes are plain https mp3 URLs with no
+                    # 'podcast+' marker, so they need their hosts listed explicitly or
+                    # 'podcasts:unfinished' would silently ignore every one of them.
+                    | (Track.uri % '%proxycast.radiofrance.fr%')
+                    | (Track.uri % '%radiofrance-podcast.net%'))
+                   & (Track.option_type != "info"))
+        # A video (YouTube, a channel's uploads) or a page item (web:, Vimeo,
+        # Dailymotion…) is only a podcast when it is LONG: the same scheme carries
+        # songs and sound effects. Long = a known duration past LONG_MEDIA_MS, or,
+        # when none was ever read, a position already past the resume mark.
+        video = (((Track.uri % 'youtube:%') | (Track.uri % 'yt:%')
+                  | (Track.uri % 'web:%') | (Track.uri % 'xp:%'))
+                 & ((Track.duration_ms >= self.LONG_MEDIA_MS)
+                    | (Track.duration_ms.is_null() & (Track.read_position >= RES))))
         query = Track.select().where(
-            ((Track.uri % '%podcast+%') | (Track.uri % '%youtube:video%') | (Track.uri % '%yt:%')
-                # Radio France OpenAPI episodes are plain https mp3 URLs with no
-                # 'podcast+' marker, so they need their hosts listed explicitly or
-                # 'podcasts:unfinished' would silently ignore every one of them.
-                | (Track.uri % '%proxycast.radiofrance.fr%')
-                | (Track.uri % '%radiofrance-podcast.net%'))
+            (episode | video)
             # read_count_end == 0 → finished at least once = DONE, never re-served.
             & (Track.read_count_end == 0)
             & (Track.read_end < 0.9)
@@ -1064,7 +1078,6 @@ class DatabaseHandler():
             # two skips to infer.
             & (Track.disliked == 0)
             & (Track.option_type != "library")
-            & (Track.option_type != "info")
         ).order_by(effective_recency.desc()).limit(pool_size)
         pool = [o.uri for o in self.transform_query_to_list(query)]
         if not pool:

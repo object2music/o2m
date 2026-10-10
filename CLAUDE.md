@@ -591,7 +591,7 @@ dispatch branches against the picker).
 | `herenow:library` | daily habits (hour + library extract) |
 | `albums:spotify` | a random saved album or artist |
 | `albums:local` | a random local album |
-| `podcasts:unfinished` | episodes already started, most recent first |
+| `podcasts:unfinished` | long spoken media already started, most recent first: episodes (RSS, Radio France) and, when longer than 10 min, videos and page items (YouTube, a channel's uploads, `web:` — Vimeo, Dailymotion…) |
 | `podcasts:channel` | the episodes of this box's own feeds |
 | `infos:library` | the scheduled news bulletin (see the two-clocks note below) |
 | `rf:sujet:<keyword>` | Radio France episodes matching a theme or tag, refilled dynamically |
