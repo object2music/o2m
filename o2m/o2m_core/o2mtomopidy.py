@@ -2683,13 +2683,18 @@ class O2mToMopidy:
         ready = self._unread_spoken_uris(cached)[:max_results]
         if ready or self._podcast_cache_fresh():
             return ready
-        if not self.rf_enabled():
-            return []
-        eps = self._rf_convert(
-            rf.episodes_of_show(self._rf_api_key, show_url, first=max(max_results * 2, 20)))
-        for e in eps:
-            self._remember_rf_published(e)
-        return self._unread_spoken_uris([e['uri'] for e in eps])[:max_results]
+        if self.rf_enabled():
+            eps = self._rf_convert(
+                rf.episodes_of_show(self._rf_api_key, show_url, first=max(max_results * 2, 20)))
+            for e in eps:
+                self._remember_rf_published(e)
+            ready = self._unread_spoken_uris([e['uri'] for e in eps])[:max_results]
+            if ready:
+                return ready
+        # The API can list a show and carry no audio for any of it (Recto-Verso:
+        # every diffusion has podcastEpisode null) while its feed holds them all.
+        feed = self._rf_feed_for_show(show_url)
+        return self.add_podcast_from_channel(None, 'podcast+' + feed, max_results) if feed else []
 
     def _remember_rf_published(self, episode):
         """Stash an RF episode's publication date. Their URIs are plain mp3 links,
@@ -2803,35 +2808,30 @@ class O2mToMopidy:
         total = 0
         for feed in feeds:
             try:
-                items = self.get_podcast_from_url(feed)
                 self.dbHandler.upsert_podcast_channel(
                     feed, 'rss', title=self._feed_title(feed), url=feed)
-                # mopidy's Refs give a uri and a title but no date, and the date is
-                # both what the Details panel shows and what makes an episode
-                # identifiable across sources — so read it from the feed itself.
-                dates = self._feed_pubdates(feed)
-                eps = []
-                for it in items:
-                    guid = (it.uri or '').split('#', 1)[-1]
-                    day, ekey = dates.get(guid, ('', ''))
-                    eps.append({'uri': it.uri, 'name': getattr(it, 'name', ''),
-                                'day': day, 'key': ekey})
-                total += self.dbHandler.upsert_episodes(eps, channel_id=feed,
-                                                        option_type=self._spoken_type_for_uri(feed))
+                total += self._warm_feed(feed, feed)
             except Exception as e:
                 print(f"warmup_podcast_catalogue(feed {feed}): {e}")
+        for url in shows:
+            try:
+                eps = (self._rf_convert(rf.episodes_of_show(self._rf_api_key, url, first=40))
+                       if self.rf_enabled() else [])
+                if eps:
+                    self.dbHandler.upsert_podcast_channel(
+                        url, 'rf', title=eps[0].get('show_title', ''), url=url,
+                        feed_url=self._rf_feed_for_show(url))
+                    self.dbHandler.upsert_episodes(eps, channel_id=url, dedup=True)
+                    total += len(eps)
+                else:
+                    # No playable episode from the API (or no key): the show's
+                    # feed, filed under the SHOW so rf_show_episodes finds it.
+                    feed = self._rf_feed_for_show(url)
+                    if feed:
+                        total += self._warm_feed(feed, url)
+            except Exception as e:
+                print(f"warmup_podcast_catalogue(show {url}): {e}")
         if self.rf_enabled():
-            for url in shows:
-                try:
-                    eps = self._rf_convert(rf.episodes_of_show(self._rf_api_key, url, first=40))
-                    if eps:
-                        self.dbHandler.upsert_podcast_channel(
-                            url, 'rf', title=eps[0].get('show_title', ''), url=url,
-                            feed_url=self._rf_feed_for_show(url))
-                        self.dbHandler.upsert_episodes(eps, channel_id=url, dedup=True)
-                        total += len(eps)
-                except Exception as e:
-                    print(f"warmup_podcast_catalogue(show {url}): {e}")
             for subject in subjects:
                 try:
                     total += self._warm_subject(subject)
@@ -2848,6 +2848,22 @@ class O2mToMopidy:
         print(f"warmup_podcast_catalogue: {total} episodes refreshed "
               f"({len(feeds)} feeds, {len(shows)} shows, {len(subjects)} subjects)")
         return total
+
+    def _warm_feed(self, feed, channel_id):
+        """Store a feed's episodes under channel_id; returns how many."""
+        items = self.get_podcast_from_url(feed)
+        # mopidy's Refs give a uri and a title but no date, and the date is
+        # both what the Details panel shows and what makes an episode
+        # identifiable across sources — so read it from the feed itself.
+        dates = self._feed_pubdates(feed)
+        eps = []
+        for it in items:
+            guid = (it.uri or '').split('#', 1)[-1]
+            day, ekey = dates.get(guid, ('', ''))
+            eps.append({'uri': it.uri, 'name': getattr(it, 'name', ''),
+                        'day': day, 'key': ekey})
+        return self.dbHandler.upsert_episodes(eps, channel_id=channel_id,
+                                              option_type=self._spoken_type_for_uri(feed))
 
     def _podcast_cache_fresh(self, hours=6):
         """True while the catalogue warmup is recent enough to be believed —
