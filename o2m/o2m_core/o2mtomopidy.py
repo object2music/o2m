@@ -1782,7 +1782,8 @@ class O2mToMopidy:
     def list_podcast_channels(self):
         """All referenced podcast *channels*. Like radios, a channel has no Track
         record: it's a '#Label' comment line immediately preceding an active
-        'podcast+<feed_url>' line inside a box's data (podcast/info/hidden boxes).
+        'podcast+<feed_url>' or 'rf:show:<page>' line inside a box's data
+        (podcast/info/hidden boxes).
         Returns the mopidy-podcast URI (O2M's '?max_results=' hint stripped) so a
         result can be browsed into episodes and played directly. Disabled
         ('#podcast+…') lines are skipped. Deduped by feed."""
@@ -1795,7 +1796,9 @@ class O2mToMopidy:
                 line = bdir.split_condition(raw)[1]
                 if not line:
                     continue
-                if line.startswith('podcast+'):
+                # A Radio France show line is a channel too: the channel view and
+                # the box line both resolve it (its feed, discovered from the page).
+                if line.startswith(('podcast+', 'rf:show:')):
                     feed = re.sub(r'[?&]max_results=\d+', '', line)
                     if label and feed not in seen:
                         seen.add(feed)
