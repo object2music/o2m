@@ -1108,6 +1108,12 @@ if __name__ == "__main__":
         live_names = {}
         feed = db.podcast_uri_remove_max_results(uri)
         channel = feed.split('+', 1)[1] if feed.startswith('podcast+') else feed
+        source = channel
+        if channel.startswith('rf:show:'):
+            # A Radio France show: its episodes are filed under the show page, and
+            # what can be read live is the feed discovered from that page.
+            channel = channel[len('rf:show:'):]
+            source = o2mHandler._rf_feed_for_show(channel)
         try:
             uris = db.get_episodes_by_channel(channel, limit=limit + offset + 1)
             # A thin catalogue is not an answer, it is a fragment. The fallback used
@@ -1119,9 +1125,9 @@ if __name__ == "__main__":
             # order is the spine (it is the authority on what the channel holds
             # now), and the catalogued episodes it no longer lists — older ones,
             # possibly started — are kept after it rather than lost.
-            if offset == 0 and len(uris) < limit:
+            if offset == 0 and len(uris) < limit and source:
                 try:
-                    shows = o2mHandler.get_podcast_from_url(channel) or []
+                    shows = o2mHandler.get_podcast_from_url(source) or []
                     live = [u for u in (getattr(r, 'uri', None) for r in shows) if u]
                     # An episode the catalogue has never seen has no Track row to
                     # read a name from, and the guid tail is a uuid — the feed's own
