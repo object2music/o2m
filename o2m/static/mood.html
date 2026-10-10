@@ -1268,6 +1268,19 @@ function renderSettings() {
       </div>
     </div>
     <div class="set-sec">
+      <div class="set-sec-h">Boxes column</div>
+      <div class="set-note">What each view of the column puts at its head. By default a
+        view shows only what is on among its own kind; the other choice heads every view
+        with everything that is on — boxes, albums, artists and tags side by side — so
+        the column says what is playing whichever tab is open. Stored in this browser.</div>
+      <div class="set-row">
+        <select id="og-all-active" class="set-select">
+          <option value="0"${typeof OBJGRID !== 'undefined' && OBJGRID.showAll ? '' : ' selected'}>Each view shows its own</option>
+          <option value="1"${typeof OBJGRID !== 'undefined' && OBJGRID.showAll ? ' selected' : ''}>Every view shows all that is on</option>
+        </select>
+      </div>
+    </div>
+    <div class="set-sec">
       <div class="set-sec-h">Maintenance</div>
       <div class="set-note">Enrichment runs on its own in the background; these force a pass
         now. Clearing today's history removes this day's plays from the stats.</div>
@@ -1352,6 +1365,9 @@ function renderSettings() {
     try { localStorage.setItem(MARK_KEY, b.dataset.markSet); } catch (e) {}
     applyMark(); renderSettings();
   }));
+  body.querySelector('#og-all-active')?.addEventListener('change', (e) => {
+    if (typeof OBJGRID !== 'undefined') OBJGRID.setShowAll(e.target.value === '1');
+  });
   body.querySelector('#off-quota')?.addEventListener('change', (e) => {
     try { localStorage.setItem(OFF_QUOTA_KEY, String(parseInt(e.target.value, 10) || OFF_DEFAULT_QUOTA_MB)); } catch (_) {}
     offPaintToggle(); renderSettings();

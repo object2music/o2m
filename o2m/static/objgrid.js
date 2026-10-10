@@ -42,6 +42,10 @@ const OBJGRID = (() => {
   const PAGE = 500;
 
   const KIND_OF = { boxgrid: 'box', albums: 'album', artists: 'artist', tags: 'tag' };
+  const MODE_OF = { box: 'boxgrid', album: 'albums', artist: 'artists', tag: 'tags' };
+  /* Settings → Boxes column: every view also heads its grid with what is on in
+     the OTHER views, so the column says what is playing whichever tab is open. */
+  const ALL_KEY = 'o2m-og-all-active';
   const ICONS = {
     /* Two box glyphs, as asked: the solid box opens the list, the same box drawn
        as a grid of four opens the mosaic. */
@@ -61,6 +65,9 @@ const OBJGRID = (() => {
     included: new Set(),    // active box uids an active cascade brought in
     busy: new Set(),
     pending: new Set(),     // tile keys being turned ON, not yet answered
+    boxInfo: new Map(),     // active box uid → {name, image}
+    showAll: (() => { try { return localStorage.getItem(ALL_KEY) === '1'; } catch (e) { return false; } })(),
+    foreignSig: '',         // which foreign tiles the grid was last rendered with
   };
 
   /* ── DOM ───────────────────────────────────────────────────────────────── */
@@ -192,6 +199,14 @@ const OBJGRID = (() => {
   async function load(mode) {
     const grid = document.getElementById('obj-grid');
     if (grid) grid.innerHTML = '<div class="og-empty">Loading…</div>';
+    await fetchRows(mode);
+    // No refreshActive() here: tileHTML reads the active state, which init()
+    // fills once and every toggle keeps up to date. Re-asking on each mode
+    // switch would be a second request for an answer already on hand.
+    if (state.mode === mode) render();
+  }
+
+  async function fetchRows(mode) {
     try {
       if (mode === 'boxgrid') {
         // The pinned boxes, in the shape the tiles read.
@@ -219,10 +234,49 @@ const OBJGRID = (() => {
       state.rows[mode] = [];
       state.more[mode] = false;
     }
-    // No refreshActive() here: tileHTML reads the active state, which init()
-    // fills once and every toggle keeps up to date. Re-asking on each mode
-    // switch would be a second request for an answer already on hand.
-    if (state.mode === mode) render();
+  }
+
+  /* The other views' rows, fetched quietly when a foreign tile needs its cover:
+     an active album shown in the tags view is drawn from the albums listing. */
+  const fetching = new Set();
+  function ensureRows(mode) {
+    if (state.rows[mode] !== null || fetching.has(mode)) return;
+    fetching.add(mode);
+    fetchRows(mode).then(() => { fetching.delete(mode); render(); paint(); });
+  }
+
+  /* What is on in the other views, as rows of their own kind, for the head of
+     this one (Settings → Boxes column). Empty unless the setting is on. Each is
+     drawn from its own listing when that is loaded, so it wears the same cover
+     as in its own view; else from what the server says about it. */
+  function foreignRows() {
+    if (!state.showAll || !MOSAICS.includes(state.mode)) return [];
+    const here = KIND_OF[state.mode];
+    const find = (kind, key) => (state.rows[MODE_OF[kind]] || [])
+      .find(r => (kind === 'box' ? r.uid : r.uri) === key);
+    const out = [];
+    if (here !== 'box') state.activeBoxes.forEach(uid => {
+      const info = state.boxInfo.get(uid) || {};
+      out.push({ kind: 'box', row: find('box', uid)
+        || { uri: 'box:' + uid, uid, name: info.name || uid, sub: '', image: info.image || '' } });
+    });
+    state.active.forEach((o, uri) => {
+      if (!o.kind || o.kind === here || !MODE_OF[o.kind]) return;
+      const row = find(o.kind, uri);
+      if (!row) ensureRows(MODE_OF[o.kind]);
+      out.push({ kind: o.kind, row: row || { uri, name: o.name || uri, sub: '', image: '' } });
+    });
+    const q = state.filter;
+    return q ? out.filter(f => ((f.row.name || '') + ' ' + (f.row.sub || '')).toLowerCase().includes(q))
+             : out;
+  }
+  const foreignKey = f => f.kind + ':' + (f.row.uid || f.row.uri);
+
+  function setShowAll(on) {
+    state.showAll = !!on;
+    try { localStorage.setItem(ALL_KEY, state.showAll ? '1' : '0'); } catch (e) {}
+    render();
+    paint();
   }
 
   /* ── Render ────────────────────────────────────────────────────────────── */
@@ -292,8 +346,15 @@ const OBJGRID = (() => {
   function render() {
     const grid = document.getElementById('obj-grid');
     if (!grid || !MOSAICS.includes(state.mode)) return;
+    // Still loading: load() renders once the listing is in.
+    if (state.rows[state.mode] === null) return;
     const kind = KIND_OF[state.mode];
     const rows = visibleRows();
+    const foreign = foreignRows();
+    state.foreignSig = foreign.map(foreignKey).join('|');
+    // Foreign tiles first in the markup, then the view's own: both groups sit
+    // at the head through `order` once active, and these always are.
+    const head = foreign.map(f => tileHTML(f.row, f.kind).replace('class="og-tile', 'class="og-tile og-foreign')).join('');
 
     if (!rows.length) {
       const empty = (state.rows[state.mode] || []).length
@@ -302,11 +363,11 @@ const OBJGRID = (() => {
         : state.mode === 'albums'  ? 'No saved albums cached yet.'
         : state.mode === 'tags'    ? 'No tags yet — they come from the genre enrichment.'
                                    : 'No followed artists cached yet.';
-      grid.innerHTML = `<div class="og-empty">${objEsc(empty)}</div>`
+      grid.innerHTML = head + `<div class="og-empty">${objEsc(empty)}</div>`
         + (state.mode === 'boxgrid' ? newBoxHTML() : '');
       return;
     }
-    let html = rows.map(r => tileHTML(r, kind)).join('');
+    let html = head + rows.map(r => tileHTML(r, kind)).join('');
     if (state.mode === 'boxgrid') html += newBoxHTML();
     // The rule that breaks the line between what is on and what is not. It sits
     // in the grid at all times and hides itself when one of the two groups is
@@ -486,6 +547,10 @@ const OBJGRID = (() => {
      and the two views could disagree with each other because toggling from one
      never told the other. One request, one painter, one clock. */
   function paint() {
+    // A foreign tile comes and goes with what is on elsewhere: when that set
+    // changed, the grid is rebuilt first (its tiles are then already painted).
+    if (state.showAll && MOSAICS.includes(state.mode) && state.rows[state.mode] !== null
+        && foreignRows().map(foreignKey).join('|') !== state.foreignSig) render();
     const grid = document.getElementById('obj-grid');
     const tiles = grid ? [...grid.querySelectorAll('.og-tile')] : [];
     const isOn = t => t.dataset.kind === 'box'
@@ -535,6 +600,7 @@ const OBJGRID = (() => {
       state.active = new Map(((d && d.items) || []).map(o => [o.uri, o]));
       state.activeBoxes = new Set((d && d.boxes) || []);
       state.included = new Set((d && d.included) || []);
+      state.boxInfo = new Map(Object.entries((d && d.box_info) || {}));
       // A fill running server-side, whoever started it (see setServerBusy).
       if (typeof setServerBusy === 'function') setServerBusy(!!(d && d.busy), askedAt);
     } catch (e) { return; }
@@ -647,5 +713,6 @@ const OBJGRID = (() => {
     watchSticky();
   }
 
-  return { init, setMode, refreshActive, activeCounts, pickRandom };
+  return { init, setMode, refreshActive, activeCounts, pickRandom, setShowAll,
+           get showAll() { return state.showAll; } };
 })();

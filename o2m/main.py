@@ -736,6 +736,8 @@ if __name__ == "__main__":
             # dials while it is true, which it cannot know from its own requests.
             return jsonify({'items': virtualbox.active_objects(o2mHandler),
                             'boxes': virtualbox.active_box_uids(o2mHandler),
+                            # their names and pictures, for a view that lists no boxes
+                            'box_info': virtualbox.active_box_info(o2mHandler),
                             # boxes an active cascade included: counted apart
                             'included': o2mHandler.included_box_uids(),
                             'busy': o2mHandler.is_filling()})

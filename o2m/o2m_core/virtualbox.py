@@ -153,6 +153,17 @@ def active_box_uids(handler):
             if uid and not is_virtual(uid) and uid not in INTERNAL_UIDS]
 
 
+def active_box_info(handler):
+    """uid → {name, image} for the active stored boxes: what a view that does not
+    list boxes needs to draw one (an unpinned box, activated by its tag, has no
+    row anywhere else on the page)."""
+    keep = set(active_box_uids(handler))
+    return {b.uid: {'name': getattr(b, 'description', '') or b.uid,
+                    'image': getattr(b, 'image_url', '') or ''}
+            for b in (getattr(handler, 'activeboxs', None) or [])
+            if getattr(b, 'uid', None) in keep}
+
+
 def toggle(handler, uri, mode='toogle', name=''):
     """Activate or deactivate an object, by the same truth table as a box.
 

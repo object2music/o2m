@@ -900,6 +900,13 @@ Other points worth knowing:
   `state` against the current classes: measuring is what forces a layout flush,
   and `paint` runs on a 10s poll that usually has nothing to report.
   `prefers-reduced-motion` skips the whole thing.
+- **Settings → Boxes column → "Every view shows all that is on"** (per device,
+  `o2m-og-all-active`) heads each mosaic with the active items of the OTHER kinds
+  too — boxes, albums, artists, tags side by side — as tiles of their own kind
+  (`og-foreign`, `foreignRows` in `objgrid.js`), which toggle and open like at
+  home. A box needs a name where no box listing is loaded, hence `box_info` in
+  `/api/active_objects`; an object's cover comes from its own listing, fetched
+  quietly the first time one is needed. Off by default.
 - **Where the name goes depends on what the tile IS.** An album is recognised by its
   sleeve, so its name is a caption under the square. A box is never a picture one
   knows — it is only its name — so the name goes IN the square: set large when there
