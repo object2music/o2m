@@ -900,12 +900,25 @@ if __name__ == "__main__":
             return jsonify({'name': '', 'episodes': []})
         try:
             from o2m_core import radiofrance as _rf
+            from o2m_core.o2mmodels import Track
             show = _rf.show_by_url(o2mHandler._rf_api_key, url)
+            name = (show or {}).get('name', '')
             eps = _rf.episodes_of_show(o2mHandler._rf_api_key, url, first=30)
-            return jsonify({'name': (show or {}).get('name', ''), 'image': '',
-                            'episodes': [{'uri': e['uri'], 'name': e['name'],
-                                          'length': e.get('length'), 'artist': e.get('sub', '')}
-                                         for e in eps]})
+            episodes = [{'uri': e['uri'], 'name': e['name'],
+                         'length': e.get('length'), 'artist': e.get('sub', '')}
+                        for e in eps]
+            if not episodes:
+                # The API can list a show with no audio for any of it (Recto-Verso);
+                # its feed has them — the same fallback the box line uses.
+                feed = o2mHandler._rf_feed_for_show(url)
+                refs = o2mHandler.get_podcast_from_url(feed) if feed else []
+                lengths = {t.uri: t.duration_ms for t in
+                           Track.select(Track.uri, Track.duration_ms)
+                           .where(Track.uri.in_([r.uri for r in refs] or ['']))}
+                episodes = [{'uri': r.uri, 'name': r.name or '',
+                             'length': lengths.get(r.uri), 'artist': name}
+                            for r in refs]
+            return jsonify({'name': name, 'image': '', 'episodes': episodes})
         except Exception as e:
             return jsonify({'name': '', 'episodes': [], 'error': str(e)})
 
