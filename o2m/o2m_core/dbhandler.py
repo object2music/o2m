@@ -516,15 +516,20 @@ class DatabaseHandler():
         if not cid:
             return
         feed_url = feed_url or (cid if kind == 'rss' else '')
-        # Only overwrite feed_url when we actually have one: a show's feed is
-        # discovered once, and the plain per-episode upserts that follow must not
-        # wipe it back to empty.
-        preserve = [PodcastChannel.title, PodcastChannel.title_norm,
-                    PodcastChannel.url, PodcastChannel.station,
-                    PodcastChannel.image_url, PodcastChannel.kind,
-                    PodcastChannel.cached_at]
-        if feed_url:
-            preserve.append(PodcastChannel.feed_url)
+        # An existing row takes only the values this call actually has. Callers
+        # that know one thing about a channel (its feed, discovered from the show
+        # page) pass nothing else, and used to blank its title with it — which
+        # took the show out of search (title_norm), Recto-Verso on 2026-10-10.
+        update = {PodcastChannel.kind: kind,
+                  PodcastChannel.cached_at: datetime.datetime.utcnow()}
+        if title:
+            update[PodcastChannel.title] = title
+            update[PodcastChannel.title_norm] = _normalize_genre(title)[:255]
+        for field, value in ((PodcastChannel.url, url), (PodcastChannel.station, station),
+                             (PodcastChannel.image_url, image_url),
+                             (PodcastChannel.feed_url, feed_url)):
+            if value:
+                update[field] = value
         try:
             PodcastChannel.insert({
                 'id': cid, 'kind': kind, 'title': title or '',
@@ -532,9 +537,7 @@ class DatabaseHandler():
                 'url': url or '', 'station': station or '', 'image_url': image_url or '',
                 'feed_url': feed_url,
                 'cached_at': datetime.datetime.utcnow(),
-            }).on_conflict(action='update',
-                           update={PodcastChannel.title: title or ''},
-                           preserve=preserve).execute()
+            }).on_conflict(update=update).execute()
         except Exception as e:
             print(f"upsert_podcast_channel error: {e}")
 
