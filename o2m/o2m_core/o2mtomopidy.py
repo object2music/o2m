@@ -4605,7 +4605,16 @@ class O2mToMopidy:
                                  dismissed=db.dismissed_duplicate_keys())
         isrc = {r['uri']: r['isrc'] for r in rows if r.get('isrc') is not None}
         ask = [m['uri'] for g in groups for m in g if m['uri'] not in isrc]
-        fetched = self.spotifyHandler.fetch_isrcs(ask, max_calls=fetch_max) if ask else {}
+        # At most one batch of Spotify calls a DAY per database: every instance
+        # restarts daily and all of them share one app — and one quota (seven
+        # instances × 100 would be the 17 h lock-out again). The merge of what is
+        # already known still runs on every start.
+        today = int(datetime.date.today().strftime('%Y%m%d'))
+        day, _ = db.get_cache_meta('duplicates_isrc_day')
+        fetched = {}
+        if ask and day != today:
+            db.set_cache_meta('duplicates_isrc_day', today)
+            fetched = self.spotifyHandler.fetch_isrcs(ask, max_calls=fetch_max)
         isrc.update(fetched)
         merged = []
         for keep, others in dup.certain_merges(groups, isrc):
