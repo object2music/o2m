@@ -2163,15 +2163,13 @@
      enough; they keep their centred glyph and label, bare. */
   [data-theme="creme"] .basic-tex, [data-theme="bulletin"] .basic-tex { display: none; }
 
-  /* Every other theme: the plate is ONE opaque block of the theme's ground —
-     glyph over name, centred on the textured tile. Two stacked
-     translucent bands (a square under the glyph, a bar under the name) read as a
-     patch and let half-dots show at their edges. The name takes the full text
-     colour: these are the view's main controls, and the muted ink of a box name
-     (sized for a small tile) washed them out. Accent when on, like a box. */
+  /* Every other theme: glyph over name on ONE plate, centred on the textured
+     tile (two stacked bands read as a patch and let half-dots show at their
+     edges). The ink is the interface's own: --og-ink (the theme's muted, with
+     its contrast fixes) at rest, full text on hover, accent when on. */
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle {
     justify-content: center; align-items: center; padding: calc(10px * var(--ui));
-    color: var(--text);
+    color: var(--og-ink);
   }
   /* The plate fades from a dense core under the glyph and name to nothing far
      beyond them — a radial gradient of the theme's ground drawn on a halo
