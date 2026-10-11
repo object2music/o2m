@@ -4270,9 +4270,14 @@ class O2mToMopidy:
         # not a skip — nobody chose to stop listening. Only a spoken item's
         # bookmark is kept, so it still resumes where it was cut.
         if interrupted:
+            # Not a play nor a skip — but it WAS heard (past the 5% artefact
+            # threshold above), so the date moves: the anti-repeat cooldown reads
+            # last_read_date, and a track cut by a box change after three minutes
+            # must not come back as if never played.
+            stat.last_read_date = datetime.datetime.now(datetime.timezone.utc)
             if self._is_spoken_uri(uri):
                 stat.read_position = pos
-                stat.save()
+            stat.save()
             return None
 
         if fix==False:

@@ -3724,108 +3724,110 @@ with the house Premium account.</li>
             effective_uri = o2mHandler.get_spotify_uri(track.uri)
             discover_level = o2mHandler.calculate_discover_level(effective_uri)
 
-            #No action if discover_level set to 0
-            if discover_level > 0:
-            
-                # Direct lookup from _track_info — no index arithmetic, no parallel lists
-                tlid = event.tl_track.tlid
-                info = o2mHandler._track_info.get(tlid, {})
-                # An 'ended' caused by o2m stopping the track itself is not a skip.
-                interrupted = (event.event == "track_playback_ended"
-                               and o2mHandler.consume_interrupted(tlid))
-                option_type = info.get('option_type', 'new_mopidy')
-                library_link = info.get('library_link', '')
-                data = ''
-                position = event.time_position
+            # Stats are recorded whatever the discover level: at DL 0 nothing was —
+            # no play, no skip, no date — so the anti-repeat cooldown, which reads
+            # Track.last_read_date, never saw those plays. Only the end-of-track
+            # recommendations depend on the DL (below).
 
-                active_box = o2mHandler.get_active_box_by_tlid(tlid)
-                if not active_box:
-                    active_box = o2mHandler.get_active_box_by_uri(track.uri)
+            # Direct lookup from _track_info — no index arithmetic, no parallel lists
+            tlid = event.tl_track.tlid
+            info = o2mHandler._track_info.get(tlid, {})
+            # An 'ended' caused by o2m stopping the track itself is not a skip.
+            interrupted = (event.event == "track_playback_ended"
+                           and o2mHandler.consume_interrupted(tlid))
+            option_type = info.get('option_type', 'new_mopidy')
+            library_link = info.get('library_link', '')
+            data = ''
+            position = event.time_position
 
-                if active_box:
-                    if active_box.data != '': data = active_box.data
-                    # library_link fallback when not stored in _track_info (e.g. Iris-added track)
-                    if not library_link:
-                        if active_box.data == 'spotify:favorites':
-                            library_link = 'o2m:favorites'
-                        else:
-                            from o2m_core import boxdirectives as _bdir
-                            data_lines = [_bdir.split_condition(x)[1]
-                                          for x in active_box.data.split("\n")
-                                          if not x.startswith('#') and not x.startswith('\r')]
-                            for content in data_lines:
-                                if 'spotify:playlist' in content:
-                                    library_link = content
-                                    break
-                print(f"Library Link : {library_link}")
+            active_box = o2mHandler.get_active_box_by_tlid(tlid)
+            if not active_box:
+                active_box = o2mHandler.get_active_box_by_uri(track.uri)
 
-                if event.event == "track_playback_ended":
-                    #Quick and dirty volume Management
-                    if "radiofrance-podcast.net" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
-                        print (f"Set Volume : {o2mHandler.current_volume}")
-                        #o2mHandler.mopidyHandler.mixer.set_volume(o2mHandler.current_volume)
-                        o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
+            if active_box:
+                if active_box.data != '': data = active_box.data
+                # library_link fallback when not stored in _track_info (e.g. Iris-added track)
+                if not library_link:
+                    if active_box.data == 'spotify:favorites':
+                        library_link = 'o2m:favorites'
+                    else:
+                        from o2m_core import boxdirectives as _bdir
+                        data_lines = [_bdir.split_condition(x)[1]
+                                      for x in active_box.data.split("\n")
+                                      if not x.startswith('#') and not x.startswith('\r')]
+                        for content in data_lines:
+                            if 'spotify:playlist' in content:
+                                library_link = content
+                                break
+            print(f"Library Link : {library_link}")
 
-                    # Recommandations added at each ended and nottrack (only spotify:track now)
-                    if "track" in effective_uri and position / track.length > 0.9:
-                        print (f"Ending with option_type {option_type}")
-                        if option_type != 'new':
-                            #int(round(discover_level * 0.25))
-                            #Pb with this library_link calc
-                            library_link="o2m:reco_after_track"
-                            try: o2mHandler.add_reco_after_track_read(effective_uri,library_link,data,seed_tlid=tlid)
-                            except Exception as val_e:
-                                print(f"Erreur : {val_e}")
-                                o2mHandler.spotifyHandler.init_token_sp()
-                                o2mHandler.add_reco_after_track_read(effective_uri,library_link,data,seed_tlid=tlid)
-                        if option_type != 'hidden' and option_type != 'trash' :
-                            print ("Adding raw stats")
-                            o2mHandler.update_stat_raw(effective_uri)
+            if event.event == "track_playback_ended":
+                #Quick and dirty volume Management
+                if "radiofrance-podcast.net" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
+                    print (f"Set Volume : {o2mHandler.current_volume}")
+                    #o2mHandler.mopidyHandler.mixer.set_volume(o2mHandler.current_volume)
+                    o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
 
-                # Podcast
-                '''if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
+                # Recommandations added at each ended and nottrack (only spotify:track now)
+                if "track" in effective_uri and track.length and position / track.length > 0.9:
+                    print (f"Ending with option_type {option_type}")
+                    if option_type != 'new' and discover_level > 0:
+                        #int(round(discover_level * 0.25))
+                        #Pb with this library_link calc
+                        library_link="o2m:reco_after_track"
+                        try: o2mHandler.add_reco_after_track_read(effective_uri,library_link,data,seed_tlid=tlid)
+                        except Exception as val_e:
+                            print(f"Erreur : {val_e}")
+                            o2mHandler.spotifyHandler.init_token_sp()
+                            o2mHandler.add_reco_after_track_read(effective_uri,library_link,data,seed_tlid=tlid)
+                    if option_type != 'hidden' and option_type != 'trash' :
+                        print ("Adding raw stats")
+                        o2mHandler.update_stat_raw(effective_uri)
 
-                    #URI harmonization if max_results used : pb to update track.uri
-                    if "?max_results=" in track.uri: 
-                        uri1 = track.uri.split("?max_results=")
-                        if "#" in uri1[1]: 
-                            uri2 = uri1[1].split("#")
-                            track_uri = str(uri1[0]) + "#" + str(uri2[1])
-                        else : track_uri = str(uri1[0])
-                    if o2mHandler.dbHandler.stat_exists(track.uri):
-                        stat = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
-                        #If last stat read position is greater than actual: do not update
-                        #if position < stat.read_position: position = stat.read_position
-                        print(f"Event : {position} / stat : {stat.read_position}")
-                    # If directly in box data (not m3u) : behaviour to ckeck
-                    if (position / track.length > 0.7): 
-                        active_box = o2mHandler.dbHandler.get_box_by_data(track.uri)  # To check !!! Récupère le active_box correspondant à la chaine
-                        if active_box != None:
-                            if active_box.box_type == "podcasts:channel":
-                                active_box.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
-                                active_box.update()
-                                active_box.save()
-                '''
-                                
-                print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
+            # Podcast
+            '''if ("podcast+" in track.uri and ("#" in track.uri or "episode" in track.uri) ) or ("youtube:video:" in track.uri) or ("yt:" in track.uri):
 
-                # Update stats 
-                # A pause is a play reported at its position, and that is what writes
-                # read_position — the value track_started_event reads back to resume.
-                # This used to re-spell "is it spoken" as its own list of schemes, which
-                # had already drifted away from _is_spoken_uri: no 'web:', no Radio
-                # France host. One definition, asked under the canonical uri.
-                if (event.event == "track_playback_ended") or o2mHandler._is_spoken_uri(effective_uri):
-                    
-                    try:
-                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri,interrupted=interrupted)
-                    except Exception as val_e:
-                        print(f"Erreur : {val_e}")
-                        o2mHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve
-                        o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri,interrupted=interrupted)
+                #URI harmonization if max_results used : pb to update track.uri
+                if "?max_results=" in track.uri: 
+                    uri1 = track.uri.split("?max_results=")
+                    if "#" in uri1[1]: 
+                        uri2 = uri1[1].split("#")
+                        track_uri = str(uri1[0]) + "#" + str(uri2[1])
+                    else : track_uri = str(uri1[0])
+                if o2mHandler.dbHandler.stat_exists(track.uri):
+                    stat = o2mHandler.dbHandler.get_stat_by_uri(track.uri)
+                    #If last stat read position is greater than actual: do not update
+                    #if position < stat.read_position: position = stat.read_position
+                    print(f"Event : {position} / stat : {stat.read_position}")
+                # If directly in box data (not m3u) : behaviour to ckeck
+                if (position / track.length > 0.7): 
+                    active_box = o2mHandler.dbHandler.get_box_by_data(track.uri)  # To check !!! Récupère le active_box correspondant à la chaine
+                    if active_box != None:
+                        if active_box.box_type == "podcasts:channel":
+                            active_box.option_last_unread = (track.track_no)  # actualise le numéro du dernier podcast écouté
+                            active_box.update()
+                            active_box.save()
+            '''
+                            
+            print(f"\n{event.event} song : {track.name} with option_type {option_type} and library_link {library_link}")
 
-                if "tunein" in effective_uri:
-                    if option_type != 'hidden': o2mHandler.update_stat_raw(effective_uri)
+            # Update stats 
+            # A pause is a play reported at its position, and that is what writes
+            # read_position — the value track_started_event reads back to resume.
+            # This used to re-spell "is it spoken" as its own list of schemes, which
+            # had already drifted away from _is_spoken_uri: no 'web:', no Radio
+            # France host. One definition, asked under the canonical uri.
+            if (event.event == "track_playback_ended") or o2mHandler._is_spoken_uri(effective_uri):
+                
+                try:
+                    o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri,interrupted=interrupted)
+                except Exception as val_e:
+                    print(f"Erreur : {val_e}")
+                    o2mHandler.spotifyHandler.init_token_sp() #pb of expired token to resolve
+                    o2mHandler.update_stat_track(track,position,option_type,library_link,uri_override=effective_uri,interrupted=interrupted)
+
+            if "tunein" in effective_uri:
+                if option_type != 'hidden': o2mHandler.update_stat_raw(effective_uri)
 
             # Tracklist filling when empty
             tracklist_length = mopidy.tracklist.get_length()
