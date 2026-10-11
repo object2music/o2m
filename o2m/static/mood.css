@@ -2162,19 +2162,19 @@
      (objgrid.css — .og-art--mark, .og-cap, .og-cap-txt, .og-tile.active):
      · the dots texture under a light VEIL of the theme's ground (35%);
      · the name in the box name's type and ink (--og-ink; text on hover, accent
-       when on) on a BAND of the ground at --cap-alpha — the glyph rides at the
-       head of that band;
+       when on) on a BAND of the ground at --cap-alpha, under the glyph on its
+       own square of the same band;
      · on: the accent frame doubled inside, the texture to greyscale.
      The band is CENTRED, not set from the top-left as a box name is: the ALL
      button sits on the inner corner of every tile, so the bottom-right tile's
      top-left is under it; tried at the outer edges (2026-10-11), it read
      smaller and lopsided. */
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle {
-    flex-direction: row; align-items: center; justify-content: center; gap: 0;
+    flex-direction: column; align-items: center; justify-content: center; gap: 0;
     padding: calc(8px * var(--ui));
     /* Name size, glyph size (the tile's original glyph), the band's padding
-       around the glyph; the name's line takes the band's full height so glyph
-       and name share one bar. */
+       around the glyph. The glyph sits on its own square of band, the name on
+       the line under it: two bands, touching. */
     --bt-fs: calc(17px * var(--ui)); --bt-g: calc(26px * var(--ui)); --bt-pad: calc(5px * var(--ui));
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle::after {
@@ -2183,14 +2183,14 @@
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt {
     display: block; font-size: var(--bt-fs); font-weight: 700; letter-spacing: -.01em;
-    line-height: calc(var(--bt-g) + 2 * var(--bt-pad));
+    line-height: 1.3;
     color: var(--og-ink); transition: color .15s;
-    padding: 0 .45em 0 0;
+    padding: .1em .45em;
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle .o2m-actuator-glyph {
     order: -1; flex-shrink: 0; box-sizing: content-box;
     width: var(--bt-g); height: var(--bt-g);
-    padding: var(--bt-pad) calc(var(--bt-pad) * 2) var(--bt-pad) calc(8px * var(--ui));
+    padding: var(--bt-pad);
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt,
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle .o2m-actuator-glyph {
