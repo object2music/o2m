@@ -2368,6 +2368,15 @@ if __name__ == "__main__":
             pass
         return ''
 
+    def _last_played(stat):
+        when = getattr(stat, 'last_read_date', None) if stat else None
+        if not when:
+            return ''
+        try:
+            return bdir.to_local(when).strftime('%Y-%m-%d %H:%M')
+        except Exception:
+            return ''
+
     @api.route('/api/track_info')
     def api_track_info():
         from flask import jsonify
@@ -2471,6 +2480,9 @@ if __name__ == "__main__":
                 'source':         source,
                 'published':      (getattr(stat, 'published_at', None) or '') if stat else '',
                 'channel':        _channel_name(stat),
+                # When it was last read (any play past the 5% artefact threshold,
+                # skips included), in LOCAL time: the database keeps UTC.
+                'last_played':    _last_played(stat),
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500

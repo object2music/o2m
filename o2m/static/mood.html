@@ -3160,6 +3160,8 @@ const TRACK_FIELDS = [
   ['Mood',       'mood',       i => moodWord(i.mood) || '—'],
   ['Popularity', 'popularity', i => fmtEV(i.popularity)],
   ['Plays',      'plays',      i => (i.read_count_end ?? 0) + ''],
+  // Local 'YYYY-MM-DD HH:MM' from the server; shown day-first like Date.
+  ['Last played','lastplayed', i => fmtLastPlayed(i.last_played)],
   // Spoken content only: when an episode was published is the one genuinely
   // useful fact beyond its title. Hidden for music by _tpSyncSpokenRows.
   // Stored ISO (sortable); shown day-first, which is how a listener reads a date.
@@ -3174,7 +3176,8 @@ const EDITABLE_FIELDS = ['energy', 'valence', 'mood'];
 const TRACK_PANEL_ROWS = [
   ['Status', 'type'], ['Source', 'source'], ['Audio', 'audio'], ['Rating', 'fav'],
   ['Energy', 'energy'], ['Valence', 'valence'],
-  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Date', 'published'],
+  ['Mood', 'mood'], ['Popularity', 'popularity'], ['Plays', 'plays'], ['Last played', 'lastplayed'],
+  ['Date', 'published'],
   ['Channel', 'channel'], ['Playlists', 'playlists'],
 ];
 
@@ -4527,6 +4530,11 @@ async function updateSpokenHeader(track) {
 }
 
 /* 'YYYY-MM-DD' -> 'DD-MM-YYYY'; anything else is passed through untouched. */
+function fmtLastPlayed(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(String(v || '').trim());
+  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}` : '—';
+}
+
 function fmtDay(v) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || '').trim());
   return m ? `${m[3]}-${m[2]}-${m[1]}` : (v || '—');
