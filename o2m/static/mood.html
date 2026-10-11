@@ -1849,9 +1849,13 @@ function _rowDragClear(wrap) {
     .forEach(r => r.classList.remove('tl-drop-before', 'tl-drop-after'));
 }
 
-/* Insertion index (0..n, "before row k") for a pointer at clientY. */
-function _rowDragSlot(rows, y) {
+/* Insertion index (0..n, "before row k") for a pointer at clientY. The dragged
+   row is skipped: it is translated under the pointer, so its own middle moves
+   with it — grabbed by its top half, the pointer stayed "above" it for ever and
+   every drop landed back where it started. */
+function _rowDragSlot(rows, y, from) {
   for (let k = 0; k < rows.length; k++) {
+    if (k === from) continue;
     const r = rows[k].getBoundingClientRect();
     if (y < r.top + r.height / 2) return k;
   }
@@ -1861,7 +1865,7 @@ function _rowDragSlot(rows, y) {
 function _rowDragPaint(d) {
   const rows = _rowDragRows(d.wrap);
   _rowDragClear(d.wrap);
-  d.slot = _rowDragSlot(rows, d.y);
+  d.slot = _rowDragSlot(rows, d.y, d.from);
   // The line sits on the row the slot touches; the row's own two edges mean
   // "stay where it is" and draw nothing.
   if (d.slot !== d.from && d.slot !== d.from + 1) {
