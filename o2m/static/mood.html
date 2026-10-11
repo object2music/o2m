@@ -4961,15 +4961,15 @@ function renderBxMood() {
   }
   const n = s.tracks.length;
   const order = _bxMoodFar ? s.tracks.map((_, i) => i) : s.tracks.map((_, i) => n - 1 - i);
-  const rows = order.map(i => {
+  // The standard track rows (objRenderTracks): the ⓘ menu plays them, a click
+  // opens the track, the meta line fills in as rows scroll into view. The number
+  // column carries the distance to the average, which is what orders the list.
+  const rows = objRenderTracks(order.map(i => {
     const t = s.tracks[i];
-    return `<div class="bxm-row" data-i="${i}">`
-      + `<span class="bxm-dot" style="background:${moodColor(t.energy, t.valence, 1)}"></span>`
-      + `<span class="bxm-name"><span class="bxm-t">${objEsc(t.name || t.uri)}</span>`
-      + `<span class="bxm-a">${objEsc(t.artist || '')}</span></span>`
-      + `<span class="bxm-d${t.distance > m.sigma ? ' out' : ''}" title="Distance to the average">${t.distance.toFixed(2)}</span>`
-      + `</div>`;
-  }).join('');
+    return { uri: t.uri, name: t.name || t.uri, length: t.length || 0,
+             artists: t.artist ? [{ name: t.artist, uri: t.artist_uri || '' }] : [],
+             index: t.distance.toFixed(2) };
+  }), 'track');
   body.innerHTML =
       `<div class="bxm-head">`
     +   `<div class="bxm-stat"><span>Energy</span><b>${_bxmFmt(s.energy)}</b></div>`
@@ -5001,13 +5001,26 @@ function renderBxMood() {
   // A row points at its dot, and a dot at its row.
   const list = document.getElementById('bxm-list');
   const canvas = document.getElementById('bxm-radar');
+  const idxOf = new Map(s.tracks.map((t, i) => [t.uri, i]));
+  // Outside the DL radius: the distance takes the accent.
+  list?.querySelectorAll('.tl-item').forEach(r => {
+    const t = s.tracks[idxOf.get(r.dataset.uri)];
+    if (t && t.distance > m.sigma) r.classList.add('bxm-out');
+  });
+  const rowOf = i => list.querySelector(`.tl-item[data-uri="${CSS.escape(s.tracks[i].uri)}"]`);
+  let marked = null;
   const mark = i => {
+    marked = i;
     paintBxMood(i);
-    list.querySelectorAll('.bxm-row.on').forEach(r => r.classList.remove('on'));
-    list.querySelector(`.bxm-row[data-i="${i}"]`)?.classList.add('on');
+    list.querySelectorAll('.tl-item.bxm-on').forEach(r => r.classList.remove('bxm-on'));
+    rowOf(i)?.classList.add('bxm-on');
   };
-  list?.addEventListener('pointerover', ev => { const r = ev.target.closest('.bxm-row'); if (r) mark(+r.dataset.i); });
-  list?.addEventListener('click', ev => { const r = ev.target.closest('.bxm-row'); if (r) mark(+r.dataset.i); });
+  // Pointing at a row rings its dot; the click itself is the standard row's
+  // (open the track, or the ⓘ menu), handled by the modal's delegation.
+  list?.addEventListener('pointerover', ev => {
+    const r = ev.target.closest('.tl-item');
+    if (r && idxOf.has(r.dataset.uri)) mark(idxOf.get(r.dataset.uri));
+  });
   canvas?.addEventListener('pointermove', ev => {
     const i = bxMoodHit(canvas, ev);
     if (i < 0) { hideMatrixTooltip(); return; }
@@ -5019,13 +5032,10 @@ function renderBxMood() {
     const i = bxMoodHit(canvas, ev);
     if (i < 0) return;
     mark(i);
-    list.querySelector(`.bxm-row[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+    rowOf(i)?.scrollIntoView({ block: 'nearest' });
   });
   paintBxMood();
-  if (canvas && window.ResizeObserver) new ResizeObserver(() => {
-    const on = list.querySelector('.bxm-row.on');
-    paintBxMood(on ? +on.dataset.i : null);
-  }).observe(canvas);
+  if (canvas && window.ResizeObserver) new ResizeObserver(() => paintBxMood(marked)).observe(canvas);
 }
 
 /* Deleting is irreversible, so the button double-checks itself: the first click

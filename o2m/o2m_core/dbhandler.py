@@ -2020,7 +2020,8 @@ class DatabaseHandler():
         return None
 
     def get_track_mood_points(self, uris):
-        """{uri: {energy, valence, popularity, name, artist}} for the uris that carry BOTH
+        """{uri: {energy, valence, popularity, name, artist, artist_uri, length}}
+        for the uris that carry BOTH
         values — what the box editor's mood section plots (boxmood.measure).
         The artist is the track's main one (TrackArtist position 0). Chunked,
         since a tag line hands over up to 2000 uris."""
@@ -2030,21 +2031,23 @@ class DatabaseHandler():
             chunk = uris[i:i + 500]
             try:
                 rows = (Track.select(Track.uri, Track.name, Track.energy, Track.valence,
-                                     Track.popularity)
+                                     Track.popularity, Track.duration_ms)
                         .where(Track.uri.in_(chunk), Track.energy.is_null(False),
                                Track.valence.is_null(False)).tuples())
-                for uri, name, e, v, pop in rows:
+                for uri, name, e, v, pop, dur in rows:
                     out[uri] = {'energy': float(e), 'valence': float(v),
                                 'popularity': None if pop is None else float(pop),
-                                'name': name or '', 'artist': ''}
+                                'name': name or '', 'artist': '', 'artist_uri': '',
+                                'length': dur or 0}
                 if out:
                     found = [u for u in chunk if u in out]
-                    q = (TrackArtist.select(TrackArtist.track_uri, Artist.name)
+                    q = (TrackArtist.select(TrackArtist.track_uri, Artist.name, Artist.id)
                          .join(Artist, on=(TrackArtist.artist_id == Artist.id))
                          .where(TrackArtist.track_uri.in_(found), TrackArtist.position == 0)
                          .tuples()) if found else []
-                    for uri, aname in q:
+                    for uri, aname, aid in q:
                         out[uri]['artist'] = aname or ''
+                        out[uri]['artist_uri'] = f'spotify:artist:{aid}' if aid else ''
                     # No artist link (about a third of a playlist here): the
                     # album's denormalized artist is the next best name.
                     bare = [u for u in found if not out[u]['artist']]

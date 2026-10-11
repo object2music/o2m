@@ -1836,16 +1836,14 @@
     .bxm-head { grid-template-columns: repeat(2, 1fr); }
     .bxm-list { flex: none; contain: none; max-height: 60vh; }
   }
-  .bxm-row { display: flex; align-items: center; gap: calc(8px * var(--ui)); padding: calc(4px * var(--ui)) calc(2px * var(--ui));
-    border-bottom: 1px solid var(--border); cursor: default; }
-  .bxm-row.on { background: var(--card); }
-  .bxm-dot { flex: 0 0 auto; width: calc(8px * var(--ui)); height: calc(8px * var(--ui)); border-radius: 50%; }
-  .bxm-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .bxm-t, .bxm-a { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bxm-t { font-size: var(--t-body-s); color: var(--text); }
-  .bxm-a { font-size: calc(11px * var(--ui)); color: var(--muted); }
-  .bxm-d { flex: 0 0 auto; font-family: var(--font-mono); font-size: calc(11px * var(--ui)); color: var(--muted); }
-  .bxm-d.out { color: var(--accent); }
+  /* Rows are the standard track rows (.tl-item); only the one pointed at is ours. */
+  .bxm-list .obj-tracks { margin: 0; }
+  .bxm-list .tl-item.bxm-on { background: var(--card); }
+  /* The number column holds a distance (0.41), not a rank: mono and smaller, or
+     four characters at the rank's display size would push the title over. */
+  .bxm-list .tl-num { font-family: var(--font-mono); font-size: calc(12px * var(--ui)); font-weight: 600;
+    min-width: calc(40px * var(--ui)); letter-spacing: 0; align-self: center; }
+  .bxm-list .tl-item.bxm-out .tl-num { color: var(--accent); opacity: 1; }
   .bxm-notes { list-style: none; margin: 0; padding: 0; font-size: calc(11px * var(--ui)); color: var(--muted); }
   .bxm-notes li { display: flex; justify-content: space-between; gap: calc(10px * var(--ui)); padding: calc(2px * var(--ui)) 0; }
   .bxm-line { font-family: var(--font-mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
