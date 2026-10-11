@@ -277,6 +277,19 @@ class DatabaseHandler():
         else:
             return []
 
+    def get_boxes_all(self):
+        """Every stored box, pinned or not, named first then by name — what the
+        box editor's Browse > Your boxes offers to include (box:<uid>). An NFC
+        tag that was never pinned is a box too, and is often what one includes."""
+        try:
+            rows = list(Box.select().dicts())
+        except Exception as e:
+            self.log.error(f"get_boxes_all: {e}")
+            return []
+        rows.sort(key=lambda b: (not (b.get('description') or '').strip(),
+                                 (b.get('description') or b.get('uid') or '').lower()))
+        return rows
+
     def get_box_by_data(self, data):
         self.log.info(f'searching for box with data: {data}')
         query = Box.select().where(Box.data == data)

@@ -678,7 +678,9 @@ if __name__ == "__main__":
     #Return list of favorite boxes
     @api.route('/api/box_favorites')
     def api_box_favorites():
-        boxes = o2mHandler.dbHandler.get_boxes_pinned()
+        # ?all=1: every box, not only the pinned ones (the box editor's Browse).
+        boxes = (o2mHandler.dbHandler.get_boxes_all() if request.args.get('all')
+                 else o2mHandler.dbHandler.get_boxes_pinned())
         # `kind`: what the box IS, in the actuators' words — auto, library,
         # podcast, info, radio — read by the same classification as the Basic
         # view, so the mosaic's generated cover and the actuators cannot

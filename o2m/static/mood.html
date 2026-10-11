@@ -5391,13 +5391,14 @@ const WC_BROWSE_NODES = {
   podchannels: { label: 'Channels in your boxes', icon: ICON.hash },
   rfsubjects:  { label: 'Radio France subjects',   icon: ICON.zap },
   radiotop:    { label: 'Top stations near you',  icon: ICON.radio },
+  boxes:       { label: 'Your boxes',             icon: ICON.box },
 };
 const WC_BROWSE_BY_KIND = {
-  music:   ['playlists', 'artists', 'albums', 'radiotop'],
-  podcast: ['rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop'],
-  info:    ['rfsubjects', 'podnews', 'podgenres', 'podchannels', 'radiotop'],
-  radio:   ['radiotop'],
-  hybrid:  ['playlists', 'artists', 'albums', 'rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop'],
+  music:   ['playlists', 'artists', 'albums', 'radiotop', 'boxes'],
+  podcast: ['rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop', 'boxes'],
+  info:    ['rfsubjects', 'podnews', 'podgenres', 'podchannels', 'radiotop', 'boxes'],
+  radio:   ['radiotop', 'boxes'],
+  hybrid:  ['playlists', 'artists', 'albums', 'rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop', 'boxes'],
 };
 /* Which result sections a search shows, in order. Radios are offered for every
    kind (a stream is welcome in any box). Podcast channels are deliberately NOT:
@@ -5701,10 +5702,10 @@ function renderDataEditor(items) {
     `<div class="wc-add">`
     + `<div class="wc-add-head">Add content</div>`
     + `<div class="wc-tabs">`
-    +   tab('guided', ICON.code, 'Guided')
-    +   tab('search', ICON.plus, 'Search')
     +   tab('browse', ICON.list, 'Browse')
+    +   tab('guided', ICON.code, 'Guided')
     +   tab('patterns', ICON.zap, 'Smart patterns')
+    +   tab('search', ICON.plus, 'Search')
     + `</div></div>`;
   return `<div class="wc">`
     + `<div class="wc-toolbar">`
@@ -6158,6 +6159,15 @@ async function browseFetch(node, opts) {
     const d = await _wcJson('/directory?kind=radio');
     return { rows: _wcDirRows((d && d.items) || []), kind: 'radio',
              empty: 'Radio directory unavailable.' };
+  }
+  if (node === 'boxes') {
+    // Every box, pinned or not; picked in the editor it becomes a `box:<uid>`
+    // include. The box being edited is left out — including itself is a loop.
+    const d = await _wcJson('/box_favorites?all=1');
+    const rows = (Array.isArray(d) ? d : [])
+      .filter(b => b.uid && b.uid !== _boxEditUid)
+      .map(b => ({ uri: 'box:' + b.uid, name: b.description || b.uid, image: b.image_url || '' }));
+    return { rows, kind: 'box', empty: 'No boxes yet.' };
   }
   if (node === 'podtop' || node === 'podnews') {
     const d = await _wcJson('/directory?kind=podcast' + (node === 'podnews' ? '&genre=1489' : ''));
