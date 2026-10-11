@@ -2612,7 +2612,24 @@ class DatabaseHandler():
         reverse of get_local_uri, for when the in-memory map has been lost."""
         try:
             t = Track.get_or_none(Track.local_uri == local_uri)
-            return t.uri if t else None
+            if t:
+                return t.uri
+            # The same download can exist in several box folders of the cache
+            # (…/cache/<box uid>/X.mp3 and …/cache/Chill_Work/X.mp3) while
+            # local_uri names only one, so a play of the other copy mapped to
+            # nothing and its stats went to a row keyed on the file (found on
+            # "View From The Other Side", 2026-10-11: 115 such file rows). The file
+            # NAME is the track: match on it. RIGHT() rather than LIKE, since the
+            # url-escaped name is full of '%'.
+            name = '/' + str(local_uri).rsplit('/', 1)[-1]
+            if len(name) > 8:
+                row = db.execute_sql(
+                    "SELECT uri FROM track WHERE local_uri IS NOT NULL AND uri LIKE %s "
+                    "AND RIGHT(local_uri, %s) = %s LIMIT 1",
+                    ('spotify:track:%', len(name), name)).fetchone()
+                if row:
+                    return row[0]
+            return None
         except Exception:
             return None
 
