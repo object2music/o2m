@@ -2162,21 +2162,21 @@
      (objgrid.css — .og-art--mark, .og-cap, .og-cap-txt, .og-tile.active):
      · the dots texture under a light VEIL of the theme's ground (35%);
      · the name in the box name's type and ink (--og-ink; text on hover, accent
-       when on), left-aligned, on a BAND of the ground at --cap-alpha run in from
-       the tile's left edge — the glyph rides at the head of that band;
+       when on) on a BAND of the ground at --cap-alpha — the glyph rides at the
+       head of that band;
      · on: the accent frame doubled inside, the texture to greyscale.
-     Top row at the top, bottom row at the bottom: the ALL button sits on the
-     inner corner of every tile, so the bottom-right tile's top-left — where a
-     box sets its name — is under it. Hugging the OUTER edge keeps all four clear. */
+     The band is CENTRED, not set from the top-left as a box name is: the ALL
+     button sits on the inner corner of every tile, so the bottom-right tile's
+     top-left is under it; tried at the outer edges (2026-10-11), it read
+     smaller and lopsided. */
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle {
-    flex-direction: row; align-items: flex-start; justify-content: flex-start; gap: 0;
-    padding: calc(8px * var(--ui)) calc(8px * var(--ui)) calc(8px * var(--ui)) 0;
+    flex-direction: row; align-items: center; justify-content: center; gap: 0;
+    padding: calc(8px * var(--ui));
     /* Name size, glyph size (the tile's original glyph), the band's padding
        around the glyph; the name's line takes the band's full height so glyph
        and name share one bar. */
     --bt-fs: calc(17px * var(--ui)); --bt-g: calc(26px * var(--ui)); --bt-pad: calc(5px * var(--ui));
   }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:nth-of-type(n+3) { align-items: flex-end; }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle::after {
     content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
     background: var(--sheet-bg, var(--bg)); opacity: .35;
