@@ -2497,6 +2497,40 @@ class SpotifyHandler:
         print(f"warmup_retry_all_sentinels: done — {total} total resolved")
         return total
 
+    def fetch_isrcs(self, uris, max_calls=600, pause=0.5):
+        """Store each track's ISRC (external_ids.isrc) on its row, one call per
+        track: the batch endpoint (GET /tracks?ids=) answers 403 to this app
+        (Development Mode, measured 2026-10-11) while GET /tracks/{id} works.
+        Paced, and stops at the first 429. Returns {uri: isrc} for what it read
+        ('' when Spotify has none or the track is gone)."""
+        got = {}
+        if self.sp is None or not self._db:
+            return got
+        for uri in list(uris)[:max_calls]:
+            if self._is_rate_limited():
+                print("fetch_isrcs: rate-limited, stopping")
+                break
+            tid = uri.rsplit(':', 1)[-1]
+            try:
+                t = self.sp.track(tid) or {}
+                code = ((t.get('external_ids') or {}).get('isrc') or '').strip().upper()
+            except spotipy.SpotifyException as e:
+                if e.http_status == 429:
+                    self._on_rate_limit(e)
+                    break
+                if e.http_status in (400, 404):
+                    code = ''
+                else:
+                    print(f"fetch_isrcs: {uri}: {e}")
+                    break
+            except Exception as e:
+                print(f"fetch_isrcs: {uri}: {e}")
+                break
+            self._db.set_isrc(uri, code)
+            got[uri] = code
+            time.sleep(pause)
+        return got
+
     def warmup_cache(self, discover_level=5):
         """Orchestrate all warmup passes based on should_warmup() decision.
         Designed to run in a background thread at startup."""

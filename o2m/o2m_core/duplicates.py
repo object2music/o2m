@@ -109,3 +109,22 @@ def merged_counters(keep, others):
     if out['liked'] and out['disliked']:
         out['disliked'] = 0              # mutually exclusive; the like is the commitment
     return out
+
+
+def certain_merges(groups, isrc):
+    """The merges that need no one's eye: within each proposed group, the
+    members sharing one ISRC are the same recording. `isrc` maps uri -> code
+    ('' or missing = unknown, never matched). Returns [(keep, [others])], keep
+    being the most read of the subset (groups come most read first)."""
+    out = []
+    for g in groups:
+        by = {}
+        for m in g:
+            code = (isrc.get(m['uri']) or '').strip().upper()
+            if code:
+                by.setdefault(code, []).append(m['uri'])
+        for uris in by.values():
+            if len(uris) > 1:
+                out.append((uris[0], uris[1:]))
+    return out
+

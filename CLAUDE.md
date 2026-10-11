@@ -98,7 +98,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **31**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **32**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -1093,6 +1093,17 @@ version had just played. On 2026-10-11: **686 groups** with at least one played.
   panel land on it. The selection pool gives the pair one ticket and judges the
   merged-away uri by the kept row's stats (`_selection_pool`). Spotify playlists
   are untouched: a playlist still holds whichever uri it held.
+- **Certain duplicates merge by themselves: same ISRC** (`Track.isrc`, migration
+  **v32**; `auto_merge_duplicates`, at every start and from the page's button,
+  `POST /api/duplicates/auto`). Spotify publishes one disc several times — per
+  market, per distributor, reissued unchanged — and plays a track under whichever
+  id is available where you are (relinking), so the playlist holds one uri and the
+  play is reported under another. The ISRC is the recording's own code: equal on
+  both. Only the members of a PROPOSED group are asked (one `GET /tracks/{id}`
+  each — the batch `GET /tracks?ids=` answers 403 to this Development-mode app),
+  paced 0.5 s apart, 600 per run, stopping at a 429; '' records "Spotify has no
+  code". A dismissed group is never auto-merged. One run at a time across the
+  instances (CacheMeta `duplicates_auto_at`, 1 while running).
 - **Undo** (`unmerge_track`) restores the version from the snapshot stored on its
   alias (counters and the ids of the play-log rows moved) and takes its counters
   back off the kept row; plays made since the merge stay where they landed.

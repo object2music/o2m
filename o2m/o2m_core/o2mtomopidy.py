@@ -4540,6 +4540,51 @@ class O2mToMopidy:
         except Exception:
             return 0
 
+    def auto_merge_duplicates(self, fetch_max=600):
+        """Merge the duplicates that are certain: same recording by ISRC.
+
+        Reads the proposed groups (o2m_core/duplicates.py), asks Spotify the ISRC
+        of the members that have none yet (paced, `fetch_max` calls at most — the
+        rest waits for the next run), then merges every subset sharing one ISRC
+        into its most read member. Groups a person dismissed are left alone. What
+        stays on the /duplicates page is what Spotify cannot settle: a live take,
+        a remaster with its own ISRC, a track with no code.
+
+        Every instance runs it at startup on the one shared database, so a run
+        marks itself running (CacheMeta, 1 while it runs, 0 once done) and a
+        second instance skips — unless the mark is over 30 min old (a run that
+        died without clearing it)."""
+        from o2m_core import duplicates as dup
+        db = self.dbHandler
+        running, at = db.get_cache_meta('duplicates_auto_at')
+        if running and at and (datetime.datetime.utcnow() - at).total_seconds() < 1800:
+            return {'skipped': 'another run is in progress'}
+        db.set_cache_meta('duplicates_auto_at', 1)
+        try:
+            return self._auto_merge_duplicates(dup, db, fetch_max)
+        finally:
+            db.set_cache_meta('duplicates_auto_at', 0)
+
+    def _auto_merge_duplicates(self, dup, db, fetch_max):
+        rows = db.duplicate_rows()
+        groups = dup.find_groups(rows, aliased=db.track_alias_map(ttl=0).keys(),
+                                 dismissed=db.dismissed_duplicate_keys())
+        isrc = {r['uri']: r['isrc'] for r in rows if r.get('isrc') is not None}
+        ask = [m['uri'] for g in groups for m in g if m['uri'] not in isrc]
+        fetched = self.spotifyHandler.fetch_isrcs(ask, max_calls=fetch_max) if ask else {}
+        isrc.update(fetched)
+        merged = []
+        for keep, others in dup.certain_merges(groups, isrc):
+            try:
+                db.merge_tracks(keep, others)
+                merged.append((keep, others))
+            except Exception as e:
+                print(f"auto_merge_duplicates: {keep} <- {others}: {e}")
+        print(f"auto_merge_duplicates: {len(fetched)} ISRC read, {len(ask) - len(fetched)} left "
+              f"for later, {len(merged)} groups merged")
+        return {'fetched': len(fetched), 'pending': len(ask) - len(fetched),
+                'merged': [{'keep': k, 'others': o} for k, o in merged]}
+
     def is_radio_uri(self, uri):
         """A live stream: http(s) or tunein, and neither a downloadable episode
         (a bare Radio France mp3 is http too) nor a 'web:' media. Asked of the

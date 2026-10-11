@@ -2988,14 +2988,17 @@ class DatabaseHandler():
         out = []
         cur = db.execute_sql(
             "SELECT t.uri, t.name, t.duration_ms, t.read_count, t.read_count_end, "
-            "t.last_read_date, t.album_id, ta.artist_id, t.liked "
+            "t.last_read_date, t.album_id, ta.artist_id, t.liked, t.isrc "
             "FROM track t JOIN trackartist ta ON ta.track_uri = t.uri AND ta.position = 0 "
             "WHERE t.uri LIKE %s AND t.name IS NOT NULL", ('spotify:track:%',))
-        for uri, name, ms, rc, rce, last, album, artist, liked in cur.fetchall():
+        for uri, name, ms, rc, rce, last, album, artist, liked, isrc in cur.fetchall():
             out.append({'uri': uri, 'name': name, 'duration_ms': ms, 'read_count': rc or 0,
                         'read_count_end': rce or 0, 'last_read_date': last,
-                        'album_id': album, 'artist': artist, 'liked': liked or 0})
+                        'album_id': album, 'artist': artist, 'liked': liked or 0, 'isrc': isrc})
         return out
+
+    def set_isrc(self, uri, code):
+        Track.update(isrc=(code or '')[:32]).where(Track.uri == uri).execute()
 
     def dismissed_duplicate_keys(self):
         try:

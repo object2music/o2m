@@ -149,6 +149,11 @@ class Track(BaseModel):
     # (the mirror of PodcastChannel.ad_skip_s, which skips the START of an
     # episode). A stream has no end of its own; NULL = it plays until stopped.
     play_limit_s = IntegerField(null=True)
+    # The recording's international code, from the Web API (external_ids.isrc).
+    # Two uris with the same ISRC are the same recording, published twice: that
+    # is what lets duplicates be merged without asking (o2m_core/duplicates.py).
+    # '' = asked, Spotify has none; NULL = never asked.
+    isrc = CharField(null=True)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -742,6 +747,10 @@ def _migration_v28(migrator):
     db.create_tables([BoxImage], safe=True)
 
 
+def _migration_v32(migrator):
+    _add_column_safe(migrator, 'track', 'isrc', CharField(null=True))
+
+
 def _migration_v31(migrator):
     db.create_tables([TrackAlias, DuplicateDismissed], safe=True)
 
@@ -802,7 +811,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 31
+SCHEMA_VERSION = 32
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -836,6 +845,7 @@ _MIGRATIONS = [
     (29, "podcastchannel_ad_skip_column", _migration_v29),
     (30, "track_play_limit_column", _migration_v30),
     (31, "track_alias_and_dismissed_duplicates", _migration_v31),
+    (32, "track_isrc_column", _migration_v32),
 ]
 
 

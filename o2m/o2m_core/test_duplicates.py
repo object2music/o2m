@@ -62,5 +62,20 @@ class Merge(unittest.TestCase):
         self.assertEqual((m['liked'], m['disliked']), (1, 0))
 
 
+class Certain(unittest.TestCase):
+    def test_same_isrc_merges_into_the_most_read(self):
+        g = dup.find_groups([row('a', rc=13), row('b', rc=57)])
+        self.assertEqual(dup.certain_merges(g, {'a': 'GBBGU1487003', 'b': 'gbbgu1487003'}),
+                         [('b', ['a'])])
+
+    def test_different_or_unknown_isrc_is_left_to_a_person(self):
+        g = dup.find_groups([row('a', rc=1), row('b', rc=1), row('c', rc=1)])
+        self.assertEqual(dup.certain_merges(g, {'a': 'X1', 'b': 'X2', 'c': ''}), [])
+
+    def test_only_the_matching_subset_merges(self):
+        g = dup.find_groups([row('a', rc=3), row('b', rc=2), row('c', rc=1)])
+        self.assertEqual(dup.certain_merges(g, {'a': 'X1', 'b': 'X2', 'c': 'X1'}), [('a', ['c'])])
+
+
 if __name__ == '__main__':
     unittest.main()

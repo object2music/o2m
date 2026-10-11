@@ -237,6 +237,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"background warmup error: {e}")
         try:
+            o2mHandler.auto_merge_duplicates()
+        except Exception as e:
+            print(f"auto_merge_duplicates error: {e}")
+        try:
             o2mHandler.dbHandler.backfill_last_play_seq()
         except Exception as e:
             print(f"backfill_last_play_seq error: {e}")
@@ -2946,6 +2950,20 @@ if __name__ == "__main__":
             return jsonify({'error': str(e)}), 500
         _dup_memo['groups'] = None
         return jsonify({'ok': True, 'uri': uri, 'keep': keep})
+
+    @api.route('/api/duplicates/auto', methods=['POST'])
+    @require_edit_auth
+    def api_duplicates_auto():
+        """Run the certain merges now (same ISRC) instead of waiting for the
+        next start. Reads at most 600 ISRCs per call, ~5 min (paced well under
+        the rate limit: a 429 would cool the whole app down for an hour)."""
+        from flask import jsonify
+        try:
+            r = o2mHandler.auto_merge_duplicates()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        _dup_memo['groups'] = None
+        return jsonify({'ok': True, **r})
 
     @api.route('/api/duplicates/dismiss', methods=['POST'])
     @require_edit_auth
