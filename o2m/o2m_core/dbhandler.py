@@ -2019,6 +2019,46 @@ class DatabaseHandler():
             pass
         return None
 
+    def get_track_mood_points(self, uris):
+        """{uri: {energy, valence, popularity, name, artist}} for the uris that carry BOTH
+        values — what the box editor's mood section plots (boxmood.measure).
+        The artist is the track's main one (TrackArtist position 0). Chunked,
+        since a tag line hands over up to 2000 uris."""
+        out = {}
+        uris = [u for u in dict.fromkeys(uris or []) if u]
+        for i in range(0, len(uris), 500):
+            chunk = uris[i:i + 500]
+            try:
+                rows = (Track.select(Track.uri, Track.name, Track.energy, Track.valence,
+                                     Track.popularity)
+                        .where(Track.uri.in_(chunk), Track.energy.is_null(False),
+                               Track.valence.is_null(False)).tuples())
+                for uri, name, e, v, pop in rows:
+                    out[uri] = {'energy': float(e), 'valence': float(v),
+                                'popularity': None if pop is None else float(pop),
+                                'name': name or '', 'artist': ''}
+                if out:
+                    found = [u for u in chunk if u in out]
+                    q = (TrackArtist.select(TrackArtist.track_uri, Artist.name)
+                         .join(Artist, on=(TrackArtist.artist_id == Artist.id))
+                         .where(TrackArtist.track_uri.in_(found), TrackArtist.position == 0)
+                         .tuples()) if found else []
+                    for uri, aname in q:
+                        out[uri]['artist'] = aname or ''
+                    # No artist link (about a third of a playlist here): the
+                    # album's denormalized artist is the next best name.
+                    bare = [u for u in found if not out[u]['artist']]
+                    if bare:
+                        q = (AlbumTrack.select(AlbumTrack.track_uri, Album.artist_name)
+                             .join(Album, on=(AlbumTrack.album_id == Album.id))
+                             .where(AlbumTrack.track_uri.in_(bare)).tuples())
+                        for uri, aname in q:
+                            if aname and not out[uri]['artist']:
+                                out[uri]['artist'] = aname
+            except Exception as e:
+                self.log.error(f"get_track_mood_points: {e}")
+        return out
+
     def get_artist_track_uris(self, artist_id):
         """Return cached track URIs linked to artist_id via TrackArtist (cache-only)."""
         if not artist_id:

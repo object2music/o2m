@@ -1157,7 +1157,8 @@
 
   /* ── Matrix tooltip ── */
   #matrix-tooltip {
-    position: fixed; display: none; pointer-events: none; z-index: 200;
+    /* Above the object modal (210): the box editor's radar shows it too. */
+    position: fixed; display: none; pointer-events: none; z-index: 220;
     background: var(--surface); border-radius: 0;
     padding: calc(8px * var(--ui)) calc(12px * var(--ui)); max-width: calc(200px * var(--ui));
     box-shadow: 0 calc(4px * var(--ui)) calc(20px * var(--ui)) #00000070;
@@ -1807,6 +1808,41 @@
   .bx-img-field.drop .og-thumb { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .bx-img-field.busy .bx-img-tile { animation: basic-pulse 1s ease-in-out infinite; }
   .obj-field input[type="checkbox"] { width: calc(16px * var(--ui)); height: calc(16px * var(--ui)); accent-color: var(--accent); cursor: pointer; }
+  /* Box editor — mood of the content (mood.html, bxMoodSection). */
+  .bxm { margin-top: calc(10px * var(--ui)); border-bottom: 1px solid var(--border); padding-bottom: calc(10px * var(--ui)); }
+  .bxm > summary { cursor: pointer; font-size: calc(12px * var(--ui)); color: var(--muted); padding: calc(6px * var(--ui)) calc(2px * var(--ui)); }
+  .bxm[open] > summary { color: var(--text); }
+  .bxm-body { display: flex; flex-direction: column; gap: calc(10px * var(--ui)); padding-top: calc(6px * var(--ui)); }
+  .bxm-head { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(8px * var(--ui)); }
+  .bxm-stat { display: flex; flex-direction: column; gap: calc(2px * var(--ui)); min-width: 0; }
+  .bxm-stat span { font-size: calc(10px * var(--ui)); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .bxm-stat b { font-family: var(--font-mono); font-size: var(--t-body); color: var(--text); font-weight: 600; }
+  /* Plot and list side by side; stacked on a narrow modal. */
+  .bxm-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(12px * var(--ui)); align-items: start; }
+  @media (max-width: 560px) { .bxm-grid { grid-template-columns: 1fr; } .bxm-head { grid-template-columns: repeat(2, 1fr); } }
+  .bxm-plotwrap { display: flex; flex-direction: column; gap: calc(4px * var(--ui)); }
+  .bxm-radar { width: 100%; max-width: calc(320px * var(--ui)); aspect-ratio: 1; display: block; }
+  .bxm-legend { font-size: calc(11px * var(--ui)); color: var(--muted); }
+  .bxm-listwrap { display: flex; flex-direction: column; min-width: 0; }
+  .bxm-sort { align-self: flex-start; background: none; border: none; padding: 0 0 calc(4px * var(--ui)); font: inherit;
+    font-size: calc(11px * var(--ui)); color: var(--muted); cursor: pointer; text-decoration: underline dotted; }
+  .bxm-sort:hover { color: var(--text); }
+  .bxm-list { max-height: calc(320px * var(--ui)); overflow-y: auto; border-top: 1px solid var(--border); }
+  .bxm-row { display: flex; align-items: center; gap: calc(8px * var(--ui)); padding: calc(4px * var(--ui)) calc(2px * var(--ui));
+    border-bottom: 1px solid var(--border); cursor: default; }
+  .bxm-row.on { background: var(--card); }
+  .bxm-dot { flex: 0 0 auto; width: calc(8px * var(--ui)); height: calc(8px * var(--ui)); border-radius: 50%; }
+  .bxm-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .bxm-t, .bxm-a { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bxm-t { font-size: var(--t-body-s); color: var(--text); }
+  .bxm-a { font-size: calc(11px * var(--ui)); color: var(--muted); }
+  .bxm-d { flex: 0 0 auto; font-family: var(--font-mono); font-size: calc(11px * var(--ui)); color: var(--muted); }
+  .bxm-d.out { color: var(--accent); }
+  .bxm-notes { list-style: none; margin: 0; padding: 0; font-size: calc(11px * var(--ui)); color: var(--muted); }
+  .bxm-notes li { display: flex; justify-content: space-between; gap: calc(10px * var(--ui)); padding: calc(2px * var(--ui)) 0; }
+  .bxm-line { font-family: var(--font-mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bxm-what { flex: 0 0 auto; }
+  .bxm-acts { display: flex; gap: calc(8px * var(--ui)); flex-wrap: wrap; }
   .obj-save-row { margin-top: calc(14px * var(--ui)); display: flex; align-items: center;
     justify-content: space-between; gap: calc(12px * var(--ui)); flex-wrap: wrap; }
   .obj-save-btn { background: var(--accent); color: #fff; border: none; padding: calc(8px * var(--ui)) calc(18px * var(--ui));

@@ -1332,6 +1332,51 @@ if __name__ == "__main__":
             'uris': uris,
         })
 
+    @api.route('/api/box_mood', methods=['POST'])
+    def api_box_mood():
+        """The mood of a box's content, for the editor's mood section: the
+        line-weighted average energy/valence, every measured track with its
+        distance to it, and what each line could and could not measure.
+
+        POST because it reads the data being EDITED, not the stored one — the
+        section answers for the box on screen, unsaved lines included. Read-only
+        and cache-only (o2m_core/boxmood.py), so not edit-locked."""
+        from flask import jsonify
+        from o2m_core import boxmood
+        body = request.get_json(silent=True) or {}
+        data = body.get('data')
+        if data is None and body.get('uid'):
+            box = o2mHandler.dbHandler.find_box_by_uid(body['uid'])
+            data = box.data if box else None
+        if data is None:
+            return jsonify({'error': 'data or uid required'}), 400
+        db = o2mHandler.dbHandler
+
+        class _Reader:
+            def track_uris(self, kind, key):
+                if kind == 'track':
+                    return ['spotify:track:' + key]
+                if kind == 'album':
+                    return db.get_album_tracks(key) or []
+                if kind == 'artist':
+                    return db.get_artist_track_uris(key) or []
+                if kind == 'playlist':
+                    return db.get_playlist_track_uris(key) or []
+                if kind == 'tag':
+                    return db.get_tag_track_uris(key) or []
+                return []
+
+            def features(self, uris):
+                return db.get_track_mood_points(uris)
+
+        try:
+            points, lines = boxmood.measure(data, _Reader())
+            summary = boxmood.summarize(points)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return jsonify({'dl': boxmood.DL_REF, 'sigma': boxmood.SIGMA,
+                        'summary': summary, 'lines': lines})
+
     @api.route('/api/box_edit', methods=['POST'])
     @require_edit_auth
     def api_box_edit():

@@ -36,8 +36,8 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 (the samplers and the anti-repeat cooldown), `test_webmedia.py`
 (the `web:` page reader), `test_virtualbox.py` (activating an album or an artist
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
-budget shared between its lines) and `test_boximage.py` (what
-a box picture upload may be). Run from the repo root (package-prefixed, since they import
+budget shared between its lines), `test_boximage.py` (what
+a box picture upload may be) and `test_boxmood.py` (the mood of a box's content). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -1036,6 +1036,28 @@ pictures along, and external addresses keep working.
   is deleted by `sweep_box_images` at startup once 24 h old and referenced by no box.
 - An instance that has not pulled this shows a broken picture for such a box: the url
   is relative and answered by the instance serving the page.
+
+## A box's mood: where its content sits on the energy/valence plane
+
+The box editor ends with **Mood of the content** (`bxMoodSection` in `mood.html`,
+`POST /api/box_mood`, `o2m_core/boxmood.py` + `test_boxmood.py`): the average
+energy/ambiance of the box's tracks, the radar with the DL 5 circle around that
+average, and the tracks listed from the most divergent to the closest.
+
+- **It reads the content being edited**, unsaved lines included, and **the cache
+  only** — playlists, albums, artists, tracks, `tag:` (the same lookups the fill
+  uses). Resolving the box instead would have measured `auto:` lines too, but every
+  mood-driven line would then follow the CURRENT dials. Rules, feeds, streams and,
+  for now, **included boxes (`box:`)** are listed as not measured.
+- **Each line weighs the same** in the average, split between its tracks — the box
+  budget gives each line an equal share, so that is what the box plays; a per-track
+  mean let a 300-track artist drown the playlist beside it. Over 400 measured tracks
+  a line is sampled.
+- **The radar is the Full view's** (`paintMoodRadar`, which `drawMatrix` now calls
+  with its own state): the tracks as its popularity-grey dots, the average as its
+  target, DL 5 as its circle (σ = 0.30, the selection's own mood radius).
+- **"Use as box mood"** only fills the Energy / Ambiance fields (`option_energy` /
+  `option_valence`); storing it is the Save button's decision, like any field.
 
 ## `web:<url>` — the media a web page holds (experimental)
 

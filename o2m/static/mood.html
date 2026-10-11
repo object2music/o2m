@@ -4036,7 +4036,26 @@ function drawMatrix(ts) {
   requestAnimationFrame(drawMatrix);
   const canvas = document.getElementById('mood-matrix');
   if (!canvas) return;
+  const points = [];
+  matrixTlItems.forEach(({ uri, tlid }) => {
+    const f = matrixFeatures[uri];
+    if (f && tlid !== currentTlid) points.push(f);
+  });
+  paintMoodRadar(canvas, {
+    points, current: matrixFeatures[matrixCurUri], ts,
+    target: { energy: appState.energy, valence: appState.valence, dl: appState.dl },
+  });
+}
 
+/* The mood radar itself, given what to draw — the Full view's matrix
+   (drawMatrix, every frame) and the box editor's "Mood of the content"
+   (renderBxMood) are the same picture with different data.
+     points:    [{energy, valence, popularity}] — greyscale by popularity
+     current:   {energy, valence} pulsing in the accent (the track playing), or none
+     highlight: {energy, valence} ringed, still (a row pointed at), or none
+     target:    {energy, valence, dl} — the dot and its dashed DL circle
+   The canvas must already carry its backing size (W·dpr square). */
+function paintMoodRadar(canvas, { points = [], current = null, highlight = null, target, ts = 0 }) {
   const dpr   = window.devicePixelRatio || 1;
   const W     = canvas.width  / dpr;
   const H     = canvas.height / dpr;
@@ -4103,17 +4122,23 @@ function drawMatrix(ts) {
   ctx.fillText('▼ Intense', mx, PAD + inner + PAD - 2);
 
   /* Tracklist dots — color correlated to popularity (darker = more popular) */
-  matrixTlItems.forEach(({ uri, tlid }) => {
-    const f = matrixFeatures[uri];
-    if (!f || tlid === currentTlid) return;
+  points.forEach(f => {
     ctx.beginPath();
     ctx.arc(ex(f.energy), vy(f.valence), 3 * UI_SCALE, 0, Math.PI * 2);
     ctx.fillStyle = popularityColor(f.popularity);
     ctx.fill();
   });
 
+  /* A point picked from outside (the box editor's list): ringed, not pulsing —
+     the pulse says "playing", which this is not. */
+  if (highlight) {
+    ctx.beginPath();
+    ctx.arc(ex(highlight.energy), vy(highlight.valence), 7 * UI_SCALE, 0, Math.PI * 2);
+    ctx.strokeStyle = accentColor(1); ctx.lineWidth = 2.5; ctx.stroke();
+  }
+
   /* Currently playing — blinking dot in the theme's accent color */
-  const curF = matrixFeatures[matrixCurUri];
+  const curF = current;
   if (curF) {
     const cx = ex(curF.energy), cy = vy(curF.valence);
     const pulse = (Math.sin(ts / 450) + 1) / 2;
@@ -4129,7 +4154,7 @@ function drawMatrix(ts) {
   }
 
   /* DL area — dashed circle */
-  const { energy, valence, dl } = appState;
+  const { energy, valence, dl } = target;
   const r  = (dl / 20 + 0.05) * inner;
   const tx = ex(energy), ty = vy(valence);
   ctx.save();
@@ -4183,7 +4208,12 @@ function showMatrixTooltip(canvas, e) {
   // Pick closest
   candidates.sort((a, b) => a.d - b.d);
   const { item, f } = candidates[0];
+  placeMatrixTooltip(e, item, f);
+}
 
+/* The matrix tooltip for one point, next to the pointer — shared by the Full
+   view's matrix and the box editor's radar. */
+function placeMatrixTooltip(e, item, f) {
   const tip = document.getElementById('matrix-tooltip');
   tip.querySelector('.tt-name').textContent   = item?.name   || '?';
   tip.querySelector('.tt-artist').textContent = item?.artist || '';
@@ -4818,6 +4848,7 @@ function renderBoxEditor(info) {
     + bxField('Favorite', bxChk('favorite', info.favorite))
     + bxField('Public', bxChk('public', info.public))
     + bxField('Content', `<div id="bx-editor-host">${renderDataEditor(_bxItems || [])}</div>`, 'obj-data-field')
+    + bxMoodSection()
     + `<div class="obj-save-row">`
     +   `<button class="obj-save-btn" id="bx-save">Save box</button>`
     +   `<button class="bx-danger-btn" id="bx-delete" data-armed="0">${ICON.x}<span>Delete box</span></button>`
@@ -4830,6 +4861,171 @@ function wireBoxEditor(info) {
   wireBxImageField();
   wireDataEditor();
   resolveDataItems();
+  wireBxMood();
+}
+
+/* ── Mood of the content ──────────────────────────────────────────────────────
+   Where the box's tracks sit on the energy/valence plane (POST /api/box_mood,
+   o2m_core/boxmood.py): the line-weighted average, the selection's mood radius
+   at DL 5 drawn around it, every measured track, and the tracks listed by their
+   distance to the average. It reads the content being EDITED, unsaved lines
+   included, and only what the cache holds — a rule (auto:, a feed, a stream) and,
+   for now, an included box are listed as not measured.
+   "Use as box mood" only fills the Energy and Ambiance fields above: the
+   decision to store it is the Save button's, like any other field. */
+let _bxMood = null, _bxMoodFar = true, _bxMoodSeq = 0;
+
+function bxMoodSection() {
+  return `<details class="bxm" id="bxm">`
+    + `<summary>Mood of the content</summary>`
+    + `<div class="bxm-body" id="bxm-body"><div class="bx-empty">Open to measure.</div></div>`
+    + `</details>`;
+}
+
+function wireBxMood() {
+  _bxMood = null;
+  const d = document.getElementById('bxm');
+  d?.addEventListener('toggle', () => { if (d.open && !_bxMood) loadBxMood(); });
+}
+
+async function loadBxMood() {
+  const body = document.getElementById('bxm-body');
+  if (!body) return;
+  const seq = ++_bxMoodSeq;
+  body.innerHTML = '<div class="bx-empty">Measuring…</div>';
+  try {
+    const r = await fetch(API + '/box_mood', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ data: getDataEditorValue() }),
+    }).then(r => r.json());
+    if (seq !== _bxMoodSeq) return;               // a newer measure is on its way
+    if (r.error) throw new Error(r.error);
+    _bxMood = r;
+    renderBxMood();
+  } catch (e) {
+    if (seq === _bxMoodSeq) body.innerHTML = `<div class="bx-empty">Could not measure: ${objEsc(e.message || 'error')}</div>`;
+  }
+}
+
+const _bxmFmt = x => (x == null ? '–' : Number(x).toFixed(2));
+
+/* The radar is the Full view's own (paintMoodRadar): the box's tracks as its
+   dots, the average as its target with the DL circle around it. */
+function paintBxMood(hiIdx) {
+  const c = document.getElementById('bxm-radar');
+  const s = _bxMood?.summary;
+  if (!c || !s) return;
+  const dpr = window.devicePixelRatio || 1, need = Math.round(c.offsetWidth * dpr);
+  if (need <= 0) return;
+  if (c.width !== need || c.height !== need) { c.width = need; c.height = need; }
+  paintMoodRadar(c, {
+    points: s.tracks,
+    highlight: hiIdx != null ? s.tracks[hiIdx] : null,
+    target: { energy: s.energy, valence: s.valence, dl: _bxMood.dl },
+  });
+}
+
+/* The dot under the pointer, by the radar's own geometry (PAD, energy across,
+   ambiance up). */
+function bxMoodHit(c, e) {
+  const s = _bxMood?.summary;
+  if (!s) return -1;
+  const rect = c.getBoundingClientRect(), inner = rect.width - 2 * PAD, HIT = 10 * UI_SCALE;
+  let best = -1, bd = HIT;
+  s.tracks.forEach((t, i) => {
+    const d = Math.hypot(e.clientX - (rect.left + PAD + t.energy * inner),
+                         e.clientY - (rect.top + PAD + (1 - t.valence) * inner));
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+
+function renderBxMood() {
+  const body = document.getElementById('bxm-body');
+  const m = _bxMood;
+  if (!body || !m) return;
+  const notes = (m.lines || []).map(l => {
+    const what = l.kind == null
+      ? (l.line.startsWith('box:') ? 'included box — not measured yet' : 'a rule, not a fixed set — not measured')
+      : `${l.measured} of ${l.tracks} track${l.tracks === 1 ? '' : 's'} measured`
+        + (l.measured < l.tracks && l.measured >= 400 ? ' (sample)' : '');
+    return `<li><span class="bxm-line">${objEsc(l.line)}</span><span class="bxm-what">${what}</span></li>`;
+  }).join('');
+  const s = m.summary;
+  if (!s) {
+    body.innerHTML = `<div class="bx-empty">Nothing in this content carries an energy and an ambiance yet.</div>`
+      + `<ul class="bxm-notes">${notes}</ul>`
+      + `<div class="bxm-acts"><button type="button" class="bx-foot-btn ghost" id="bxm-refresh">Measure again</button></div>`;
+    document.getElementById('bxm-refresh')?.addEventListener('click', loadBxMood);
+    return;
+  }
+  const n = s.tracks.length;
+  const order = _bxMoodFar ? s.tracks.map((_, i) => i) : s.tracks.map((_, i) => n - 1 - i);
+  const rows = order.map(i => {
+    const t = s.tracks[i];
+    return `<div class="bxm-row" data-i="${i}">`
+      + `<span class="bxm-dot" style="background:${moodColor(t.energy, t.valence, 1)}"></span>`
+      + `<span class="bxm-name"><span class="bxm-t">${objEsc(t.name || t.uri)}</span>`
+      + `<span class="bxm-a">${objEsc(t.artist || '')}</span></span>`
+      + `<span class="bxm-d${t.distance > m.sigma ? ' out' : ''}" title="Distance to the average">${t.distance.toFixed(2)}</span>`
+      + `</div>`;
+  }).join('');
+  body.innerHTML =
+      `<div class="bxm-head">`
+    +   `<div class="bxm-stat"><span>Energy</span><b>${_bxmFmt(s.energy)}</b></div>`
+    +   `<div class="bxm-stat"><span>Ambiance</span><b>${_bxmFmt(s.valence)}</b></div>`
+    +   `<div class="bxm-stat"><span>Spread</span><b>${_bxmFmt(s.spread)}</b></div>`
+    +   `<div class="bxm-stat"><span>In the DL ${m.dl} radius</span><b>${Math.round(s.inside * 100)}%</b></div>`
+    + `</div>`
+    + `<div class="bxm-grid">`
+    +   `<div class="bxm-plotwrap"><canvas class="bxm-radar" id="bxm-radar"></canvas>`
+    +     `<div class="bxm-legend">Target: the average · circle: the mood radius at DL ${m.dl}</div></div>`
+    +   `<div class="bxm-listwrap">`
+    +     `<button type="button" class="bxm-sort" id="bxm-sort">${n} tracks · ${_bxMoodFar ? 'most divergent first' : 'closest first'}</button>`
+    +     `<div class="bxm-list" id="bxm-list">${rows}</div>`
+    +   `</div>`
+    + `</div>`
+    + `<ul class="bxm-notes">${notes}</ul>`
+    + `<div class="bxm-acts">`
+    +   `<button type="button" class="bx-foot-btn" id="bxm-use">Use as box mood</button>`
+    +   `<button type="button" class="bx-foot-btn ghost" id="bxm-refresh">Measure again</button>`
+    + `</div>`;
+  document.getElementById('bxm-refresh')?.addEventListener('click', loadBxMood);
+  document.getElementById('bxm-sort')?.addEventListener('click', () => { _bxMoodFar = !_bxMoodFar; renderBxMood(); });
+  document.getElementById('bxm-use')?.addEventListener('click', () => {
+    const e = document.getElementById('bx-option_energy'), v = document.getElementById('bx-option_valence');
+    if (e) e.value = s.energy.toFixed(2);
+    if (v) v.value = s.valence.toFixed(2);
+    setFeedback('Energy and Ambiance set — Save box to keep them');
+  });
+  // A row points at its dot, and a dot at its row.
+  const list = document.getElementById('bxm-list');
+  const canvas = document.getElementById('bxm-radar');
+  const mark = i => {
+    paintBxMood(i);
+    list.querySelectorAll('.bxm-row.on').forEach(r => r.classList.remove('on'));
+    list.querySelector(`.bxm-row[data-i="${i}"]`)?.classList.add('on');
+  };
+  list?.addEventListener('pointerover', ev => { const r = ev.target.closest('.bxm-row'); if (r) mark(+r.dataset.i); });
+  list?.addEventListener('click', ev => { const r = ev.target.closest('.bxm-row'); if (r) mark(+r.dataset.i); });
+  canvas?.addEventListener('pointermove', ev => {
+    const i = bxMoodHit(canvas, ev);
+    if (i < 0) { hideMatrixTooltip(); return; }
+    const t = s.tracks[i];
+    placeMatrixTooltip(ev, { name: t.name || t.uri, artist: t.artist }, t);
+  });
+  canvas?.addEventListener('pointerleave', hideMatrixTooltip);
+  canvas?.addEventListener('click', ev => {
+    const i = bxMoodHit(canvas, ev);
+    if (i < 0) return;
+    mark(i);
+    list.querySelector(`.bxm-row[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+  });
+  paintBxMood();
+  if (canvas && window.ResizeObserver) new ResizeObserver(() => {
+    const on = list.querySelector('.bxm-row.on');
+    paintBxMood(on ? +on.dataset.i : null);
+  }).observe(canvas);
 }
 
 /* Deleting is irreversible, so the button double-checks itself: the first click
