@@ -959,24 +959,46 @@ if __name__ == "__main__":
 
     @api.route('/api/channel_settings')
     def api_channel_settings():
-        """A channel's own settings — today only the pre-roll skip, in seconds.
-        ?uri= is the channel (podcast+<feed>, web:<page>) or one of its episodes."""
+        """A source's own settings, in seconds. ?uri= is a channel (podcast+<feed>,
+        rf:show:<page>, web:<page>) or one of its episodes → `ad_skip_s`, the
+        pre-roll skipped on a fresh start; or a radio stream → `play_limit_s`,
+        how long it plays before the next track (0 = until stopped). `radio`
+        says which of the two applies; one endpoint and one field in the page
+        serve both, since they are the same gesture at either end of a play."""
         from flask import jsonify
         uri = (request.args.get('uri') or '').strip()
         if not uri:
             return jsonify({'error': 'uri required'}), 400
         db = o2mHandler.dbHandler
-        return jsonify({'uri': uri, 'ad_skip_s': db.get_channel_ad_skip(uri),
+        if o2mHandler.is_radio_uri(uri):
+            return jsonify({'uri': uri, 'radio': True, 'known': True,
+                            'play_limit_s': db.get_play_limit(uri)})
+        return jsonify({'uri': uri, 'radio': False, 'ad_skip_s': db.get_channel_ad_skip(uri),
                         'known': bool(db._channels_for(uri))})
 
     @api.route('/api/channel_settings', methods=['POST'])
     @require_edit_auth
     def api_channel_settings_set():
         """{uri, ad_skip_s, name?} — stores the pre-roll skip on the channel
-        (0 clears it). Applies from the next fresh start of one of its episodes."""
+        (0 clears it). Applies from the next fresh start of one of its episodes.
+        {uri, play_limit_s} for a radio — applies from its next start."""
         from flask import jsonify
         data = request.get_json(silent=True) or {}
         uri = (data.get('uri') or '').strip()
+        if 'play_limit_s' in data:
+            try:
+                secs = int(data.get('play_limit_s') or 0)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'play_limit_s must be a number of seconds'}), 400
+            if not uri or secs < 0 or secs > 86400:
+                return jsonify({'error': 'uri and 0 <= play_limit_s <= 86400 required'}), 400
+            if not o2mHandler.is_radio_uri(uri):
+                return jsonify({'error': 'not a radio stream'}), 400
+            try:
+                o2mHandler.dbHandler.set_play_limit(uri, secs)
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+            return jsonify({'ok': True, 'uri': uri, 'play_limit_s': secs})
         try:
             secs = int(data.get('ad_skip_s') or 0)
         except (TypeError, ValueError):
@@ -3539,6 +3561,8 @@ with the house Premium account.</li>
                     #skip advertising 
                     #elif "radiofrance-podcast.net" in track.uri: o2mHandler.mopidyHandler.playback.seek(15000)
                 #elif "radiofrance-podcast.net" in track.uri:  o2mHandler.mopidyHandler.playback.seek(15000)
+            # A radio with a play limit is moved on from after that long.
+            o2mHandler.arm_play_limit(event.tl_track.tlid, uri)
             if "radiofrance-podcast.net" in track.uri or "proxycast.radiofrance.fr" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
                 volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
                 if volume > 100: volume = 100

@@ -3049,8 +3049,7 @@ async function openPodcast(uri, seed) {
     const coverHtml = objCoverHTML(cover, uri);
     let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Podcast')}</b>`
       + `<span>${eps.length} episode${eps.length === 1 ? '' : 's'}</span>`
-      + `<label class="obj-setting" id="obj-adskip" hidden title="Seconds skipped at the start of each episode (pre-roll ad), on a fresh start only — never when resuming">`
-      + `Skip intro <input class="obj-num" type="number" min="0" max="600" step="5" inputmode="numeric"> s</label>`
+      + sourceSecondsHTML('ad_skip_s', 'label')
       + `</div></div>`;
     html += '<div id="obj-pod-list"></div>';
     objBody().innerHTML = html;
@@ -3059,39 +3058,78 @@ async function openPodcast(uri, seed) {
   } catch (e) { objBody().innerHTML = '<div class="obj-empty">Could not load podcast.</div>'; }
 }
 
-/* The channel's pre-roll skip (PodcastChannel.ad_skip_s). Per channel and 0 by
-   default: a per-host rule skipped 30 s of every Radio France show, ad or not.
-   Shown only for what the server can attach a setting to — a feed, a Radio France
-   show page or a web page. */
-async function channelAdSkipField(uri, name) {
-  const row = document.getElementById('obj-adskip');
-  if (!row || !/^(podcast\+|rf:show:|web:|xp:)/.test(uri)) return;
+/* A source's own setting, in seconds, at either end of a play: the pre-roll a
+   channel's episodes skip (`ad_skip_s`, PodcastChannel), or how long a radio plays
+   before o2m moves to the next track (`play_limit_s`, Track — a stream has no end
+   of its own). One endpoint (/api/channel_settings), one definition, one wiring,
+   whichever view shows it: the channel view, the radio's details. */
+const SOURCE_SECONDS = {
+  ad_skip_s: {
+    label: 'Skip intro', max: 600, step: 5, empty: '0',
+    title: 'Seconds skipped at the start of each episode (pre-roll ad), on a fresh start only — never when resuming',
+    said: v => v ? `Episodes of this channel will skip their first ${v} s` : 'No intro skip for this channel',
+  },
+  play_limit_s: {
+    label: 'Play limit', max: 86400, step: 60, empty: '',
+    title: 'Seconds this radio plays before moving to the next track. Empty: it plays until stopped',
+    said: v => v ? `This radio will move on after ${fmtSeconds(v)}` : 'This radio plays until stopped',
+  },
+};
+function fmtSeconds(v) {
+  const m = Math.floor(v / 60), s = v % 60;
+  return m ? `${m} min${s ? ` ${s} s` : ''}` : `${s} s`;
+}
+/* shape 'label': an inline setting (the channel hero); 'row': a details-list row.
+   Hidden until wireSourceSeconds knows the setting applies here. */
+function sourceSecondsHTML(key, shape) {
+  const c = SOURCE_SECONDS[key];
+  const input = `<input class="obj-num" type="number" min="0" max="${c.max}" step="${c.step}" inputmode="numeric"`
+              + ` placeholder="${c.empty === '' ? 'none' : c.empty}"> s`;
+  const attrs = `data-src-setting="${key}" style="display:none" title="${objEsc(c.title)}"`;
+  return shape === 'row'
+    ? `<div ${attrs}><dt>${c.label}</dt><dd>${input}</dd></div>`
+    : `<label class="obj-setting" ${attrs}>${c.label} ${input}</label>`;
+}
+async function wireSourceSeconds(row, uri, { name = '', stillHere = () => true } = {}) {
+  if (!row || !uri) return;
+  const key = row.dataset.srcSetting, c = SOURCE_SECONDS[key];
   const d = await _wcJson('/channel_settings?uri=' + encodeURIComponent(uri));
-  if (!d || d.error || objCurrentUri !== uri) return;     // gone, or another object opened
+  if (!d || d.error || !stillHere() || !row.isConnected) return;
+  if (key === 'play_limit_s' && !d.radio) return;          // older server, or not a stream
   // A show or page with no channel row yet has nowhere to keep it (only a feed
   // can be registered from its uri alone): no field rather than one that fails.
-  if (!d.known && !uri.startsWith('podcast+')) return;
+  if (key === 'ad_skip_s' && (d.radio || (!d.known && !uri.startsWith('podcast+')))) return;
   const input = row.querySelector('input');
-  let saved = d.ad_skip_s || 0;
-  input.value = saved;
-  row.hidden = false;
+  let saved = d[key] || 0;
+  const show = v => { input.value = v ? v : c.empty; };
+  show(saved);
+  row.style.display = '';
   input.addEventListener('change', async () => {
-    const v = Math.round(Number(input.value));
-    if (!Number.isFinite(v) || v < 0 || v > 600) { input.value = saved; setFeedback('Between 0 and 600 seconds'); return; }
-    if (v === saved) return;
-    if (!editUnlocked) { input.value = saved; setFeedback('Enable editing first'); return; }
+    const raw = input.value.trim();
+    const v = raw === '' ? 0 : Math.round(Number(raw));
+    if (!Number.isFinite(v) || v < 0 || v > c.max) { show(saved); setFeedback(`Between 0 and ${c.max} seconds`); return; }
+    if (v === saved) { show(saved); return; }
+    if (!editUnlocked) { show(saved); setFeedback('Enable editing first'); return; }
     try {
       const r = await fetch(API + '/channel_settings', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ uri, ad_skip_s: v, name })
+        body: JSON.stringify({ uri, [key]: v, name })
       });
-      if (r.status === 401) { input.value = saved; setFeedback('Editing not authorized'); return; }
+      if (r.status === 401) { show(saved); setFeedback('Editing not authorized'); return; }
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.error) { input.value = saved; setFeedback(j.error || 'Could not save'); return; }
-      saved = v; input.value = v;
-      setFeedback(v ? `Episodes of this channel will skip their first ${v} s` : 'No intro skip for this channel');
-    } catch (e) { input.value = saved; setFeedback('Could not save'); }
+      if (!r.ok || j.error) { show(saved); setFeedback(j.error || 'Could not save'); return; }
+      saved = v; show(v);
+      setFeedback(c.said(v));
+    } catch (e) { show(saved); setFeedback('Could not save'); }
   });
+}
+/* The channel's pre-roll skip. Per channel and 0 by default: a per-host rule
+   skipped 30 s of every Radio France show, ad or not. Shown only for what the
+   server can attach a setting to — a feed, a Radio France show page or a web page. */
+function channelAdSkipField(uri, name) {
+  if (!/^(podcast\+|rf:show:|web:|xp:)/.test(uri)) return;
+  wireSourceSeconds(objBody().querySelector('[data-src-setting="ad_skip_s"]'), uri,
+                    { name, stillHere: () => objCurrentUri === uri });
 }
 
 // Playlist detail: resolve the playlist's tracks (mopidy lookup on the
@@ -3382,7 +3420,7 @@ async function maybeShowRadioTitle(track) {
       if (nameEl) setTrackName(displayTitle);
       fitHeroTitle();
       _radioLast.title = displayTitle;
-      renderRadioDetails(d);   // keep the radio-adapted DETAILS in sync
+      renderRadioDetails(d, track.uri);   // keep the radio-adapted DETAILS in sync
     }
     // Cover: the item's own artwork when available (songs; some shows), else the
     // station brand logo (repli 1), else a clean placeholder — never a stale cover,
@@ -3688,9 +3726,11 @@ function syncDetailsWidth() {
 // Radio-adapted DETAILS: a stream isn't a library track, so show the station +
 // current song + Source=Radio, and DROP the lifecycle fields (status/plays/energy/
 // library scale) which don't apply. `d` = /api/radio_now_playing payload.
-function renderRadioDetails(d) {
+function renderRadioDetails(d, uri) {
   const host = tdPanel.body();
   if (!host) return;
+  // A song change re-renders this list: not under a finger typing the limit.
+  if (host.contains(document.activeElement) && document.activeElement.matches('input')) return;
   const isSong = !!(d && d.kind === 'song');
   const rows = [];
   // 'Title' is generic — the current item is a song OR a show/segment. Artist/album
@@ -3708,8 +3748,10 @@ function renderRadioDetails(d) {
     html += `<div><dt>Favorite</dt><dd class="td-fav" id="radio-fav">${ICON.heart(false)}</dd></div>`
           + `<div><dt>Playlists</dt><dd id="radio-playlists"></dd></div>`;
   }
-  host.innerHTML = html + '</dl>';
+  host.innerHTML = html + (uri ? sourceSecondsHTML('play_limit_s', 'row') : '') + '</dl>';
   tdPanel.ev = null;
+  if (uri) wireSourceSeconds(host.querySelector('[data-src-setting]'), uri,
+                             { stillHere: () => detailsUri === uri });
   if (isSong) wireRadioActions();
 }
 
@@ -3753,7 +3795,7 @@ async function renderTrackDetails(uri) {
     try { d = await fetch(API + '/radio_now_playing').then(r => r.json()); } catch (e) {}
     if (_detailsReq !== uri) return;
     detailsUri = uri;
-    renderRadioDetails(d);
+    renderRadioDetails(d, uri);
     panel?.classList.remove('switching');
     requestAnimationFrame(syncDetailsWidth);
     return;
@@ -4230,6 +4272,13 @@ async function renderTrackObj(uri, seed) {
   objTMatrixUri = uri;
   // Same shared body as the now-playing panel (one render path — see makeTrackPanel).
   objPanel.render(info, { hero: true, cover, uri, name, artist, artists, album, albumUri });
+  if (_isStreamUri(uri)) {
+    const dl = objBody().querySelector('dl');
+    if (dl) {
+      dl.insertAdjacentHTML('beforeend', sourceSecondsHTML('play_limit_s', 'row'));
+      wireSourceSeconds(dl.lastElementChild, uri, { name, stillHere: () => seq === _objViewSeq });
+    }
+  }
 }
 
 async function saveCurrentTrackFeatures() {

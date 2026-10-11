@@ -97,7 +97,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **29**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **30**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -555,6 +555,16 @@ lists of the same patterns drift.
   to its channel by the feed in its uri, else `Track.channel_id` (`web:`, bare RF
   mp3). Ads cannot be detected: no feed exposes chapters or ad markers, and
   `itunes:duration` already includes the ad.
+- **Radio play limit — the same setting at the other end of a play**: a live
+  stream never ends, so a radio can be given a duration (`Track.play_limit_s`,
+  migration **v30**, NULL = until stopped), after which o2m moves to the next
+  track (`arm_play_limit` on `track_playback_started`, `is_radio_uri`). The check
+  reads Mopidy's playback position, so a pause does not count, and is marked
+  `_mark_interrupted` — o2m moving on is not a skip. If nothing follows, playback
+  stops. Both settings share one endpoint (`/api/channel_settings` answers
+  `play_limit_s` and `radio: true` for a stream) and one field in the page
+  (`SOURCE_SECONDS` / `sourceSecondsHTML` / `wireSourceSeconds`): the channel view
+  shows Skip intro, a radio's details (now-playing panel and modal) Play limit.
 
 ## Box Data: the complete line reference
 

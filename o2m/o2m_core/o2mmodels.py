@@ -145,6 +145,10 @@ class Track(BaseModel):
     # stats_raw.id of this track's last play — a monotonic sequence, so the number of
     # OTHER tracks played since is a rotation depth, which a mere elapsed time is not.
     last_play_seq = IntegerField(null=True)
+    # Radios only: seconds a live stream plays before o2m moves to the next track
+    # (the mirror of PodcastChannel.ad_skip_s, which skips the START of an
+    # episode). A stream has no end of its own; NULL = it plays until stopped.
+    play_limit_s = IntegerField(null=True)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -716,6 +720,11 @@ def _migration_v28(migrator):
     db.create_tables([BoxImage], safe=True)
 
 
+def _migration_v30(migrator):
+    # Nullable, so no SQL DEFAULT is needed: an older image's INSERT omits it.
+    _add_column_safe(migrator, 'track', 'play_limit_s', IntegerField(null=True))
+
+
 def _migration_v29(migrator):
     # Nullable, so no SQL DEFAULT is needed: an older image's INSERT omits it.
     _add_column_safe(migrator, 'podcastchannel', 'ad_skip_s', IntegerField(null=True))
@@ -767,7 +776,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 29
+SCHEMA_VERSION = 30
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -799,6 +808,7 @@ _MIGRATIONS = [
     (27, "stats_raw_id_auto_increment", _migration_v27),
     (28, "box_image_table", _migration_v28),
     (29, "podcastchannel_ad_skip_column", _migration_v29),
+    (30, "track_play_limit_column", _migration_v30),
 ]
 
 

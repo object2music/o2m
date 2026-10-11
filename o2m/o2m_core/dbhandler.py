@@ -2960,6 +2960,22 @@ class DatabaseHandler():
         PodcastChannel.update(ad_skip_s=seconds).where(PodcastChannel.id.in_(ids)).execute()
         return ids
 
+    def get_play_limit(self, uri):
+        """Seconds this radio plays before moving on (Track.play_limit_s), 0 = no limit."""
+        try:
+            row = Track.select(Track.play_limit_s).where(Track.uri == uri).first()
+            return int(row.play_limit_s or 0) if row else 0
+        except Exception:
+            return 0
+
+    def set_play_limit(self, uri, seconds):
+        """Store a radio's play limit (0 clears it). Creates the row if absent: a
+        station is set up before it has ever been played."""
+        val = max(0, int(seconds or 0)) or None
+        Track.insert({'uri': uri, 'play_limit_s': val}).on_conflict(
+            action='update', update={'play_limit_s': val},
+        ).execute()
+
     def count_rf_shows(self):
         try:
             return PodcastChannel.select(PodcastChannel.id).where(PodcastChannel.kind == 'rf').count()

@@ -75,6 +75,7 @@ class O2mToMopidy:
         # tlids whose playback o2m itself cut short (a box deactivated, the
         # tracklist cleared): their 'ended' event is not a listener's skip.
         self._interrupted_tlids = set()
+        self._play_limit_tokens = {}       # tlid -> token of its live play-limit check
         # (owner box uid, uri) → the box LINE that drew it ('tag:jazz',
         # 'spotify:artist:…'). tracklistappend_box returns one flat uri list per
         # box, so add_tracks used to GUESS the source from the box's first
@@ -4518,6 +4519,58 @@ class O2mToMopidy:
             return max(0, int(self.dbHandler.get_channel_ad_skip(uri) or 0)) * 1000
         except Exception:
             return 0
+
+    def is_radio_uri(self, uri):
+        """A live stream: http(s) or tunein, and neither a downloadable episode
+        (a bare Radio France mp3 is http too) nor a 'web:' media. Asked of the
+        CANONICAL uri — a 'web:' item plays under a signed http url."""
+        u = str(uri or '')
+        return (u.startswith(('http:', 'https:', 'tunein:'))
+                and not self._is_spoken_uri(u) and not webmedia.is_web_uri(u))
+
+    # Radio play limit: the mirror of the pre-roll skip. A stream never ends, so a
+    # radio set to N seconds (Track.play_limit_s, edited in its details) is moved
+    # on from by o2m once it has PLAYED that long. The check reads Mopidy's own
+    # playback position rather than trusting a wall clock, so a pause does not
+    # count; and a token per tlid makes a replay of the same entry restart the
+    # count instead of running two checks side by side.
+    def arm_play_limit(self, tlid, uri):
+        if tlid is None or not self.is_radio_uri(uri):
+            return
+        secs = self.dbHandler.get_play_limit(uri)
+        if not secs:
+            return
+        token = object()
+        self._play_limit_tokens[tlid] = token
+        print(f"Play limit: {uri} moves on after {secs} s")
+        self._play_limit_later(tlid, token, secs * 1000, secs)
+
+    def _play_limit_later(self, tlid, token, limit_ms, delay_s):
+        t = threading.Timer(delay_s, self._play_limit_check, args=(tlid, token, limit_ms))
+        t.daemon = True
+        t.start()
+
+    def _play_limit_check(self, tlid, token, limit_ms):
+        if self._play_limit_tokens.get(tlid) is not token:
+            return                                   # replayed since: a newer check owns it
+        try:
+            pb = self.mopidyHandler.playback
+            state = pb.get_state()
+            if state == 'stopped' or pb.get_current_tlid() != tlid:
+                self._play_limit_tokens.pop(tlid, None)
+                return
+            left = limit_ms - (pb.get_time_position() or 0)
+            if state == 'paused' or left > 1000:
+                self._play_limit_later(tlid, token, limit_ms,
+                                       30 if state == 'paused' else max(left / 1000, 1))
+                return
+            self._play_limit_tokens.pop(tlid, None)
+            print(f"Play limit reached (tlid {tlid}): next track")
+            # o2m moving on is not a skip (see _mark_interrupted).
+            self._mark_interrupted()
+            pb.next()
+        except Exception as e:
+            print(f"_play_limit_check: {e}")
 
     def _is_spoken_uri(self, uri):
         return bool(uri and self._SPOKEN_URI_RE.search(str(uri)))
