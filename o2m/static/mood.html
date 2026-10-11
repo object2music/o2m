@@ -163,8 +163,9 @@
            stretched (`slice`) over a wide tile its dots grew to four times a box
            tile's and drowned the label. So the grid is redrawn as a repeating SVG
            pattern at a box tile's pitch (17px × --ui, the mosaic's ~7 per tile),
-           same ramp classes (`ring-a-1`/`ring-b-1`) and ground — the theme still
-           colours it. The label gets a span so it can carry the name's band.
+           same ramp classes (`ring-a-1`/`ring-b-1`, coloured only inside an
+           `.o2m-bullseye` svg — without the class every dot is black) and ground,
+           so the theme still colours it. The label gets a span so it can carry the name's band.
            Bulletin and Bulletin2 hide the texture: their tiles are panes over a
            picture. */
         (function () {
@@ -174,7 +175,7 @@
           document.querySelectorAll('#basic-toggles .basic-toggle').forEach(b => {
             const id = 'basic-dots-' + b.dataset.cat;
             b.insertAdjacentHTML('afterbegin', '<span class="basic-tex" aria-hidden="true">'
-              + `<svg width="100%" height="100%"><defs><pattern id="${id}" patternUnits="userSpaceOnUse"`
+              + `<svg class="o2m-bullseye" width="100%" height="100%"><defs><pattern id="${id}" patternUnits="userSpaceOnUse"`
               + ` width="${2 * p}" height="${2 * p}">`
               + dot(h, h, 'a') + dot(p + h, h, 'b') + dot(h, p + h, 'b') + dot(p + h, p + h, 'a')
               + `</pattern></defs><rect width="100%" height="100%" fill="var(--surface)"/>`
