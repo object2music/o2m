@@ -1773,6 +1773,30 @@ other interface live. Measured: a remote ALL takes ~35 s, past the box lock's ol
 - `GET /api/genres` — genre list with track counts
 - `GET /mood` — mood UI (served from `o2m/static/mood.html`)
 
+## Track rows: one renderer, one gesture set
+
+Every list of tracks in `mood.html` is the same row, `trackRowInnerHTML`, drawn
+by two callers: `renderTracklist` (the tracklist, and the local queue offline) and
+`objRenderTracks` / `_searchObjRows` (every modal list — album, artist, playlist,
+podcast episodes, search, browse, the box editor's mood list). A new list reuses
+one of them; it does not grow a third row.
+
+They answer the same gestures, from one delegated handler (`rowOpen` /
+`rowPlayNow`, next to the renderer):
+- **one click → the detail** (the track, or the album / artist / playlist /
+  podcast / box the row names);
+- **double click → play now** — a tracklist row plays that very entry; any other
+  row is inserted after the current track (the menu's `Play now`; an album or an
+  artist plays its tracks; a box only opens, it is activated, not queued).
+
+Until 2026-10-11 they disagreed: a click PLAYED a tracklist row and OPENED a modal
+row. The single click now waits `ROW_DBL_MS` (280 ms) to know it is not the first
+half of a double click — the price of two actions on one target. The ⓘ menu and
+the artist link keep their own meaning. **Excluded on purpose**: the box editor's
+content editor (`#bx-editor-host`), where a click on a search result ADDS it to
+the box — a picker, not a list. Long-press-and-drag to move a row in the
+tracklist is not implemented yet.
+
 ## UI Language Convention
 
 **All user-facing UI text is English by default** (labels, buttons, feedback messages,

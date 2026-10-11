@@ -1213,6 +1213,8 @@
     transition: background .12s;
   }
   .tl-item:active { background: var(--fill-2); }
+  /* Two taps make a double click (rowGestures): no zoom-on-double-tap delay. */
+  .tl-item { touch-action: manipulation; }
   .tl-item.current .tl-name { color: var(--accent); }
   .tl-num {
     font-family: var(--font-head); font-size: calc(22px * var(--ui)); font-weight: 800;

@@ -1758,6 +1758,81 @@ function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artists = 
     + `<button class="tl-info" title="Track actions" aria-label="Track actions"${infoAttr}>${TL_INFO_SVG}</button>`;
 }
 
+/* ── Track rows: one gesture set for every list ────────────────────────────────
+   Every list of tracks in the interface is this row (trackRowInnerHTML), drawn
+   by two callers: renderTracklist (the tracklist, and the local queue offline)
+   and objRenderTracks / _searchObjRows (every modal list — album, artist,
+   playlist, podcast, search, browse, the box editor's mood list). They used to
+   answer a click in opposite ways: the tracklist PLAYED the row, a modal list
+   OPENED it. One handler now, for all of them:
+     · one click   → the row's detail (a track, or the album/artist/… it names)
+     · double click → play it now (a tracklist row: that very entry; elsewhere
+                     inserted after the current track — the menu's "Play now")
+   The single click waits ROW_DBL_MS to know it is not the first half of a
+   double one; that wait is the price of having both on one target. Touch gets
+   the same, from two taps. The row's own controls keep their meaning: the ⓘ
+   menu, the artist link.
+   Not here: the box editor's content editor (#bx-editor-host, its Add panel),
+   where a click on a result ADDS it to the box — a picker, not a list to browse. */
+const ROW_DBL_MS = 280;
+let _rowPending = null;   // { row, timer } — a first click waiting for a second
+
+function _rowTarget(e) {
+  const row = e.target.closest?.('.tl-item');
+  if (!row || row.closest('#bx-editor-host')) return null;
+  if (e.target.closest('.tl-info, .tl-artist [data-artist-uri], button, a, input, select, textarea')) return null;
+  return row;
+}
+
+function rowOpen(row) {
+  const uri = row.dataset.uri;
+  if (!uri) return;
+  if (row.dataset.tlid != null && !row.classList.contains('obj-openable')) {
+    // A tracklist row names a track, whatever its scheme: the track view.
+    return openTrackDetailSheet(uri, { name: row.querySelector('.tl-name')?.textContent || '' });
+  }
+  objOpenByKind(uri, row.dataset.kind, row.dataset.name);
+}
+
+function rowPlayNow(row) {
+  const uri = row.dataset.uri;
+  const tlid = row.dataset.tlid != null && !row.classList.contains('obj-openable') ? Number(row.dataset.tlid) : null;
+  resetProgress();
+  if (tlid != null) {
+    if (OFF.on) { offPlayAt(tlid); return; }   // offline, tlid is the local queue index
+    rpc('core.playback.play', { tlid }).then(() => setTimeout(refreshNowPlaying, 200));
+    return;
+  }
+  if (!uri) return;
+  const kind = row.dataset.kind || 'track';
+  if (kind === 'box') { rowOpen(row); return; }   // a box is activated, not queued
+  if (OFF.on) { offQueuePlayNow(uri); return; }
+  if (kind === 'track' || kind === 'radio') playNow(uri);
+  else objPlayObject(uri, 'now');                 // album, artist, playlist, podcast
+}
+
+document.addEventListener('click', (e) => {
+  const row = _rowTarget(e);
+  if (!row) return;
+  if (_rowPending && _rowPending.row === row) {
+    clearTimeout(_rowPending.timer);
+    _rowPending = null;
+    rowPlayNow(row);
+    return;
+  }
+  if (_rowPending) clearTimeout(_rowPending.timer);
+  const pending = { row, timer: setTimeout(() => {
+    if (_rowPending === pending) _rowPending = null;
+    rowOpen(row);
+  }, ROW_DBL_MS) };
+  _rowPending = pending;
+});
+// A double click selects the word under the pointer; on a row that is noise.
+// Stopping the second press's default keeps selection possible by dragging.
+document.addEventListener('mousedown', (e) => {
+  if (e.detail > 1 && _rowTarget(e)) e.preventDefault();
+});
+
 function updateCurrentRow(wrap, activeTlid) {
   wrap.querySelectorAll('.tl-item').forEach((item, i) => {
     const num = item.querySelector('.tl-num');
@@ -1839,9 +1914,7 @@ function renderTracklist(tracks, activeTlid) {
       // Clicking the artist name opens the artist detail instead of playing the row.
       const al = e.target.closest('.tl-artist [data-artist-uri]');
       if (al) { e.stopPropagation(); openArtist(al.dataset.artistUri, al.textContent.trim()); return; }
-      resetProgress();
-      if (OFF.on) { offPlayAt(tlid); return; }   // tlid is the local queue index
-      rpc('core.playback.play', {tlid}).then(() => setTimeout(refreshNowPlaying, 200));
+      // The row itself: one click / double click, as in every list (rowGestures).
     });
     frag.appendChild(item);
     if (tlid === activeTlid) scrollTarget = item;
@@ -8566,11 +8639,9 @@ async function init() {
       const items = await menuItemsWithLibrary(ib.dataset.uri, ib.dataset.kind || null);
       openActionMenu(ib, items); return;
     }
-    // Click on a harmonized object row (not the ⓘ, not the artist sublink) → open its detail.
-    const orow = e.target.closest('.tl-item.obj-openable');
-    if (orow && !e.target.closest('.tl-artist [data-artist-uri]')) {
-      objOpenByKind(orow.dataset.uri, orow.dataset.kind, orow.dataset.name); return;
-    }
+    // A harmonized object row (not the ⓘ, not the artist sublink): one click opens,
+    // a double click plays — the shared handler does both (rowGestures).
+    if (e.target.closest('.tl-item') && !e.target.closest('.tl-artist [data-artist-uri]')) return;
     const row = e.target.closest('[data-artist-uri],[data-album-uri],[data-box-uid]');
     if (!row) return;
     if (row.dataset.artistUri) return openArtist(row.dataset.artistUri, (row.textContent || '').trim());
