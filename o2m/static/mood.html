@@ -157,16 +157,35 @@
       <button class="basic-toggle" data-cat="radio" data-o2m-actuator="radio">Radio</button>
       <button id="basic-all" title="All on / all off" aria-label="All on / all off" data-o2m-actuator="all">All</button>
       <script>
-        /* The four actuators wear the texture a box tile without a picture wears in
-           the mosaic (objgrid.js, backfillBoxImages): the `dots` cover, drawn with
-           the theme's ramps and faded back (mood.css, .basic-tex). `slice` so the
-           grid fills a tile that is not square (and full height: the cover is drawn
-           `height:auto`, i.e. square) instead of floating in its middle.
-           Bulletin and Bulletin2 hide it: their tiles are panes over a picture. */
-        document.querySelectorAll('#basic-toggles .basic-toggle').forEach(b =>
-          b.insertAdjacentHTML('afterbegin', '<span class="basic-tex" aria-hidden="true">' +
-            O2M.cover('dots').replace('<svg', '<svg preserveAspectRatio="xMidYMid slice"')
-              .replace('height:auto', 'height:100%') + '</span>'));
+        /* The four actuators read like a box tile in the mosaic (objgrid.js/.css):
+           the same `dots` texture AT THE SAME SCALE, and the name set the way a box
+           name is set over a picture. The cover itself is a square of 7×7 dots;
+           stretched (`slice`) over a wide tile its dots grew to four times a box
+           tile's and drowned the label. So the grid is redrawn as a repeating SVG
+           pattern at a box tile's pitch (17px × --ui, the mosaic's ~7 per tile),
+           same ramp classes (`ring-a-1`/`ring-b-1`) and ground — the theme still
+           colours it. The label gets a span so it can carry the name's band.
+           Bulletin and Bulletin2 hide the texture: their tiles are panes over a
+           picture. */
+        (function () {
+          const ui = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui')) || 1;
+          const p = 17 * ui, r = (p * 0.27).toFixed(2), h = p / 2;
+          const dot = (x, y, side) => `<circle class="ring-${side}-1" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r}"/>`;
+          document.querySelectorAll('#basic-toggles .basic-toggle').forEach(b => {
+            const id = 'basic-dots-' + b.dataset.cat;
+            b.insertAdjacentHTML('afterbegin', '<span class="basic-tex" aria-hidden="true">'
+              + `<svg width="100%" height="100%"><defs><pattern id="${id}" patternUnits="userSpaceOnUse"`
+              + ` width="${2 * p}" height="${2 * p}">`
+              + dot(h, h, 'a') + dot(p + h, h, 'b') + dot(h, p + h, 'b') + dot(p + h, p + h, 'a')
+              + `</pattern></defs><rect width="100%" height="100%" fill="var(--surface)"/>`
+              + `<rect width="100%" height="100%" fill="url(#${id})"/></svg></span>`);
+            [...b.childNodes].forEach(n => {
+              if (n.nodeType === 3 && n.textContent.trim())
+                n.replaceWith(Object.assign(document.createElement('span'),
+                  { className: 'basic-name', innerHTML: `<span class="basic-name-txt">${n.textContent.trim()}</span>` }));
+            });
+          });
+        })();
       </script>
     </div>
     <div id="basic-dials" class="ui-100">
