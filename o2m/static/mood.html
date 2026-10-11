@@ -3356,7 +3356,7 @@ const TRACK_FIELDS = [
   ['Popularity', 'popularity', i => fmtEV(i.popularity)],
   ['Plays',      'plays',      i => (i.read_count_end ?? 0) + ''],
   // Local 'YYYY-MM-DD HH:MM' from the server; shown day-first like Date.
-  ['Last played','lastplayed', i => fmtLastPlayed(i.last_played)],
+  ['Last played','lastplayed', i => fmtLastPlayed(i.last_played, i.last_played_ts)],
   // Spoken content only: when an episode was published is the one genuinely
   // useful fact beyond its title. Hidden for music by _tpSyncSpokenRows.
   // Stored ISO (sortable); shown day-first, which is how a listener reads a date.
@@ -4735,10 +4735,29 @@ async function updateSpokenHeader(track) {
   } catch (e) {}
 }
 
-/* 'YYYY-MM-DD' -> 'DD-MM-YYYY'; anything else is passed through untouched. */
-function fmtLastPlayed(v) {
-  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$/.exec(String(v || '').trim());
-  return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}` : '—';
+/* 'YYYY-MM-DD HH:MM' (local) -> '3 days ago · DD-MM-YYYY HH:MM'. `ts` is the same
+   instant in epoch seconds; a server without it is read as this device's time. */
+function fmtLastPlayed(v, ts) {
+  const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(String(v || '').trim());
+  if (!m) return '—';
+  const when = ts ? new Date(ts * 1000) : new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]);
+  return `${fmtAgo(when)} · ${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}`;
+}
+/* How long ago, the way one says it: minutes and hours within the day, then
+   calendar days (yesterday is the day before today, not 24 h back), weeks,
+   months, years. */
+function fmtAgo(when) {
+  const now = new Date(), s = Math.max(0, (now - when) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  const midnight = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((midnight(now) - midnight(when)) / 86400000);
+  if (days === 0) return `${Math.floor(s / 3600)} h ago`;
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  if (days < 61) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 730) return `${Math.floor(days / 30.44)} months ago`;
+  return `${Math.floor(days / 365.25)} years ago`;
 }
 
 function fmtDay(v) {

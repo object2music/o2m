@@ -2399,6 +2399,18 @@ if __name__ == "__main__":
         except Exception:
             return ''
 
+    def _last_played_ts(stat):
+        when = getattr(stat, 'last_read_date', None) if stat else None
+        if not when:
+            return None
+        try:
+            import datetime as _dt
+            if when.tzinfo is None:                  # stored UTC, read back naive
+                when = when.replace(tzinfo=_dt.timezone.utc)
+            return int(when.timestamp())
+        except Exception:
+            return None
+
     @api.route('/api/track_info')
     def api_track_info():
         from flask import jsonify
@@ -2505,6 +2517,8 @@ if __name__ == "__main__":
                 # When it was last read (any play past the 5% artefact threshold,
                 # skips included), in LOCAL time: the database keeps UTC.
                 'last_played':    _last_played(stat),
+                # The same instant as epoch seconds, for the page's "3 days ago".
+                'last_played_ts': _last_played_ts(stat),
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
