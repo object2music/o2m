@@ -429,18 +429,21 @@ class O2mToMopidy:
         backend is on (2026-09-24) those tracks are common, so a file:// uri missing
         from the map is looked up by `Track.local_uri` and remembered. (A signed
         CDN url cannot be recovered that way: nothing in it names its page.)"""
-        if not uri or uri.startswith('spotify:'):
+        if not uri:
             return uri
-        hit = self._played_to_canonical.get(uri)
-        if hit:
-            return hit
-        if uri.startswith('file:'):
-            # Remembered either way: a miss is cached as itself, so a file that is
-            # not a download is not searched for again on every panel refresh.
-            found = self.dbHandler.spotify_uri_for_local(uri) or uri
-            self._played_to_canonical[uri] = found
-            return found
-        return uri
+        if not uri.startswith('spotify:'):
+            hit = self._played_to_canonical.get(uri)
+            if hit:
+                uri = hit
+            elif uri.startswith('file:'):
+                # Remembered either way: a miss is cached as itself, so a file that is
+                # not a download is not searched for again on every panel refresh.
+                found = self.dbHandler.spotify_uri_for_local(uri) or uri
+                self._played_to_canonical[uri] = found
+                uri = found
+        # A version merged into another (the /duplicates page) is read as that one:
+        # its plays, likes and panel all land on the recording's single row.
+        return self.dbHandler.track_alias_map().get(uri, uri)
 
 #TAG MANAGEMENT
     @property
@@ -3904,11 +3907,19 @@ class O2mToMopidy:
         feat, pop, last_read, rc, seq, excluded = {}, {}, {}, {}, {}, set()
         # The rotation ruler, read once for the whole pool (see recent_music_play_seq).
         seq_tail = self.dbHandler.recent_music_play_seq(self.cooldown_seq_window)
+        # A version merged into another is the same recording: one ticket, not
+        # two, and judged by the recording's row (its plays, its cooldown, its
+        # dislike) — the merged-away row was zeroed and would look never played.
+        aliases = self.dbHandler.track_alias_map()
+        canon = {u: aliases[u] for u in uris if u in aliases}
+        if canon:
+            present = set(uris)
+            uris = [u for u in dict.fromkeys(uris) if not (u in canon and canon[u] in present)]
         try:
             for t in (Track.select(Track.uri, Track.energy, Track.valence, Track.popularity,
                                    Track.option_type, Track.last_read_date, Track.read_count,
                                    Track.last_play_seq, Track.disliked)
-                          .where(Track.uri << list(uris)).namedtuples()):
+                          .where(Track.uri << list(set(uris) | set(canon.values()))).namedtuples()):
                 # A dislike is dropped whatever the caller asked, `exclude_hidden`
                 # included: hidden/trash are a lifecycle a box may legitimately be
                 # made OF, while a dislike is one deliberate gesture on one track —
@@ -3932,6 +3943,15 @@ class O2mToMopidy:
         except Exception as e:
             print(f"{label} lookup error: {e}")
             return None
+        for u, c in canon.items():
+            if u not in uris:
+                continue
+            if c in excluded:
+                excluded.add(u)
+                continue
+            for d in (feat, pop, last_read, rc, seq):
+                if c in d:
+                    d[u] = d[c]
 
         if excluded:
             uris = [u for u in uris if u not in excluded]

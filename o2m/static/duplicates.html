@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>O2M Duplicates</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Archivo+Expanded:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- Design system : source unique des tokens (voir DESIGN_SYNC.md). -->
+<link rel="stylesheet" href="/static/ds/o2m.css">
+<script>
+  /* The theme follows the one picked in Mood: same key, same default. Applied
+     before paint to avoid a flash. No switcher here — Mood stays the settings
+     surface, so data-theme is fixed for the page's lifetime (which lets us read
+     the tokens once for Chart.js). */
+  (function () {
+    var t = new URLSearchParams(location.search).get('theme')
+          || localStorage.getItem('o2m2-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    // The PWA chrome colour follows the theme's ground instead of a frozen navy.
+    var m = document.createElement('meta');
+    m.name = 'theme-color';
+    m.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#15120E';
+    document.head.appendChild(m);
+  })();
+  /* Going back from Mood after a theme change: a page restored from the bfcache
+     would keep the stale data-theme. */
+  addEventListener('pageshow', function (e) {
+    if (!e.persisted) return;
+    var t = localStorage.getItem('o2m2-theme') || 'dark';
+    if (t !== document.documentElement.getAttribute('data-theme')) location.reload();
+  });
+</script>
+<style>
+  /* No :root here: every token comes from ds/o2m.css. */
+  body { min-height: 100vh; padding: var(--sp-5) var(--sp-4) calc(84px * var(--ui)); }
+
+  /* Unified footer (shared look with the Mood page) */
+  #site-footer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between; gap: calc(12px * var(--ui));
+    padding: calc(10px * var(--ui)) calc(16px * var(--ui)); background: var(--surface); border-top: 1px solid var(--border);
+  }
+  #site-footer .brand { font-size: calc(12px * var(--ui)); font-weight: 700; color: var(--muted); letter-spacing: .04em; }
+  .footer-nav { display: flex; align-items: center; gap: calc(6px * var(--ui)); flex-wrap: wrap; }
+  .footer-link {
+    display: inline-flex; align-items: center; gap: calc(6px * var(--ui)); font-size: calc(12px * var(--ui));
+    color: var(--muted); text-decoration: none; background: transparent;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: calc(6px * var(--ui)) calc(11px * var(--ui));
+    cursor: pointer; font-family: inherit; line-height: 1;
+  }
+  .footer-link:hover { color: var(--text); border-color: var(--text); }
+  .footer-link svg { width: calc(15px * var(--ui)); height: calc(15px * var(--ui)); display: block; }
+  #btn-snapcast.playing { color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 500px) { #site-footer .brand { display: none; } }
+  h1 { font-family: var(--font-head); font-size: var(--t-h2); font-weight: 800;
+       text-transform: uppercase; margin-bottom: calc(4px * var(--ui)); color: var(--text); }
+  .subtitle { font-size: calc(12px * var(--ui)); color: var(--muted); margin-bottom: calc(28px * var(--ui)); }
+  .subtitle a { color: var(--muted); text-decoration: none; }
+  .subtitle a:hover { color: var(--text); }
+
+  .section { margin-bottom: calc(32px * var(--ui)); }
+  .section-title {
+    font-family: var(--font-mono); font-size: var(--t-label); text-transform: uppercase;
+    letter-spacing: .12em; color: var(--muted); margin-bottom: calc(12px * var(--ui));
+  }
+  .section-note { font-size: var(--t-label); color: var(--muted); margin: calc(-6px * var(--ui)) 0 calc(12px * var(--ui)); }
+  .card {
+    background: var(--surface); border-radius: var(--radius); padding: var(--sp-4);
+    border: 1px solid var(--border);
+  }
+  /* Comparative table */
+  .table-scroll { overflow-x: auto; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: var(--t-body-s); min-width: calc(640px * var(--ui)); }
+  table.cmp th, table.cmp td { padding: calc(8px * var(--ui)) calc(10px * var(--ui)); text-align: right; white-space: nowrap; }
+  table.cmp th:first-child, table.cmp td:first-child { text-align: left; }
+  table.cmp thead th {
+    font-size: var(--t-label); text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  table.cmp tbody td { border-bottom: 1px solid var(--border); }
+  table.cmp tbody tr:last-child td { border-bottom: none; }
+  table.cmp tr.totals td { font-weight: 700; border-top: calc(2px * var(--ui)) solid var(--border); color: var(--text); }
+  /* Pager */
+  .pager { display: flex; align-items: center; justify-content: center; gap: calc(12px * var(--ui)); margin-top: calc(12px * var(--ui)); }
+  .pager button {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: calc(6px * var(--ui)) calc(12px * var(--ui)); font: inherit; font-size: var(--t-body-s); cursor: pointer;
+  }
+  .pager button:hover:not(:disabled) { border-color: var(--text); }
+  .pager button:disabled { opacity: .4; cursor: default; }
+  .pager .pager-info { font-size: calc(12px * var(--ui)); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Duplicates: one card per proposed group */
+  .dup-group { margin-bottom: calc(12px * var(--ui)); }
+  .dup-head { display: flex; align-items: baseline; justify-content: space-between; gap: calc(12px * var(--ui));
+              margin-bottom: calc(8px * var(--ui)); flex-wrap: wrap; }
+  .dup-title { font-weight: 700; font-size: var(--t-body); }
+  .dup-title span { color: var(--muted); font-weight: 400; }
+  .dup-actions { display: flex; gap: calc(8px * var(--ui)); }
+  .dup-actions button, #dup-more {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: calc(5px * var(--ui)) calc(11px * var(--ui));
+    font: inherit; font-size: var(--t-body-s); cursor: pointer;
+  }
+  .dup-actions button:hover, #dup-more:hover { border-color: var(--text); }
+  .dup-actions button.primary { border-color: var(--accent); color: var(--accent); }
+  .dup-actions button:disabled { opacity: .4; cursor: wait; }
+  table.cmp.dup { min-width: calc(520px * var(--ui)); }
+  table.cmp.dup th, table.cmp.dup td { text-align: left; }
+  table.cmp.dup td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  table.cmp.dup tr.keep td { color: var(--text); }
+  table.cmp.dup tr:not(.keep) td { color: var(--muted); }
+  .dup-heart { width: calc(11px * var(--ui)); height: calc(11px * var(--ui)); vertical-align: -1px; color: var(--accent); }
+  .dup-done { font-size: var(--t-body-s); color: var(--muted); }
+  .dup-done button { margin-left: calc(8px * var(--ui)); }
+
+  .num-muted { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>O2M Duplicates</h1>
+<p class="subtitle">One recording, several uris &mdash; <a href="/stats">&#8592; Stats</a></p>
+
+<div class="section">
+  <div class="section-title">Groups <span id="dup-count"></span></div>
+  <div class="section-note">
+    One recording under several Spotify uris (an album and a compilation, a remaster…):
+    same title, same main artist, same length, at least one of them played. Merging adds
+    the plays of the others to the one kept, moves their play log, and counts their
+    future plays on it. Undo stays possible. Editing must be unlocked on the Mood page.
+  </div>
+  <div id="dup-list"><div class="card" style="color:var(--muted)">Loading…</div></div>
+  <div class="pager"><button id="dup-more" hidden>Load more</button></div>
+</div>
+
+<footer id="site-footer">
+  <span class="brand">O2M &middot; Duplicates</span>
+  <nav class="footer-nav">
+    <a class="footer-link" href="/mood"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>Mood</a>
+    <a class="footer-link" href="/stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Stats</a>
+    <a class="footer-link" href="/tag_features"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Tags</a>
+  </nav>
+</footer>
+
+<script>
+const API = location.origin + '/api';
+
+/* ── Duplicates (GET/POST /api/duplicates…) ── */
+const dupEsc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dupLen = ms => ms ? `${Math.floor(ms / 60000)}:${String(Math.round(ms / 1000) % 60).padStart(2, '0')}` : '';
+function dupAgo(ts) {
+  if (!ts) return '—';
+  const now = new Date(), when = new Date(ts * 1000), s = Math.max(0, (now - when) / 1000);
+  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))} min ago`;
+  const mid = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const days = Math.round((mid(now) - mid(when)) / 86400000);
+  if (days === 0) return `${Math.floor(s / 3600)} h ago`;
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  if (days < 61) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 730) return `${Math.floor(days / 30.44)} months ago`;
+  return `${Math.floor(days / 365.25)} years ago`;
+}
+let dupOffset = 0, dupSeq = 0;
+function dupGroupHTML(g) {
+  const id = 'dup' + (++dupSeq);
+  const rows = g.tracks.map((t, i) => `<tr${i === 0 ? ' class="keep"' : ''}>`
+    + `<td><input type="radio" name="${id}" value="${dupEsc(t.uri)}"${i === 0 ? ' checked' : ''}></td>`
+    + `<td>${dupEsc(t.album) || '<span class="num-muted">—</span>'}${t.liked ? ' <svg class="dup-heart" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="liked"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>' : ''}</td>`
+    + `<td class="n">${dupLen(t.length)}</td>`
+    + `<td class="n">${t.plays} <span class="num-muted">(${t.complete})</span></td>`
+    + `<td>${dupAgo(t.last_played_ts)}</td></tr>`).join('');
+  return `<div class="card dup-group" data-uris="${dupEsc(g.tracks.map(t => t.uri).join(' '))}">`
+    + `<div class="dup-head"><div class="dup-title">${dupEsc(g.name)} <span>— ${dupEsc(g.artist)}</span></div>`
+    + `<div class="dup-actions"><button class="primary" data-dup="merge">Merge into the kept one</button>`
+    + `<button data-dup="dismiss">Not duplicates</button></div></div>`
+    + `<div class="table-scroll"><table class="cmp dup"><thead><tr><th>Keep</th><th>Album</th>`
+    + `<th style="text-align:right">Length</th><th style="text-align:right">Plays (complete)</th>`
+    + `<th>Last played</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+async function loadDuplicates(more) {
+  const list = document.getElementById('dup-list'), btn = document.getElementById('dup-more');
+  try {
+    const d = await fetch(`${API}/duplicates?limit=20&offset=${dupOffset}`).then(r => r.json());
+    if (d.error) throw new Error(d.error);
+    document.getElementById('dup-count').textContent = `· ${d.total}`;
+    const html = d.groups.map(dupGroupHTML).join('');
+    if (more) list.insertAdjacentHTML('beforeend', html);
+    else list.innerHTML = html || '<div class="card" style="color:var(--muted)">No duplicates found.</div>';
+    dupOffset += d.groups.length;
+    btn.hidden = dupOffset >= d.total;
+  } catch (e) {
+    list.innerHTML = `<div class="card" style="color:var(--accent)">Could not load duplicates: ${dupEsc(e.message)}</div>`;
+  }
+}
+async function dupPost(path, body) {
+  const r = await fetch(`${API}/duplicates/${path}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (r.status === 401) throw new Error('Unlock editing on the Mood page first');
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || 'Failed');
+  return j;
+}
+document.addEventListener('change', e => {
+  const radio = e.target.closest('.dup-group input[type=radio]');
+  if (!radio) return;
+  radio.closest('tbody').querySelectorAll('tr').forEach(tr =>
+    tr.classList.toggle('keep', tr.contains(radio)));
+});
+document.addEventListener('click', async e => {
+  if (e.target.id === 'dup-more') { e.target.disabled = true; await loadDuplicates(true); e.target.disabled = false; return; }
+  const b = e.target.closest('[data-dup]');
+  if (!b) return;
+  const card = b.closest('.dup-group'), uris = card.dataset.uris.split(' ');
+  card.querySelectorAll('button').forEach(x => { x.disabled = true; });
+  try {
+    if (b.dataset.dup === 'merge') {
+      const keep = card.querySelector('input[type=radio]:checked').value;
+      const others = uris.filter(u => u !== keep);
+      const j = await dupPost('merge', { keep, others });
+      card.dataset.merged = others.join(' ');
+      card.innerHTML = `<div class="dup-done">${dupEsc(card.querySelector('.dup-title').textContent)} — merged, `
+        + `${j.plays} plays on the kept version.<button data-dup="undo">Undo</button></div>`;
+    } else if (b.dataset.dup === 'undo') {
+      for (const u of (card.dataset.merged || '').split(' ').filter(Boolean)) await dupPost('unmerge', { uri: u });
+      card.innerHTML = '<div class="dup-done">Merge undone — it will be proposed again on reload.</div>';
+    } else {
+      await dupPost('dismiss', { uris });
+      card.innerHTML = `<div class="dup-done">${dupEsc(card.querySelector('.dup-title').textContent)} — not proposed again.</div>`;
+    }
+  } catch (err) {
+    alert(err.message);
+    card.querySelectorAll('button').forEach(x => { x.disabled = false; });
+  }
+});
+
+loadDuplicates(false);
+</script>
+</body>
+</html>

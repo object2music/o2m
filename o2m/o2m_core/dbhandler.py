@@ -16,6 +16,7 @@ from o2m_core.o2mmodels import (
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
     RfTaxonomy, PodcastChannel, EpisodeTaxonomy, OfflineRequest, BoxImage,
+    TrackAlias, DuplicateDismissed,
     setup_database,
 )
 
@@ -2959,6 +2960,164 @@ class DatabaseHandler():
             ids = [ref]
         PodcastChannel.update(ad_skip_s=seconds).where(PodcastChannel.id.in_(ids)).execute()
         return ids
+
+    # ── Duplicate tracks (o2m_core/duplicates.py) ────────────────────────────
+    _alias_memo = (0.0, {})
+
+    def track_alias_map(self, ttl=60):
+        """{merged-away uri: canonical uri}. Memoised briefly: every instance
+        shares the table and asks on each played uri; a merge made on another
+        instance is honoured within a minute."""
+        import time as _t
+        at, m = DatabaseHandler._alias_memo
+        if _t.monotonic() - at < ttl:
+            return m
+        try:
+            m = {a.uri: a.canonical for a in TrackAlias.select(TrackAlias.uri, TrackAlias.canonical)}
+        except Exception:
+            m = {}
+        DatabaseHandler._alias_memo = (_t.monotonic(), m)
+        return m
+
+    def _forget_aliases(self):
+        DatabaseHandler._alias_memo = (0.0, {})
+
+    def duplicate_rows(self):
+        """Every Spotify track with a name, its main artist and its length — what
+        duplicates.find_groups reads. One query, ~80k rows."""
+        out = []
+        cur = db.execute_sql(
+            "SELECT t.uri, t.name, t.duration_ms, t.read_count, t.read_count_end, "
+            "t.last_read_date, t.album_id, ta.artist_id, t.liked "
+            "FROM track t JOIN trackartist ta ON ta.track_uri = t.uri AND ta.position = 0 "
+            "WHERE t.uri LIKE %s AND t.name IS NOT NULL", ('spotify:track:%',))
+        for uri, name, ms, rc, rce, last, album, artist, liked in cur.fetchall():
+            out.append({'uri': uri, 'name': name, 'duration_ms': ms, 'read_count': rc or 0,
+                        'read_count_end': rce or 0, 'last_read_date': last,
+                        'album_id': album, 'artist': artist, 'liked': liked or 0})
+        return out
+
+    def dismissed_duplicate_keys(self):
+        try:
+            return {d.key for d in DuplicateDismissed.select(DuplicateDismissed.key)}
+        except Exception:
+            return set()
+
+    def dismiss_duplicates(self, uris):
+        from o2m_core import duplicates as _dup
+        key = _dup.group_key(uris)
+        DuplicateDismissed.insert(key=key, dismissed_at=datetime.datetime.utcnow()).on_conflict_ignore().execute()
+        return key
+
+    def names_for(self, album_ids=(), artist_ids=()):
+        albums, artists = {}, {}
+        if album_ids:
+            albums = {a.id: a.name for a in Album.select(Album.id, Album.name).where(Album.id << list(album_ids))}
+        if artist_ids:
+            artists = {a.id: a.name for a in Artist.select(Artist.id, Artist.name).where(Artist.id << list(artist_ids))}
+        return albums, artists
+
+    _MERGE_FIELDS = ('read_count', 'read_count_end', 'skipped_count', 'last_read_date',
+                     'last_play_seq', 'read_end', 'liked', 'disliked')
+
+    @staticmethod
+    def _epoch(v):
+        if isinstance(v, datetime.datetime):
+            if v.tzinfo is None:
+                v = v.replace(tzinfo=datetime.timezone.utc)
+            return int(v.timestamp())
+        return v
+
+    def merge_tracks(self, keep, others):
+        """Fold `others` into `keep`: counters summed into keep's row (see
+        duplicates.merged_counters), their play log re-pointed to keep, their own
+        counters zeroed, and an alias recorded so their future plays count on
+        keep. Each alias keeps a snapshot for unmerge_track. Returns the merged
+        counters."""
+        from o2m_core import duplicates as _dup
+        others = [u for u in dict.fromkeys(others) if u and u != keep]
+        aliases = self.track_alias_map(ttl=0)
+        if not others or keep in aliases:
+            raise ValueError('nothing to merge, or the kept track is itself merged away')
+        k = Track.get_or_none(Track.uri == keep)
+        rows = [Track.get_or_none(Track.uri == u) for u in others]
+        if k is None or any(r is None for r in rows):
+            raise ValueError('unknown track')
+        as_dict = lambda t: {f: getattr(t, f) for f in self._MERGE_FIELDS}
+        merged = _dup.merged_counters(as_dict(k), [as_dict(r) for r in rows])
+        now = datetime.datetime.utcnow()
+        with db.atomic():
+            for r in rows:
+                raw_ids = [x[0] for x in db.execute_sql(
+                    "SELECT Id FROM stats_raw WHERE uri = %s", (r.uri,)).fetchall()]
+                if raw_ids:
+                    db.execute_sql("UPDATE stats_raw SET uri = %s WHERE uri = %s", (keep, r.uri))
+                snap = {f: self._epoch(getattr(r, f)) for f in self._MERGE_FIELDS}
+                snap['raw_ids'] = raw_ids
+                TrackAlias.insert(uri=r.uri, canonical=keep, merged_at=now,
+                                  snapshot=json.dumps(snap)).on_conflict(
+                    action='update', update={TrackAlias.canonical: keep, TrackAlias.merged_at: now,
+                                             TrackAlias.snapshot: json.dumps(snap)}).execute()
+                # Earlier merges INTO this one now point at keep too.
+                TrackAlias.update(canonical=keep).where(TrackAlias.canonical == r.uri).execute()
+                Track.update(read_count=0, read_count_end=0, skipped_count=0,
+                             last_play_seq=None).where(Track.uri == r.uri).execute()
+            Track.update(**merged).where(Track.uri == keep).execute()
+        self._forget_aliases()
+        try:
+            self._rescore(keep)
+        except Exception as e:
+            print(f"merge_tracks rescore: {e}")
+        return merged
+
+    def unmerge_track(self, uri):
+        """Undo one merge: the version's counters and play log come back, and are
+        taken off the canonical row (plays made since stay where they landed)."""
+        a = TrackAlias.get_or_none(TrackAlias.uri == uri)
+        if a is None:
+            raise ValueError('not merged')
+        snap = json.loads(a.snapshot or '{}')
+        keep = a.canonical
+        with db.atomic():
+            ids = snap.get('raw_ids') or []
+            if ids:
+                db.execute_sql("UPDATE stats_raw SET uri = %s WHERE Id IN (" + ','.join(['%s'] * len(ids)) + ")",
+                               [uri] + list(ids))
+            k = Track.get_or_none(Track.uri == keep)
+            if k is not None:
+                Track.update(**{f: max(0, (getattr(k, f) or 0) - int(snap.get(f) or 0))
+                                for f in ('read_count', 'read_count_end', 'skipped_count')}
+                             ).where(Track.uri == keep).execute()
+            restore = {f: snap.get(f) for f in ('read_count', 'read_count_end', 'skipped_count',
+                                                 'last_play_seq', 'read_end')}
+            if snap.get('last_read_date'):
+                restore['last_read_date'] = datetime.datetime.utcfromtimestamp(snap['last_read_date'])
+            Track.update(**restore).where(Track.uri == uri).execute()
+            a.delete_instance()
+        self._forget_aliases()
+        for u in (keep, uri):
+            try:
+                self._rescore(u)
+            except Exception as e:
+                print(f"unmerge_track rescore: {e}")
+        return keep
+
+    def _rescore(self, uri):
+        """Popularity of one track now, rather than at the next daily batch."""
+        from o2m_core.popularity import compute_popularity, is_scorable, DEFAULT_PRIOR_COMPLETION
+        t = Track.get_or_none(Track.uri == uri)
+        if t is None or not is_scorable(t.uri, t.option_type):
+            return
+        first = db.execute_sql("SELECT MIN(read_date) FROM stats_raw WHERE uri = %s", (uri,)).fetchone()
+        pl = db.execute_sql("SELECT COUNT(DISTINCT playlist_id) FROM playlisttrack WHERE track_uri = %s",
+                            (uri,)).fetchone()
+        score = round(compute_popularity(
+            t.read_end, t.read_count, t.read_count_end, t.skipped_count,
+            last_read_date=t.last_read_date, liked=t.liked, option_type=t.option_type,
+            disliked=t.disliked, prior_completion=self.get_completion_prior() or DEFAULT_PRIOR_COMPLETION,
+            first_played_at=first[0] if first else None, playlist_count=(pl[0] if pl else 0) or 0,
+            now=datetime.datetime.utcnow()), 4)
+        Track.update(popularity=score).where(Track.uri == uri).execute()
 
     def get_play_limit(self, uri):
         """Seconds this radio plays before moving on (Track.play_limit_s), 0 = no limit."""

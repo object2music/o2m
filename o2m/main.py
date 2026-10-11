@@ -2862,6 +2862,103 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e), 'mood_distribution': {}, 'scatter': []}), 500
 
+    # ── Duplicate tracks: proposals and merges (o2m_core/duplicates.py) ─────
+    _dup_memo = {'at': 0.0, 'groups': None}
+
+    def _dup_groups(fresh=False):
+        import time as _t
+        if fresh or _dup_memo['groups'] is None or _t.monotonic() - _dup_memo['at'] > 300:
+            from o2m_core import duplicates as _dup
+            db = o2mHandler.dbHandler
+            _dup_memo['groups'] = _dup.find_groups(
+                db.duplicate_rows(), aliased=db.track_alias_map(ttl=0).keys(),
+                dismissed=db.dismissed_duplicate_keys())
+            _dup_memo['at'] = _t.monotonic()
+        return _dup_memo['groups']
+
+    @api.route('/api/duplicates')
+    def api_duplicates():
+        """Groups of uris that look like one recording (same title, same main
+        artist, same length), at least one of them played — most played first.
+        Paged: ?limit=&offset=. `merged` lists what was merged, for undo."""
+        from flask import jsonify
+        try:
+            limit = max(1, min(int(request.args.get('limit') or 20), 100))
+            offset = max(0, int(request.args.get('offset') or 0))
+        except ValueError:
+            limit, offset = 20, 0
+        db = o2mHandler.dbHandler
+        try:
+            from types import SimpleNamespace
+            groups = _dup_groups(fresh=request.args.get('fresh') == '1')
+            page = groups[offset:offset + limit]
+            albums, artists = db.names_for({m['album_id'] for g in page for m in g if m.get('album_id')},
+                                           {m['artist'] for g in page for m in g})
+            out = [{
+                'name': g[0]['name'],
+                'artist': artists.get(g[0]['artist'], ''),
+                'tracks': [{
+                    'uri': m['uri'], 'name': m['name'], 'album': albums.get(m.get('album_id'), ''),
+                    'length': m.get('duration_ms'), 'plays': m.get('read_count') or 0,
+                    'complete': m.get('read_count_end') or 0, 'liked': bool(m.get('liked')),
+                    # The raw query hands the stored epoch back as an int.
+                    'last_played_ts': (int(m['last_read_date']) if isinstance(m['last_read_date'], (int, float))
+                                       and m['read_count'] else
+                                       _last_played_ts(SimpleNamespace(read_count=m['read_count'],
+                                                                       last_read_date=m['last_read_date'])))
+                } for m in g],
+            } for g in page]
+            return jsonify({'total': len(groups), 'offset': offset, 'groups': out})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/duplicates/merge', methods=['POST'])
+    @require_edit_auth
+    def api_duplicates_merge():
+        """{keep, others: [uri]} — fold the others into keep (counters, play log)
+        and read them as keep from now on."""
+        from flask import jsonify
+        d = request.get_json(silent=True) or {}
+        keep, others = (d.get('keep') or '').strip(), [u for u in (d.get('others') or []) if u]
+        if not keep or not others:
+            return jsonify({'error': 'keep and others required'}), 400
+        try:
+            merged = o2mHandler.dbHandler.merge_tracks(keep, others)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        _dup_memo['groups'] = None
+        return jsonify({'ok': True, 'keep': keep, 'merged': others,
+                        'plays': merged.get('read_count')})
+
+    @api.route('/api/duplicates/unmerge', methods=['POST'])
+    @require_edit_auth
+    def api_duplicates_unmerge():
+        """{uri} — undo the merge of that version."""
+        from flask import jsonify
+        uri = ((request.get_json(silent=True) or {}).get('uri') or '').strip()
+        try:
+            keep = o2mHandler.dbHandler.unmerge_track(uri)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        _dup_memo['groups'] = None
+        return jsonify({'ok': True, 'uri': uri, 'keep': keep})
+
+    @api.route('/api/duplicates/dismiss', methods=['POST'])
+    @require_edit_auth
+    def api_duplicates_dismiss():
+        """{uris} — these are not one recording; stop proposing them together."""
+        from flask import jsonify
+        uris = [u for u in ((request.get_json(silent=True) or {}).get('uris') or []) if u]
+        if len(uris) < 2:
+            return jsonify({'error': 'two uris or more required'}), 400
+        key = o2mHandler.dbHandler.dismiss_duplicates(uris)
+        _dup_memo['groups'] = None
+        return jsonify({'ok': True, 'key': key})
+
     @api.route('/api/stats/tracks')
     def api_stats_tracks():
         from flask import jsonify
@@ -2895,6 +2992,11 @@ if __name__ == "__main__":
     def stats_ui():
         from flask import send_from_directory
         return send_from_directory('static', 'stats.html')
+
+    @api.route('/duplicates')
+    def duplicates_ui():
+        from flask import send_from_directory
+        return send_from_directory('static', 'duplicates.html')
 
     @api.route('/api/mopidy_rpc', methods=['POST'])
     def api_mopidy_rpc():

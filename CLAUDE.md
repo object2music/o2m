@@ -37,7 +37,8 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 (the `web:` page reader), `test_virtualbox.py` (activating an album or an artist
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
-a box picture upload may be) and `test_boxmood.py` (the mood of a box's content). Run from the repo root (package-prefixed, since they import
+a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
+`test_duplicates.py` (proposing and merging duplicate tracks). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -97,7 +98,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **30**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **31**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -1068,6 +1069,33 @@ average, and the tracks listed from the most divergent to the closest.
   target, DL 5 as its circle (σ = 0.30, the selection's own mood radius).
 - **"Use as box mood"** only fills the Energy / Ambiance fields (`option_energy` /
   `option_valence`); storing it is the Save button's decision, like any field.
+
+## Duplicate tracks: one recording under several uris
+
+Spotify publishes one recording on an album, a compilation, a deluxe or regional
+edition, each with its own track uri, and o2m keys everything on the uri — so a
+song's plays were split between rows. Found on "Rachid Ouiguini": 57 reads on one
+uri, 13 on the other, and the panel said "last played 2 weeks ago" while the other
+version had just played. On 2026-10-11: **686 groups** with at least one played.
+
+- **Proposed, never merged automatically** (`o2m_core/duplicates.py`, pure, with
+  `test_duplicates.py`): same normalised title (release decorations such as
+  "- Remastered 2009" dropped), same MAIN artist, lengths within 3 s. A live take
+  or a re-recording can pass all three, so a person decides on the **Duplicates page** (`/duplicates`, `static/duplicates.html`, linked from the Stats footer)
+  (`GET /api/duplicates`, `POST /api/duplicates/merge|unmerge|dismiss`, the writes
+  edit-locked). "Not duplicates" is remembered (`DuplicateDismissed`, keyed by the
+  sorted uris, so a new version joining the group proposes it again).
+- **A merge is an alias, not a deletion** (`TrackAlias`, migration **v31**): the
+  kept row receives the summed counters (latest date and play sequence, a like on
+  any version, completion weighted by reads), the others' `stats_raw` rows are
+  re-pointed to it, their own counters zeroed, and from then on
+  `get_spotify_uri` reads them AS the kept uri — so their future plays, likes and
+  panel land on it. The selection pool gives the pair one ticket and judges the
+  merged-away uri by the kept row's stats (`_selection_pool`). Spotify playlists
+  are untouched: a playlist still holds whichever uri it held.
+- **Undo** (`unmerge_track`) restores the version from the snapshot stored on its
+  alias (counters and the ids of the play-log rows moved) and takes its counters
+  back off the kept row; plays made since the merge stay where they landed.
 
 ## `web:<url>` — the media a web page holds (experimental)
 

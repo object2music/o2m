@@ -448,6 +448,28 @@ class BoxImage(BaseModel):
     created_at = TimestampField(null=True, utc=True)
 
 
+class TrackAlias(BaseModel):
+    """Two uris for one recording, merged by hand (the /duplicates page; see
+    o2m_core/duplicates.py). Spotify serves the same song under several uris — an
+    album and a compilation, a remaster, a regional release — and each kept its
+    own counters, so a track played fifty times could read "last played two
+    weeks ago" under the uri on screen. `uri` is the merged-away version, read
+    from then on as `canonical` (O2mToMopidy.get_spotify_uri); `snapshot` keeps
+    its counters as they were, so a wrong merge can be undone."""
+    uri       = CharField(primary_key=True)
+    canonical = CharField(index=True)
+    merged_at = TimestampField(null=True, utc=True)
+    snapshot  = TextField(null=True)
+
+
+class DuplicateDismissed(BaseModel):
+    """A group of uris the duplicates finder proposed and was told are NOT one
+    recording (a live take, a re-recording of the same length). Keyed by the
+    sorted uris, so a new version joining the group proposes it again."""
+    key          = CharField(primary_key=True)
+    dismissed_at = TimestampField(null=True, utc=True)
+
+
 # ─── Database versioning ───────────────────────────────────────────────────────
 #
 # SCHEMA_VERSION is the target version.  setup_database() applies every
@@ -720,6 +742,10 @@ def _migration_v28(migrator):
     db.create_tables([BoxImage], safe=True)
 
 
+def _migration_v31(migrator):
+    db.create_tables([TrackAlias, DuplicateDismissed], safe=True)
+
+
 def _migration_v30(migrator):
     # Nullable, so no SQL DEFAULT is needed: an older image's INSERT omits it.
     _add_column_safe(migrator, 'track', 'play_limit_s', IntegerField(null=True))
@@ -776,7 +802,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 31
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -809,6 +835,7 @@ _MIGRATIONS = [
     (28, "box_image_table", _migration_v28),
     (29, "podcastchannel_ad_skip_column", _migration_v29),
     (30, "track_play_limit_column", _migration_v30),
+    (31, "track_alias_and_dismissed_duplicates", _migration_v31),
 ]
 
 
