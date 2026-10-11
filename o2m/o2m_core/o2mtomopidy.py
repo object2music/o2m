@@ -1143,7 +1143,8 @@ class O2mToMopidy:
                             try:
                                 hinted = self._source_hint.pop(
                                     (active_box.uid, self.get_spotify_uri(track_uri)), None)
-                                effective_link = hinted or self.get_library_link_for_track(track_uri, library_link)
+                                effective_link = hinted or self.get_library_link_for_track(
+                                    track_uri, library_link, mopidy_track=tl_track.track)
                                 library_display = self.get_library_display(effective_link) if effective_link else ''
                             except Exception:
                                 library_display = ''
@@ -3756,7 +3757,7 @@ class O2mToMopidy:
                 break
         return library_link
 
-    def get_library_link_for_track(self, track_uri, library_link_hint):
+    def get_library_link_for_track(self, track_uri, library_link_hint, mopidy_track=None):
         """Derive a full library URI for a specific track when the hint is generic.
 
         Examples:
@@ -3783,13 +3784,30 @@ class O2mToMopidy:
 
             resolved = library_link_hint
             if library_link_hint == 'spotify:album':
-                resolved = self.spotifyHandler.get_track_album(track_id)
+                resolved = self.spotifyHandler.get_track_album(track_id) or library_link_hint
             elif library_link_hint == 'spotify:artist':
                 artist_id = self.spotifyHandler.get_track_artist(track_id)
                 if artist_id:
                     resolved = f'spotify:artist:{artist_id}'
+            if resolved == library_link_hint and mopidy_track is not None:
+                # Neither the cache nor the Web API knew (a track with no artist
+                # link yet, the API rate-limited): Mopidy's own track object names
+                # its album and artists, uris included — no call needed.
+                try:
+                    if library_link_hint == 'spotify:album':
+                        u = getattr(getattr(mopidy_track, 'album', None), 'uri', '') or ''
+                    else:
+                        u = (getattr((getattr(mopidy_track, 'artists', None) or [None])[0], 'uri', '') or '')
+                    if u.startswith(library_link_hint + ':'):
+                        resolved = u
+                except Exception:
+                    pass
 
-            self.library_link_from_track_cache[cache_key] = resolved
+            # A generic hint left unresolved is not remembered: it was a miss of
+            # the moment (a rate limit), and caching it pinned the bare
+            # 'spotify:artist' on that track for the life of the process.
+            if resolved != library_link_hint:
+                self.library_link_from_track_cache[cache_key] = resolved
             return resolved
         except Exception as e:
             print(f"Error deriving library_link from track {track_uri} hint {library_link_hint}: {e}")
@@ -3805,6 +3823,10 @@ class O2mToMopidy:
             # A tag names itself; asking Spotify for 'tag:jazz' is a wasted round trip.
             if isinstance(library_link, str) and library_link.startswith('tag:'):
                 return library_link
+            # A generic hint nothing could resolve to one album or artist is the
+            # AUTO mix's albums & artists bucket: say that, not 'Artist: spotify:artist'.
+            if library_link in ('spotify:artist', 'spotify:album'):
+                return 'Albums & artists'
 
             display = library_link
             prefix = ''
@@ -4298,7 +4320,7 @@ class O2mToMopidy:
         # Store library_link in the in_library field (repurposed from obsolete boolean)
         if library_link and library_link != '':
             try:
-                effective_link = self.get_library_link_for_track(uri, library_link)
+                effective_link = self.get_library_link_for_track(uri, library_link, mopidy_track=track)
             except Exception:
                 effective_link = library_link
             stat.in_library = self.get_library_display(effective_link)
