@@ -2530,6 +2530,10 @@ if __name__ == "__main__":
         recording the local→spotify mapping for stats) — same path O2M uses when
         it fills the tracklist, so externally-cached content is used live."""
         from flask import jsonify
+        # An insert landing between two adds of a running fill (another device,
+        # the remote's ALL) is placed against a queue about to change under it.
+        if o2mHandler.is_filling():
+            return jsonify({'error': 'The queue is being filled — one moment', 'status': 'busy'}), 409
         uris_in = request.args.getlist('uri')  # one or many uri= params (album/artist queue)
         if not uris_in:
             return jsonify({'error': 'uri required'}), 400

@@ -4560,6 +4560,10 @@ class O2mToMopidy:
                 self._play_limit_tokens.pop(tlid, None)
                 return
             left = limit_ms - (pb.get_time_position() or 0)
+            if left <= 1000 and self.is_filling():
+                # Not in the middle of a fill: the next track may be about to go.
+                self._play_limit_later(tlid, token, limit_ms, 2)
+                return
             if state == 'paused' or left > 1000:
                 self._play_limit_later(tlid, token, limit_ms,
                                        30 if state == 'paused' else max(left / 1000, 1))

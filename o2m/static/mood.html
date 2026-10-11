@@ -543,6 +543,16 @@ function paintBusy() {
   document.body.classList.toggle('mix-busy', busy);
   document.querySelectorAll('#basic-all').forEach(b => { b.disabled = busy; });
 }
+/* While a fill rebuilds the queue — this page's or anyone's — the gestures that
+   move through it or edit it wait too: skip, previous, play a row, play now /
+   next, remove, drag. Skipping mid-fill plays a track the fill is about to drop
+   or reorder, and an insert lands between two of its adds. The offline queue is
+   this device's own and never waits. Returns true when the gesture must stop. */
+function queueLocked() {
+  if (OFF.on || !(mixBusy || serverBusy)) return false;
+  setFeedback('The queue is being filled — one moment');
+  return true;
+}
 
 /* True from the moment a dial moves until its value has actually been applied.
    syncMoodDials must not write over it: a change waits 4.5s on the debounce, and a
@@ -1602,6 +1612,7 @@ function optimisticSkip(delta) {
 }
 document.getElementById('btn-next').addEventListener('click', async () => {
   if (OFF.on) { offSkip(1); return; }
+  if (queueLocked()) return;
   resetProgress();
   optimisticSkip(1);
   await rpc('core.playback.next');
@@ -1609,6 +1620,7 @@ document.getElementById('btn-next').addEventListener('click', async () => {
 });
 document.getElementById('btn-prev').addEventListener('click', async () => {
   if (OFF.on) { offSkip(-1); return; }
+  if (queueLocked()) return;
   resetProgress();
   optimisticSkip(-1);
   await rpc('core.playback.previous');
@@ -1797,6 +1809,7 @@ function rowOpen(row) {
 function rowPlayNow(row) {
   const uri = row.dataset.uri;
   const tlid = row.dataset.tlid != null && !row.classList.contains('obj-openable') ? Number(row.dataset.tlid) : null;
+  if ((row.dataset.kind || 'track') !== 'box' && queueLocked()) return;
   resetProgress();
   if (tlid != null) {
     if (OFF.on) { offPlayAt(tlid); return; }   // offline, tlid is the local queue index
@@ -1894,6 +1907,7 @@ function _rowDragTick() {
 }
 
 function _rowDragStart(d) {
+  if (queueLocked()) { _rowDrag = null; return; }
   d.active = true;
   d.from = _rowDragRows(d.wrap).indexOf(d.row);
   if (d.from < 0) { _rowDragEnd(false); return; }
@@ -1923,6 +1937,7 @@ async function _rowDragEnd(drop) {
   // Mopidy's to_position is an index in the list WITHOUT the moved row.
   const to = d.slot > d.from ? d.slot - 1 : d.slot;
   if (to === d.from) return;
+  if (queueLocked()) return;                       // a fill began while the row was held
   const rows = _rowDragRows(d.wrap);
   // Moved on screen at once; the next refresh confirms it from the server.
   if (d.slot < rows.length) d.wrap.insertBefore(d.row, rows[d.slot]);
@@ -2527,9 +2542,11 @@ function initMediaSession() {
     await rpc('core.playback.pause');    setTimeout(refreshNowPlaying, 300); });
   setH('previoustrack', async () => {
     if (OFF.on) { offSkip(-1); return; }
+    if (queueLocked()) return;
     resetProgress(); await rpc('core.playback.previous'); setTimeout(refreshNowPlaying, 300); });
   setH('nexttrack',     async () => {
     if (OFF.on) { offSkip(1); return; }
+    if (queueLocked()) return;
     resetProgress(); await rpc('core.playback.next');     setTimeout(refreshNowPlaying, 300); });
   setH('seekto', async (d) => {
     if (!d || d.seekTime == null) return;
@@ -2869,6 +2886,7 @@ function trackMenuItems(uri, tlid) {
   return items;
 }
 async function removeFromTracklist(tlid) {
+  if (queueLocked()) return;
   try {
     await rpc('core.tracklist.remove', { criteria: { tlid: [tlid] } });
     setFeedback('Removed');
@@ -3202,6 +3220,7 @@ function _playNextReq(uris) {
   return fetch(API + '/play_next?' + qs).then(r => r.json());
 }
 async function playNext(uris) {
+  if (queueLocked()) return;
   try {
     const r = await _playNextReq(uris);
     if (r.ok) { setFeedback(r.count > 1 ? ('Queued ' + r.count + ' tracks next') : 'Added to play next'); setTimeout(refreshNowPlaying, 300); }
@@ -3209,6 +3228,7 @@ async function playNext(uris) {
   } catch(e) { setFeedback('Queue error'); }
 }
 async function playNow(uri) {
+  if (queueLocked()) return;
   try {
     const r = await _playNextReq(uri);
     if (r.ok && r.tlid != null) {
@@ -9060,8 +9080,17 @@ async function updateProgress() {          // one-off network resync (not a 1s l
 // O2M refills the tracklist track-by-track during playback → a burst of
 // `tracklist_changed`. Coalesce them into a single refresh to avoid replaying
 // refreshNowPlaying (and its RPCs) many times per second.
-let _tlChangeTimer = null;
+let _tlChangeTimer = null, _tlBusyAskedAt = 0;
 function scheduleTracklistRefresh() {
+  // A fill sends tracklist_changed in a burst, each one restarting the debounce
+  // below — so the refresh it carries ran only when the burst paused, and a fill
+  // started elsewhere (the remote's ALL, a tag) reached the dials seconds late,
+  // after some of them had already been moved. Ask at once, at most every 1 s.
+  const now = performance.now();
+  if (!serverBusy && now - _tlBusyAskedAt > 1000 && typeof OBJGRID !== 'undefined') {
+    _tlBusyAskedAt = now;
+    OBJGRID.refreshActive();
+  }
   clearTimeout(_tlChangeTimer);
   _tlChangeTimer = setTimeout(() => {
     refreshNowPlaying();

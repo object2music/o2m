@@ -1780,6 +1780,16 @@ other interface live. Measured: a remote ALL takes ~35 s, past the box lock's ol
   409, is kept and re-sent when the fill ends rather than dropped. Measured: a remote
   ALL locks the page at 0.8 s and releases it 0.4 s after the server finishes; a local
   toggle locks in the same tick and releases with its answer.
+- **A foreign fill is asked about on the FIRST `tracklist_changed`**, at most once a
+  second (`scheduleTracklistRefresh`). The question used to ride the debounced
+  refresh, and a fill's burst of events kept restarting that debounce: the page
+  learned of a remote ALL only when the burst paused, dials still live until then.
+- **The queue gestures wait with the dials** (`queueLocked`): skip and previous
+  (buttons and headset), playing a row, Play now / Play next, Remove, dragging a
+  row. Mid-fill, a skip plays a track the fill may drop, an insert lands between
+  two of its adds. `/api/play_next` answers `409 busy` during a fill for the
+  other devices, and a radio's play limit waits for the fill to end. Offline
+  never waits: that queue is the device's own.
 - `GET /api/genres` — genre list with track counts
 - `GET /mood` — mood UI (served from `o2m/static/mood.html`)
 

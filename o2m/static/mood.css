@@ -2209,6 +2209,10 @@
      it had been left out, and dragging it mid-fill queued exactly that race. */
   body.mix-busy .dial-wrap,
   body.mix-busy #mood-matrix { pointer-events: none; animation: basic-pulse 1s ease-in-out infinite; }
+  /* Skip and previous wait too (queueLocked): dimmed, still clickable so the tap
+     can say why nothing happens. Offline the queue is the device's own. */
+  html:not(.offline-mode) body.mix-busy #btn-next,
+  html:not(.offline-mode) body.mix-busy #btn-prev { opacity: .35; }
   /* Playback status line above the actuators: animated eq (freezes when paused
      via body.is-paused) + track/box counts + network dot. */
   #basic-status {
