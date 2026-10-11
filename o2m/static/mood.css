@@ -2187,13 +2187,13 @@
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate::before {
     content: ''; position: absolute; z-index: -1; pointer-events: none;
     inset: calc(-55px * var(--ui)) calc(-110px * var(--ui));
-    background: radial-gradient(closest-side, var(--plate) 25%, transparent);
+    background: radial-gradient(closest-side, var(--plate) 30%, transparent);
   }
   @supports (background: color-mix(in srgb, red 50%, transparent)) {
     html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate::before {
       background: radial-gradient(closest-side,
-        color-mix(in srgb, var(--plate) 88%, transparent) 0%,
-        color-mix(in srgb, var(--plate) 80%, transparent) 25%,
+        color-mix(in srgb, var(--plate) 94%, transparent) 0%,
+        color-mix(in srgb, var(--plate) 85%, transparent) 25%,
         color-mix(in srgb, var(--plate) 55%, transparent) 50%,
         color-mix(in srgb, var(--plate) 25%, transparent) 75%,
         transparent 100%);
