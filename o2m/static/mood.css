@@ -2148,67 +2148,43 @@
      little forward on hover and when on, greyscale when on. Behind the glyph and
      the label: the button isolates, the texture sits at -1 inside it. */
   .basic-toggle { position: relative; overflow: hidden; isolation: isolate; }
+  /* Texture well back: it is a ground, the label is the content. At .35 (a box
+     tile's value) the dots out-weighed the name in a tile this large. */
   .basic-tex { position: absolute; inset: 0; z-index: -1; pointer-events: none;
-               opacity: .35; transition: opacity .15s, filter .2s; }
+               opacity: .2; transition: opacity .15s, filter .2s; }
   .basic-toggle .basic-tex svg { display: block; width: 100%; height: 100%; }
-  .basic-toggle:hover .basic-tex { opacity: .5; }
-  .basic-toggle.on .basic-tex { opacity: .5; filter: grayscale(1); }
-  /* Bulletin and Bulletin2: the tiles are panes over a picture, which is texture
-     enough; they keep their centred glyph and label. */
-  [data-theme="creme"] .basic-tex, [data-theme="bulletin"] .basic-tex { display: none; }
+  .basic-toggle:hover .basic-tex { opacity: .3; }
+  .basic-toggle.on .basic-tex { opacity: .3; filter: grayscale(1); }
+  /* The plate carries the glyph and the name together; everywhere it lays them
+     out the way the button did (column, same gap). */
+  .basic-plate { display: flex; flex-direction: column; align-items: center; gap: inherit; }
   .basic-name { display: block; }
+  /* Bulletin and Bulletin2: the tiles are panes over a picture, which is texture
+     enough; they keep their centred glyph and label, bare. */
+  [data-theme="creme"] .basic-tex, [data-theme="bulletin"] .basic-tex { display: none; }
 
-  /* Every other theme: an actuator IS a box tile of the mosaic, drawn larger
-     (objgrid.css — .og-art--mark, .og-cap, .og-cap-txt, .og-tile.active):
-     · the dots texture under a light VEIL of the theme's ground (35%);
-     · the name in the box name's type and ink (--og-ink; text on hover, accent
-       when on) on a BAND of the ground at --cap-alpha, under the glyph on its
-       own square of the same band;
-     · on: the accent frame doubled inside, the texture to greyscale.
-     The band is CENTRED, not set from the top-left as a box name is: the ALL
-     button sits on the inner corner of every tile, so the bottom-right tile's
-     top-left is under it; tried at the outer edges (2026-10-11), it read
-     smaller and lopsided. */
+  /* Every other theme: the plate is ONE opaque block of the theme's ground —
+     glyph over name, even padding — centred on the textured tile. Two stacked
+     translucent bands (a square under the glyph, a bar under the name) read as a
+     patch and let half-dots show at their edges. The name takes the full text
+     colour: these are the view's main controls, and the muted ink of a box name
+     (sized for a small tile) washed them out. Accent when on, like a box. */
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle {
-    flex-direction: column; align-items: center; justify-content: center; gap: 0;
-    padding: calc(8px * var(--ui));
-    /* Name size, glyph size (the tile's original glyph), the band's padding
-       around the glyph. The glyph sits on its own square of band, the name on
-       the line under it: two bands, touching. */
-    --bt-fs: calc(17px * var(--ui)); --bt-g: calc(26px * var(--ui)); --bt-pad: calc(5px * var(--ui));
+    justify-content: center; align-items: center; padding: calc(10px * var(--ui));
+    color: var(--text);
   }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle::after {
-    content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-    background: var(--sheet-bg, var(--bg)); opacity: .35;
+  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate {
+    gap: calc(6px * var(--ui));
+    padding: calc(12px * var(--ui)) calc(18px * var(--ui));
+    background: var(--sheet-bg, var(--bg));
+    border-radius: var(--radius, 0);
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt {
-    display: block; font-size: var(--bt-fs); font-weight: 700; letter-spacing: -.01em;
-    line-height: 1.3;
-    color: var(--og-ink); transition: color .15s;
-    padding: .1em .45em;
+    font-size: calc(17px * var(--ui)); font-weight: 700; letter-spacing: -.01em; line-height: 1.2;
+    color: inherit;
   }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle .o2m-actuator-glyph {
-    order: -1; flex-shrink: 0; box-sizing: content-box;
-    width: var(--bt-g); height: var(--bt-g);
-    padding: var(--bt-pad);
-  }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt,
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle .o2m-actuator-glyph {
-    background: var(--sheet-bg, var(--bg));
-  }
-  @supports (background: color-mix(in srgb, red 50%, transparent)) {
-    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt,
-    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle .o2m-actuator-glyph {
-      /* Firmer than a box name's band (--cap-alpha, ~52%): asked for (2026-10-11). */
-      background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 75%, transparent);
-    }
-  }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle { color: var(--og-ink); }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:hover,
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:hover .basic-name-txt { color: var(--text); }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on,
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on .basic-name-txt { color: var(--accent); }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on { box-shadow: inset 0 0 0 1px var(--accent); }
+  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
   /* ══ TEMPORARY — Bulletin only: filled active state ═══════════════════════
      Recolouring the label and hairline alone is nearly invisible on this light
@@ -2343,7 +2319,8 @@
                     justify-content: center; }
     .basic-toggle svg { width: calc(44px * var(--ui)); height: calc(44px * var(--ui)); }
     .basic-toggle .basic-tex svg { width: 100%; height: 100%; }
-    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle { --bt-fs: calc(26px * var(--ui)); --bt-g: calc(44px * var(--ui)); --bt-pad: calc(7px * var(--ui)); }
+    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt { font-size: calc(24px * var(--ui)); }
+    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate { padding: calc(16px * var(--ui)) calc(26px * var(--ui)); gap: calc(10px * var(--ui)); }
     .basic-toggles { gap: calc(14px * var(--ui)); }
     #basic-all { width: calc(86px * var(--ui)); height: calc(86px * var(--ui)); font-size: var(--t-label); }
     #basic-all svg { width: calc(27px * var(--ui)); height: calc(27px * var(--ui)); }

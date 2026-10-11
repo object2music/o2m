@@ -158,24 +158,35 @@
       <button id="basic-all" title="All on / all off" aria-label="All on / all off" data-o2m-actuator="all">All</button>
       <script>
         /* The four actuators wear the texture a box tile without a picture wears in
-           the mosaic (objgrid.js, backfillBoxImages): the `dots` cover, drawn with
-           the theme's ramps. `slice` so the grid fills a tile that is not square
-           (and full height: the cover is drawn `height:auto`, i.e. square) — which
-           makes its dots larger than a box tile's, and that is the size wanted
-           here: redrawn at a box tile's pitch they read as a fine grain lost in a
-           tile this big. The label gets a span so it can carry the name's band.
-           Bulletin and Bulletin2 hide the texture: their tiles are panes over a
-           picture. */
-        document.querySelectorAll('#basic-toggles .basic-toggle').forEach(b => {
-          b.insertAdjacentHTML('afterbegin', '<span class="basic-tex" aria-hidden="true">' +
-            O2M.cover('dots').replace('<svg', '<svg preserveAspectRatio="xMidYMid slice"')
-              .replace('height:auto', 'height:100%') + '</span>');
-          [...b.childNodes].forEach(n => {
-            if (n.nodeType === 3 && n.textContent.trim())
-              n.replaceWith(Object.assign(document.createElement('span'),
-                { className: 'basic-name', innerHTML: `<span class="basic-name-txt">${n.textContent.trim()}</span>` }));
+           the mosaic (objgrid.js, backfillBoxImages): the `dots` grid in the
+           theme's ramps (`ring-a-1`/`ring-b-1`, coloured only inside an
+           `.o2m-bullseye` svg). Drawn as a repeating pattern at a fixed pitch
+           (24px × --ui) rather than the 7×7 cover stretched over the tile: stretched,
+           three rows of big discs out-shouted the label (2026-10-11); at a box
+           tile's own pitch they were a grain lost in a tile this size.
+           Glyph and name go in ONE plate (`.basic-plate`): the glyph is inserted
+           here rather than by O2M.mount (the attribute is dropped so it does not
+           add a second), so both share one block that the box-tile themes can set
+           on a single opaque ground. Bulletin and Bulletin2 hide the texture and
+           leave the plate bare: their tiles are panes over a picture. */
+        (function () {
+          const ui = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui')) || 1;
+          const p = 24 * ui, r = (p * 0.24).toFixed(2), h = p / 2;
+          const dot = (x, y, side) => `<circle class="ring-${side}-1" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r}"/>`;
+          document.querySelectorAll('#basic-toggles .basic-toggle').forEach(b => {
+            const id = 'basic-dots-' + b.dataset.cat;
+            const label = b.textContent.trim();
+            const glyph = window.O2M ? O2M.actuator(b.dataset.o2mActuator) : '';
+            b.removeAttribute('data-o2m-actuator');
+            b.innerHTML = '<span class="basic-tex" aria-hidden="true">'
+              + `<svg class="o2m-bullseye" width="100%" height="100%"><defs><pattern id="${id}" patternUnits="userSpaceOnUse"`
+              + ` width="${2 * p}" height="${2 * p}">`
+              + dot(h, h, 'a') + dot(p + h, h, 'b') + dot(h, p + h, 'b') + dot(p + h, p + h, 'a')
+              + `</pattern></defs><rect width="100%" height="100%" fill="var(--surface)"/>`
+              + `<rect width="100%" height="100%" fill="url(#${id})"/></svg></span>`
+              + `<span class="basic-plate">${glyph}<span class="basic-name"><span class="basic-name-txt">${label}</span></span></span>`;
           });
-        });
+        })();
       </script>
     </div>
     <div id="basic-dials" class="ui-100">
