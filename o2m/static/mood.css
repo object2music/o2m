@@ -1818,16 +1818,24 @@
   .bxm-stat span { font-size: calc(10px * var(--ui)); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .bxm-stat b { font-family: var(--font-mono); font-size: var(--t-body); color: var(--text); font-weight: 600; }
   /* Plot and list side by side; stacked on a narrow modal. */
-  .bxm-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(12px * var(--ui)); align-items: start; }
-  @media (max-width: 560px) { .bxm-grid { grid-template-columns: 1fr; } .bxm-head { grid-template-columns: repeat(2, 1fr); } }
+  /* Half and half: the radar takes its whole column, and the list beside it is
+     exactly as tall — `contain: size` keeps its content out of the row height,
+     so the radar sets it and the list scrolls within it. */
+  .bxm-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(12px * var(--ui)); align-items: stretch; }
   .bxm-plotwrap { display: flex; flex-direction: column; gap: calc(4px * var(--ui)); }
-  .bxm-radar { width: 100%; max-width: calc(320px * var(--ui)); aspect-ratio: 1; display: block; }
+  .bxm-radar { width: 100%; aspect-ratio: 1; display: block; }
   .bxm-legend { font-size: calc(11px * var(--ui)); color: var(--muted); }
   .bxm-listwrap { display: flex; flex-direction: column; min-width: 0; }
   .bxm-sort { align-self: flex-start; background: none; border: none; padding: 0 0 calc(4px * var(--ui)); font: inherit;
     font-size: calc(11px * var(--ui)); color: var(--muted); cursor: pointer; text-decoration: underline dotted; }
   .bxm-sort:hover { color: var(--text); }
-  .bxm-list { max-height: calc(320px * var(--ui)); overflow-y: auto; border-top: 1px solid var(--border); }
+  .bxm-list { flex: 1 1 0; min-height: calc(160px * var(--ui)); contain: size; overflow-y: auto; border-top: 1px solid var(--border); }
+  /* Stacked on a narrow modal: the radar full width, the list under it at its own height. */
+  @media (max-width: 560px) {
+    .bxm-grid { grid-template-columns: 1fr; }
+    .bxm-head { grid-template-columns: repeat(2, 1fr); }
+    .bxm-list { flex: none; contain: none; max-height: 60vh; }
+  }
   .bxm-row { display: flex; align-items: center; gap: calc(8px * var(--ui)); padding: calc(4px * var(--ui)) calc(2px * var(--ui));
     border-bottom: 1px solid var(--border); cursor: default; }
   .bxm-row.on { background: var(--card); }
