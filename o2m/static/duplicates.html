@@ -102,12 +102,15 @@
   .dup-title { font-weight: 700; font-size: var(--t-body); }
   .dup-title span { color: var(--muted); font-weight: 400; }
   .dup-actions { display: flex; gap: calc(8px * var(--ui)); }
-  .dup-actions button, #dup-more {
+  .dup-actions button, #dup-more, .dup-all {
     background: var(--surface); color: var(--text); border: 1px solid var(--border);
     border-radius: var(--radius); padding: calc(5px * var(--ui)) calc(11px * var(--ui));
     font: inherit; font-size: var(--t-body-s); cursor: pointer;
   }
-  .dup-actions button:hover, #dup-more:hover { border-color: var(--text); }
+  .dup-actions button:hover, #dup-more:hover, .dup-all:hover { border-color: var(--text); }
+  .dup-all { border-color: var(--accent); color: var(--accent); }
+  .dup-all:disabled { opacity: .5; cursor: wait; }
+  .dup-bar { display: flex; justify-content: flex-end; margin-bottom: calc(12px * var(--ui)); }
   .dup-actions button.primary { border-color: var(--accent); color: var(--accent); }
   .dup-actions button:disabled { opacity: .4; cursor: wait; }
   table.cmp.dup { min-width: calc(520px * var(--ui)); }
@@ -135,8 +138,9 @@
     the plays of the others to the one kept, moves their play log, and counts their
     future plays on it. Undo stays possible. Editing must be unlocked on the Mood page.
   </div>
+  <div class="dup-bar"><button class="dup-all" hidden>Merge all shown</button></div>
   <div id="dup-list"><div class="card" style="color:var(--muted)">Loading…</div></div>
-  <div class="pager"><button id="dup-more" hidden>Load more</button></div>
+  <div class="pager"><button class="dup-all" hidden>Merge all shown</button><button id="dup-more" hidden>Load more</button></div>
 </div>
 
 <footer id="site-footer">
@@ -195,6 +199,7 @@ async function loadDuplicates(more) {
     else list.innerHTML = html || '<div class="card" style="color:var(--muted)">No duplicates found.</div>';
     dupOffset += d.groups.length;
     btn.hidden = dupOffset >= d.total;
+    dupSyncAll();
   } catch (e) {
     list.innerHTML = `<div class="card" style="color:var(--accent)">Could not load duplicates: ${dupEsc(e.message)}</div>`;
   }
@@ -213,20 +218,55 @@ document.addEventListener('change', e => {
   radio.closest('tbody').querySelectorAll('tr').forEach(tr =>
     tr.classList.toggle('keep', tr.contains(radio)));
 });
+/* The groups on screen still waiting for a decision. */
+const dupPending = () => [...document.querySelectorAll('.dup-group')].filter(c => c.querySelector('input[type=radio]'));
+function dupSyncAll() {
+  const n = dupPending().length;
+  document.querySelectorAll('.dup-all').forEach(b => {
+    b.hidden = n < 2; b.textContent = `Merge all shown (${n})`;
+  });
+}
+/* Merge one group into the version ticked in it. */
+async function dupMerge(card) {
+  const uris = card.dataset.uris.split(' ');
+  const keep = card.querySelector('input[type=radio]:checked').value;
+  const others = uris.filter(u => u !== keep);
+  const title = card.querySelector('.dup-title').textContent;
+  const j = await dupPost('merge', { keep, others });
+  card.dataset.merged = others.join(' ');
+  card.innerHTML = `<div class="dup-done">${dupEsc(title)} — merged, `
+    + `${j.plays} plays on the kept version.<button data-dup="undo">Undo</button></div>`;
+}
 document.addEventListener('click', async e => {
   if (e.target.id === 'dup-more') { e.target.disabled = true; await loadDuplicates(true); e.target.disabled = false; return; }
+  if (e.target.closest('.dup-all')) {
+    const cards = dupPending();
+    if (!cards.length || !confirm(`Merge the ${cards.length} groups shown, each into the version ticked in it?`)) return;
+    const btns = document.querySelectorAll('.dup-all');
+    btns.forEach(b => { b.disabled = true; });
+    let done = 0;
+    try {
+      for (const card of cards) {
+        btns.forEach(b => { b.textContent = `Merging ${done + 1} / ${cards.length}…`; });
+        card.querySelectorAll('button').forEach(x => { x.disabled = true; });
+        await dupMerge(card);
+        done++;
+      }
+    } catch (err) {
+      alert(`Stopped after ${done} of ${cards.length}: ${err.message}`);
+      dupPending().forEach(c => c.querySelectorAll('button').forEach(x => { x.disabled = false; }));
+    }
+    btns.forEach(b => { b.disabled = false; });
+    dupSyncAll();
+    return;
+  }
   const b = e.target.closest('[data-dup]');
   if (!b) return;
   const card = b.closest('.dup-group'), uris = card.dataset.uris.split(' ');
   card.querySelectorAll('button').forEach(x => { x.disabled = true; });
   try {
     if (b.dataset.dup === 'merge') {
-      const keep = card.querySelector('input[type=radio]:checked').value;
-      const others = uris.filter(u => u !== keep);
-      const j = await dupPost('merge', { keep, others });
-      card.dataset.merged = others.join(' ');
-      card.innerHTML = `<div class="dup-done">${dupEsc(card.querySelector('.dup-title').textContent)} — merged, `
-        + `${j.plays} plays on the kept version.<button data-dup="undo">Undo</button></div>`;
+      await dupMerge(card);
     } else if (b.dataset.dup === 'undo') {
       for (const u of (card.dataset.merged || '').split(' ').filter(Boolean)) await dupPost('unmerge', { uri: u });
       card.innerHTML = '<div class="dup-done">Merge undone — it will be proposed again on reload.</div>';
@@ -238,6 +278,7 @@ document.addEventListener('click', async e => {
     alert(err.message);
     card.querySelectorAll('button').forEach(x => { x.disabled = false; });
   }
+  dupSyncAll();
 });
 
 loadDuplicates(false);
