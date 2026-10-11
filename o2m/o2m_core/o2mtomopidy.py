@@ -4540,7 +4540,7 @@ class O2mToMopidy:
         except Exception:
             return 0
 
-    def auto_merge_duplicates(self, fetch_max=600):
+    def auto_merge_duplicates(self, fetch_max=100):
         """Merge the duplicates that are certain: same recording by ISRC.
 
         Reads the proposed groups (o2m_core/duplicates.py), asks Spotify the ISRC
@@ -4549,6 +4549,13 @@ class O2mToMopidy:
         into its most read member. Groups a person dismissed are left alone. What
         stays on the /duplicates page is what Spotify cannot settle: a live take,
         a remaster with its own ISRC, a track with no code.
+
+        `fetch_max` is small on purpose. The app is in Development Mode, which
+        has a request QUOTA, not only a rate: the first run (600 calls, 0.5 s
+        apart, 2026-10-11) got 517 in, then a 429 QUOTA_EXCEEDED with a 17 h
+        Retry-After — for the whole app, so every instance's Web API went dark
+        with it (playback, which goes through other identities, did not). One
+        hundred a run, one run a start, is a few days to clear the backlog.
 
         Every instance runs it at startup on the one shared database, so a run
         marks itself running (CacheMeta, 1 while it runs, 0 once done) and a

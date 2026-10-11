@@ -2497,7 +2497,7 @@ class SpotifyHandler:
         print(f"warmup_retry_all_sentinels: done — {total} total resolved")
         return total
 
-    def fetch_isrcs(self, uris, max_calls=600, pause=0.5):
+    def fetch_isrcs(self, uris, max_calls=100, pause=1.0):
         """Store each track's ISRC (external_ids.isrc) on its row, one call per
         track: the batch endpoint (GET /tracks?ids=) answers 403 to this app
         (Development Mode, measured 2026-10-11) while GET /tracks/{id} works.

@@ -2955,8 +2955,8 @@ if __name__ == "__main__":
     @require_edit_auth
     def api_duplicates_auto():
         """Run the certain merges now (same ISRC) instead of waiting for the
-        next start. Reads at most 600 ISRCs per call, ~5 min (paced well under
-        the rate limit: a 429 would cool the whole app down for an hour)."""
+        next start. Reads at most 100 ISRCs per call (~2 min): the app's
+        Development-Mode quota is app-wide, see auto_merge_duplicates."""
         from flask import jsonify
         try:
             r = o2mHandler.auto_merge_duplicates()

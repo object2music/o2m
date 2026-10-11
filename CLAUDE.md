@@ -1101,8 +1101,12 @@ version had just played. On 2026-10-11: **686 groups** with at least one played.
   play is reported under another. The ISRC is the recording's own code: equal on
   both. Only the members of a PROPOSED group are asked (one `GET /tracks/{id}`
   each — the batch `GET /tracks?ids=` answers 403 to this Development-mode app),
-  paced 0.5 s apart, 600 per run, stopping at a 429; '' records "Spotify has no
-  code". A dismissed group is never auto-merged. One run at a time across the
+  paced 1 s apart, **100 per run**, stopping at a 429; '' records "Spotify has no
+  code". The cap is the lesson of the first run: 600 calls got 517 in and then a
+  `429 QUOTA_EXCEEDED` with a **17 h Retry-After for the whole app** — a
+  Development-Mode app has a request quota, and every instance shares the app, so
+  all their Web API calls (likes to Spotify, playlist writes, search, library
+  sync) stopped with it; playback, on other identities, did not. A dismissed group is never auto-merged. One run at a time across the
   instances (CacheMeta `duplicates_auto_at`, 1 while running).
 - **Undo** (`unmerge_track`) restores the version from the snapshot stored on its
   alias (counters and the ids of the play-log rows moved) and takes its counters

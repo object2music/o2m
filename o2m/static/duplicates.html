@@ -248,7 +248,7 @@ document.addEventListener('click', async e => {
   if (e.target.id === 'dup-more') { e.target.disabled = true; await loadDuplicates(true); e.target.disabled = false; return; }
   if (e.target.id === 'dup-auto') {
     const b = e.target;
-    b.disabled = true; b.textContent = 'Checking with Spotify… (a few minutes)';
+    b.disabled = true; b.textContent = 'Checking with Spotify… (up to 2 min)';
     try {
       const j = await dupPost('auto', {});
       if (j.skipped) alert('A run is already in progress (this or another instance) — try again in a few minutes.');
