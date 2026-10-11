@@ -2199,7 +2199,8 @@
   @supports (background: color-mix(in srgb, red 50%, transparent)) {
     html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt,
     html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle .o2m-actuator-glyph {
-      background: color-mix(in srgb, var(--sheet-bg, var(--bg)) var(--cap-alpha, 52%), transparent);
+      /* Firmer than a box name's band (--cap-alpha, ~52%): asked for (2026-10-11). */
+      background: color-mix(in srgb, var(--sheet-bg, var(--bg)) 75%, transparent);
     }
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle { color: var(--og-ink); }
