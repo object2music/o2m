@@ -4764,13 +4764,12 @@ async function updateSpokenHeader(track) {
   } catch (e) {}
 }
 
-/* 'YYYY-MM-DD HH:MM' (local) -> '3 days ago · DD-MM-YYYY HH:MM'. `ts` is the same
-   instant in epoch seconds; a server without it is read as this device's time. */
+/* 'YYYY-MM-DD HH:MM' (local) -> '3 days ago'. `ts` is the same instant in epoch
+   seconds; a server without it is read as this device's time. */
 function fmtLastPlayed(v, ts) {
   const m = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/.exec(String(v || '').trim());
   if (!m) return '—';
-  const when = ts ? new Date(ts * 1000) : new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]);
-  return `${fmtAgo(when)} · ${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}`;
+  return fmtAgo(ts ? new Date(ts * 1000) : new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5]));
 }
 /* How long ago, the way one says it: minutes and hours within the day, then
    calendar days (yesterday is the day before today, not 24 h back), weeks,

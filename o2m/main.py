@@ -2390,8 +2390,16 @@ if __name__ == "__main__":
             pass
         return ''
 
+    def _played_when(stat):
+        # last_read_date is also stamped on rows that were never read (2026-10-11:
+        # 56,158 of the 84,627 dated tracks have read_count 0 — a row opened when
+        # the track was queued or cached). Only a counted read is a "last played".
+        if not stat or not (getattr(stat, 'read_count', 0) or 0):
+            return None
+        return getattr(stat, 'last_read_date', None)
+
     def _last_played(stat):
-        when = getattr(stat, 'last_read_date', None) if stat else None
+        when = _played_when(stat)
         if not when:
             return ''
         try:
@@ -2400,7 +2408,7 @@ if __name__ == "__main__":
             return ''
 
     def _last_played_ts(stat):
-        when = getattr(stat, 'last_read_date', None) if stat else None
+        when = _played_when(stat)
         if not when:
             return None
         try:
