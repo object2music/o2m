@@ -4861,6 +4861,10 @@ function renderAlbum(uri, { name = 'Album', artist = '', image = '', release = '
 // DB-first (O2M cache); falls back to a live Spotify lookup when not cached.
 async function openAlbum(uri, seed) {
   if (!uri) { setFeedback('No album link'); return; }
+  // An episode's "album" is its channel (mopidy-podcast gives `podcast+<feed>`):
+  // it opens the channel view, the one Browse and search open, so the header link
+  // reaches the same page with its episodes and its intro skip.
+  if (/^(podcast\+|rf:show:)/.test(uri) && !uri.includes('#')) return openPodcast(uri, { name: seed?.name });
   objNavTo();
   objSetHead('Album', seed?.name || 'Album', seed?.artist || '');
   openObjPanel();
