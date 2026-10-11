@@ -2090,6 +2090,19 @@
   }
   .basic-toggle svg { width: calc(26px * var(--ui)); height: calc(26px * var(--ui)); }
   .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
+  /* The texture a box tile without a picture wears in the mosaic (objgrid.css,
+     .og-art--mark): the same `dots` cover, the same fades — well back at rest, a
+     little forward on hover and when on, greyscale when on. Behind the glyph and
+     the label: the button isolates, the texture sits at -1 inside it. */
+  .basic-toggle { position: relative; overflow: hidden; isolation: isolate; }
+  .basic-tex { position: absolute; inset: 0; z-index: -1; pointer-events: none;
+               opacity: .35; transition: opacity .15s, filter .2s; }
+  .basic-toggle .basic-tex svg { width: 100%; height: 100%; }
+  .basic-toggle:hover .basic-tex { opacity: .5; }
+  .basic-toggle.on .basic-tex { opacity: .5; filter: grayscale(1); }
+  /* Bulletin and Bulletin2: the tiles are panes over a picture, which is texture
+     enough. */
+  [data-theme="creme"] .basic-tex, [data-theme="bulletin"] .basic-tex { display: none; }
 
   /* ══ TEMPORARY — Bulletin only: filled active state ═══════════════════════
      Recolouring the label and hairline alone is nearly invisible on this light
