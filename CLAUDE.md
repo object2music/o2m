@@ -1790,12 +1790,20 @@ They answer the same gestures, from one delegated handler (`rowOpen` /
   artist plays its tracks; a box only opens, it is activated, not queued).
 
 Until 2026-10-11 they disagreed: a click PLAYED a tracklist row and OPENED a modal
-row. The single click now waits `ROW_DBL_MS` (280 ms) to know it is not the first
+row. The single click now waits `ROW_DBL_MS` (350 ms; 280 was too tight in use) to know it is not the first
 half of a double click — the price of two actions on one target. The ⓘ menu and
 the artist link keep their own meaning. **Excluded on purpose**: the box editor's
 content editor (`#bx-editor-host`), where a click on a search result ADDS it to
-the box — a picker, not a list. Long-press-and-drag to move a row in the
-tracklist is not implemented yet.
+the box — a picker, not a list.
+
+**Long press and drag moves a row in the tracklist** (`wireRowDrag`): held still
+`ROW_HOLD_MS` (400 ms) the row lifts, follows the pointer (the list scrolls near
+its edges), a line shows where it lands, and the drop calls
+`core.tracklist.move` — whose `to_position` is an index in the list WITHOUT the
+moved row. Offline it moves the local queue and remaps the two indexes into it
+(`OFF.i`, `OFF.loggedAt`). Moving more than 8 px before the hold is up cancels it:
+that is what keeps a swipe scrolling the list on a phone. Tracklist only — the
+other lists are listings, not an order anyone owns.
 
 ## UI Language Convention
 

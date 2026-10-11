@@ -1768,13 +1768,13 @@ function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artists = 
      · one click   → the row's detail (a track, or the album/artist/… it names)
      · double click → play it now (a tracklist row: that very entry; elsewhere
                      inserted after the current track — the menu's "Play now")
-   The single click waits ROW_DBL_MS to know it is not the first half of a
-   double one; that wait is the price of having both on one target. Touch gets
+   The single click waits ROW_DBL_MS (350 ms — 280 was too tight in use) to
+   know it is not the first half of a double one; that wait is the price of having both on one target. Touch gets
    the same, from two taps. The row's own controls keep their meaning: the ⓘ
    menu, the artist link.
    Not here: the box editor's content editor (#bx-editor-host, its Add panel),
    where a click on a result ADDS it to the box — a picker, not a list to browse. */
-const ROW_DBL_MS = 280;
+const ROW_DBL_MS = 350;
 let _rowPending = null;   // { row, timer } — a first click waiting for a second
 
 function _rowTarget(e) {
@@ -1827,6 +1827,159 @@ document.addEventListener('click', (e) => {
   }, ROW_DBL_MS) };
   _rowPending = pending;
 });
+document.addEventListener('click', (e) => {
+  // The click a drop ends with is not a click on the row (rowDrag).
+  if (_rowDragJustEnded) { _rowDragJustEnded = false; e.stopPropagation(); e.preventDefault(); }
+}, true);
+
+/* ── Long press and drag: move a row in the tracklist ─────────────────────────
+   Hold a tracklist row still for ROW_HOLD_MS and it lifts; it then follows the
+   pointer, a line shows where it will land, and letting go moves it there
+   (core.tracklist.move — offline, the local queue). Moving before the hold is
+   up is a scroll or a click, never a drag: that is what keeps a vertical swipe
+   scrolling the list on a phone. Only the tracklist: the other lists are
+   listings, not an order anyone owns. */
+const ROW_HOLD_MS = 400, ROW_HOLD_SLOP = 8;
+let _rowDrag = null, _rowDragJustEnded = false;
+
+function _rowDragRows(wrap) { return [...wrap.querySelectorAll(':scope > .tl-item')]; }
+
+function _rowDragClear(wrap) {
+  wrap.querySelectorAll('.tl-drop-before, .tl-drop-after')
+    .forEach(r => r.classList.remove('tl-drop-before', 'tl-drop-after'));
+}
+
+/* Insertion index (0..n, "before row k") for a pointer at clientY. */
+function _rowDragSlot(rows, y) {
+  for (let k = 0; k < rows.length; k++) {
+    const r = rows[k].getBoundingClientRect();
+    if (y < r.top + r.height / 2) return k;
+  }
+  return rows.length;
+}
+
+function _rowDragPaint(d) {
+  const rows = _rowDragRows(d.wrap);
+  _rowDragClear(d.wrap);
+  d.slot = _rowDragSlot(rows, d.y);
+  // The line sits on the row the slot touches; the row's own two edges mean
+  // "stay where it is" and draw nothing.
+  if (d.slot !== d.from && d.slot !== d.from + 1) {
+    if (d.slot < rows.length) rows[d.slot].classList.add('tl-drop-before');
+    else rows[rows.length - 1]?.classList.add('tl-drop-after');
+  }
+  d.row.style.transform = `translateY(${d.y - d.y0}px)`;
+}
+
+function _rowDragTick() {
+  const d = _rowDrag;
+  if (!d || !d.active) return;
+  // Near an edge of the scroller, scroll — a tracklist is longer than a screen.
+  const sc = d.scroller;
+  if (sc) {
+    const r = sc.getBoundingClientRect(), edge = 48 * UI_SCALE;
+    const v = d.y < r.top + edge ? -1 : d.y > r.bottom - edge ? 1 : 0;
+    if (v) {
+      const before = sc.scrollTop;
+      sc.scrollTop += v * 12;
+      d.y0 -= sc.scrollTop - before;   // the row is carried by the pointer, not the scroll
+      _rowDragPaint(d);
+    }
+  }
+  d.raf = requestAnimationFrame(_rowDragTick);
+}
+
+function _rowDragStart(d) {
+  d.active = true;
+  d.from = _rowDragRows(d.wrap).indexOf(d.row);
+  if (d.from < 0) { _rowDragEnd(false); return; }
+  d.scroller = scrollableAncestor(d.row);
+  d.row.classList.add('tl-dragging');
+  document.body.classList.add('row-dragging');
+  if (_rowPending) { clearTimeout(_rowPending.timer); _rowPending = null; }
+  try { navigator.vibrate?.(15); } catch (e) {}
+  _rowDragPaint(d);
+  d.raf = requestAnimationFrame(_rowDragTick);
+}
+
+async function _rowDragEnd(drop) {
+  const d = _rowDrag;
+  _rowDrag = null;
+  if (!d) return;
+  clearTimeout(d.timer);
+  if (!d.active) return;
+  cancelAnimationFrame(d.raf);
+  _rowDragJustEnded = true;
+  setTimeout(() => { _rowDragJustEnded = false; }, 400);   // no click followed (touch, pointercancel)
+  d.row.classList.remove('tl-dragging');
+  d.row.style.transform = '';
+  document.body.classList.remove('row-dragging');
+  _rowDragClear(d.wrap);
+  if (!drop) return;
+  // Mopidy's to_position is an index in the list WITHOUT the moved row.
+  const to = d.slot > d.from ? d.slot - 1 : d.slot;
+  if (to === d.from) return;
+  const rows = _rowDragRows(d.wrap);
+  // Moved on screen at once; the next refresh confirms it from the server.
+  if (d.slot < rows.length) d.wrap.insertBefore(d.row, rows[d.slot]);
+  else d.wrap.appendChild(d.row);
+  if (OFF.on) { offMoveInQueue(d.from, to); return; }
+  try {
+    await rpc('core.tracklist.move', { start: d.from, end: d.from + 1, to_position: to });
+    setFeedback('Moved');
+  } catch (e) { setFeedback('Move error'); }
+  setTimeout(refreshNowPlaying, 150);
+}
+
+/* Offline the rows are the local queue: move the entry and carry the two
+   indexes that point into it (what plays, what was already logged). */
+function offMoveInQueue(from, to) {
+  const [t] = OFF.queue.splice(from, 1);
+  if (!t) return;
+  OFF.queue.splice(to, 0, t);
+  const remap = k => k === from ? to
+    : (from < k && k <= to) ? k - 1
+    : (to <= k && k < from) ? k + 1 : k;
+  OFF.i = remap(OFF.i);
+  if (OFF.loggedAt >= 0) OFF.loggedAt = remap(OFF.loggedAt);
+  lastTracklistSig = null;   // indexes moved: repaint the rows from the queue
+  offRenderQueue();
+  setFeedback('Moved');
+}
+
+(function wireRowDrag() {
+  const wrap = document.getElementById('tracklist-wrap');
+  if (!wrap) return;
+  wrap.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    const row = e.target.closest('.tl-item');
+    if (!row || row.parentElement !== wrap) return;
+    if (e.target.closest('.tl-info, .tl-artist [data-artist-uri], button, a')) return;
+    const d = { wrap, row, id: e.pointerId, x0: e.clientX, y0: e.clientY, y: e.clientY, active: false };
+    d.timer = setTimeout(() => { if (_rowDrag === d) _rowDragStart(d); }, ROW_HOLD_MS);
+    _rowDrag = d;
+  });
+  window.addEventListener('pointermove', (e) => {
+    const d = _rowDrag;
+    if (!d || e.pointerId !== d.id) return;
+    if (!d.active) {
+      // Moved before the hold: a scroll or a click — not ours.
+      if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) > ROW_HOLD_SLOP) { clearTimeout(d.timer); _rowDrag = null; }
+      return;
+    }
+    d.y = e.clientY;
+    _rowDragPaint(d);
+  });
+  window.addEventListener('pointerup', (e) => { if (_rowDrag && e.pointerId === _rowDrag.id) _rowDragEnd(true); });
+  window.addEventListener('pointercancel', (e) => { if (_rowDrag && e.pointerId === _rowDrag.id) _rowDragEnd(false); });
+  // Once lifted, a finger moving must drag the row, not scroll the page. The
+  // hold kept it still, so the browser has not begun scrolling and this
+  // touchmove can still be cancelled.
+  wrap.addEventListener('touchmove', (e) => { if (_rowDrag?.active) e.preventDefault(); }, { passive: false });
+  // A long press on a phone opens the text menu; on a row it is the drag.
+  wrap.addEventListener('contextmenu', (e) => { if (e.target.closest('.tl-item')) e.preventDefault(); });
+})();
+
 // A double click selects the word under the pointer; on a row that is noise.
 // Stopping the second press's default keeps selection possible by dragging.
 document.addEventListener('mousedown', (e) => {

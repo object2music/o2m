@@ -1215,6 +1215,15 @@
   .tl-item:active { background: var(--fill-2); }
   /* Two taps make a double click (rowGestures): no zoom-on-double-tap delay. */
   .tl-item { touch-action: manipulation; }
+  /* Long press and drag in the tracklist (rowDrag): no text selection or
+     callout under a held finger, the lifted row above its neighbours, and a
+     line where it will land. */
+  #tracklist-wrap > .tl-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  .tl-item.tl-dragging { position: relative; z-index: 5; background: var(--card); opacity: .92;
+    box-shadow: 0 calc(4px * var(--ui)) calc(16px * var(--ui)) rgba(0,0,0,.25); transition: none; }
+  .tl-item.tl-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  .tl-item.tl-drop-after  { box-shadow: inset 0 -2px 0 var(--accent); }
+  body.row-dragging, body.row-dragging * { cursor: grabbing !important; }
   .tl-item.current .tl-name { color: var(--accent); }
   .tl-num {
     font-family: var(--font-head); font-size: calc(22px * var(--ui)); font-weight: 800;
