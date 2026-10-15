@@ -2197,14 +2197,25 @@
         transparent 100%);
     }
   }
+  /* The name in the view's own register: --font-head in upper case, like the dial
+     titles (DISCOVERY, MOOD) — the tiles were the one mixed-case bold sans on the
+     screen. A step larger than those titles, these being the main controls, and
+     regular weight: in capitals at that size, bold out-shouted everything else. */
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt {
     display: block; text-align: center;
-    font-size: calc(17px * var(--ui)); font-weight: 700; letter-spacing: -.01em; line-height: 1.2;
+    font-family: var(--font-head); font-size: var(--t-body); font-weight: 400;
+    text-transform: uppercase; letter-spacing: .04em; line-height: 1.2;
     color: inherit;
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate .o2m-actuator-glyph { margin: 0 auto; }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:hover { color: var(--text); border-color: var(--border-strong); }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on { color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  /* Hover only where there is one, and never over an ON tile. A phone keeps
+     :hover on the last tile touched, and this rule out-specifies `.basic-toggle.on`:
+     the tile just switched on lost its accent border to --border-strong, leaving a
+     dim 1px inset where a solid frame belongs. */
+  @media (hover: hover) {
+    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:not(.on):hover { color: var(--text); border-color: var(--border-strong); }
+  }
+  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on { color: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
   /* ══ TEMPORARY — Bulletin only: filled active state ═══════════════════════
      Recolouring the label and hairline alone is nearly invisible on this light
