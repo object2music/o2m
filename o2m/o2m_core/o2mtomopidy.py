@@ -416,7 +416,45 @@ class O2mToMopidy:
             print(f"add: {len(retry)} local file(s) refused by Mopidy — streaming them instead")
             kw2 = {'at_position': at_position + len(added)} if at_position is not None else {}
             added = list(added) + list(self.mopidyHandler.tracklist.add(uris=retry, **kw2) or [])
+        added = self._rescue_episodes(resolved, added, at_position)
         return added
+
+    def _rescue_episodes(self, resolved, added, at_position=None):
+        """Re-add the podcast episodes Mopidy dropped, one at a time, after a feed
+        refresh.
+
+        Mopidy looks up every podcast+ uri of one tracklist.add in a single
+        lookup_many, and mopidy-podcast answers None (not []) for an episode its
+        feed cache does not hold — that cache lives 24 h, so today's episode of a
+        feed read yesterday is "No such track". Core then rejects the backend's
+        whole answer ("Expected a list of Track, not None") and adds NONE of the
+        episodes: on 2026-10-15 "Radio Infos" resolved 30 items and queued 4, the
+        survivors being the non-podcast ones. So: refresh each feed concerned,
+        then add the missing episodes one by one, so that an episode really gone
+        from its feed only loses itself. They land after the batch, not in their
+        original slots — a spoken box is a list of bulletins, not a sequence."""
+        got = {t.track.uri for t in added}
+        missing = [u for u in resolved
+                   if isinstance(u, str) and u.startswith('podcast+') and '#' in u
+                   and u not in got]
+        if not missing:
+            return added
+        for feed in dict.fromkeys(u.split('#', 1)[0] for u in missing):
+            try:
+                self.mopidyHandler.library.refresh(uri=feed)
+            except Exception as e:
+                print(f"add: refresh {feed[:80]}: {e}")
+        rescued = []
+        for u in missing:
+            kw = ({'at_position': at_position + len(added) + len(rescued)}
+                  if at_position is not None else {})
+            try:
+                rescued += list(self.mopidyHandler.tracklist.add(uris=[u], **kw) or [])
+            except Exception as e:
+                print(f"add: {u[:80]}: {e}")
+        print(f"add: {len(missing)} episode(s) dropped by Mopidy's podcast lookup, "
+              f"{len(rescued)} recovered after a feed refresh")
+        return list(added) + rescued
 
     def get_spotify_uri(self, uri):
         """Canonicalize a played uri (a downloaded file, a signed CDN url) back to
@@ -1886,13 +1924,22 @@ class O2mToMopidy:
             pool = [b for b in boxes if not any(a.uid == b['uid'] for a in self.activeboxs)]
             if not pool:
                 return 0
+            # Thinnest sources first. A shortfall only rolls forward, so a thin
+            # source served LAST gave its unused places to nobody: the Info
+            # actuator (Radio Infos, 25 feeds, then Radio Infos last, a single
+            # infos:library bulletin) queued 15 + 1 = 16 of 30. Served first, the
+            # bulletin takes its one place and the rich box the 29 left. Fewer
+            # content lines is a proxy for fewer items, not a measure — a wrong
+            # guess only gives back today's order. Stable sort: ties keep the
+            # pinned order.
+            subs = [s for s in (self.dbHandler.get_box_by_uid(m['uid']) for m in pool)
+                    if s is not None]
+            subs.sort(key=lambda s: len([l for l in self._content_lines(s.data)
+                                         if not bdir.is_directive(l)]))
             gained_total = 0
             budget = limit
-            for i, meta in enumerate(pool):
-                sub = self.dbHandler.get_box_by_uid(meta['uid'])
-                if sub is None:
-                    continue
-                share = max(1, round(budget / (len(pool) - i)))
+            for i, sub in enumerate(subs):
+                share = max(1, round(budget / (len(subs) - i)))
                 self.activeboxs.append(sub)
                 try:
                     before = self.mopidyHandler.tracklist.get_length()
@@ -2605,9 +2652,13 @@ class O2mToMopidy:
         feedurl = data.split("+")[1]
 
         shows = self.get_podcast_from_url(feedurl)
-        #unread_shows = shows[last_track_played:]  # Remove n first shows already read (to be checked not used anymore)
-        unread_shows = shows[:max_results]  # Cut to max results (to be suppressed if grabbing later than first tracks)
-        for item in unread_shows:
+        # Filter first, cut after. The feed used to be cut to max_results BEFORE the
+        # read episodes were dropped, so a feed whose share is 1 gave nothing as
+        # soon as its latest episode had been heard, however many unread ones
+        # stood behind it — and in a box of 25 feeds every share is about 1.
+        for item in shows:
+            if max_results and len(uris) >= max_results:
+                break
             stat_pod = self.dbHandler.get_stat_by_uri(item.uri)
             if (stat_pod):
                 #An explicit dislike drops the episode before any other rule

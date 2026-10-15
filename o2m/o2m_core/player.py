@@ -99,6 +99,7 @@ class LibraryPort(Protocol):
         uris: Iterable[str] | None = None,
         exact: bool = False,
     ) -> list[Any]: ...
+    def refresh(self, uri: str | None = None) -> None: ...
 
 
 class PlayerPort(Protocol):
@@ -137,7 +138,7 @@ PORT_SURFACE: dict[str, frozenset[str]] = {
     ),
     "mixer": frozenset({"get_volume", "set_mute", "set_volume"}),
     "playlists": frozenset({"lookup"}),
-    "library": frozenset({"get_distinct", "search"}),
+    "library": frozenset({"get_distinct", "refresh", "search"}),
 }
 
 PORT_ATTRIBUTES: frozenset[str] = frozenset({"http_url"})
@@ -224,6 +225,7 @@ class InertPlayer:
     class _Library:
         def get_distinct(self, field, query=None): return set()
         def search(self, query, uris=None, exact=False): return []
+        def refresh(self, uri=None): return None
 
     def __init__(self) -> None:
         self.tracklist = self._Tracklist()
