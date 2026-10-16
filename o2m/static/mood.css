@@ -2126,12 +2126,20 @@
        every theme where the two differ (dark, bulletin, invert) — the mark looked
        pasted on a patch instead of punched out of the grid. */
     background: var(--bg); border: 1px solid var(--border-strong);
-    color: var(--muted); cursor: pointer; font: inherit; font-size: calc(10px * var(--ui)); font-weight: 700;
+    color: var(--muted); cursor: pointer; font: inherit;
+    /* Same register as the status line and the tiles' names: mono capitals. */
+    font-family: var(--font-mono); font-size: var(--t-label); font-weight: 400;
+    text-transform: uppercase; letter-spacing: .06em;
     box-shadow: 0 calc(2px * var(--ui)) calc(10px * var(--ui)) rgba(0,0,0,.25);
     transition: color .15s, border-color .15s;
   }
   #basic-all svg { width: calc(20px * var(--ui)); height: calc(20px * var(--ui)); }
+  /* ON: the ground takes the ink's colour too — a faint accent wash inside the
+     accent ring, so the disc reads lit and not only outlined. */
   #basic-all.on { color: var(--accent); border-color: var(--accent); }
+  @supports (background: color-mix(in srgb, red 50%, transparent)) {
+    #basic-all.on { background: color-mix(in srgb, var(--accent) 14%, var(--bg)); }
+  }
   /* Parked (a tile is filling): dimmed, not pulsing — the pulse is the actor's. */
   #basic-all:disabled { cursor: wait; opacity: .5; }
   #basic-all.running  { opacity: 1; animation: basic-pulse 1s ease-in-out infinite; }
@@ -2144,17 +2152,19 @@
   .basic-toggle svg { width: calc(26px * var(--ui)); height: calc(26px * var(--ui)); }
   .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
   /* The texture a box tile without a picture wears in the mosaic (objgrid.css,
-     .og-art--mark): the same `dots` cover, the same fades — well back at rest, a
-     little forward on hover and when on, greyscale when on. Behind the glyph and
+     .og-art--mark): the same `dots` cover — well back at rest, a little forward
+     on hover and when on. The colour follows the ink: greyscale while the name
+     is muted, the theme's colours once it turns accent (the reverse of a box
+     tile, whose cover is a photo that gives its colour up). Behind the glyph and
      the label: the button isolates, the texture sits at -1 inside it. */
   .basic-toggle { position: relative; overflow: hidden; isolation: isolate; }
   /* Texture well back: it is a ground, the label is the content. At .35 (a box
      tile's value) the dots out-weighed the name in a tile this large. */
   .basic-tex { position: absolute; inset: 0; z-index: -1; pointer-events: none;
-               opacity: .2; transition: opacity .15s, filter .2s; }
+               opacity: .32; filter: grayscale(1); transition: opacity .15s, filter .2s; }
   .basic-toggle .basic-tex svg { display: block; width: 100%; height: 100%; }
-  .basic-toggle:hover .basic-tex { opacity: .3; }
-  .basic-toggle.on .basic-tex { opacity: .3; filter: grayscale(1); }
+  .basic-toggle:hover .basic-tex { opacity: .42; }
+  .basic-toggle.on .basic-tex { opacity: .45; filter: none; }
   /* The plate carries the glyph and the name together; everywhere it lays them
      out the way the button did (column, same gap). */
   .basic-plate { display: flex; flex-direction: column; align-items: center; gap: inherit; }
@@ -2197,14 +2207,13 @@
         transparent 100%);
     }
   }
-  /* The name in the view's own register: --font-head in upper case, like the dial
-     titles (DISCOVERY, MOOD) — the tiles were the one mixed-case bold sans on the
-     screen. A step larger than those titles, these being the main controls, and
-     regular weight: in capitals at that size, bold out-shouted everything else. */
+  /* The name in the type of the status line right above (59 TRACKS · …): mono
+     capitals at body size, regular. The tiles were the one mixed-case bold sans
+     on the screen. */
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-name-txt {
     display: block; text-align: center;
-    font-family: var(--font-head); font-size: var(--t-body); font-weight: 400;
-    text-transform: uppercase; letter-spacing: .04em; line-height: 1.2;
+    font-family: var(--font-mono); font-size: var(--t-body); font-weight: 400;
+    text-transform: uppercase; letter-spacing: .06em; line-height: 1.2;
     color: inherit;
   }
   html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate .o2m-actuator-glyph { margin: 0 auto; }
@@ -2213,9 +2222,13 @@
      the tile just switched on lost its accent border to --border-strong, leaving a
      dim 1px inset where a solid frame belongs. */
   @media (hover: hover) {
-    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:not(.on):hover { color: var(--text); border-color: var(--border-strong); }
+    html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle:not(.on):hover { color: var(--text); }
   }
-  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on { color: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  /* A hairline frame, the ALL disc's own (1px --border-strong); accent when on,
+     with the ink. A queued tile keeps its dashed accent hairline (.pending). */
+  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle { border-color: var(--border-strong); }
+  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.on { color: var(--accent); border-color: var(--accent); }
+  html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-toggle.pending { border-color: var(--accent); }
 
   /* ══ TEMPORARY — Bulletin only: filled active state ═══════════════════════
      Recolouring the label and hairline alone is nearly invisible on this light
