@@ -1344,6 +1344,9 @@
     opacity: 0; visibility: hidden; transition: opacity .2s, transform .2s, visibility .2s;
   }
   #feedback.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+  /* A toast carrying a link (setFeedback's action): it takes the tap. */
+  #feedback.actionable { pointer-events: auto; cursor: pointer; }
+  #feedback.actionable:hover { color: var(--accent); border-color: var(--accent); }
 
   /* ── Clear buttons (tracklist + boxes) ── */
   #btn-clear-tl, #btn-clear-boxes, #btn-reset-mood {

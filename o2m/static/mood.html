@@ -3401,14 +3401,12 @@ async function openAddToBox(anchor, uri, label) {
   if (!line) return;
   const name = _bxLabelFor(uri, label);
   let boxes = [];
-  try { boxes = await fetch(API + '/box_favorites?all=1').then(r => r.json()); }
+  // The pinned boxes only: all of them (150 here) is a list nobody can pick from.
+  try { boxes = await fetch(API + '/box_favorites').then(r => r.json()); }
   catch (e) { setFeedback('Could not load the boxes'); return; }
   if (!Array.isArray(boxes)) boxes = [];
   const selfUid = line.startsWith('box:') ? line.slice(4) : null;   // a box never includes itself
   boxes = boxes.filter(b => b && b.uid && b.uid !== selfUid);
-  // Pinned boxes first; the sort is stable, so each group keeps the server's
-  // order (named boxes first, then by name).
-  boxes.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
   const el = document.createElement('div');
   el.className = 'pl-dropdown bx-pick';
   el.innerHTML = `<div class="bx-pick-head">Add to box${name ? ' — ' + objEsc(name) : ''}</div>`
@@ -3418,7 +3416,7 @@ async function openAddToBox(anchor, uri, label) {
         return `<button type="button" data-uid="${objEsc(b.uid)}"${has ? ' disabled' : ''}>`
           + `<span>${objEsc(b.description || b.uid)}</span>`
           + (has ? '<small>already in</small>' : '') + '</button>';
-      }).join('') : '<span class="bx-pick-empty">No boxes.</span>') + '</div>';
+      }).join('') : '<span class="bx-pick-empty">No pinned boxes.</span>') + '</div>';
   el.querySelector('.bx-pick-filter').addEventListener('input', e => {
     const q = e.target.value.trim().toLowerCase();
     el.querySelectorAll('.bx-pick-list button').forEach(b => {
@@ -3435,7 +3433,9 @@ async function openAddToBox(anchor, uri, label) {
       if (r.status === 401) { setFeedback('Editing not authorized'); btn.disabled = false; return; }
       const d = await r.json().catch(() => ({}));
       if (d.error) { setFeedback('Box: ' + d.error); btn.disabled = false; return; }
-      setFeedback((d.added ? 'Added to ' : 'Already in ') + (d.name || 'the box'));
+      const uid = btn.dataset.uid;
+      setFeedback((d.added ? 'Added to ' : 'Already in ') + (d.name || 'the box') + ' — open',
+                  () => openBox(uid));
       _closeBoxPicker();
     } catch (e) { setFeedback('Box error'); btn.disabled = false; }
   }));
@@ -9278,12 +9278,17 @@ function onMopidyEvent(m) {
   }
 }
 
-function setFeedback(msg) {
+/* The toast at the bottom. With `action`, it becomes a link: a tap runs it and
+   closes the toast, which stays up a little longer to leave time for the tap
+   (Add to box → open the box). Any later message drops the action. */
+function setFeedback(msg, action) {
   const el = document.getElementById('feedback');
   el.textContent = msg || '';
   el.classList.toggle('show', !!msg);
+  el.classList.toggle('actionable', !!(msg && action));
+  el.onclick = (msg && action) ? () => { el.classList.remove('show', 'actionable'); el.onclick = null; action(); } : null;
   clearTimeout(el._t);
-  if (msg) el._t = setTimeout(() => el.classList.remove('show'), 3000);
+  if (msg) el._t = setTimeout(() => el.classList.remove('show', 'actionable'), action ? 6000 : 3000);
 }
 
 /* ── Fullscreen ── */
