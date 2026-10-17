@@ -2176,6 +2176,10 @@ class O2mToMopidy:
                 except Exception as e:
                     print(f"rf:sujet prefetch pool: {e}")
 
+            # Same for the podcast feeds: fetched together here, the dispatch below
+            # then reads them from the memo (_feed_items). Same test as the dispatch.
+            self.prefetch_feeds([x.strip().split('+')[1] for x in _pod_feeds])
+
             # ONE budget for the whole box, shared between its lines (boxbudget:
             # without it the first playlist of a box took all of it, and a cascade
             # queued one quota per included box on top of its own).
@@ -2627,14 +2631,62 @@ class O2mToMopidy:
         #self.add_tracks(box, shows, max_results_pod)
         return shows
 
+    # A parsed feed is kept this long. Long enough for one fill to read each feed
+    # once — the prefetch in tracklistappend_box, then the dispatch — short enough
+    # that a new episode is seen on the next activation.
+    _FEED_TTL = 120
+
+    def _feed_items(self, url):
+        """The items of one feed, fetched and parsed, memoised _FEED_TTL seconds.
+        Failures raise and are not cached: a timeout is an accident of the minute.
+
+        Every fetch shares ONE SSLContext. Building one loads the whole CA store,
+        which costs 0.64s on the Raspberry Pi 3B (OpenSSL 3.0) — urllib builds a
+        fresh one per request, so a box of 23 feeds spent ~15s on that alone."""
+        key = (url, self.option_sort)
+        cache = self.__dict__.setdefault('_feed_cache', {})
+        hit = cache.get(key)
+        if hit and time.time() - hit[0] < self._FEED_TTL:
+            return hit[1]
+        opener = self.__dict__.get('_feed_opener')
+        if opener is None:
+            import ssl
+            from urllib.request import HTTPSHandler, build_opener
+            opener = build_opener(HTTPSHandler(context=ssl.create_default_context()))
+            # Same User-Agent as mopidy-podcast's own opener.
+            opener.addheaders = Extension.get_url_opener({"proxy": {}}).addheaders
+            self._feed_opener = opener
+        f = opener.open(url, timeout=10)
+        with contextlib.closing(f) as source:
+            feed = feeds.parse(source)
+        items = list(feed.items(self.option_sort))
+        cache[key] = (time.time(), items)
+        return items
+
+    def prefetch_feeds(self, urls):
+        """Fetch several feeds at once into the _feed_items memo. Each costs about
+        1.4s on the Pi, nearly all of it TLS, so 23 feeds read one after the other
+        took ~35s before the first episode was queued. Errors are left for the
+        sequential read to report, feed by feed, as before."""
+        urls = list(dict.fromkeys(urls))
+        if len(urls) < 2:
+            return
+        import concurrent.futures as _cf
+        def _one(u):
+            try:
+                self._feed_items(u)
+            except Exception:
+                pass
+        try:
+            with _cf.ThreadPoolExecutor(max_workers=min(8, len(urls))) as ex:
+                list(ex.map(_one, urls))
+        except Exception as e:
+            print(f"feed prefetch pool: {e}")
+
     def get_podcast_from_url(self, url):
         try:
-            f = Extension.get_url_opener({"proxy": {}}).open(url, timeout=10)
-            with contextlib.closing(f) as source:
-                feed = feeds.parse(source)
-            print(f"option_sort : {self.option_sort}")
-            shows = list(feed.items(self.option_sort))
-            # Conserve les max_results premiers épisodes
+            shows = list(self._feed_items(url))
+            # Keep the first max_results episodes
             del shows[self.max_results :]
             return shows
         except (url_error.HTTPError, url_error.URLError) as e:
