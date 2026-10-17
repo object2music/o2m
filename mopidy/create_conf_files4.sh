@@ -39,7 +39,11 @@ media_dir = $LOCAL_MEDIA_DIR
 enabled = $YOUTUBE_ENABLED
 youtube_api_key = $YOUTUBE_API_KEY
 api_enabled = $YOUTUBE_API_ENABLED
-allow_cache = true
+# Off unless YOUTUBE_ALLOW_CACHE is set: the cache downloads every YouTube track
+# the tracklist holds, in the background, into the container, with no cap and
+# no eviction. Mopidy-YouTube tests the raw string, so 'false' would turn it ON —
+# leave the variable empty to disable it.
+allow_cache = ${YOUTUBE_ALLOW_CACHE:-}
 youtube_dl_package = $YOUTUBE_DL_PACKAGE
 
 [podcast]
