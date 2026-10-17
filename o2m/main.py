@@ -1,4 +1,4 @@
-import logging, subprocess, os, spotipy, json, threading, requests, contextlib
+import logging, subprocess, os, re, spotipy, json, threading, requests, contextlib
 
 from mopidyapi import MopidyAPI
 from o2m_core import util
@@ -176,16 +176,17 @@ if __name__ == "__main__":
     api=create_api()
     api.app_context().push()
 
-    # Silence noisy Werkzeug access logs for high-frequency polling/health-check
-    # endpoints (status badges, track features, Docker healthcheck) so the logs stay
-    # readable. Doesn't affect the print()s in o2mtomopidy.py (track end, stats
-    # updates, recos, ...) — those go straight to stdout, untouched by this filter.
-    # Extend the list as needed.
-    _SILENCED_LOG_PATHS = ('/api/track_features', '/api/track_status', '/health')
+    # Werkzeug's access log: a successful READ is not logged. The page polls
+    # several endpoints every few seconds per open device (active_objects,
+    # basic_boxes, dl, mood, track_status...), which buried everything else —
+    # and a list of paths to silence fell behind every new poll. What is still
+    # logged: writes (POST/PUT/DELETE), errors (4xx/5xx) and Werkzeug's own
+    # startup lines. Doesn't affect the print()s in o2mtomopidy.py (track end,
+    # stats, recos), which go straight to stdout.
+    _QUIET_ACCESS_RE = re.compile(r'"(?:GET|HEAD|OPTIONS) [^"]*" [23]\d\d ')
     class _SilencePollingFilter(logging.Filter):
         def filter(self, record):
-            msg = record.getMessage()
-            return not any(p in msg for p in _SILENCED_LOG_PATHS)
+            return not _QUIET_ACCESS_RE.search(record.getMessage())
     logging.getLogger('werkzeug').addFilter(_SilencePollingFilter())
 
     # `mopidy` (and the background WS listener thread it starts) is built only
