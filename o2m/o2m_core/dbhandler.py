@@ -2802,8 +2802,14 @@ class DatabaseHandler():
             return 0
 
     def get_liked_track_uris(self):
-        """Return list of URIs where liked=1."""
-        return [t.uri for t in Track.select(Track.uri).where(Track.liked == 1)]
+        """Return the liked MUSIC uris. Every caller fills a music mix (the AUTO
+        favorites bucket, spotify:library2), and a liked episode or video is a like
+        too: it reached 'Auto music' 12 times and was skipped 12 times. Spoken
+        content has its own lines (infos:library, podcasts:unfinished, meta_*)."""
+        return [t.uri for t in Track.select(Track.uri).where(
+            (Track.liked == 1)
+            & (Track.uri.startswith('spotify:track:') | Track.uri.startswith('local:'))
+            & ((Track.option_type.is_null()) | ~(Track.option_type << ['podcast', 'info'])))]
 
     # ─── CacheMeta ─────────────────────────────────────────────────────────────
 
