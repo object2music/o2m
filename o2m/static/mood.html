@@ -5765,6 +5765,11 @@ let _bxBrowseNode = null;  // null = subsection list, a WC_BROWSE_NODES key, or 
 let _bxGenreName = '';
 let _bxSearchQ = '';
 let _wcSearchTimer = null;
+/* Every search field waits for the typing to STOP: each keystroke restarts the
+   wait, and a query starts only once the field has been still for SEARCH_IDLE_MS
+   and holds at least SEARCH_MIN_AUTO characters — 550 ms and two letters fired
+   on a hesitation mid-word. Enter searches at once, from two characters. */
+const SEARCH_IDLE_MS = 800, SEARCH_MIN_AUTO = 3;
 
 const WC_BROWSE_NODES = {
   favorites:   { label: 'Favourite tracks',       icon: ICON.heart(true) },
@@ -6226,7 +6231,7 @@ function _wcWireSearchInput() {
   inp.addEventListener('input', () => {
     _bxSearchQ = inp.value.trim();
     clearTimeout(_wcSearchTimer);
-    _wcSearchTimer = setTimeout(run, 450);
+    if (_bxSearchQ.length >= SEARCH_MIN_AUTO) _wcSearchTimer = setTimeout(run, SEARCH_IDLE_MS);
   });
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); run(); }
@@ -7037,8 +7042,10 @@ async function openTagSearch(tag) {
   _searchRender();
 }
 
+let _searchSeq = 0;
 async function openSearch(q, opts) {
   const inPlace = !!(opts && opts.inPlace);   // live-edit from the header field: no nav push, no spinner
+  const seq = ++_searchSeq;
   if (!inPlace) objNavTo();
   objSetHead('Search', q, '');
   objSetActionUris([]);          // a search view has no single object to act on
@@ -7046,7 +7053,10 @@ async function openSearch(q, opts) {
   let d;
   const _limit = 15;
   try { d = await fetch(API + '/search?q=' + encodeURIComponent(q) + '&limit=' + _limit).then(r => r.json()); }
-  catch(e) { objBody().innerHTML = '<div class="obj-empty">Search failed.</div>'; return; }
+  catch(e) { if (seq === _searchSeq) objBody().innerHTML = '<div class="obj-empty">Search failed.</div>'; return; }
+  // A search typed meanwhile owns the view: this answer, to an older query that
+  // happened to come back later, would overwrite its results.
+  if (seq !== _searchSeq) return;
   if (!d || d.error) { objBody().innerHTML = `<div class="obj-empty">${objEsc((d && d.error) || 'Search failed')}</div>`; return; }
   _searchState = { q, limit: _limit, offset: 0, data: d };
   _searchRender();
@@ -9063,14 +9073,28 @@ async function init() {
     if (open) searchInput.focus();
     else { searchInput.value = ''; clearTimeout(_searchTimer); }
   });
-  const runSearch = () => { const q = searchInput.value.trim(); if (q.length >= 2) openSearch(q); };
-  searchInput?.addEventListener('input', () => { clearTimeout(_searchTimer); _searchTimer = setTimeout(runSearch, 550); });
+  // While the modal already shows this field's search, a refined query replaces
+  // it in place — each pause used to push one more Search view into the history.
+  const runSearch = () => {
+    const q = searchInput.value.trim();
+    if (q.length < 2) return;
+    const showingSearch = document.body.classList.contains('obj-open')
+      && document.getElementById('obj-panel')?.classList.contains('search-mode');
+    openSearch(q, showingSearch ? { inPlace: true } : undefined);
+  };
+  searchInput?.addEventListener('input', () => {
+    clearTimeout(_searchTimer);
+    if (searchInput.value.trim().length >= SEARCH_MIN_AUTO) _searchTimer = setTimeout(runSearch, SEARCH_IDLE_MS);
+  });
   searchInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { clearTimeout(_searchTimer); runSearch(); } });
   // Header search field: refine the query in place (no modal close, no nav push).
   const objSearchInput = document.getElementById('obj-search-input');
   let _objSearchTimer = null;
   const runObjSearch = () => { const q = objSearchInput.value.trim(); if (q.length >= 2) openSearch(q, { inPlace: true }); };
-  objSearchInput?.addEventListener('input', () => { clearTimeout(_objSearchTimer); _objSearchTimer = setTimeout(runObjSearch, 550); });
+  objSearchInput?.addEventListener('input', () => {
+    clearTimeout(_objSearchTimer);
+    if (objSearchInput.value.trim().length >= SEARCH_MIN_AUTO) _objSearchTimer = setTimeout(runObjSearch, SEARCH_IDLE_MS);
+  });
   objSearchInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { clearTimeout(_objSearchTimer); runObjSearch(); }
     else if (e.key === 'Escape') { e.stopPropagation(); objSearchInput.blur(); }   // blur, don't close the modal
