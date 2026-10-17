@@ -16,7 +16,6 @@ The system is split into Docker services defined in `docker-compose.yml`:
 - **`mysql`** (prod only): Persistent storage for boxes (NFC tag configs) and listening stats. Init data from `o2m/samples/mysql/`.
 - **`phpmyadmin`** (prod only): DB admin UI on `PORT_PHPMYADMIN`.
 - **`back`** (dev only): PocketBase backend on port 8090. Migrations in `backend/pb_migrations/`.
-- **`front`** (dev only): SvelteKit frontend. Hot-reloads `frontend/src/`.
 
 Run production stack: `docker compose --profile prod up`
 Run dev stack: `docker compose --profile dev up`
@@ -1614,12 +1613,12 @@ registers over HTTPS — in prod (Caddy) the shell is cached on first visit and 
 on an HTTP dev instance offline lives only as long as the tab stays open. Covers are not
 cached: the generated (local) cover is used instead.
 
-## Frontend (`frontend/`)
+## The SvelteKit frontend is gone
 
-SvelteKit + TypeScript + Tailwind CSS app. Source in `frontend/src/`:
-- Routes under `src/routes/` (library, flows, radios pages)
-- Models in `src/lib/models/` (Box, Flow, Track, Tracklist, etc.)
-- Snapcast stream control in `src/lib/utils/snapstream.ts` and `snapcontrol.js`
+`frontend/` (SvelteKit + Tailwind, the dev-only `front` service) was deleted on
+2026-10-17: unused since the UI became `o2m/static/mood.html`, and it carried all 27
+Dependabot alerts of the repo, every fix a major upgrade (Svelte 5, Vite 8,
+Tailwind 4). Git history has it.
 
 ## Mopidy image and extension (`mopidy/`)
 
@@ -1872,7 +1871,7 @@ other lists are listings, not an order anyone owns.
 
 **All user-facing UI text is English by default** (labels, buttons, feedback messages,
 tooltips, placeholders). This applies across the whole project — the mood UI
-(`o2m/static/mood.html`), the SvelteKit frontend (`frontend/`), and any new interface.
+(`o2m/static/mood.html`) and any new interface.
 Write new strings in English; translate existing French strings to English when you
 touch surrounding code. Some user-facing concepts are
 renamed for clarity (e.g. the *valence* control is labelled **Ambiance**).
@@ -1925,7 +1924,7 @@ git tag `css-ui-100`; setting `--ui: 1` also gives back the old sizes exactly.
 **Feather / Lucide-style inline SVG** — stroke-based, `viewBox="0 0 24 24"`,
 `fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
 stroke-linejoin="round"`, sized via CSS (`width/height`). They inherit `currentColor`
-so they adapt to every theme automatically. This applies everywhere (mood UI, frontend,
+so they adapt to every theme automatically. This applies everywhere (mood UI,
 new interfaces): playback controls, footer links, the details-panel lock/heart, status
 glyphs, etc. When you touch code that still has emoji icons (e.g. 🔒 ♥ ⚡), replace them
 with the equivalent Feather/Lucide SVG.

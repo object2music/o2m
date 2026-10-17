@@ -156,7 +156,6 @@ data/
 
 
 #Front
-frontend/.svelte-kit/
 frontend/node_modules/
 
 #Backend
