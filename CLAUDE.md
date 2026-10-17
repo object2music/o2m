@@ -846,8 +846,8 @@ that it never takes the active state — it acts rather than selects. It activat
 element of whatever view is open, drawn only from what is NOT already on:
 activating something already playing is a no-op the user cannot tell from a broken
 button, and turning it off would be the opposite of what a die is for. In the list
-view it *clicks the existing row* rather than re-implementing `toggleBox`; in a
-mosaic it resolves the tile FIRST — so the pick pulses while it fills, exactly like
+view it calls `toggleBox` on the existing row (a click there now opens the detail);
+in a mosaic it resolves the tile FIRST — so the pick pulses while it fills, exactly like
 a tap on that tile — then goes through the same toggle. It scrolls the winner into
 view **only in the list**: a mosaic sends what is active to the head of the grid,
 so scrolling to a tile would be scrolling to where it is about to no longer be.
@@ -1857,6 +1857,12 @@ half of a double click — the price of two actions on one target. The ⓘ menu 
 the artist link keep their own meaning. **Excluded on purpose**: the box editor's
 content editor (`#bx-editor-host`), where a click on a search result ADDS it to
 the box — a picker, not a list.
+
+**What is activated rather than played answers the same two gestures**
+(`dualTap`, beside `ROW_DBL_MS`): a box, album, artist or tag in the Boxes column
+(list and mosaics) and a box row in a search — one click → its detail, double
+click → toggle it. Single click used to toggle, so a mis-tap launched a fill. The
+mosaic's eye and the list's ⓘ still open the detail at once.
 
 **Long press and drag moves a row in the tracklist** (`wireRowDrag`): held still
 `ROW_HOLD_MS` (400 ms) the row lifts, follows the pointer (the list scrolls near

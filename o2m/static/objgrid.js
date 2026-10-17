@@ -443,19 +443,25 @@ const OBJGRID = (() => {
     }
     const tile = e.target.closest('.og-tile');
     if (!tile) return;
-    // The eye opens the object's detail view; the rest of the tile toggles it —
-    // the same division as the boxes list's ⓘ glyph.
+    // The eye opens the object's detail view at once; the rest of the tile is
+    // one click → the detail, two → toggle — the gestures of every other list
+    // (dualTap, mood.html).
     if (e.target.closest('[data-og-open]')) {
       e.stopPropagation();
-      const { uri, kind, name, sub, uid } = tile.dataset;
-      if (kind === 'album') openAlbum(uri, { name, artist: sub });
-      else if (kind === 'artist') openArtist(uri, name);
-      // A tag's detail is what carries it — the same view a tag chip opens.
-      else if (kind === 'tag') openTagSearch(name);
-      else openBox(uid);
+      openDetail(tile.dataset);
       return;
     }
-    toggle(tile.dataset, tile);
+    if (typeof dualTap === 'function')
+      dualTap(tile, () => openDetail(tile.dataset), () => toggle(tile.dataset, tile));
+    else toggle(tile.dataset, tile);
+  }
+
+  function openDetail({ uri, kind, name, sub, uid }) {
+    if (kind === 'album') openAlbum(uri, { name, artist: sub });
+    else if (kind === 'artist') openArtist(uri, name);
+    // A tag's detail is what carries it — the same view a tag chip opens.
+    else if (kind === 'tag') openTagSearch(name);
+    else openBox(uid);
   }
 
   /* `data` is a tile's dataset, or the same four fields built by pickRandom for a
@@ -645,9 +651,10 @@ const OBJGRID = (() => {
     if (pick.el) scrollTo(pick.el);
     if (btn) btn.disabled = true;
     try {
-      // The list view's rows are the existing buttons, with their own handler and
-      // their own feedback — click rather than re-implement them here.
-      if (pick.el) pick.el.click();
+      // The list view's rows are the existing buttons, with their own feedback —
+      // toggled through the same function their double click calls (a single
+      // click on them now opens the detail).
+      if (pick.el) await toggleBox(pick.uid, pick.el);
       else await toggle(pick, el);
     } finally {
       if (btn) btn.disabled = false;

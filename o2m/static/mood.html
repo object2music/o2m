@@ -1816,6 +1816,27 @@ function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artists = 
 const ROW_DBL_MS = 350;
 let _rowPending = null;   // { row, timer } — a first click waiting for a second
 
+/* The same two gestures for what is ACTIVATED rather than played — a box, an
+   album, an artist or a tag in the Boxes column (its list and its mosaics), a
+   box in a search: one click opens its detail, a double click toggles it. A
+   single click used to toggle, which made a mis-tap a fill — seconds of work and
+   a changed tracklist — while every list beside it only opened. */
+let _tapPending = null;   // { el, timer }
+function dualTap(el, single, double) {
+  if (_tapPending && _tapPending.el === el) {
+    clearTimeout(_tapPending.timer);
+    _tapPending = null;
+    double();
+    return;
+  }
+  if (_tapPending) clearTimeout(_tapPending.timer);
+  const pending = { el, timer: setTimeout(() => {
+    if (_tapPending === pending) _tapPending = null;
+    single();
+  }, ROW_DBL_MS) };
+  _tapPending = pending;
+}
+
 function _rowTarget(e) {
   const row = e.target.closest?.('.tl-item');
   if (!row || row.closest('#bx-editor-host')) return null;
@@ -1845,7 +1866,7 @@ function rowPlayNow(row) {
   }
   if (!uri) return;
   const kind = row.dataset.kind || 'track';
-  if (kind === 'box') { rowOpen(row); return; }   // a box is activated, not queued
+  if (kind === 'box') { toggleBox(uri.replace(/^box:/, ''), row); return; }   // a box is activated, not queued
   if (OFF.on) { offQueuePlayNow(uri); return; }
   if (kind === 'track' || kind === 'radio') playNow(uri);
   else objPlayObject(uri, 'now');                 // album, artist, playlist, podcast
@@ -7123,9 +7144,10 @@ async function loadBoxes() {
       btn.dataset.auto = /auto/i.test((box.description || '') + ' ' + (box.option_type || ''))
         ? '1' : '0';
       btn.addEventListener('click', (e) => {
-        // The info glyph opens the box detail; the rest of the row toggles the box.
+        // The info glyph opens the box detail at once; the rest of the row is
+        // one click → the detail, two → toggle (dualTap).
         if (e.target.closest('.box-info-btn')) { e.stopPropagation(); openBox(box.uid); return; }
-        toggleBox(box.uid, btn);
+        dualTap(btn, () => openBox(box.uid), () => toggleBox(box.uid, btn));
       });
       wrap.appendChild(btn);
     });
@@ -7233,7 +7255,8 @@ async function toggleBox(uid, btn) {
     const answer = ((await fetch(API + '/box?uid=' + encodeURIComponent(uid)
                                  + '&mode=toogle').then(r => r.text())) || '').trim();
     moodSessionActive = false;   // starting a box ends the implicit mood session
-    const boxName = btn.querySelector('.box-name')?.textContent || '';
+    // A row of the boxes list, or a box row of a search (rowPlayNow).
+    const boxName = btn.querySelector('.box-name, .tl-name')?.textContent || '';
     if (answer === 'TAG added')        setFeedback(`▶ ${boxName}`);
     else if (answer === 'TAG removed') setFeedback(`⏹ ${boxName}`);
     else                               setFeedback(boxName);
