@@ -562,6 +562,13 @@ function paintBusy() {
   const busy = mixBusy || serverBusy;
   document.body.classList.toggle('mix-busy', busy);
   document.querySelectorAll('#basic-all').forEach(b => { b.disabled = busy; });
+  // Skip, previous and clear are really disabled, not only dimmed: a dimmed
+  // button still read as available. Offline the queue is the device's own and
+  // never waits, so offStart / offStop repaint this. queueLocked() still guards
+  // the handlers for the paths a disabled button does not cover (the headset,
+  // a tap landing before the page has learned of a foreign fill).
+  const lockQueue = busy && !OFF.on;
+  document.querySelectorAll('#btn-next, #btn-prev, #btn-clear-tl').forEach(b => { b.disabled = lockQueue; });
 }
 /* While a fill rebuilds the queue — this page's or anyone's — the gestures that
    move through it or edit it wait too: skip, previous, play a row, play now /
@@ -7241,6 +7248,7 @@ async function fetchTrackFeatures(uris) {
 
 /* ── Clear tracklist ── */
 async function clearTracklist() {
+  if (queueLocked()) return;   // clearing mid-fill empties a queue the fill keeps adding to
   await rpc('core.tracklist.clear');
   currentTracklistLength = 0;
   setTimeout(refreshNowPlaying, 200);
@@ -7912,6 +7920,7 @@ async function offStart() {
   OFF.on = true;
   document.documentElement.classList.add('offline-mode');
   offPaintToggle();
+  paintBusy();
 
   OFF.queue = offBuildQueue();
   offRenderQueue();
@@ -7923,6 +7932,7 @@ async function offStart() {
 function offStop() {
   OFF.on = false;
   document.documentElement.classList.remove('offline-mode');
+  paintBusy();
   if (OFF.el) {
     offLogPlay(false);
     try { OFF.el.pause(); } catch (e) {}
