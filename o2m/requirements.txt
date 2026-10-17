@@ -20,8 +20,10 @@ mopidyapi
 mopidy_podcast
 
 # database sqlite orm
-peewee
-PyMysql
+peewee<4
+# PyMySQL 2 defaults to SSL PREFERRED and builds an SSL context per connection
+# (o2m opens one per request thread): 12-16s per API call on a Pi 3B.
+PyMysql<2
 numpy 
 flask
 flask_cors
