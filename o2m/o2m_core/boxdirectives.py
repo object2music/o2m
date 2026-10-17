@@ -324,3 +324,55 @@ def depends_on_mood(data, option_sort=None, now=None):
         if smart and _SMART_SPOTIFY_RE.match(p):
             return True
     return False
+
+
+def _ends_inside_block(data):
+    """True when the data's last window block is never closed. Such a block runs
+    to the end of the data (the forgiving reading in _iter_windows), so a line
+    appended after it would silently be gated by it."""
+    block = False
+    head = False
+    for raw in (data or '').splitlines():
+        line = (raw or '').strip()
+        if not line:
+            continue
+        if line == '}':
+            block = head = False
+        elif line == '{':
+            block = block or head
+            head = False
+        elif _BLOCK_RE.match(line):
+            block, head = True, False
+        else:
+            window, payload = split_condition(line)
+            head = window is not None and not payload
+    return block
+
+
+def append_line(data, line, label=None):
+    """Add one content line at the end of a box's data -> (new data, added).
+
+    What 'Add to box' writes. The line is not added again when the box already
+    names it (gated or not: it is in the box, and a second copy would only take
+    a second share of the budget). A '#label' line goes before it, which is how
+    the editor names a line (parseBoxData reads a '#' line before an item as its
+    label). If the data ends inside an unclosed window block, the block is closed
+    first: it already ran to the end, so the existing lines keep their meaning,
+    and the new line plays at every hour like any line added by hand at the end."""
+    if '\n' in (line or '') or '\r' in (line or ''):
+        return data or '', False          # one line, never a smuggled second one
+    line = (line or '').strip()
+    if not line or line.startswith('#'):
+        return data or '', False
+    for _window, payload in _iter_windows(data or ''):
+        if (payload or '').strip() == line:
+            return data or '', False
+    out = (data or '').rstrip('\n')
+    lines = [out] if out.strip() else []
+    if _ends_inside_block(data):
+        lines.append('}')
+    label = ' '.join((label or '').split())
+    if label:
+        lines.append('#' + label)
+    lines.append(line)
+    return '\n'.join(lines), True

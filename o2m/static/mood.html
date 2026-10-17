@@ -2817,7 +2817,7 @@ function openActionMenu(triggerBtn, items) {
   menu.innerHTML = items.map((it, i) =>
     `<button type="button" data-i="${i}">${it.icon}${objEsc(it.label)}</button>`).join('');
   items.forEach((it, i) => menu.querySelector(`[data-i="${i}"]`)
-    .addEventListener('click', () => { it.action(); _closeActionMenu(); }));
+    .addEventListener('click', () => { it.action(triggerBtn); _closeActionMenu(); }));
   // Append first: _placePopup measures the menu's height to decide up vs down.
   document.body.appendChild(menu);
   _placePopup(menu, triggerBtn);
@@ -2909,6 +2909,7 @@ function trackMenuItems(uri, tlid) {
   // deliver — the same line puts it back on the next fill.
   if (!_isStreamUri(uri)) items.push({ label: 'Dislike', icon: ICON.heartOff, action: () => setTrackDislike(uri, true) });
   items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
+  items.push(addToBoxItem(uri));
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
 }
@@ -2940,6 +2941,7 @@ function objMenuItems(uri, kind) {
   if (kind === 'podcast')items.push({ label: 'See episodes', icon: ICON_DETAILS, action: () => openPodcast(uri) });
   if (kind === 'playlist')items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openPlaylist(uri) });
   if (kind === 'track')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
+  items.push(addToBoxItem(uri));
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
 }
@@ -3225,8 +3227,11 @@ async function openObjActions(btn) {
                    action: () => playNow([objCurrentPlayUris[
                      Math.floor(Math.random() * objCurrentPlayUris.length)]]) });
   }
-  if (objCurrentUri)
+  if (objCurrentUri) {
+    // The object the modal shows, under the name its header shows.
+    items.push(addToBoxItem(objCurrentUri, document.getElementById('obj-title')?.textContent));
     items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(objCurrentUri) });
+  }
   if (document.getElementById('obj-pod-list') && podcastEps.length > 1)
     items.push({ label: podcastOldestFirst ? 'Newest first' : 'Oldest first', icon: ICON_SORT,
                  action: togglePodcastOrder });
@@ -3341,6 +3346,106 @@ async function togglePlaylistMembership(cb, uri) {
     refreshPlaylistEditors(uri);   // refresh active list + count in every panel
   } catch(e) { setFeedback('Playlist error'); cb.checked = !add; }
   finally { cb.disabled = false; }
+}
+
+/* ── Add to box ──────────────────────────────────────────────────────────────
+   Every menu that names an object (a track row, a search or listing row, a
+   modal's ⋯) can add it to a box of one's choice: the object's own box line is
+   appended to the box's content (POST /api/box_add_line, edit-locked), once,
+   after a '#label' when a name is known. An active box picks it up at its next
+   fill. Offline menus do not offer it: they act on the device's own queue. */
+function addToBoxItem(uri, label) {
+  return { label: 'Add to box…', icon: ICON.box, action: (anchor) => openAddToBox(anchor, uri, label) };
+}
+/* The uri a box line must name. Mopidy holds a downloaded track under its file
+   path and a web: item under a signed CDN url; written into a box, either would
+   be dead by tomorrow — the canonical uri is what lasts. A radio has no
+   translation and stays what it is. */
+async function canonicalTrackUri(uri) {
+  if (!uri || !/^(file:|https?:)/.test(uri)) return uri;
+  if (!_playedMeta.has(uri)) {
+    try {
+      const d = await fetch(API + '/played_meta?uri=' + encodeURIComponent(uri)).then(r => r.json());
+      _playedMeta.set(uri, (d && d[uri]) || null);
+    } catch (e) { return uri; }
+  }
+  const m = _playedMeta.get(uri);
+  return (m && m.uri) || uri;
+}
+function _bxLabelFor(uri, label) {
+  if (label && String(label).trim() && label !== '—') return String(label).trim();
+  const t = trackMeta.get(uri);
+  if (!t || !t.name) return '';
+  const artist = (t.artists || []).map(a => a.name).filter(Boolean).join(', ');
+  return artist ? `${t.name} — ${artist}` : t.name;
+}
+// Does this box already name the line? Gated lines count, '#'-disabled ones do not
+// (the server applies the same rule and answers added:false).
+const _BX_WINDOW_PREFIX_RE = /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}\s*>\s*/;
+function _bxHasLine(box, line) {
+  return String(box.data || '').split(/\r?\n/)
+    .some(l => l.trim().replace(_BX_WINDOW_PREFIX_RE, '') === line);
+}
+let _bxPickEl = null;
+function _closeBoxPicker() {
+  _bxPickEl?.remove(); _bxPickEl = null;
+  document.removeEventListener('click', _bxPickOutside, true);
+}
+function _bxPickOutside(e) {
+  if (_bxPickEl && !_bxPickEl.contains(e.target)) _closeBoxPicker();
+}
+async function openAddToBox(anchor, uri, label) {
+  _closeBoxPicker();
+  if (!editUnlocked) { setFeedback('Enable editing first'); return; }
+  const line = await canonicalTrackUri(uri);
+  if (!line) return;
+  const name = _bxLabelFor(uri, label);
+  let boxes = [];
+  try { boxes = await fetch(API + '/box_favorites?all=1').then(r => r.json()); }
+  catch (e) { setFeedback('Could not load the boxes'); return; }
+  if (!Array.isArray(boxes)) boxes = [];
+  const selfUid = line.startsWith('box:') ? line.slice(4) : null;   // a box never includes itself
+  boxes = boxes.filter(b => b && b.uid && b.uid !== selfUid);
+  // Pinned boxes first; the sort is stable, so each group keeps the server's
+  // order (named boxes first, then by name).
+  boxes.sort((a, b) => (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0));
+  const el = document.createElement('div');
+  el.className = 'pl-dropdown bx-pick';
+  el.innerHTML = `<div class="bx-pick-head">Add to box${name ? ' — ' + objEsc(name) : ''}</div>`
+    + `<input type="search" class="bx-pick-filter" placeholder="Filter boxes" autocomplete="off">`
+    + `<div class="bx-pick-list">` + (boxes.length ? boxes.map(b => {
+        const has = _bxHasLine(b, line);
+        return `<button type="button" data-uid="${objEsc(b.uid)}"${has ? ' disabled' : ''}>`
+          + `<span>${objEsc(b.description || b.uid)}</span>`
+          + (has ? '<small>already in</small>' : '') + '</button>';
+      }).join('') : '<span class="bx-pick-empty">No boxes.</span>') + '</div>';
+  el.querySelector('.bx-pick-filter').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    el.querySelectorAll('.bx-pick-list button').forEach(b => {
+      b.hidden = !!q && !b.textContent.toLowerCase().includes(q);
+    });
+  });
+  el.querySelectorAll('.bx-pick-list button').forEach(btn => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const r = await fetch(API + '/box_add_line', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: btn.dataset.uid, line, label: name }),
+      });
+      if (r.status === 401) { setFeedback('Editing not authorized'); btn.disabled = false; return; }
+      const d = await r.json().catch(() => ({}));
+      if (d.error) { setFeedback('Box: ' + d.error); btn.disabled = false; return; }
+      setFeedback((d.added ? 'Added to ' : 'Already in ') + (d.name || 'the box'));
+      _closeBoxPicker();
+    } catch (e) { setFeedback('Box error'); btn.disabled = false; }
+  }));
+  document.body.appendChild(el);
+  if (anchor && anchor.isConnected) _placePopup(el, anchor);
+  else el.classList.add('bx-pick--center');
+  _bxPickEl = el;
+  // A phone would open its keyboard over the list; a pointer can type at once.
+  if (window.matchMedia('(hover: hover)').matches) el.querySelector('.bx-pick-filter').focus();
+  setTimeout(() => document.addEventListener('click', _bxPickOutside, true), 0);
 }
 
 /* ── Rating: two marks side by side ──────────────────────────────────────────
@@ -6918,7 +7023,7 @@ async function openTagSearch(tag) {
   if (!tag) return;
   objNavTo();
   objSetHead('Tag', tag, 'tracks · albums · artists');
-  objSetActionUris([]);
+  objSetActionUris([], 'tag:' + tag);
   openObjPanel();
   objLoading('Loading…');
   let d;

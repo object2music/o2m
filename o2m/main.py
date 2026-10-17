@@ -1424,6 +1424,39 @@ if __name__ == "__main__":
             return jsonify({'error': str(e)}), 500
         return jsonify({'ok': True, 'uid': uid, 'changed': changed})
 
+    @api.route('/api/box_add_line', methods=['POST'])
+    @require_edit_auth
+    def api_box_add_line():
+        """Append one line to a box's content — the menus' 'Add to box'. The
+        line is the object's own box line (a track, album, artist, playlist,
+        feed, episode, radio, tag:, box:…), added once, after an optional
+        '#label'. An active box picks it up at its next fill. Answers
+        `added: false` when the box already names it."""
+        from flask import jsonify
+        from o2m_core import boxdirectives
+        data = request.get_json(silent=True) or {}
+        uid = (data.get('uid') or '').strip()
+        line = (data.get('line') or '').strip()
+        if not uid or not line:
+            return jsonify({'error': 'uid and line required'}), 400
+        if len(line) > 2000:
+            return jsonify({'error': 'line too long'}), 400
+        if line == 'box:' + uid:
+            return jsonify({'error': 'a box cannot include itself'}), 400
+        # Never get_box_by_uid here: it creates a box for an unknown uid.
+        box = o2mHandler.dbHandler.find_box_by_uid(uid)
+        if box is None:
+            return jsonify({'error': 'box not found'}), 404
+        new_data, added = boxdirectives.append_line(box.data, line, data.get('label'))
+        if added:
+            box.data = new_data
+            try:
+                box.save()
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+        return jsonify({'ok': True, 'uid': uid, 'added': added,
+                        'name': box.description or uid})
+
     @api.route('/api/box_image', methods=['POST'])
     @require_edit_auth
     def api_box_image_upload():

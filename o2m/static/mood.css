@@ -618,6 +618,30 @@
   .pl-dropdown label:hover { color: var(--accent); }
   .pl-dropdown label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pl-dropdown input { accent-color: var(--accent); flex-shrink: 0; }
+  /* Add to box: the playlist picker's frame, with a filter and one button per box. */
+  .bx-pick { min-width: calc(220px * var(--ui)); max-width: calc(300px * var(--ui)); }
+  .bx-pick--center { top: 50%; left: 50%; transform: translate(-50%, -50%); max-height: 70vh; }
+  .bx-pick-head {
+    font-size: var(--t-label); color: var(--muted); padding: 0 calc(2px * var(--ui)) calc(2px * var(--ui));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .bx-pick-filter {
+    width: 100%; box-sizing: border-box; font: inherit; font-size: calc(12px * var(--ui));
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    padding: calc(5px * var(--ui)) calc(7px * var(--ui));
+  }
+  .bx-pick-list { display: flex; flex-direction: column; gap: calc(2px * var(--ui)); overflow-y: auto; min-height: 0; }
+  .bx-pick-list button {
+    display: flex; align-items: baseline; justify-content: space-between; gap: calc(8px * var(--ui));
+    background: none; border: none; cursor: pointer; text-align: left;
+    padding: calc(6px * var(--ui)) calc(4px * var(--ui)); font-size: calc(12px * var(--ui)); color: var(--text);
+  }
+  .bx-pick-list button:hover:not(:disabled) { background: var(--fill-2); color: var(--accent); }
+  .bx-pick-list button:disabled { cursor: default; color: var(--muted); }
+  .bx-pick-list button[hidden] { display: none; }
+  .bx-pick-list button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .bx-pick-list small { flex-shrink: 0; font-size: var(--t-label); color: var(--muted); }
+  .bx-pick-empty { font-size: var(--t-label); color: var(--muted); }
   body.edit-mode #mood-matrix { box-shadow: inset 0 0 0 calc(2px * var(--ui)) var(--accent); }
 
   /* ── Now Playing ── */

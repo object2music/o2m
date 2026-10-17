@@ -281,3 +281,51 @@ class TestDependsOnMood(unittest.TestCase):
         data = '08:00-10:00 > auto:library\ninfos:library'
         self.assertTrue(bd.depends_on_mood(data, now=at9))
         self.assertFalse(bd.depends_on_mood(data, now=at20))
+
+
+class TestAppendLine(unittest.TestCase):
+    def test_appends_with_label(self):
+        data, added = bd.append_line('auto:library', 'spotify:album:x', 'An album')
+        self.assertTrue(added)
+        self.assertEqual(data, 'auto:library\n#An album\nspotify:album:x')
+
+    def test_empty_box(self):
+        self.assertEqual(bd.append_line('', 'tag:jazz'), ('tag:jazz', True))
+        self.assertEqual(bd.append_line(None, 'tag:jazz'), ('tag:jazz', True))
+
+    def test_already_there_gated_or_not(self):
+        self.assertEqual(bd.append_line('tag:jazz\n', 'tag:jazz'), ('tag:jazz\n', False))
+        data = '08:00-10:00 > tag:jazz'
+        self.assertEqual(bd.append_line(data, 'tag:jazz'), (data, False))
+        data = '08:00-10:00 > {\n  tag:jazz\n}'
+        self.assertEqual(bd.append_line(data, 'tag:jazz'), (data, False))
+
+    def test_disabled_copy_does_not_count(self):
+        data, added = bd.append_line('#tag:jazz', 'tag:jazz')
+        self.assertTrue(added)
+        self.assertEqual(data, '#tag:jazz\ntag:jazz')
+
+    def test_closes_an_unclosed_block(self):
+        data, _ = bd.append_line('08:00-10:00 > {\n  infos:library', 'tag:jazz')
+        self.assertEqual(data, '08:00-10:00 > {\n  infos:library\n}\ntag:jazz')
+        # and the new line is ungated, the old one still gated
+        gated = dict((p, w) for w, p in bd._iter_windows(data))
+        self.assertIsNone(gated['tag:jazz'])
+        self.assertIsNotNone(gated['infos:library'])
+
+    def test_closes_a_brace_on_its_own_line_block(self):
+        data, _ = bd.append_line('18:00-09:00 >\n{\nmood:calm', 'tag:jazz')
+        self.assertTrue(data.endswith('mood:calm\n}\ntag:jazz'))
+
+    def test_closed_block_left_alone(self):
+        data, _ = bd.append_line('08:00-10:00 > {\nx\n}', 'tag:jazz')
+        self.assertEqual(data, '08:00-10:00 > {\nx\n}\ntag:jazz')
+
+    def test_rejects_empty_or_comment(self):
+        self.assertFalse(bd.append_line('a', '  ')[1])
+        self.assertFalse(bd.append_line('a', '#x')[1])
+
+    def test_one_line_only(self):
+        self.assertEqual(bd.append_line('x', 'spotify:track:a\nmeta_all'), ('x', False))
+        data, _ = bd.append_line('', 'spotify:track:a', 'two\nlines')
+        self.assertEqual(data, '#two lines\nspotify:track:a')
