@@ -918,6 +918,43 @@ class DatabaseHandler():
             print(f"retire_finished_bookmarks: {e}")
             return 0
 
+    def realign_track_moods(self):
+        """Put the categorical mood back in line with energy/valence.
+
+        Since 2026-07-04 every write derives `mood` from the point
+        (util.mood_from_energy_valence: the quadrant on Russell's circumplex),
+        but rows written before kept the mood the tag vote gave them — so a
+        track could sit in the energetic quadrant of the matrix and read
+        'calm' in its details ("El Beach": e=0.64, v=0.39, mood calm).
+        Measured on 2026-10-17: 155 of 41,515 rows with energy disagreed, 144
+        of them unlocked. A locked row (mood_edited_at set) is left alone: its
+        mood may have been chosen by hand, apart from the point.
+
+        One statement, the quadrant rule written as SQL so both databases
+        evaluate it the same way. Guarded by a CacheMeta flag."""
+        done, _ = self.get_cache_meta('realign_track_moods')
+        if done:
+            return 0
+        try:
+            from peewee import Case
+            v = fn.COALESCE(Track.valence, 0.5)
+            derived = Case(None, [
+                ((Track.energy > 0.5) & (v > 0.5), 'happy'),
+                (Track.energy > 0.5, 'energetic'),
+                (v > 0.5, 'calm'),
+            ], 'dark')
+            n = (Track.update(mood=derived)
+                 .where(Track.energy.is_null(False)
+                        & Track.mood_edited_at.is_null()
+                        & (Track.mood.is_null() | (Track.mood != derived)))
+                 .execute())
+            self.set_cache_meta('realign_track_moods', 1)
+            print(f"realign_track_moods: {n} moods now match their energy/valence")
+            return n
+        except Exception as e:
+            print(f"realign_track_moods: {e}")
+            return 0
+
     # ── Box pictures (o2m_core/boximage.py) ───────────────────────────────────
 
     def save_box_image(self, data, mime):

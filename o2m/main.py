@@ -250,6 +250,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"retire_finished_bookmarks error: {e}")
         try:
+            o2mHandler.dbHandler.realign_track_moods()
+        except Exception as e:
+            print(f"realign_track_moods error: {e}")
+        try:
             o2mHandler.dbHandler.sweep_box_images()
         except Exception as e:
             print(f"sweep_box_images error: {e}")
