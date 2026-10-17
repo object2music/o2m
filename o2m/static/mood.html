@@ -1633,9 +1633,29 @@ function optimisticSkip(delta) {
   _lastUserActionAt = Date.now();
   _optTlid = dest.tlid; _expectedUri = dest.uri || null;
   currentDurationMs = dest.length || 0;
-  document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
+  paintDuration();
   updateCurrentRow(document.getElementById('tracklist-wrap'), dest.tlid);
   switchNowPlayingTo(dest.uri, dest);
+}
+
+/* The header switches on the PLAYBACK EVENT, which carries the track: waiting
+   for refreshNowPlaying meant four round trips to Mopidy (the whole tracklist
+   among them) with the previous track still on screen. The refresh still runs
+   and confirms; switchNowPlayingTo is idempotent per uri, so it repaints nothing.
+   A substituted web: item arrives under a signed url with no name — that one
+   waits for the refresh, which translates it. */
+function paintStartedTrack(tlt) {
+  const t = tlt && tlt.track;
+  if (!t || !t.uri || OFF.on) return;
+  if (/^https?:/.test(t.uri) && !t.name) return;
+  _expectedUri = t.uri;
+  currentDurationMs = t.length || 0;
+  resetProgress();
+  setClock(0, true);
+  paintDuration();
+  updateCurrentRow(document.getElementById('tracklist-wrap'), tlt.tlid);
+  switchNowPlayingTo(t.uri, { name: t.name, artists: t.artists || [],
+                              album: (t.album && t.album.uri) ? t.album.name : '' });
 }
 document.getElementById('btn-next').addEventListener('click', async () => {
   if (OFF.on) { offSkip(1); return; }
@@ -2442,6 +2462,7 @@ function switchNowPlayingTo(uri, { name, artist, artists, album }) {
   const isStream = _isStreamUri(uri);
   paintTrackText(isStream && (!name || _isStreamUri(name)) ? 'Radio' : name, artist, album, artists);
   updateHeroAccent(uri);
+  loadRadioLimit(uri);
   clearTrackTags();
   fetchAndRenderTrackTags(uri);
   loadStatusBadge(uri);
@@ -2532,7 +2553,7 @@ async function refreshNowPlaying() {
   registerTrackMeta(track);   // so the "More" menu's Copy link can resolve a podcast episode page
   currentTrackObj  = track || null;
   currentDurationMs = track?.length || 0;
-  document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
+  paintDuration();
   matrixTlItems  = tracks.map(({tlid: id, track: t}) => ({
     uri: t?.uri, tlid: id,
     name:   t?.name || '',
@@ -3188,6 +3209,7 @@ async function wireSourceSeconds(row, uri, { name = '', stillHere = () => true }
       if (!r.ok || j.error) { show(saved); setFeedback(j.error || 'Could not save'); return; }
       saved = v; show(v);
       setFeedback(c.said(v));
+      if (key === 'play_limit_s' && _radioLimit.uri === uri) { _radioLimit.ms = v * 1000; paintDuration(); }
     } catch (e) { show(saved); setFeedback('Could not save'); }
   });
 }
@@ -4902,9 +4924,12 @@ async function updateSpokenHeader(track) {
     if (cur && cur !== track.uri) return;          // track changed meanwhile
     const line = [d.channel, d.source].filter(Boolean).join(' · ');
     const artistEl = document.getElementById('artist-name');
-    if (artistEl && line) { artistEl.textContent = line; artistEl.classList.remove('obj-link'); }
     const albumEl = document.getElementById('album-name');
-    if (albumEl) albumEl.textContent = d.published ? fmtDay(d.published) : '';
+    const day = d.published ? fmtDay(d.published) : '';
+    const changed = (line && artistEl && artistEl.textContent !== line) || (albumEl && albumEl.textContent !== day);
+    if (artistEl && line) { artistEl.textContent = line; artistEl.classList.remove('obj-link'); }
+    if (albumEl) albumEl.textContent = day;
+    if (changed) npAnimateIn(document.getElementById('artist-album'));
   } catch (e) {}
 }
 
@@ -9244,12 +9269,55 @@ function pushPositionState() {
   } catch(e) {}
 }
 function tickProgress() {
-  if (seekDragging || !currentDurationMs) return;
-  const pos = Math.min(clockPosMs(), currentDurationMs);
+  if (seekDragging) return;
+  const span = progressSpanMs();
+  if (!span) {
+    // A radio with no play limit: no end to measure against, but the time it has
+    // been playing is real (Mopidy counts it) — it used to sit at 0:00.
+    if (_isStreamUri(npTargetUri() || ''))
+      document.getElementById('prog-elapsed').textContent = msToMin(clockPosMs()) || '0:00';
+    return;
+  }
+  const pos = Math.min(clockPosMs(), span);
   // In-page bar only — NO mediaSession call here (see pushPositionState).
   document.getElementById('progress-fill').style.width =
-    Math.min(100, (pos / currentDurationMs) * 100) + '%';
-  document.getElementById('prog-elapsed').textContent = msToMin(pos);
+    Math.min(100, (pos / span) * 100) + '%';
+  document.getElementById('prog-elapsed').textContent = msToMin(pos) || '0:00';
+  if (!currentDurationMs) paintLimitEnd(pos, span);
+}
+
+/* A radio's play limit (`play_limit_s`, set in its details) stands in for the
+   length it does not have: the bar runs towards it and the duration slot shows
+   it, with the clock time o2m will move on at. Only for display — seeking and
+   the OS media session still read currentDurationMs, which a stream does not
+   have. Mopidy's position is what the server's limit counts too (a pause does
+   not use it up), so the two agree. */
+let _radioLimit = { uri: null, ms: 0 };
+async function loadRadioLimit(uri) {
+  _radioLimit = { uri, ms: 0 };
+  if (!uri || !_isStreamUri(uri)) return;
+  const d = await _wcJson('/channel_settings?uri=' + encodeURIComponent(uri));
+  if (_radioLimit.uri !== uri) return;
+  _radioLimit.ms = (d && d.radio && d.play_limit_s) ? d.play_limit_s * 1000 : 0;
+  paintDuration();
+}
+function _limitFor(uri) { return (uri && _radioLimit.uri === uri) ? _radioLimit.ms : 0; }
+function progressSpanMs() { return currentDurationMs || _limitFor(npTargetUri()); }
+function paintDuration() {
+  const el = document.getElementById('prog-duration');
+  if (!el) return;
+  const lim = currentDurationMs ? 0 : _limitFor(npTargetUri());
+  el.textContent = msToMin(currentDurationMs || lim);
+  el.classList.toggle('prog-limit', !!lim);
+  if (lim) paintLimitEnd(Math.min(clockPosMs(), lim), lim);
+  else el.removeAttribute('title');
+}
+function paintLimitEnd(pos, span) {
+  const el = document.getElementById('prog-duration');
+  if (!el) return;
+  const at = new Date(Date.now() + Math.max(0, span - pos));
+  const hhmm = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  el.title = progPlaying ? `Play limit — moves on at ${hhmm}` : 'Play limit (paused: the limit waits)';
 }
 async function updateProgress() {          // one-off network resync (not a 1s loop)
   if (seekDragging) return;
@@ -9287,6 +9355,8 @@ function onMopidyEvent(m) {
     case 'tracklist_changed':
       scheduleTracklistRefresh(); break;   // debounced (bursty during refill)
     case 'track_playback_started':
+      paintStartedTrack(m.tl_track);       // the event carries the track: paint it now
+      refreshNowPlaying(); break;
     case 'track_playback_ended':
     case 'playback_state_changed':
       refreshNowPlaying(); break;          // reseed track + state + clock

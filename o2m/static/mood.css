@@ -672,16 +672,16 @@
     object-fit: cover; display: block;
     filter: none;
     /* filter: theme recolor · opacity: crossfade on track change (setCoverSmooth) */
-    transition: filter .4s, opacity .22s ease;
+    transition: filter .4s, opacity .35s ease;
   }
   #cover.cover-fading { opacity: 0; }
   /* Entrance of freshly replaced header text / badge (npAnimateIn): the new content
      is painted at once and fades in from nothing — no fade-out to wait for, and no
      beat during which the previous track's text still shows. */
-  @keyframes np-in { from { opacity: 0; } to { opacity: 1; } }
-  .np-in { animation: np-in .3s ease; }
+  @keyframes np-in { from { opacity: 0; transform: translateY(calc(3px * var(--ui))); } to { opacity: 1; transform: none; } }
+  .np-in { animation: np-in .45s cubic-bezier(.2, .7, .2, 1); }
   /* Details column: out while the next track's details load, in when painted. */
-  #track-details .td-body { transition: opacity .18s ease; }
+  #track-details .td-body { transition: opacity .3s ease; }
   #track-details.switching .td-body { opacity: 0; }
   @media (prefers-reduced-motion: reduce) {
     .np-in { animation: none; }
@@ -694,7 +694,10 @@
      Deliberate divergence: the overprint/invert grayscale applied to #cover is NOT
      applied here. Those filters desaturate photography, whereas this cover is already
      made of the theme's own ramps — greying it would kill its accent half. */
-  #cover-gen { position: absolute; inset: 0; display: none; transition: opacity .22s ease; }
+  /* A radio's play limit in the duration slot (paintDuration): the end o2m will
+     move on at, not a length — the accent says it is a setting. */
+  #prog-duration.prog-limit { color: var(--accent); cursor: help; }
+  #cover-gen { position: absolute; inset: 0; display: none; transition: opacity .35s ease; }
   /* Track switch: the previous artwork fades out while the next one is looked up,
      and the next one fades in (setCoverSmooth / setCoverGenerated lift the class). */
   #cover-wrap.switching #cover, #cover-wrap.switching #cover-gen { opacity: 0; }
