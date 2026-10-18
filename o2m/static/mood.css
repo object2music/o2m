@@ -2608,17 +2608,26 @@
        fallbacks of the same variables). Re-declared here, below #top-zone, so
        they compute at the header's scale. */
     #top-right {
-      --np-gap: calc(10px * var(--ui));        /* tags/title → progress */
-      --np-gap-tight: calc(6px * var(--ui));   /* progress → transport */
-      --np-gap-vol: calc(20px * var(--ui));    /* transport → volume */
-      --np-gap-end: calc(20px * var(--ui));    /* under the volume */
+      /* One 12px step between the blocks of the stack (cover → progress is the
+         cover column's 8 + 4, tags → progress 4 + 4 + their line), and 8 for
+         the timecode → transport, which belong together. Was 18 / 6 / 20 / 20:
+         the header gives its height to the accordion, where it buys the second
+         row of box tiles. */
+      --np-gap: calc(4px * var(--ui));         /* cover/tags → progress */
+      --np-gap-tight: calc(8px * var(--ui));   /* progress → transport */
+      --np-gap-vol: calc(12px * var(--ui));    /* transport → volume */
+      --np-gap-end: calc(12px * var(--ui));    /* under the volume */
     }
 
-    /* Transport: three equal 36px boxes (was 44 at 110% = 48). */
+    /* Transport: five equal 32px boxes (was 36, and 44 at 110% = 48 before). */
     #controls .ctrl-btn.o2m-tbtn,
-    #controls #btn-play.o2m-tbtn--play { width: calc(36px * var(--ui)); height: calc(36px * var(--ui)); padding: 0; }
+    #controls #btn-play.o2m-tbtn--play { width: calc(32px * var(--ui)); height: calc(32px * var(--ui)); padding: 0; }
     #controls .ctrl-btn.o2m-tbtn svg,
-    #controls #btn-play.o2m-tbtn--play svg { width: calc(18px * var(--ui)); height: calc(18px * var(--ui)); }
+    #controls #btn-play.o2m-tbtn--play svg { width: calc(16px * var(--ui)); height: calc(16px * var(--ui)); }
+    #controls .ctrl-btn.ctrl-seek svg { width: calc(18px * var(--ui)); height: calc(18px * var(--ui)); }
+    /* Overprint's phone transport shares its line with the volume: no room for
+       the ±30 s pair there. */
+    [data-theme="overprint"] #controls .ctrl-seek { display: none; }
     /* The details opener sits in the same corner as the transport's box size. */
     #btn-details { width: calc(34px * var(--ui)); height: calc(34px * var(--ui)); }
     #btn-details svg { width: calc(16px * var(--ui)); height: calc(16px * var(--ui)); }

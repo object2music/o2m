@@ -107,9 +107,11 @@
 
     <!-- Playback controls -->
     <div id="controls">
+      <button class="ctrl-btn o2m-tbtn ctrl-seek" id="btn-rew" title="Back 30 s" aria-label="Back 30 seconds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><text x="12" y="15.4" text-anchor="middle" font-size="9" font-weight="700" fill="currentColor" stroke="none">30</text></svg></button>
       <button class="ctrl-btn o2m-tbtn" id="btn-prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="4" x2="5" y2="20"/></svg></button>
       <button class="ctrl-btn o2m-tbtn o2m-tbtn--play" id="btn-play"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
       <button class="ctrl-btn o2m-tbtn" id="btn-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="4" x2="19" y2="20"/></svg></button>
+      <button class="ctrl-btn o2m-tbtn ctrl-seek" id="btn-fwd" title="Forward 30 s" aria-label="Forward 30 seconds"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><text x="12" y="15.4" text-anchor="middle" font-size="9" font-weight="700" fill="currentColor" stroke="none">30</text></svg></button>
       <div id="volume-row">
         <span id="volume-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
         <input type="range" id="volume-slider" min="0" max="100" value="50">
@@ -1674,6 +1676,24 @@ document.getElementById('btn-prev').addEventListener('click', async () => {
   await rpc('core.playback.previous');
   refreshNowPlaying();
 });
+
+// ±30 s on either side of the skips. A live stream has no duration and nothing
+// to seek in, so the buttons do nothing there rather than restart the stream.
+async function seekRelative(sec) {
+  if (OFF.on) {
+    if (OFF.el) offSeekAbsolute(OFF.el.currentTime * 1000 + sec * 1000);
+    return;
+  }
+  if (!currentDurationMs) return;
+  let pos = await rpc('core.playback.get_time_position');
+  if (typeof pos !== 'number') pos = clockPosMs();
+  const to = Math.max(0, Math.min(pos + sec * 1000, currentDurationMs - 1000));
+  setClock(to, progPlaying);
+  await rpc('core.playback.seek', { time_position: Math.round(to) });
+  setTimeout(updateProgress, 300);
+}
+document.getElementById('btn-rew').addEventListener('click', () => seekRelative(-30));
+document.getElementById('btn-fwd').addEventListener('click', () => seekRelative(30));
 
 /* ── Now playing + tracklist ── */
 function msToMin(ms) {
