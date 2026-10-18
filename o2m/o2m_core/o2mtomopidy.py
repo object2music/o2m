@@ -1865,105 +1865,111 @@ class O2mToMopidy:
 
     _YT_UPLOADS_RE = re.compile(r'^(?:yt|youtube):playlist:(UU[\w-]{22})$')
 
-    def list_youtube_channels(self):
-        """Every YouTube channel named in a box — the Browse view's counterpart
-        of list_podcast_channels. A channel is its uploads playlist
-        (`yt:playlist:UU…`, what Mopidy-YouTube plays); a channel ADDRESS typed
-        as a line (`web:` or `yt:` + youtube.com/@x, /channel/, /c/, /user/)
-        is converted the way the box builder converts it (webmedia.
-        youtube_channel — an @handle costs one page read, memoised 6 h). Named
-        by the '#Label' line before it, else by the channel page's own name,
-        else by its id. Disabled lines skipped; deduped by uri."""
-        results, seen = [], set()
-        for box in Box.select(Box.uid, Box.data):
+    def _scan_box_channels(self, boxes):
+        """Every channel line of the boxes → {'label', 'type', 'boxes', 'title'}.
+
+        A channel is a podcast feed (`podcast+<feed>`, O2M's ?max_results= hint
+        dropped), a Radio France show (`rf:show:<page>`) or a YouTube channel —
+        its uploads playlist (`yt:playlist:UU…`), or a channel ADDRESS typed as a
+        line, converted the way the box builder converts it (webmedia.
+        youtube_channel; an @handle costs one page read, memoised 6 h). Its
+        label is the '#Label' line right before it; `type` is 'info' when ANY
+        news box names it — sticky, like an episode's classification. Time
+        windows are read through (a window says when a line plays, not whether
+        the box refers to it); disabled lines are skipped."""
+        found = {}
+        for uid, data, option_type in boxes:
             label = None
-            for _, line in bdir.iter_lines(box.data or ''):
+            for _, line in bdir.iter_lines(data or ''):
                 line = (line or '').strip()
                 if not line:
                     continue
                 if line.startswith('#'):
-                    label = line.lstrip('#').strip()
+                    low = line.lower()
+                    label = (None if ('podcast+' in low or 'yt:' in low or 'youtube' in low)
+                             else line.lstrip('#').strip() or None)
                     continue
-                uri, name = None, ''
-                m = self._YT_UPLOADS_RE.match(line)
-                if m:
-                    uri = 'yt:playlist:' + m.group(1)
-                elif 'youtube.com/' in line and line.startswith(('web:', 'yt:', 'youtube:')):
-                    ch = webmedia.youtube_channel(re.sub(r'^web:', '', line))
-                    uri, name = ch.get('uri'), ch.get('name') or ''
-                if uri and uri not in seen:
-                    seen.add(uri)
-                    results.append({'uri': uri, 'name': label or name or uri.rsplit(':', 1)[-1],
-                                    'box_uid': box.uid})
+                key, title = None, ''
+                if line.startswith(('podcast+', 'rf:show:')) and '#' not in line:
+                    key = re.sub(r'[?&]max_results=\d+', '', line)
+                else:
+                    m = self._YT_UPLOADS_RE.match(line)
+                    if m:
+                        key = 'yt:playlist:' + m.group(1)
+                    elif 'youtube.com/' in line and line.startswith(('web:', 'yt:', 'youtube:')):
+                        ch = webmedia.youtube_channel(re.sub(r'^web:', '', line))
+                        key, title = ch.get('uri'), ch.get('name') or ''
+                if key:
+                    f = found.setdefault(key, {'label': None, 'type': 'podcast',
+                                               'boxes': [], 'title': ''})
+                    f['label'] = f['label'] or label
+                    f['title'] = f['title'] or title
+                    if option_type == 'info' and not key.startswith('yt'):
+                        f['type'] = 'info'
+                    if uid not in f['boxes']:
+                        f['boxes'].append(uid)
                 label = None
-        results.sort(key=lambda r: r['name'].lower())
-        return results
+        return found
+
+    def sync_box_channels(self, force=False):
+        """Bring the channel table's box index up to date with the boxes
+        (DatabaseHandler.sync_box_channels). Cheap when nothing changed: the
+        boxes are read and hashed (a few ms), and the scan only runs when the
+        hash moved — which also catches a box written by another instance on
+        older code, or by hand in the database. Returns True when it wrote."""
+        import hashlib
+        boxes = list(Box.select(Box.uid, Box.data, Box.option_type).tuples())
+        sig = hashlib.md5(repr(boxes).encode('utf-8', 'ignore')).hexdigest()
+        lock = self.__dict__.setdefault('_channels_lock', threading.Lock())
+        with lock:
+            if not force and sig == getattr(self, '_channels_sig', None):
+                return False
+            self.dbHandler.sync_box_channels(self._scan_box_channels(boxes))
+            self._channels_sig = sig
+            return True
+
+    def _box_channels(self):
+        try:
+            self.sync_box_channels()
+        except Exception as e:
+            print(f"sync_box_channels: {e}")
+        return self.dbHandler.box_channel_rows()
+
+    @staticmethod
+    def _channel_name(ch):
+        return (ch.label or ch.title
+                or parse.urlparse(ch.url or ch.feed_url or '').netloc or ch.box_line)
+
+    def list_youtube_channels(self):
+        """Every YouTube channel named in a box — the Browse view's counterpart
+        of list_podcast_channels. Read from the channel table's box index."""
+        rows = [{'uri': ch.box_line, 'name': self._channel_name(ch),
+                 'box_uid': (ch.in_boxes or '').split(',')[0]}
+                for ch in self._box_channels() if ch.box_line.startswith('yt')]
+        rows.sort(key=lambda r: r['name'].lower())
+        return rows
 
     def list_podcast_channels(self):
-        """All referenced podcast *channels*. Like radios, a channel has no Track
-        record: it's a '#Label' comment line immediately preceding an active
-        'podcast+<feed_url>' or 'rf:show:<page>' line inside a box's data
-        (podcast/info/hidden boxes).
-        Returns the mopidy-podcast URI (O2M's '?max_results=' hint stripped) so a
-        result can be browsed into episodes and played directly. Disabled
-        ('#podcast+…') lines are skipped. Deduped by feed."""
-        results, seen = [], set()
-        for box in Box.select():
-            label = None
-            for raw in (box.data or '').splitlines():
-                # A time window says WHEN a line plays, not whether the box refers to
-                # it: drop the prefix so a gated feed is still catalogued and listed.
-                line = bdir.split_condition(raw)[1]
-                if not line:
-                    continue
-                # A Radio France show line is a channel too: the channel view and
-                # the box line both resolve it (its feed, discovered from the page).
-                if line.startswith(('podcast+', 'rf:show:')):
-                    feed = re.sub(r'[?&]max_results=\d+', '', line)
-                    if label and feed not in seen:
-                        seen.add(feed)
-                        results.append({'uri': feed, 'name': label, 'box_uid': box.uid})
-                    label = None
-                elif line.startswith('#') and 'podcast+' not in line and 'yt' not in line.lower():
-                    label = line.lstrip('#').strip()
-                else:
-                    label = None
-        results.sort(key=lambda c: c['name'].lower())
-        return results[:200]
+        """Every podcast channel named in a box — a feed or a Radio France show,
+        as the box line that plays it (browse it into episodes, or play it).
+        Read from the channel table's box index (see sync_box_channels)."""
+        rows = [{'uri': ch.box_line, 'name': self._channel_name(ch),
+                 'box_uid': (ch.in_boxes or '').split(',')[0]}
+                for ch in self._box_channels() if not ch.box_line.startswith('yt')]
+        rows.sort(key=lambda c: c['name'].lower())
+        return rows
 
     def list_channel_objects(self):
-        """The Boxes column's Channels shelf: every podcast channel and every
-        YouTube channel the boxes name, in the tile shape (uri/name/sub/image)
-        plus `type` — 'info' when the box naming it is a news box, else
-        'podcast' — which the activation passes on (see virtualbox.spec)."""
-        types = {b.uid: b.option_type for b in Box.select(Box.uid, Box.option_type)}
-        from o2m_core.o2mmodels import PodcastChannel
-        images = {}
-        try:
-            for c in PodcastChannel.select(PodcastChannel.id, PodcastChannel.feed_url,
-                                           PodcastChannel.url, PodcastChannel.image_url
-                                           ).where(PodcastChannel.image_url != ''):
-                for k in (c.id, c.feed_url, c.url):
-                    if k:
-                        images.setdefault(k.rstrip('/'), c.image_url)
-        except Exception:
-            pass
+        """The Boxes column's Channels shelf: every channel the boxes name, in
+        the tile shape (uri/name/sub/image) plus `type` ('podcast' | 'info'),
+        which the activation passes on (see virtualbox.spec)."""
         rows = []
-        for c in self.list_podcast_channels():
-            uri = c['uri']
-            key = (uri[len('podcast+'):] if uri.startswith('podcast+')
-                   else uri[len('rf:show:'):]).rstrip('/')
-            typ = 'info' if types.get(c.get('box_uid')) == 'info' else 'podcast'
-            rows.append({'uri': uri, 'name': c['name'], 'type': typ,
-                         'sub': 'News' if typ == 'info' else 'Podcast',
-                         'image': images.get(key, '')})
-        try:
-            yt = self.list_youtube_channels()
-        except Exception:
-            yt = []
-        for c in yt:
-            rows.append({'uri': c['uri'], 'name': c['name'], 'type': 'podcast',
-                         'sub': 'YouTube', 'image': ''})
+        for ch in self._box_channels():
+            yt = ch.box_line.startswith('yt')
+            typ = 'info' if ch.spoken_type == 'info' else 'podcast'
+            rows.append({'uri': ch.box_line, 'name': self._channel_name(ch), 'type': typ,
+                         'sub': 'YouTube' if yt else ('News' if typ == 'info' else 'Podcast'),
+                         'image': ch.image_url or ''})
         rows.sort(key=lambda r: r['name'].lower())
         return rows
 
@@ -3029,11 +3035,16 @@ class O2mToMopidy:
         """Refresh the episodes of every referenced source. Never raises."""
         self._rf_feed_keys = {}   # re-read each feed once per run, not stale ones
         feeds, shows, subjects = self._boxes_podcast_sources()
+        try:
+            self.sync_box_channels()
+        except Exception as e:
+            print(f"warmup_podcast_catalogue(sync_box_channels): {e}")
         total = 0
         for feed in feeds:
             try:
+                title, image = self._feed_head(feed)
                 self.dbHandler.upsert_podcast_channel(
-                    feed, 'rss', title=self._feed_title(feed), url=feed)
+                    feed, 'rss', title=title, url=feed, image_url=image)
                 total += self._warm_feed(feed, feed)
             except Exception as e:
                 print(f"warmup_podcast_catalogue(feed {feed}): {e}")
@@ -3042,9 +3053,10 @@ class O2mToMopidy:
                 eps = (self._rf_convert(rf.episodes_of_show(self._rf_api_key, url, first=40))
                        if self.rf_enabled() else [])
                 if eps:
+                    feed = self._rf_feed_for_show(url)
                     self.dbHandler.upsert_podcast_channel(
                         url, 'rf', title=eps[0].get('show_title', ''), url=url,
-                        feed_url=self._rf_feed_for_show(url))
+                        feed_url=feed, image_url=self._feed_head(feed)[1] if feed else '')
                     self.dbHandler.upsert_episodes(eps, channel_id=url, dedup=True)
                     total += len(eps)
                 else:
@@ -3107,14 +3119,24 @@ class O2mToMopidy:
 
     def _feed_title(self, feed_url):
         """The feed's own <title> — what the Details panel shows as the channel."""
+        return self._feed_head(feed_url)[0]
+
+    def _feed_head(self, feed_url):
+        """(title, picture) of a feed, from its channel header: the picture is
+        <itunes:image href>, else <image><url>. What the Channels shelf shows as
+        the tile's cover. ('', '') when the feed cannot be read."""
         try:
-            import urllib.request as _u
+            import urllib.request as _u, html as _h
             raw = _u.urlopen(_u.Request(feed_url, headers={'User-Agent': 'o2m/1.0'}),
                              timeout=15).read(200000).decode('utf-8', 'ignore')
-            m = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', raw, re.S)
-            return (m.group(1).strip() if m else '')[:255]
+            head = raw.split('<item', 1)[0]
+            m = re.search(r'<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>', head, re.S)
+            i = (re.search(r'<itunes:image[^>]*href=["\']([^"\']+)', head)
+                 or re.search(r'<image>.*?<url>(?:<!\[CDATA\[)?\s*([^<\]\s]+)', head, re.S))
+            return ((m.group(1).strip() if m else '')[:255],
+                    _h.unescape(i.group(1).strip()) if i else '')
         except Exception:
-            return ''
+            return '', ''
 
     def _feed_index(self, feed_url):
         """Parse a feed once into what the catalogue needs:

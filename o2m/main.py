@@ -1136,15 +1136,10 @@ if __name__ == "__main__":
                                 'limit': limit, 'offset': offset})
             if kind == 'channels':
                 # Every channel the boxes name — podcast feeds, Radio France
-                # shows, YouTube channels — as the mosaic's fifth shelf. Reading
-                # them walks every box (and a YouTube @handle costs a page read),
-                # so memoised for ten minutes like the tags.
-                memo = getattr(api_library_browse, '_channels', None)
-                import time as _time
-                if not memo or _time.time() - memo[0] > 600:
-                    memo = (_time.time(), o2mHandler.list_channel_objects())
-                    api_library_browse._channels = memo
-                rows = memo[1]
+                # shows, YouTube channels — as the mosaic's fifth shelf. Read
+                # from the channel table's box index, which is brought up to
+                # date first when a box changed (sync_box_channels).
+                rows = o2mHandler.list_channel_objects()
                 return jsonify({'items': rows[offset:offset + limit],
                                 'has_more': offset + limit < len(rows),
                                 'limit': limit, 'offset': offset})

@@ -409,7 +409,7 @@ class PodcastChannel(BaseModel):
     about its show — hence Track.channel_id.
     """
     id         = CharField(primary_key=True)        # feed url (rss) or RF show id
-    kind       = CharField(null=True, index=True)   # 'rss' | 'rf'
+    kind       = CharField(null=True, index=True)   # 'rss' | 'rf' | 'yt' (a YouTube channel's uploads)
     title      = TextField(null=True)
     title_norm = CharField(null=True, index=True)
     url        = TextField(null=True)               # feed url, or the RF show page
@@ -429,6 +429,16 @@ class PodcastChannel(BaseModel):
     # and lowered back on their end. Replaces a hard-coded +50% for three podcast
     # hosts, seeded from it by migration v33. NULL = 0.
     volume_boost_pct = IntegerField(null=True)
+    # Which channels the BOXES name, kept by DatabaseHandler.sync_box_channels
+    # from the box lines (v34) — an index of the boxes, never edited by hand:
+    # the box line is what plays. `box_line` is that line ('podcast+<feed>',
+    # 'rf:show:<page>', 'yt:playlist:UU…'), `label` the '#Label' above it,
+    # `spoken_type` 'info' when a news box names it (else 'podcast'), `in_boxes`
+    # the uids of the boxes naming it — NULL when none does any more.
+    box_line    = TextField(null=True)
+    label       = TextField(null=True)
+    spoken_type = CharField(null=True)
+    in_boxes    = TextField(null=True)
 
 
 class EpisodeTaxonomy(BaseModel):
@@ -760,6 +770,15 @@ _LEGACY_BOOST_HOSTS = ('radiofrance-podcast.net', 'podcasts.nova.fr',
                        '9851446c-d9b9-47a2-99a9-26d0a4968cc3')
 
 
+def _migration_v34(migrator):
+    # The channels the boxes name, as columns of the channel table (see the
+    # model). All nullable: an older image's INSERT omits them.
+    _add_column_safe(migrator, 'podcastchannel', 'box_line', TextField(null=True))
+    _add_column_safe(migrator, 'podcastchannel', 'label', TextField(null=True))
+    _add_column_safe(migrator, 'podcastchannel', 'spoken_type', CharField(null=True))
+    _add_column_safe(migrator, 'podcastchannel', 'in_boxes', TextField(null=True))
+
+
 def _migration_v33(migrator):
     # Nullable, so no SQL DEFAULT is needed: an older image's INSERT omits it.
     _add_column_safe(migrator, 'track', 'volume_boost_pct', IntegerField(null=True))
@@ -840,7 +859,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 33
+SCHEMA_VERSION = 34
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -876,6 +895,7 @@ _MIGRATIONS = [
     (31, "track_alias_and_dismissed_duplicates", _migration_v31),
     (32, "track_isrc_column", _migration_v32),
     (33, "volume_boost_columns", _migration_v33),
+    (34, "podcastchannel_box_index", _migration_v34),
 ]
 
 

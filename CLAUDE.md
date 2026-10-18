@@ -97,7 +97,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **33**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **34**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -837,14 +837,26 @@ The Boxes column has **six views**, switched at the left of its toolbar: the box
 **tags** and **channels**.
 
 **Channels** are every podcast feed, Radio France show and YouTube channel the
-boxes name (`list_channel_objects`, `/api/library_browse?kind=channels`, memoised
-10 min), each activated as an object like an album: its "uri" is the box line that
-plays it (`podcast+<feed>`, `rf:show:`, `yt:playlist:UU…`), virtualbox kind
-`channel`, `option_sort='asc'`, and `option_type` `podcast` or `info` — the tile
-passes `type=info` when the box naming the channel is a news box, because the
-stats file episodes under the box's option_type and the Basic view lights by it.
-The eye opens the channel view (`openPodcast`). No channel carries a picture yet
-(`PodcastChannel.image_url` is empty everywhere), so the tiles are names.
+boxes name (`list_channel_objects`, `/api/library_browse?kind=channels`), each
+activated as an object like an album: its "uri" is the box line that plays it
+(`podcast+<feed>`, `rf:show:`, `yt:playlist:UU…`), virtualbox kind `channel`,
+`option_sort='asc'`, and `option_type` `podcast` or `info` — the tile passes
+`type=info` when a news box names the channel, because the stats file episodes
+under the box's option_type and the Basic view lights by it. The eye opens the
+channel view (`openPodcast`).
+
+**Which channels the boxes name is an index on `PodcastChannel`** (migration
+**v34**: `box_line`, `label`, `spoken_type`, `in_boxes`; YouTube channels are rows
+of kind `yt`, keyed by their line), so the listing, the per-channel settings and
+the picture are one object. The box lines stay the truth — the columns are only
+ever written by `sync_box_channels`, never by hand. It runs at the head of every
+listing (`list_channel_objects`, `list_podcast_channels`, `list_youtube_channels`,
+the channel search) but scans only when an md5 of every box's uid, data and
+option_type moved — a few ms otherwise — which also catches a box written by
+o2m_0 on older code or in phpMyAdmin. A row no box names any more loses
+`in_boxes` and keeps its settings and episodes. The catalogue warmup stores each
+feed's picture (`_feed_head`: `<itunes:image>`, else `<image><url>`); YouTube
+channels have none yet.
 
 **Tags** are the genres the enrichment put on artists (`ArtistGenre` — `TrackGenre`
 is empty), ranked by the tracks they reach (`get_top_tags`, noise tags left out,

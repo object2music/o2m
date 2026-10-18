@@ -3027,6 +3027,63 @@ class DatabaseHandler():
         PodcastChannel.update({field: value}).where(PodcastChannel.id.in_(ids)).execute()
         return ids
 
+    def sync_box_channels(self, found):
+        """Write which channels the boxes name onto the channel table.
+
+        `found`: box line → {'label', 'type', 'boxes', 'title'}, as scanned by
+        O2mToMopidy._scan_box_channels. Each line is matched to EVERY row standing
+        for its channel (`_channels_for`: a Radio France show can be registered
+        under its page and under its feed); a line with none gets one — a feed
+        under its feed url, a show under its page, a YouTube channel under its
+        line. Rows no box names any more lose `in_boxes`, and with it their place
+        in the listings; their settings and episodes stay. Returns the number of
+        lines written."""
+        touched = set()
+        for line, f in found.items():
+            ids = self._channels_for(line)
+            if not ids:
+                ref = self._channel_ref(line)
+                if line.startswith('podcast+') and ref.startswith('http'):
+                    self.upsert_podcast_channel(ref, 'rss', title=f.get('title') or f.get('label') or '',
+                                                url=ref, feed_url=ref)
+                    ids = [ref]
+                elif line.startswith('rf:show:') and ref.startswith('http'):
+                    self.upsert_podcast_channel(ref, 'rf', title=f.get('title') or f.get('label') or '',
+                                                url=ref)
+                    ids = [ref]
+                elif line.startswith(('yt:playlist:', 'youtube:playlist:')):
+                    pid = line.split(':', 2)[2]
+                    self.upsert_podcast_channel(line, 'yt', title=f.get('title') or f.get('label') or '',
+                                                url='https://www.youtube.com/playlist?list=' + pid)
+                    ids = [line]
+                else:
+                    continue
+            PodcastChannel.update({
+                PodcastChannel.box_line: line,
+                PodcastChannel.label: f.get('label') or None,
+                PodcastChannel.spoken_type: f.get('type') or 'podcast',
+                PodcastChannel.in_boxes: ','.join(f.get('boxes') or []) or None,
+            }).where(PodcastChannel.id.in_(list(ids))).execute()
+            touched.update(ids)
+        stale = PodcastChannel.update({PodcastChannel.in_boxes: None}).where(
+            PodcastChannel.in_boxes.is_null(False))
+        if touched:
+            stale = stale.where(PodcastChannel.id.not_in(list(touched)))
+        stale.execute()
+        return len(found)
+
+    def box_channel_rows(self):
+        """The channels the boxes name, one per box line: the rows `in_boxes`
+        marks, a channel registered twice folded into one (the row with a
+        picture and a title wins)."""
+        by_line = {}
+        for ch in (PodcastChannel.select().where(PodcastChannel.in_boxes.is_null(False))
+                   .order_by(PodcastChannel.id)):
+            cur = by_line.get(ch.box_line)
+            if cur is None or (bool(ch.image_url), bool(ch.title)) > (bool(cur.image_url), bool(cur.title)):
+                by_line[ch.box_line] = ch
+        return list(by_line.values())
+
     def get_channel_ad_skip(self, uri):
         """Seconds of pre-roll to skip for the channel of this uri."""
         return self.get_channel_setting(uri, 'ad_skip_s')
