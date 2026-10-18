@@ -1791,35 +1791,44 @@ class O2mToMopidy:
         return cats
 
     def search_radio_stations(self, query):
-        """Keyword search over radio station names — the content-search feature's
-        radio source. Stations aren't Track-backed (a live stream is never logged
-        the way a played track is); their only record is the '#Label' comment
-        line immediately preceding each stream URL inside a radio-category box's
-        data (the established convention — see e.g. the 'Radios' box). Reuses
-        get_basic_categories()['radio'] so this stays in sync with whatever
-        counts as a direct radio source elsewhere (basic-view actuator, etc)."""
+        """Keyword search over the names of the stations o2m knows — the
+        content-search feature's radio source (list_radio_stations)."""
         q = (query or '').lower()
         if not q:
             return []
-        results = []
-        for meta in self.get_basic_categories().get('radio') or []:
-            box = self.dbHandler.get_box_by_uid(meta['uid'])
-            if box is None:
-                continue
+        return [r for r in self.list_radio_stations() if q in r['name'].lower()]
+
+    def list_radio_stations(self):
+        """Every radio stream named in a box — the Browse view's "Your radios".
+        Stations aren't Track-backed the way a played track is; their name is the
+        '#Label' comment line immediately preceding the stream line (the
+        established convention — see e.g. the 'Radios' box), else the name a play
+        stored on its Track row, else the host. Read over EVERY box, not only the
+        pinned radio ones: a station included in a music box is still yours.
+        Disabled ('#http…') lines are skipped; deduped by uri, first label wins."""
+        results, seen, unnamed = [], set(), []
+        for box in Box.select(Box.uid, Box.data):
             label = None
-            for raw in (box.data or '').splitlines():
-                # A time window says WHEN a line plays, not whether the box refers to
-                # it: drop the prefix so a gated feed is still catalogued and listed.
-                line = bdir.split_condition(raw)[1]
+            # iter_lines resolves both window shapes: a gated stream is still listed.
+            for _, line in bdir.iter_lines(box.data or ''):
+                line = (line or '').strip()
                 if not line:
                     continue
                 if line.startswith('#'):
                     label = line.lstrip('#').strip()
                     continue
-                if line.startswith('http') and label:
-                    if q in label.lower():
-                        results.append({'uri': line, 'name': label, 'box_uid': box.uid})
-                    label = None
+                if self.is_radio_uri(line) and line not in seen:
+                    seen.add(line)
+                    results.append({'uri': line, 'name': label or '', 'box_uid': box.uid})
+                    if not label:
+                        unnamed.append(results[-1])
+                label = None
+        if unnamed:
+            names = {t.uri: t.name for t in Track.select(Track.uri, Track.name)
+                     .where(Track.uri.in_([r['uri'] for r in unnamed]))}
+            for r in unnamed:
+                r['name'] = names.get(r['uri']) or parse.urlparse(r['uri']).netloc or r['uri']
+        results.sort(key=lambda r: r['name'].lower())
         return results
 
     def list_podcast_channels(self):

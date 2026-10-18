@@ -443,17 +443,14 @@ const OBJGRID = (() => {
     }
     const tile = e.target.closest('.og-tile');
     if (!tile) return;
-    // The eye opens the object's detail view at once; the rest of the tile is
-    // one click → the detail, two → toggle — the gestures of every other list
-    // (dualTap, mood.html).
+    // The eye opens the object's detail view; the rest of the tile toggles it —
+    // the same division as the boxes list's ⓘ glyph.
     if (e.target.closest('[data-og-open]')) {
       e.stopPropagation();
       openDetail(tile.dataset);
       return;
     }
-    if (typeof dualTap === 'function')
-      dualTap(tile, () => openDetail(tile.dataset), () => toggle(tile.dataset, tile));
-    else toggle(tile.dataset, tile);
+    toggle(tile.dataset, tile);
   }
 
   function openDetail({ uri, kind, name, sub, uid }) {
@@ -652,8 +649,7 @@ const OBJGRID = (() => {
     if (btn) btn.disabled = true;
     try {
       // The list view's rows are the existing buttons, with their own feedback —
-      // toggled through the same function their double click calls (a single
-      // click on them now opens the detail).
+      // toggled through the same function their click calls.
       if (pick.el) await toggleBox(pick.uid, pick.el);
       else await toggle(pick, el);
     } finally {

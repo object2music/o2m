@@ -137,7 +137,6 @@
   display: flex; flex-direction: column; gap: calc(3px * var(--ui));
   padding: 0; border: none; background: none; text-align: left;
   color: var(--muted); cursor: pointer;
-  touch-action: manipulation;   /* two taps toggle (dualTap): no double-tap zoom */
   order: 2;
   transition: color .15s, opacity .15s, transform .34s cubic-bezier(.22, .61, .36, 1);
   min-width: 0;

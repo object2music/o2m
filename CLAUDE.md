@@ -1858,16 +1858,14 @@ the artist link keep their own meaning. **Excluded on purpose**: the box editor'
 content editor (`#bx-editor-host`), where a click on a search result ADDS it to
 the box — a picker, not a list.
 
-**What is activated rather than played answers the same two gestures**
-(`dualTap`, beside `ROW_DBL_MS`): a box, album, artist or tag in the Boxes column
-(list and mosaics) and a box row in a search — one click → its detail, double
-click → toggle it. Single click used to toggle, so a mis-tap launched a fill. The
-mosaic's eye and the list's ⓘ still open the detail at once.
-**On a touch screen (`hover: none`) the tap IS the toggle**, as on the Basic
-view's actuators — the same object took one tap in Basic and two in the mosaic,
-and a phone goes from one view to the other (2026-10-18). The detail is then the
-eye / ⓘ, which never hides on touch. A box row in a SEARCH keeps the list gestures:
-it is a row among tracks, not a switch.
+**What is activated rather than played is a switch, not a row**: a box, album,
+artist or tag in the Boxes column (list and mosaics) toggles on ONE click or tap,
+like the Basic view's actuators and an NFC object put down; the mosaic's eye and
+the list's ⓘ open the detail. For a day (2026-10-17) it took the lists' gestures —
+one click → detail, double → toggle, against mis-taps launching a fill — and that
+was reverted: the same object then took one tap in Basic and two in the column. A
+box row in a SEARCH keeps the list gestures (double click toggles it): there it is
+a row among tracks.
 
 **Long press and drag moves a row in the tracklist** (`wireRowDrag`): held still
 `ROW_HOLD_MS` (400 ms) the row lifts, follows the pointer (the list scrolls near

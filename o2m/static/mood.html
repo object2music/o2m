@@ -1836,31 +1836,11 @@ function trackRowInnerHTML({ indexLabel = '', name = '', artist = '', artists = 
 const ROW_DBL_MS = 350;
 let _rowPending = null;   // { row, timer } — a first click waiting for a second
 
-/* The same two gestures for what is ACTIVATED rather than played — a box, an
-   album, an artist or a tag in the Boxes column (its list and its mosaics), a
-   box in a search: one click opens its detail, a double click toggles it. A
-   single click used to toggle, which made a mis-tap a fill — seconds of work and
-   a changed tracklist — while every list beside it only opened.
-   On a touch screen the tap IS the switch, like the Basic view's actuators: a
-   phone goes from one view to the other, and two gestures for "turn this on"
-   depending on the view is worse than a mis-tap. The detail is then the eye /
-   ⓘ, which never hides on touch. */
-let _tapPending = null;   // { el, timer }
-function dualTap(el, single, double) {
-  if (matchMedia('(hover: none)').matches) { double(); return; }
-  if (_tapPending && _tapPending.el === el) {
-    clearTimeout(_tapPending.timer);
-    _tapPending = null;
-    double();
-    return;
-  }
-  if (_tapPending) clearTimeout(_tapPending.timer);
-  const pending = { el, timer: setTimeout(() => {
-    if (_tapPending === pending) _tapPending = null;
-    single();
-  }, ROW_DBL_MS) };
-  _tapPending = pending;
-}
+/* What is ACTIVATED rather than played — a box, an album, an artist or a tag in
+   the Boxes column (its list and its mosaics) — is a switch: one click toggles
+   it, like the Basic view's actuators and an NFC object put down; its detail is
+   the eye / ⓘ. For a day it took the lists' gestures (one click → detail, two →
+   toggle), which made the same object one tap in Basic and two in the column. */
 
 function _rowTarget(e) {
   const row = e.target.closest?.('.tl-item');
@@ -5834,15 +5814,16 @@ const WC_BROWSE_NODES = {
   podgenres:   { label: 'Podcast genres',         icon: ICON.list },
   podchannels: { label: 'Channels in your boxes', icon: ICON.hash },
   rfsubjects:  { label: 'Radio France subjects',   icon: ICON.zap },
+  myradios:    { label: 'Your radios',            icon: ICON.radio },
   radiotop:    { label: 'Top stations near you',  icon: ICON.radio },
   boxes:       { label: 'Your boxes',             icon: ICON.box },
 };
 const WC_BROWSE_BY_KIND = {
-  music:   ['playlists', 'artists', 'albums', 'radiotop', 'boxes'],
-  podcast: ['rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop', 'boxes'],
-  info:    ['rfsubjects', 'podnews', 'podgenres', 'podchannels', 'radiotop', 'boxes'],
-  radio:   ['radiotop', 'boxes'],
-  hybrid:  ['playlists', 'artists', 'albums', 'rfsubjects', 'podtop', 'podgenres', 'podchannels', 'radiotop', 'boxes'],
+  music:   ['playlists', 'artists', 'albums', 'myradios', 'radiotop', 'boxes'],
+  podcast: ['rfsubjects', 'podtop', 'podgenres', 'podchannels', 'myradios', 'radiotop', 'boxes'],
+  info:    ['rfsubjects', 'podnews', 'podgenres', 'podchannels', 'myradios', 'radiotop', 'boxes'],
+  radio:   ['myradios', 'radiotop', 'boxes'],
+  hybrid:  ['playlists', 'artists', 'albums', 'rfsubjects', 'podtop', 'podgenres', 'podchannels', 'myradios', 'radiotop', 'boxes'],
 };
 /* Which result sections a search shows, in order. Radios are offered for every
    kind (a stream is welcome in any box). Podcast channels are deliberately NOT:
@@ -6599,6 +6580,11 @@ async function browseFetch(node, opts) {
     return { rows: _wcDirRows(Array.isArray(d) ? d : []), kind: 'podcast',
              empty: 'No channels referenced in your boxes yet.' };
   }
+  if (node === 'myradios') {
+    const d = await _wcJson('/radio_stations');
+    return { rows: _wcDirRows(Array.isArray(d) ? d : []), kind: 'radio',
+             empty: 'No radio in your boxes yet.' };
+  }
   if (node === 'radiotop') {
     const d = await _wcJson('/directory?kind=radio');
     return { rows: _wcDirRows((d && d.items) || []), kind: 'radio',
@@ -7025,7 +7011,7 @@ async function searchLoadMore() {
    detour rather than a destination, and a Radio France subject is not an object
    you can open at all — it is a pattern that refills a box. */
 const BROWSE_NODES = ['favorites', 'podfavorites', 'podrecent', 'playlists', 'albums',
-                      'artists', 'podchannels', 'podtop', 'podnews', 'radiotop'];
+                      'artists', 'podchannels', 'podtop', 'podnews', 'myradios', 'radiotop'];
 let _browseState = null;   // { node, offset, rows } for the paged nodes
 
 function openBrowse() {
@@ -7174,10 +7160,9 @@ async function loadBoxes() {
       btn.dataset.auto = /auto/i.test((box.description || '') + ' ' + (box.option_type || ''))
         ? '1' : '0';
       btn.addEventListener('click', (e) => {
-        // The info glyph opens the box detail at once; the rest of the row is
-        // one click → the detail, two → toggle (dualTap).
+        // The info glyph opens the box detail; the rest of the row toggles the box.
         if (e.target.closest('.box-info-btn')) { e.stopPropagation(); openBox(box.uid); return; }
-        dualTap(btn, () => openBox(box.uid), () => toggleBox(box.uid, btn));
+        toggleBox(box.uid, btn);
       });
       wrap.appendChild(btn);
     });

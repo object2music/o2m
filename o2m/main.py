@@ -966,6 +966,15 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/radio_stations')
+    def api_radio_stations():
+        """Every radio stream named in a box (the Browse view's "Your radios")."""
+        from flask import jsonify
+        try:
+            return jsonify(o2mHandler.list_radio_stations())
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/channel_settings')
     def api_channel_settings():
         """A source's own settings, in seconds. ?uri= is a channel (podcast+<feed>,

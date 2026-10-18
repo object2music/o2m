@@ -1240,8 +1240,8 @@
     transition: background .12s;
   }
   .tl-item:active { background: var(--fill-2); }
-  /* Two taps make a double click (rowGestures, dualTap): no zoom-on-double-tap delay. */
-  .tl-item, .box-btn { touch-action: manipulation; }
+  /* Two taps make a double click (rowGestures): no zoom-on-double-tap delay. */
+  .tl-item { touch-action: manipulation; }
   /* Long press and drag in the tracklist (rowDrag): no text selection or
      callout under a held finger, the lifted row above its neighbours, and a
      line where it will land. */
