@@ -798,7 +798,28 @@ class O2mToMopidy:
                   f"{'moved on to tlid %s' % nxt if nxt is not None else 'stopped'}")
         except Exception as e:
             print(f"_stop_if_playing_outside_tracklist: {e}")
-                
+
+    def stop_orphan_playback(self, tlid):
+        """A track can START after o2m removed it. A removal plays the next track
+        of another box, the following removal stops and clears — and Mopidy's
+        play() is asynchronous enough that the track still comes up a second
+        after the clear, outside any tracklist (ALL off on the Pi, 2026-10-18:
+        "The Fifth Man" played to its end, then a reco was chained onto it under
+        mopidy_box, then another, with every box off). Called on
+        track_playback_started; True when it stopped the track."""
+        try:
+            if self.mopidyHandler.playback.get_current_tlid() != tlid:
+                return False   # a late event: something else plays by now
+            if self.mopidyHandler.tracklist.index(tlid=tlid) is not None:
+                return False
+            self._mark_interrupted()
+            self.mopidyHandler.playback.stop()
+            print(f"tlid {tlid} started outside the tracklist: stopped")
+            return True
+        except Exception as e:
+            print(f"stop_orphan_playback: {e}")
+            return False
+
 
     def deactivate_box(self, box):
         """Take a box out of activeboxs and remove its tracks — or neither.
@@ -3306,7 +3327,9 @@ class O2mToMopidy:
         replaying reload_active_boxes(). The cooldown only gates the REFILL
         attempt (15s) — the cheap emptiness check itself always runs, so a
         healthy poll never suppresses the next, actually-empty one."""
-        if not self.activeboxs:
+        # mopidy_box is bookkeeping, not something put down: it has nothing to
+        # reload, and alone it made this fire every 20 s for ever after ALL off.
+        if not any(b.uid != 'mopidy_box' for b in self.activeboxs):
             return
         # A fill in progress is an empty tracklist with an active box by
         # definition: its first box is in activeboxs before its first track lands.
@@ -3713,6 +3736,19 @@ class O2mToMopidy:
         if self.option_add_reco_after_track:
             #self.mopidyHandler.playback.pause()
             if "spotify:track" in track_uri:
+
+                # A seed o2m took out of the tracklist (a box switched off, the
+                # tracklist cleared) has nothing left to be continued: its
+                # _track_info is gone too, so it would otherwise read as a track
+                # added from outside and get a reco under mopidy_box — one after
+                # another, with every box off.
+                if seed_tlid is not None:
+                    try:
+                        if self.mopidyHandler.tracklist.index(tlid=seed_tlid) is None:
+                            print(f"reco: none after {track_uri}, no longer in the tracklist")
+                            return
+                    except Exception:
+                        pass
 
                 # A reco belongs to the box that served the track just heard, so that
                 # releasing that box takes the reco with it. Asked by the ENDED tlid:

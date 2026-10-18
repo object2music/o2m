@@ -3726,6 +3726,8 @@ with the house Premium account.</li>
         def track_started_event(event):
             track = event.tl_track.track
             print (event)
+            if o2mHandler.stop_orphan_playback(event.tl_track.tlid):
+                return
 
             # Mopidy reports the uri it was HANDED, which is not always the uri the
             # database knows this track by: `_resolve_uri` substitutes a downloaded
@@ -3797,7 +3799,10 @@ with the house Premium account.</li>
             position = event.time_position
 
             active_box = o2mHandler.get_active_box_by_tlid(tlid)
-            if not active_box:
+            # Not for a track o2m stopped itself: the fallback CREATES mopidy_box,
+            # and the stop() of a box switch-off is exactly when _track_info has
+            # just been cleared — it left a phantom active box behind ALL off.
+            if not active_box and not interrupted:
                 active_box = o2mHandler.get_active_box_by_uri(track.uri)
 
             if active_box:
