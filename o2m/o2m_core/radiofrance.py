@@ -420,3 +420,47 @@ def diffusions(api_key, station, themes=None, tags=None, subthemes=None,
     key = (f"rfdiff:{station}:{','.join(themes)}:{','.join(subthemes)}:"
            f"{','.join(subsubthemes)}:{','.join(tags)}:{days}:{first}")
     return _cached(key, fetch, _TTL_EPISODES, cache_empty=True) or []
+
+
+# ─── Live: what a station is airing now ───────────────────────────────────────
+
+_LIVE_QUERY = '''query($station: StationsEnum!) {
+  live(station: $station) {
+    show { start end ... on DiffusionStep { diffusion { title url show { title } } } }
+    song { start end ... on TrackStep { track { title mainArtists albumTitle } } }
+  }
+}'''
+_TTL_LIVE = 15     # the radio watcher and every open page poll; one ask serves them all
+
+
+def live_now(api_key, station):
+    """What `station` (a StationsEnum name: FRANCEINTER, FIP_ROCK…) airs now, in
+    the shape of the livemeta reading — {title, artist, album, kind, key, visual,
+    source} — or None. The song when one is on air, else the show: `title` is the
+    episode, `album` the programme. Used when livemeta has nothing covering now:
+    its feed can freeze for hours (France Inter on 2026-10-18 still listed the
+    night's 02:00 step at 09:00) while this endpoint answers the right show."""
+    def fetch():
+        data = _gql(api_key, _LIVE_QUERY, {'station': station})
+        live = (data or {}).get('live')
+        if not live:
+            return None
+        now = time.time()
+        song = live.get('song') or {}
+        track = song.get('track') or {}
+        if track.get('title') and (song.get('end') or now) >= now - 30:
+            artist = ', '.join(a for a in (track.get('mainArtists') or []) if a)
+            return {'title': track['title'].strip(), 'artist': artist,
+                    'album': (track.get('albumTitle') or '').strip(), 'kind': 'song',
+                    'key': f"{song.get('start')}-{track['title']}", 'visual': '',
+                    'source': 'radiofrance'}
+        show = live.get('show') or {}
+        diff = show.get('diffusion') or {}
+        prog = ((diff.get('show') or {}).get('title') or '').strip()
+        title = (diff.get('title') or '').strip() or prog
+        if not title:
+            return None
+        return {'title': title, 'artist': '', 'album': prog if prog != title else '',
+                'kind': 'show', 'key': diff.get('url') or f"{show.get('start')}-{title}",
+                'visual': '', 'source': 'radiofrance'}
+    return _cached(('live', station), fetch, _TTL_LIVE)

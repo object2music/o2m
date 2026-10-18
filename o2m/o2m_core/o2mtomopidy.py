@@ -185,6 +185,16 @@ class O2mToMopidy:
             'franceculture':       (4,    False, 'France Culture'),
             'monpetitfranceinter': (None, False, 'Mon Petit France Inter'),
         }
+        # The same stations as the OpenAPI's StationsEnum, for `live` (radiofrance.
+        # live_now) — asked when livemeta has nothing covering now.
+        self._RF_LIVE_ENUM = {
+            'fip': 'FIP', 'fiprock': 'FIP_ROCK', 'fipjazz': 'FIP_JAZZ',
+            'fipgroove': 'FIP_GROOVE', 'fipworld': 'FIP_WORLD',
+            'fipnouveautes': 'FIP_NOUVEAUTES', 'fipreggae': 'FIP_REGGAE',
+            'fipelectro': 'FIP_ELECTRO', 'francemusique': 'FRANCEMUSIQUE',
+            'franceinter': 'FRANCEINTER', 'franceinfo': 'FRANCEINFO',
+            'franceculture': 'FRANCECULTURE',
+        }
         # Station brand logos — the "repli 1" fallback shown as the cover when the
         # live feed carries no usable artwork (shows, station-only, streams). Keyed by
         # the same exact slug; FIP webradios share the FIP logo, PFI reuses France
@@ -5042,7 +5052,7 @@ class O2mToMopidy:
             _t.sleep(self.radio_poll_sec)
 
     def _rf_station_for_uri(self, uri):
-        """(station_id|None, is_music, full_name, logo_url) for a Radio France stream
+        """(station_id|None, is_music, full_name, logo_url, live_enum|None) for a Radio France stream
         URI, else None. Matches the EXACT stream slug (…/<slug>-hifi.aac) — not a
         substring — so 'monpetitfranceinter' ≠ 'franceinter'."""
         if not uri or 'radiofrance' not in uri.lower():
@@ -5057,7 +5067,9 @@ class O2mToMopidy:
         st = self._RF_STATIONS.get(tail)
         if not st:
             return None
-        return (st[0], st[1], st[2], self._RF_LOGOS.get(tail, ''))
+        return (st[0], st[1], st[2], self._RF_LOGOS.get(tail, ''), self._RF_LIVE_ENUM.get(tail))
+
+    _RF_LIVEMETA_GAP_S = 10 * 60   # how long a finished livemeta step may still stand for now
 
     def _rf_livemeta(self, sid):
         """Current on-air track for a Radio France station via the livemeta API."""
@@ -5076,8 +5088,13 @@ class O2mToMopidy:
             if s.get('title') and s.get('start', 0) <= now <= s.get('end', 10 ** 12):
                 cur = s
                 break
-        if not cur:  # no exact window match → most recent titled step
-            titled = [s for s in steps.values() if s.get('title')]
+        if not cur:
+            # No exact window match → the most recent titled step, but only across
+            # a gap between two steps (a jingle, a flash). The feed can FREEZE for
+            # hours: on 2026-10-18 France Inter's still ended at 03:00 at 09:00,
+            # and its last step was shown as what was on air.
+            titled = [s for s in steps.values() if s.get('title')
+                      and s.get('end', 0) >= now - self._RF_LIVEMETA_GAP_S]
             cur = max(titled, key=lambda s: s.get('start', 0)) if titled else None
         if not cur:
             return None
@@ -5089,7 +5106,11 @@ class O2mToMopidy:
                       or cur.get('performers') or '').strip()
             album = (cur.get('titreAlbum') or '').strip()
         else:
-            artist, album = '', ''
+            # A show: the item is the episode, the programme goes on the album line.
+            artist = ''
+            album = (cur.get('titleConcept') or '').strip()
+            if album == (cur.get('title') or '').strip():
+                album = ''
         # Radio France 'visual' is sometimes a full URL (songs) and sometimes a bare
         # UUID (shows) that we can't turn into an image URL — keep only usable URLs.
         vis = str(cur.get('visual') or '')
@@ -5124,8 +5145,11 @@ class O2mToMopidy:
             station = ''
         st = self._rf_station_for_uri(uri)
         if st:
-            sid, is_music, name, logo = st
+            sid, is_music, name, logo, live_enum = st
             meta = self._rf_livemeta(sid) if sid else None
+            if not (meta and meta.get('title')) and live_enum and self._rf_api_key:
+                # livemeta has nothing covering now: ask the OpenAPI's live grid.
+                meta = rf.live_now(self._rf_api_key, live_enum)
             if not (meta and meta.get('title')):
                 # Known station but no usable live item → still surface the station name.
                 meta = {'title': '', 'artist': '', 'album': '', 'kind': 'radio', 'visual': '',
