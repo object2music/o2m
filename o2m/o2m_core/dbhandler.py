@@ -2991,24 +2991,30 @@ class DatabaseHandler():
             print(f"_channels_for error: {e}")
         return sorted(ids)
 
-    def get_channel_ad_skip(self, uri):
-        """Seconds of pre-roll to skip for the channel of this uri (a channel or
-        one of its episodes). 0 when unset or unknown."""
+    _CHANNEL_SETTINGS = ('ad_skip_s', 'volume_boost_pct')
+
+    def get_channel_setting(self, uri, field):
+        """A channel's own setting (ad_skip_s, volume_boost_pct) for this uri — a
+        channel or one of its episodes. 0 when unset or unknown; the largest when
+        several rows stand for the channel."""
+        assert field in self._CHANNEL_SETTINGS
         ids = self._channels_for(uri)
         if not ids:
             return 0
+        col = getattr(PodcastChannel, field)
         try:
-            vals = [ch.ad_skip_s or 0 for ch in
-                    PodcastChannel.select(PodcastChannel.ad_skip_s).where(PodcastChannel.id.in_(ids))]
+            vals = [getattr(ch, field) or 0 for ch in
+                    PodcastChannel.select(col).where(PodcastChannel.id.in_(ids))]
             return max(vals) if vals else 0
         except Exception:
             return 0
 
-    def set_channel_ad_skip(self, uri, seconds, title=''):
-        """Store the pre-roll skip on every row standing for this channel. A feed
+    def set_channel_setting(self, uri, field, value, title=''):
+        """Store a channel setting on every row standing for this channel. A feed
         listed from a box but never registered gets its row here: the setting
         must not depend on a warmup having happened to pass by."""
-        seconds = max(0, int(seconds or 0)) or None
+        assert field in self._CHANNEL_SETTINGS
+        value = max(0, int(value or 0)) or None
         ids = self._channels_for(uri)
         if not ids:
             # Only a feed can be registered from its uri alone: a show page or a
@@ -3018,8 +3024,15 @@ class DatabaseHandler():
                 return []
             self.upsert_podcast_channel(ref, 'rss', title=title or '', url=ref, feed_url=ref)
             ids = [ref]
-        PodcastChannel.update(ad_skip_s=seconds).where(PodcastChannel.id.in_(ids)).execute()
+        PodcastChannel.update({field: value}).where(PodcastChannel.id.in_(ids)).execute()
         return ids
+
+    def get_channel_ad_skip(self, uri):
+        """Seconds of pre-roll to skip for the channel of this uri."""
+        return self.get_channel_setting(uri, 'ad_skip_s')
+
+    def set_channel_ad_skip(self, uri, seconds, title=''):
+        return self.set_channel_setting(uri, 'ad_skip_s', seconds, title)
 
     # ── Duplicate tracks (o2m_core/duplicates.py) ────────────────────────────
     _alias_memo = (0.0, {})
@@ -3196,6 +3209,22 @@ class DatabaseHandler():
         val = max(0, int(seconds or 0)) or None
         Track.insert({'uri': uri, 'play_limit_s': val}).on_conflict(
             action='update', update={'play_limit_s': val},
+        ).execute()
+
+    def get_radio_volume_boost(self, uri):
+        """How much louder, in %, this radio plays (Track.volume_boost_pct), 0 = none."""
+        try:
+            row = Track.select(Track.volume_boost_pct).where(Track.uri == uri).first()
+            return int(row.volume_boost_pct or 0) if row else 0
+        except Exception:
+            return 0
+
+    def set_radio_volume_boost(self, uri, pct):
+        """Store a radio's volume boost (0 clears it). Creates the row if absent,
+        like set_play_limit."""
+        val = max(0, int(pct or 0)) or None
+        Track.insert({'uri': uri, 'volume_boost_pct': val}).on_conflict(
+            action='update', update={'volume_boost_pct': val},
         ).execute()
 
     def count_rf_shows(self):

@@ -3134,6 +3134,7 @@ async function openPodcast(uri, seed) {
     let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || what)}</b>`
       + `<span>${eps.length} ${unit}${eps.length === 1 ? '' : 's'}</span>`
       + sourceSecondsHTML('ad_skip_s', 'label')
+      + sourceSecondsHTML('volume_boost_pct', 'label')
       + `</div></div>`;
     html += '<div id="obj-pod-list"></div>';
     objBody().innerHTML = html;
@@ -3158,6 +3159,11 @@ const SOURCE_SECONDS = {
     title: 'Seconds this radio plays before moving to the next track. Empty: it plays until stopped',
     said: v => v ? `This radio will move on after ${fmtSeconds(v)}` : 'This radio plays until stopped',
   },
+  volume_boost_pct: {
+    label: 'Volume boost', max: 300, step: 5, empty: '0', unit: '%',
+    title: 'How much louder it plays, in %: the volume is raised when it starts and lowered back when it ends',
+    said: v => v ? `It will play ${v}% louder` : 'No volume boost',
+  },
 };
 function fmtSeconds(v) {
   const m = Math.floor(v / 60), s = v % 60;
@@ -3168,7 +3174,7 @@ function fmtSeconds(v) {
 function sourceSecondsHTML(key, shape) {
   const c = SOURCE_SECONDS[key];
   const input = `<input class="obj-num" type="number" min="0" max="${c.max}" step="${c.step}" inputmode="numeric"`
-              + ` placeholder="${c.empty === '' ? 'none' : c.empty}"> s`;
+              + ` placeholder="${c.empty === '' ? 'none' : c.empty}"> ${c.unit || 's'}`;
   const attrs = `data-src-setting="${key}" style="display:none" title="${objEsc(c.title)}"`;
   return shape === 'row'
     ? `<div ${attrs}><dt>${c.label}</dt><dd>${input}</dd></div>`
@@ -3183,6 +3189,9 @@ async function wireSourceSeconds(row, uri, { name = '', stillHere = () => true }
   // A show or page with no channel row yet has nowhere to keep it (only a feed
   // can be registered from its uri alone): no field rather than one that fails.
   if (key === 'ad_skip_s' && (d.radio || (!d.known && !uri.startsWith('podcast+')))) return;
+  // Both a radio and a channel carry a volume boost; a channel only once it has a row.
+  if (key === 'volume_boost_pct'
+      && (!(key in d) || (!d.radio && !d.known && !uri.startsWith('podcast+')))) return;
   const input = row.querySelector('input');
   let saved = d[key] || 0;
   const show = v => { input.value = v ? v : c.empty; };
@@ -3191,7 +3200,7 @@ async function wireSourceSeconds(row, uri, { name = '', stillHere = () => true }
   input.addEventListener('change', async () => {
     const raw = input.value.trim();
     const v = raw === '' ? 0 : Math.round(Number(raw));
-    if (!Number.isFinite(v) || v < 0 || v > c.max) { show(saved); setFeedback(`Between 0 and ${c.max} seconds`); return; }
+    if (!Number.isFinite(v) || v < 0 || v > c.max) { show(saved); setFeedback(`Between 0 and ${c.max} ${c.unit || 'seconds'}`); return; }
     if (v === saved) { show(saved); return; }
     if (!editUnlocked) { show(saved); setFeedback('Enable editing first'); return; }
     try {
@@ -3213,8 +3222,8 @@ async function wireSourceSeconds(row, uri, { name = '', stillHere = () => true }
    server can attach a setting to — a feed, a Radio France show page or a web page. */
 function channelAdSkipField(uri, name) {
   if (!/^(podcast\+|rf:show:|web:|xp:)/.test(uri)) return;
-  wireSourceSeconds(objBody().querySelector('[data-src-setting="ad_skip_s"]'), uri,
-                    { name, stillHere: () => objCurrentUri === uri });
+  objBody().querySelectorAll('[data-src-setting]').forEach(row =>
+    wireSourceSeconds(row, uri, { name, stillHere: () => objCurrentUri === uri }));
 }
 
 // Playlist detail: resolve the playlist's tracks (mopidy lookup on the
@@ -3938,10 +3947,11 @@ function renderRadioDetails(d, uri) {
     html += `<div><dt>Favorite</dt><dd class="td-fav" id="radio-fav">${ICON.heart(false)}</dd></div>`
           + `<div><dt>Playlists</dt><dd id="radio-playlists"></dd></div>`;
   }
-  host.innerHTML = html + (uri ? sourceSecondsHTML('play_limit_s', 'row') : '') + '</dl>';
+  host.innerHTML = html + (uri ? sourceSecondsHTML('play_limit_s', 'row')
+                               + sourceSecondsHTML('volume_boost_pct', 'row') : '') + '</dl>';
   tdPanel.ev = null;
-  if (uri) wireSourceSeconds(host.querySelector('[data-src-setting]'), uri,
-                             { stillHere: () => detailsUri === uri });
+  if (uri) host.querySelectorAll('[data-src-setting]').forEach(row =>
+    wireSourceSeconds(row, uri, { stillHere: () => detailsUri === uri }));
   if (isSong) wireRadioActions();
 }
 
@@ -4465,8 +4475,10 @@ async function renderTrackObj(uri, seed) {
   if (_isStreamUri(uri)) {
     const dl = objBody().querySelector('dl');
     if (dl) {
-      dl.insertAdjacentHTML('beforeend', sourceSecondsHTML('play_limit_s', 'row'));
-      wireSourceSeconds(dl.lastElementChild, uri, { name, stillHere: () => seq === _objViewSeq });
+      dl.insertAdjacentHTML('beforeend', sourceSecondsHTML('play_limit_s', 'row')
+                                         + sourceSecondsHTML('volume_boost_pct', 'row'));
+      dl.querySelectorAll('[data-src-setting]').forEach(row =>
+        wireSourceSeconds(row, uri, { name, stillHere: () => seq === _objViewSeq }));
     }
   }
 }

@@ -76,6 +76,7 @@ class O2mToMopidy:
         # tracklist cleared): their 'ended' event is not a listener's skip.
         self._interrupted_tlids = set()
         self._play_limit_tokens = {}       # tlid -> token of its live play-limit check
+        self._volume_boost = None          # {tlid, base, set}: the boost the mixer carries now
         # (owner box uid, uri) → the box LINE that drew it ('tag:jazz',
         # 'spotify:artist:…'). tracklistappend_box returns one flat uri list per
         # box, so add_tracks used to GUESS the source from the box's first
@@ -4760,6 +4761,65 @@ class O2mToMopidy:
             return max(0, int(self.dbHandler.get_channel_ad_skip(uri) or 0)) * 1000
         except Exception:
             return 0
+
+    # Volume boost: the same kind of setting at the other knob. Some sources are
+    # mastered quieter than music (a podcast recorded at -20 LUFS beside a track
+    # at -9), so a channel or a radio can be set to play N% louder: the mixer is
+    # raised when one of its items STARTS and lowered back when it ends. It was a
+    # hard-coded +50% for three podcast hosts, raised on start and lowered by
+    # x0.67 on a natural end only — a skip, a stop or a pause-then-switch left the
+    # room 50% louder, and a boost capped at 100 came back lower than it began.
+    def volume_boost_pct(self, uri):
+        """How much louder, in %, this item plays: a radio's own setting, or its
+        channel's for a spoken item. 0 when none is set."""
+        if not uri:
+            return 0
+        try:
+            if self.is_radio_uri(uri):
+                return self.dbHandler.get_radio_volume_boost(uri)
+            if self._is_spoken_uri(uri):
+                return self.dbHandler.get_channel_setting(uri, 'volume_boost_pct')
+        except Exception as e:
+            print(f"volume_boost_pct: {e}")
+        return 0
+
+    def apply_volume_boost(self, tlid, uri):
+        """On a track start: hand back any boost still held (an end that never
+        reported), then raise the mixer for this one if it asks for it."""
+        self.restore_volume_boost()
+        pct = self.volume_boost_pct(uri)
+        if not pct:
+            return
+        try:
+            base = self.mopidyHandler.mixer.get_volume()
+            if base is None:
+                return
+            target = min(100, int(round(base * (1 + pct / 100))))
+            if target == base:
+                return
+            self.mopidyHandler.mixer.set_volume(target)
+            self._volume_boost = {'tlid': tlid, 'base': base, 'set': target}
+            print(f"Volume boost +{pct}%: {base} -> {target}")
+        except Exception as e:
+            print(f"apply_volume_boost: {e}")
+
+    def restore_volume_boost(self, tlid=None):
+        """On its end (any end: finished, skipped, stopped): lower the mixer back.
+        Untouched meanwhile → exactly the volume it had. Moved by hand during the
+        item → the same move kept, in proportion (60 boosted to 90, then turned
+        down to 75, comes back at 50), rather than undone."""
+        b = self._volume_boost
+        if not b or (tlid is not None and b['tlid'] != tlid):
+            return
+        self._volume_boost = None
+        try:
+            cur = self.mopidyHandler.mixer.get_volume()
+            back = b['base'] if (cur is None or cur == b['set']) \
+                else int(round(cur * b['base'] / b['set']))
+            self.mopidyHandler.mixer.set_volume(max(0, min(100, back)))
+            print(f"Volume boost ended: {cur} -> {back}")
+        except Exception as e:
+            print(f"restore_volume_boost: {e}")
 
     def auto_merge_duplicates(self, fetch_max=100):
         """Merge the duplicates that are certain: same recording by ISRC.

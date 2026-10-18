@@ -154,6 +154,10 @@ class Track(BaseModel):
     # is what lets duplicates be merged without asking (o2m_core/duplicates.py).
     # '' = asked, Spotify has none; NULL = never asked.
     isrc = CharField(null=True)
+    # Radios only: how much louder, in %, the stream plays — the mixer is raised
+    # when it starts and lowered back when it ends (PodcastChannel has the same
+    # setting for the episodes of a channel). NULL = 0.
+    volume_boost_pct = IntegerField(null=True)
 
     def __str__(self):
         return "URI : {} | LAST READ : {} | READ COUNT END : {}| SKIP COUNT : {} | READ POSITION : {} | READ END : {}| OPTION_TYPE : {}".format(
@@ -421,6 +425,10 @@ class PodcastChannel(BaseModel):
     # hand per channel (the channel view): no feed marks its ads, and a per-HOST
     # rule was wrong both ways — not every Radio France show carries one. NULL = 0.
     ad_skip_s  = IntegerField(null=True)
+    # How much louder, in %, its episodes play: the mixer is raised on their start
+    # and lowered back on their end. Replaces a hard-coded +50% for three podcast
+    # hosts, seeded from it by migration v33. NULL = 0.
+    volume_boost_pct = IntegerField(null=True)
 
 
 class EpisodeTaxonomy(BaseModel):
@@ -747,6 +755,27 @@ def _migration_v28(migrator):
     db.create_tables([BoxImage], safe=True)
 
 
+# The hosts the old hard-coded boost (+50% on start, x0.67 on end) applied to.
+_LEGACY_BOOST_HOSTS = ('radiofrance-podcast.net', 'podcasts.nova.fr',
+                       '9851446c-d9b9-47a2-99a9-26d0a4968cc3')
+
+
+def _migration_v33(migrator):
+    # Nullable, so no SQL DEFAULT is needed: an older image's INSERT omits it.
+    _add_column_safe(migrator, 'track', 'volume_boost_pct', IntegerField(null=True))
+    _add_column_safe(migrator, 'podcastchannel', 'volume_boost_pct', IntegerField(null=True))
+    # The channels the old per-host rule boosted keep their +50%, now as a setting.
+    cond = None
+    for h in _LEGACY_BOOST_HOSTS:
+        c = (PodcastChannel.feed_url.contains(h) | PodcastChannel.id.contains(h))
+        cond = c if cond is None else (cond | c)
+    try:
+        PodcastChannel.update(volume_boost_pct=50).where(
+            cond & PodcastChannel.volume_boost_pct.is_null()).execute()
+    except Exception as e:
+        print(f"migration v33 seed: {e}")
+
+
 def _migration_v32(migrator):
     _add_column_safe(migrator, 'track', 'isrc', CharField(null=True))
 
@@ -811,7 +840,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -846,6 +875,7 @@ _MIGRATIONS = [
     (30, "track_play_limit_column", _migration_v30),
     (31, "track_alias_and_dismissed_duplicates", _migration_v31),
     (32, "track_isrc_column", _migration_v32),
+    (33, "volume_boost_columns", _migration_v33),
 ]
 
 

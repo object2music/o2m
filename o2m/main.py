@@ -991,7 +991,9 @@ if __name__ == "__main__":
         pre-roll skipped on a fresh start; or a radio stream → `play_limit_s`,
         how long it plays before the next track (0 = until stopped). `radio`
         says which of the two applies; one endpoint and one field in the page
-        serve both, since they are the same gesture at either end of a play."""
+        serve both, since they are the same gesture at either end of a play.
+        Both also answer `volume_boost_pct`: how much louder, in %, it plays
+        (raised on start, lowered back on end)."""
         from flask import jsonify
         uri = (request.args.get('uri') or '').strip()
         if not uri:
@@ -999,8 +1001,10 @@ if __name__ == "__main__":
         db = o2mHandler.dbHandler
         if o2mHandler.is_radio_uri(uri):
             return jsonify({'uri': uri, 'radio': True, 'known': True,
-                            'play_limit_s': db.get_play_limit(uri)})
+                            'play_limit_s': db.get_play_limit(uri),
+                            'volume_boost_pct': db.get_radio_volume_boost(uri)})
         return jsonify({'uri': uri, 'radio': False, 'ad_skip_s': db.get_channel_ad_skip(uri),
+                        'volume_boost_pct': db.get_channel_setting(uri, 'volume_boost_pct'),
                         'known': bool(db._channels_for(uri))})
 
     @api.route('/api/channel_settings', methods=['POST'])
@@ -1008,10 +1012,30 @@ if __name__ == "__main__":
     def api_channel_settings_set():
         """{uri, ad_skip_s, name?} — stores the pre-roll skip on the channel
         (0 clears it). Applies from the next fresh start of one of its episodes.
-        {uri, play_limit_s} for a radio — applies from its next start."""
+        {uri, play_limit_s} for a radio — applies from its next start.
+        {uri, volume_boost_pct, name?} for either — applies from the next start."""
         from flask import jsonify
         data = request.get_json(silent=True) or {}
         uri = (data.get('uri') or '').strip()
+        if 'volume_boost_pct' in data:
+            try:
+                pct = int(data.get('volume_boost_pct') or 0)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'volume_boost_pct must be a number'}), 400
+            if not uri or pct < 0 or pct > 300:
+                return jsonify({'error': 'uri and 0 <= volume_boost_pct <= 300 required'}), 400
+            db = o2mHandler.dbHandler
+            try:
+                if o2mHandler.is_radio_uri(uri):
+                    db.set_radio_volume_boost(uri, pct)
+                    return jsonify({'ok': True, 'uri': uri, 'volume_boost_pct': pct})
+                ids = db.set_channel_setting(uri, 'volume_boost_pct', pct,
+                                             title=data.get('name') or '')
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
+            if not ids:
+                return jsonify({'error': 'unknown channel'}), 404
+            return jsonify({'ok': True, 'uri': uri, 'volume_boost_pct': pct, 'channels': ids})
         if 'play_limit_s' in data:
             try:
                 secs = int(data.get('play_limit_s') or 0)
@@ -3739,7 +3763,6 @@ with the house Premium account.</li>
             # substituted, and it silently lost both its resume and its ad-skip.
             uri = o2mHandler.get_spotify_uri(track.uri)
 
-            #Quick and dirty volume Management
             # Podcast : seek previous position
             # Any spoken item resumes where it was left. Testing 'podcast+'/youtube
             # left Radio France episodes out — they are plain mp3 links — so their
@@ -3767,10 +3790,8 @@ with the house Premium account.</li>
                 #elif "radiofrance-podcast.net" in track.uri:  o2mHandler.mopidyHandler.playback.seek(15000)
             # A radio with a play limit is moved on from after that long.
             o2mHandler.arm_play_limit(event.tl_track.tlid, uri)
-            if "radiofrance-podcast.net" in track.uri or "proxycast.radiofrance.fr" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
-                volume = o2mHandler.mopidyHandler.mixer.get_volume()*1.5
-                if volume > 100: volume = 100
-                o2mHandler.mopidyHandler.mixer.set_volume(int(volume))
+            # A channel or a radio set to play louder: raised now, lowered on its end.
+            o2mHandler.apply_volume_boost(event.tl_track.tlid, uri)
 
         # Fonction called when tracked skipped OR completly finished
         #@mopidy.audio.AudioListener.state_changed("PLAYING","PAUSED",None)
@@ -3823,11 +3844,8 @@ with the house Premium account.</li>
             print(f"Library Link : {library_link}")
 
             if event.event == "track_playback_ended":
-                #Quick and dirty volume Management
-                if "radiofrance-podcast.net" in track.uri or "podcasts.nova.fr" in track.uri or "9851446c-d9b9-47a2-99a9-26d0a4968cc3" in track.uri :
-                    print (f"Set Volume : {o2mHandler.current_volume}")
-                    #o2mHandler.mopidyHandler.mixer.set_volume(o2mHandler.current_volume)
-                    o2mHandler.mopidyHandler.mixer.set_volume(int(o2mHandler.mopidyHandler.mixer.get_volume()*0.67))
+                # Any end — finished, skipped, stopped — hands its volume boost back.
+                o2mHandler.restore_volume_boost(tlid)
 
                 # Recommandations added at each ended and nottrack (only spotify:track now)
                 if "track" in effective_uri and track.length and position / track.length > 0.9:

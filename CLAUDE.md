@@ -97,7 +97,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **32**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **33**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -565,6 +565,19 @@ lists of the same patterns drift.
   `play_limit_s` and `radio: true` for a stream) and one field in the page
   (`SOURCE_SECONDS` / `sourceSecondsHTML` / `wireSourceSeconds`): the channel view
   shows Skip intro, a radio's details (now-playing panel and modal) Play limit.
+- **Volume boost — the same kind of setting on the other knob**: a channel
+  (`PodcastChannel.volume_boost_pct`) or a radio (`Track.volume_boost_pct`,
+  migration **v33**) plays N% louder. `apply_volume_boost` raises the mixer on
+  `track_playback_started` (capped at 100) and `restore_volume_boost` lowers it on
+  ANY end of that tlid — finished, skipped, stopped — and again at the next start
+  if an end never reported. Untouched meanwhile → exactly the old volume; moved by
+  hand → the move is kept in proportion (60 → 90, turned to 75, ends at 50). It
+  replaces a hard-coded +50% for three podcast hosts (`radiofrance-podcast.net`,
+  `podcasts.nova.fr`, one Acast show) that was lowered by x0.67 on a natural end
+  only, so a skip or a stop left the room louder; v33 seeded those 150 channels
+  at 50. Shown beside Skip intro and Play limit (`SOURCE_SECONDS.volume_boost_pct`,
+  unit `%`). Server playback only: the offline player does not apply it, and the
+  boost in flight is held in memory, so an o2m restart mid-item leaves it raised.
 
 ## Box Data: the complete line reference
 
