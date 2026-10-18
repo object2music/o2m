@@ -2615,8 +2615,8 @@
          row of box tiles. */
       --np-gap: calc(4px * var(--ui));         /* cover/tags → progress */
       --np-gap-tight: calc(8px * var(--ui));   /* progress → transport */
-      --np-gap-vol: calc(12px * var(--ui));    /* transport → volume */
-      --np-gap-end: calc(16px * var(--ui));    /* under the volume: a little more, it closes the header */
+      --np-gap-vol: calc(16px * var(--ui));    /* transport → volume */
+      --np-gap-end: calc(8px * var(--ui));     /* under the volume */
     }
 
     /* Transport: five equal 32px boxes (was 36, and 44 at 110% = 48 before). */
