@@ -966,6 +966,15 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/youtube_channels')
+    def api_youtube_channels():
+        """Every YouTube channel named in a box (Browse: "YouTube channels in your boxes")."""
+        from flask import jsonify
+        try:
+            return jsonify(o2mHandler.list_youtube_channels())
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @api.route('/api/radio_stations')
     def api_radio_stations():
         """Every radio stream named in a box (the Browse view's "Your radios")."""

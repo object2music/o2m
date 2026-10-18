@@ -432,6 +432,7 @@ const ICON = {
   trendingUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
   hardDrive: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>',
   globe:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+  video:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>',
 };
 
 /* ── State ── */
@@ -3082,6 +3083,13 @@ async function objPlayObject(uri, mode) {
    the episodes of every box-referenced feed in its catalogue, so it answers
    instantly and does not depend on a per-instance mopidy setting. */
 async function podcastEpisodes(uri, offset, limit) {
+  // A YouTube channel (its uploads playlist) has no feed: Mopidy-YouTube lists
+  // its latest videos, newest first, in one lookup.
+  if (/^(yt|youtube):playlist:/.test(uri)) {
+    const r = await rpc('core.library.lookup', { uris: [uri] }).catch(() => null);
+    const vids = ((r && r.result && r.result[uri]) || []).slice(offset || 0, (offset || 0) + (limit || 50));
+    return { rows: vids.map(t => ({ uri: t.uri, name: t.name || t.uri, sub: t.date || '' })), hasMore: false };
+  }
   const d = await _wcJson('/podcast_episodes?uri=' + encodeURIComponent(uri)
                           + '&limit=' + (limit || 50) + '&offset=' + (offset || 0));
   return { rows: (d && d.items) || [], hasMore: !!(d && d.has_more) };
@@ -3106,7 +3114,8 @@ function togglePodcastOrder() {
 async function openPodcast(uri, seed) {
   if (!uri) return;
   objNavTo();
-  objSetHead('Podcast', seed?.name || 'Podcast', '');
+  const what = /^(yt|youtube):/.test(uri) ? 'YouTube' : 'Podcast';
+  objSetHead(what, seed?.name || what, '');
   objSetActionUris([], uri);
   openObjPanel();
   objLoading();
@@ -3121,8 +3130,9 @@ async function openPodcast(uri, seed) {
     eps.forEach((e, i) => { e.index = eps.length - i; });
     podcastEps = eps;
     const coverHtml = objCoverHTML(cover, uri);
-    let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || 'Podcast')}</b>`
-      + `<span>${eps.length} episode${eps.length === 1 ? '' : 's'}</span>`
+    const unit = what === 'YouTube' ? 'video' : 'episode';
+    let html = `<div class="obj-hero">${coverHtml}<div class="obj-meta"><b>${objEsc(seed?.name || what)}</b>`
+      + `<span>${eps.length} ${unit}${eps.length === 1 ? '' : 's'}</span>`
       + sourceSecondsHTML('ad_skip_s', 'label')
       + `</div></div>`;
     html += '<div id="obj-pod-list"></div>';
@@ -5813,6 +5823,7 @@ const WC_BROWSE_NODES = {
   podnews:     { label: 'Top news podcasts',      icon: ICON.rss },
   podgenres:   { label: 'Podcast genres',         icon: ICON.list },
   podchannels: { label: 'Channels in your boxes', icon: ICON.hash },
+  ytchannels:  { label: 'YouTube channels in your boxes', icon: ICON.video },
   rfsubjects:  { label: 'Radio France subjects',   icon: ICON.zap },
   myradios:    { label: 'Your radios',            icon: ICON.radio },
   radiotop:    { label: 'Top stations near you',  icon: ICON.radio },
@@ -5820,10 +5831,10 @@ const WC_BROWSE_NODES = {
 };
 const WC_BROWSE_BY_KIND = {
   music:   ['playlists', 'artists', 'albums', 'myradios', 'radiotop', 'boxes'],
-  podcast: ['rfsubjects', 'podtop', 'podgenres', 'podchannels', 'myradios', 'radiotop', 'boxes'],
-  info:    ['rfsubjects', 'podnews', 'podgenres', 'podchannels', 'myradios', 'radiotop', 'boxes'],
+  podcast: ['rfsubjects', 'podtop', 'podgenres', 'podchannels', 'ytchannels', 'myradios', 'radiotop', 'boxes'],
+  info:    ['rfsubjects', 'podnews', 'podgenres', 'podchannels', 'ytchannels', 'myradios', 'radiotop', 'boxes'],
   radio:   ['myradios', 'radiotop', 'boxes'],
-  hybrid:  ['playlists', 'artists', 'albums', 'rfsubjects', 'podtop', 'podgenres', 'podchannels', 'myradios', 'radiotop', 'boxes'],
+  hybrid:  ['playlists', 'artists', 'albums', 'rfsubjects', 'podtop', 'podgenres', 'podchannels', 'ytchannels', 'myradios', 'radiotop', 'boxes'],
 };
 /* Which result sections a search shows, in order. Radios are offered for every
    kind (a stream is welcome in any box). Podcast channels are deliberately NOT:
@@ -6580,6 +6591,12 @@ async function browseFetch(node, opts) {
     return { rows: _wcDirRows(Array.isArray(d) ? d : []), kind: 'podcast',
              empty: 'No channels referenced in your boxes yet.' };
   }
+  if (node === 'ytchannels') {
+    // Opened like a podcast channel: the channel view lists its videos (podcastEpisodes).
+    const d = await _wcJson('/youtube_channels');
+    return { rows: _wcDirRows(Array.isArray(d) ? d : []), kind: 'podcast',
+             empty: 'No YouTube channel in your boxes yet.' };
+  }
   if (node === 'myradios') {
     const d = await _wcJson('/radio_stations');
     return { rows: _wcDirRows(Array.isArray(d) ? d : []), kind: 'radio',
@@ -7011,7 +7028,7 @@ async function searchLoadMore() {
    detour rather than a destination, and a Radio France subject is not an object
    you can open at all — it is a pattern that refills a box. */
 const BROWSE_NODES = ['favorites', 'podfavorites', 'podrecent', 'playlists', 'albums',
-                      'artists', 'podchannels', 'podtop', 'podnews', 'myradios', 'radiotop'];
+                      'artists', 'podchannels', 'ytchannels', 'podtop', 'podnews', 'myradios', 'radiotop'];
 let _browseState = null;   // { node, offset, rows } for the paged nodes
 
 function openBrowse() {

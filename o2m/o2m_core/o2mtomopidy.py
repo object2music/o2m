@@ -1841,6 +1841,42 @@ class O2mToMopidy:
         results.sort(key=lambda r: r['name'].lower())
         return results
 
+    _YT_UPLOADS_RE = re.compile(r'^(?:yt|youtube):playlist:(UU[\w-]{22})$')
+
+    def list_youtube_channels(self):
+        """Every YouTube channel named in a box — the Browse view's counterpart
+        of list_podcast_channels. A channel is its uploads playlist
+        (`yt:playlist:UU…`, what Mopidy-YouTube plays); a channel ADDRESS typed
+        as a line (`web:` or `yt:` + youtube.com/@x, /channel/, /c/, /user/)
+        is converted the way the box builder converts it (webmedia.
+        youtube_channel — an @handle costs one page read, memoised 6 h). Named
+        by the '#Label' line before it, else by the channel page's own name,
+        else by its id. Disabled lines skipped; deduped by uri."""
+        results, seen = [], set()
+        for box in Box.select(Box.uid, Box.data):
+            label = None
+            for _, line in bdir.iter_lines(box.data or ''):
+                line = (line or '').strip()
+                if not line:
+                    continue
+                if line.startswith('#'):
+                    label = line.lstrip('#').strip()
+                    continue
+                uri, name = None, ''
+                m = self._YT_UPLOADS_RE.match(line)
+                if m:
+                    uri = 'yt:playlist:' + m.group(1)
+                elif 'youtube.com/' in line and line.startswith(('web:', 'yt:', 'youtube:')):
+                    ch = webmedia.youtube_channel(re.sub(r'^web:', '', line))
+                    uri, name = ch.get('uri'), ch.get('name') or ''
+                if uri and uri not in seen:
+                    seen.add(uri)
+                    results.append({'uri': uri, 'name': label or name or uri.rsplit(':', 1)[-1],
+                                    'box_uid': box.uid})
+                label = None
+        results.sort(key=lambda r: r['name'].lower())
+        return results
+
     def list_podcast_channels(self):
         """All referenced podcast *channels*. Like radios, a channel has no Track
         record: it's a '#Label' comment line immediately preceding an active
