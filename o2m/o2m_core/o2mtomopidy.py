@@ -1931,6 +1931,42 @@ class O2mToMopidy:
         results.sort(key=lambda c: c['name'].lower())
         return results[:200]
 
+    def list_channel_objects(self):
+        """The Boxes column's Channels shelf: every podcast channel and every
+        YouTube channel the boxes name, in the tile shape (uri/name/sub/image)
+        plus `type` — 'info' when the box naming it is a news box, else
+        'podcast' — which the activation passes on (see virtualbox.spec)."""
+        types = {b.uid: b.option_type for b in Box.select(Box.uid, Box.option_type)}
+        from o2m_core.o2mmodels import PodcastChannel
+        images = {}
+        try:
+            for c in PodcastChannel.select(PodcastChannel.id, PodcastChannel.feed_url,
+                                           PodcastChannel.url, PodcastChannel.image_url
+                                           ).where(PodcastChannel.image_url != ''):
+                for k in (c.id, c.feed_url, c.url):
+                    if k:
+                        images.setdefault(k.rstrip('/'), c.image_url)
+        except Exception:
+            pass
+        rows = []
+        for c in self.list_podcast_channels():
+            uri = c['uri']
+            key = (uri[len('podcast+'):] if uri.startswith('podcast+')
+                   else uri[len('rf:show:'):]).rstrip('/')
+            typ = 'info' if types.get(c.get('box_uid')) == 'info' else 'podcast'
+            rows.append({'uri': uri, 'name': c['name'], 'type': typ,
+                         'sub': 'News' if typ == 'info' else 'Podcast',
+                         'image': images.get(key, '')})
+        try:
+            yt = self.list_youtube_channels()
+        except Exception:
+            yt = []
+        for c in yt:
+            rows.append({'uri': c['uri'], 'name': c['name'], 'type': 'podcast',
+                         'sub': 'YouTube', 'image': ''})
+        rows.sort(key=lambda r: r['name'].lower())
+        return rows
+
     def search_podcast_channels(self, query):
         """Keyword search over podcast channel labels — the podcast half of the
         content-search feature (see list_podcast_channels)."""

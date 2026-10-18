@@ -831,10 +831,20 @@ end-of-track recommendations lean on the artist because `get_track_recommandatio
 branches on `'album' in data`.
 
 ### The column's views and its die (`o2m/static/objgrid.js` + `objgrid.css`)
-The Boxes column has **five views**, switched at the left of its toolbar: the boxes
+The Boxes column has **six views**, switched at the left of its toolbar: the boxes
 **list** as it always was (its tab hidden for now, the code kept — `HIDDEN` in
-`objgrid.js`), the same boxes as a **mosaic**, then **albums**, **artists** and
-**tags**.
+`objgrid.js`), the same boxes as a **mosaic**, then **albums**, **artists**,
+**tags** and **channels**.
+
+**Channels** are every podcast feed, Radio France show and YouTube channel the
+boxes name (`list_channel_objects`, `/api/library_browse?kind=channels`, memoised
+10 min), each activated as an object like an album: its "uri" is the box line that
+plays it (`podcast+<feed>`, `rf:show:`, `yt:playlist:UU…`), virtualbox kind
+`channel`, `option_sort='asc'`, and `option_type` `podcast` or `info` — the tile
+passes `type=info` when the box naming the channel is a news box, because the
+stats file episodes under the box's option_type and the Basic view lights by it.
+The eye opens the channel view (`openPodcast`). No channel carries a picture yet
+(`PodcastChannel.image_url` is empty everywhere), so the tiles are names.
 
 **Tags** are the genres the enrichment put on artists (`ArtistGenre` — `TrackGenre`
 is empty), ranked by the tracks they reach (`get_top_tags`, noise tags left out,

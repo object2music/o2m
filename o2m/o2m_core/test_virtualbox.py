@@ -66,11 +66,27 @@ class KindAndUid(unittest.TestCase):
         self.assertEqual(vb.kind_of('spotify:artist:5TkylUv5ysSbNoawmn3PBj'), 'artist')
         self.assertEqual(vb.kind_of('spotify:playlist:abc'), 'playlist')
 
+    def test_channels(self):
+        # A channel is the box line that plays it: a feed, an RF show, a
+        # YouTube channel's uploads. Spoken, so never 'library', and in order.
+        for uri in ('podcast+https://x/feed.xml', 'rf:show:https://www.radiofrance.fr/s',
+                    'yt:playlist:UU1234567890123456789012'):
+            self.assertEqual(vb.kind_of(uri), 'channel', uri)
+            s = vb.spec(uri, 'C')
+            self.assertEqual(s['data'], uri)
+            self.assertEqual(s['option_type'], 'podcast')
+            self.assertEqual(s['option_sort'], 'asc')
+        self.assertEqual(vb.spec('podcast+https://x/f', 'C', 'info')['option_type'], 'info')
+        # Only the two spoken types: anything else falls back to podcast.
+        self.assertEqual(vb.spec('podcast+https://x/f', 'C', 'trash')['option_type'], 'podcast')
+        # And the override does nothing outside channels.
+        self.assertEqual(vb.spec('spotify:album:a', 'A', 'info')['option_type'], 'library')
+
     def test_not_activable(self):
         # A track is not an object to activate (it is one thing to play), and
         # neither is anything that would resolve to nothing.
-        for uri in ('spotify:track:abc', 'spotify:album:', 'podcast+http://x/f',
-                    'web:https://example.org', 'http://stream', '', None):
+        for uri in ('spotify:track:abc', 'spotify:album:', 'podcast+http://x/f#g1',
+                    'podcast+', 'rf:show:', 'yt:video:abc', 'web:https://example.org', 'http://stream', '', None):
             self.assertIsNone(vb.kind_of(uri), uri)
             self.assertFalse(vb.is_activable(uri), uri)
 
@@ -113,7 +129,7 @@ class Spec(unittest.TestCase):
 class Toggle(unittest.TestCase):
     def setUp(self):
         self._build = vb.build
-        vb.build = lambda uri, name='': _FakeBox(**vb.spec(uri, name))
+        vb.build = lambda uri, name='', option_type=None: _FakeBox(**vb.spec(uri, name, option_type))
         self.h = _FakeHandler()
 
     def tearDown(self):

@@ -28,8 +28,8 @@
 const OBJGRID = (() => {
   /* 'boxes' is the pre-existing list, rendered by mood.html's loadBoxes(); the
      other three are mosaics owned by this file. */
-  const MODES = ['boxes', 'boxgrid', 'albums', 'artists', 'tags'];
-  const MOSAICS = ['boxgrid', 'albums', 'artists', 'tags'];
+  const MODES = ['boxes', 'boxgrid', 'albums', 'artists', 'tags', 'channels'];
+  const MOSAICS = ['boxgrid', 'albums', 'artists', 'tags', 'channels'];
   /* Views whose tab is hidden for now (the code behind them stays). A hidden
      view is never entered — a saved one falls back to the mosaic, or the column
      would open on a view with no tab to leave it by. */
@@ -41,8 +41,8 @@ const OBJGRID = (() => {
      248 rows of json is ~40 KB. Covers are the weight, and they are lazy. */
   const PAGE = 500;
 
-  const KIND_OF = { boxgrid: 'box', albums: 'album', artists: 'artist', tags: 'tag' };
-  const MODE_OF = { box: 'boxgrid', album: 'albums', artist: 'artists', tag: 'tags' };
+  const KIND_OF = { boxgrid: 'box', albums: 'album', artists: 'artist', tags: 'tag', channels: 'channel' };
+  const MODE_OF = { box: 'boxgrid', album: 'albums', artist: 'artists', tag: 'tags', channel: 'channels' };
   /* Settings → Boxes column: every view also heads its grid with what is on in
      the OTHER views, so the column says what is playing whichever tab is open. */
   const ALL_KEY = 'o2m-og-all-active';
@@ -57,8 +57,8 @@ const OBJGRID = (() => {
 
   const state = {
     mode: 'boxes',
-    rows: { boxgrid: null, albums: null, artists: null, tags: null },   // null = not fetched
-    more: { boxgrid: false, albums: false, artists: false, tags: false },
+    rows: { boxgrid: null, albums: null, artists: null, tags: null, channels: null },   // null = not fetched
+    more: { boxgrid: false, albums: false, artists: false, tags: false, channels: false },
     filter: '',
     active: new Map(),      // object uri → {kind, name}
     activeBoxes: new Set(), // box uid
@@ -87,6 +87,8 @@ const OBJGRID = (() => {
       ['albums',  ICON.disc,     'Albums'],
       ['artists', ICON.user,     'Artists'],
       ['tags',    ICONS.tag,     'Tags'],
+      // Podcast feeds, Radio France shows and YouTube channels the boxes name.
+      ['channels', ICON.rss,     'Channels'],
     ].map(([m, icon, label]) =>
       `<button type="button" class="pm-tab" role="tab" data-panel-mode="${m}"`
       + ` title="${label}" aria-label="${label}"${HIDDEN.has(m) ? ' hidden' : ''}>${icon}</button>`).join('');
@@ -307,6 +309,7 @@ const OBJGRID = (() => {
       + ` data-uri="${objEsc(row.uri)}" data-kind="${objEsc(kind)}"`
       + (row.uid ? ` data-uid="${objEsc(row.uid)}"` : '')
       + ` data-name="${objEsc(name)}" data-sub="${objEsc(row.sub || '')}"`
+      + (row.type ? ` data-type="${objEsc(row.type)}"` : '')
       + ` title="${objEsc(name)}" aria-pressed="${active}">`
       + `<span class="og-thumb">${art}<span class="og-mark">${ICON.check}</span>`
       + `<span class="og-open" role="button" tabindex="0" data-og-open`
@@ -362,6 +365,7 @@ const OBJGRID = (() => {
         : state.mode === 'boxgrid' ? 'No pinned boxes.'
         : state.mode === 'albums'  ? 'No saved albums cached yet.'
         : state.mode === 'tags'    ? 'No tags yet — they come from the genre enrichment.'
+        : state.mode === 'channels' ? 'No channels — they are the feeds, shows and YouTube channels your boxes name.'
                                    : 'No followed artists cached yet.';
       grid.innerHTML = head + `<div class="og-empty">${objEsc(empty)}</div>`
         + (state.mode === 'boxgrid' ? newBoxHTML() : '');
@@ -455,6 +459,8 @@ const OBJGRID = (() => {
 
   function openDetail({ uri, kind, name, sub, uid }) {
     if (kind === 'album') openAlbum(uri, { name, artist: sub });
+    // A channel's detail is its episodes (or videos), as in Browse.
+    else if (kind === 'channel') openPodcast(uri, { name });
     else if (kind === 'artist') openArtist(uri, name);
     // A tag's detail is what carries it — the same view a tag chip opens.
     else if (kind === 'tag') openTagSearch(name);
@@ -464,7 +470,7 @@ const OBJGRID = (() => {
   /* `data` is a tile's dataset, or the same four fields built by pickRandom for a
      row that may not be on screen. `el` is only there to grey out while it runs. */
   async function toggle(data, el) {
-    const { uri, kind, name, uid } = data;
+    const { uri, kind, name, uid, type } = data;
     const key = uid || uri;
     if (!key || state.busy.has(key)) return;
     state.busy.add(key);
@@ -497,7 +503,7 @@ const OBJGRID = (() => {
     boxFillStart();   // the dials pulse and wait with the tile (see mood.html)
     try {
       if (kind === 'box') await toggleBoxTile(uid, name);
-      else await toggleObject(uri, name);
+      else await toggleObject(uri, name, type);
       // Starting a box ends the implicit mood session; an object is no different.
       moodSessionActive = false;
       // Same two beats as toggleBox: the badge first, the filled tracklist after
@@ -517,9 +523,11 @@ const OBJGRID = (() => {
     }
   }
 
-  async function toggleObject(uri, name) {
+  async function toggleObject(uri, name, type) {
+    // `type` (podcast | info) only on a channel: what its episodes are filed as.
     const r = await fetch(`${API}/object_toggle?uri=${encodeURIComponent(uri)}`
-                          + `&name=${encodeURIComponent(name || '')}`).then(x => x.json());
+                          + `&name=${encodeURIComponent(name || '')}`
+                          + (type ? `&type=${encodeURIComponent(type)}` : '')).then(x => x.json());
     if (!r.ok) { setFeedback(r.error || 'Could not activate'); return; }
     if (r.active) state.active.set(uri, { kind: r.kind, name: name || uri });
     else state.active.delete(uri);
@@ -626,7 +634,7 @@ const OBJGRID = (() => {
     const kind = KIND_OF[state.mode];
     return visibleRows()
       .filter(r => !isActive(r, kind))
-      .map(r => ({ kind, uri: r.uri, uid: r.uid, name: r.name }));
+      .map(r => ({ kind, uri: r.uri, uid: r.uid, name: r.name, type: r.type }));
   }
 
   async function pickRandom() {

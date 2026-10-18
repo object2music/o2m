@@ -726,7 +726,9 @@ if __name__ == "__main__":
                                     'active': virtualbox.find_active(o2mHandler, uri) is not None,
                                     'kind': virtualbox.kind_of(uri)})
                 with o2mHandler._box_ops_lock(), o2mHandler.filling():
-                    r = virtualbox.toggle(o2mHandler, uri, mode=mode, name=name)
+                    # A channel says whether it is filed as podcast or news.
+                    r = virtualbox.toggle(o2mHandler, uri, mode=mode, name=name,
+                                          option_type=(request.args.get('type') or '').strip() or None)
             return jsonify(r), (200 if r.get('ok') else 400)
         except Exception as e:
             # Logged, not only returned: a 500 here once left 29 orphan tracks and
@@ -1131,6 +1133,20 @@ if __name__ == "__main__":
                 rows, more = (db.get_saved_albums(limit=limit, offset=offset) if kind == 'albums'
                               else db.get_followed_artists(limit=limit, offset=offset))
                 return jsonify({'items': rows, 'has_more': more,
+                                'limit': limit, 'offset': offset})
+            if kind == 'channels':
+                # Every channel the boxes name — podcast feeds, Radio France
+                # shows, YouTube channels — as the mosaic's fifth shelf. Reading
+                # them walks every box (and a YouTube @handle costs a page read),
+                # so memoised for ten minutes like the tags.
+                memo = getattr(api_library_browse, '_channels', None)
+                import time as _time
+                if not memo or _time.time() - memo[0] > 600:
+                    memo = (_time.time(), o2mHandler.list_channel_objects())
+                    api_library_browse._channels = memo
+                rows = memo[1]
+                return jsonify({'items': rows[offset:offset + limit],
+                                'has_more': offset + limit < len(rows),
                                 'limit': limit, 'offset': offset})
             if kind == 'tags':
                 # The tags worth putting on, as the mosaic's fourth shelf. The

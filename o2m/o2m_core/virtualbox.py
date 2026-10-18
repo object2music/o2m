@@ -42,7 +42,15 @@ _KINDS = {'album': 'album', 'artist': 'artist', 'playlist': 'playlist'}
 # path — `_expand_pick`, i.e. popularity, mood and cooldown, exactly like a box
 # line pointing at the same artist.
 # A TAG is the artist case taken further (jazz: ~11k tracks here) — smart, always.
-_SORTS = {'album': 'asc', 'artist': 'smart', 'playlist': 'smart', 'tag': 'smart'}
+# A CHANNEL (a podcast feed, a Radio France show, a YouTube channel's uploads)
+# fills like the same line in a podcast box: its episodes as the feed path hands
+# them over, not reshuffled — 'asc' for the same reason as an album.
+_SORTS = {'album': 'asc', 'artist': 'smart', 'playlist': 'smart', 'tag': 'smart',
+          'channel': 'asc'}
+
+# A channel's option_type is what its episodes are filed under (the stats write
+# the box's option_type, and 'info' is sticky) and which Basic actuator lights.
+_CHANNEL_TYPES = ('podcast', 'info')
 
 
 def kind_of(uri):
@@ -52,6 +60,14 @@ def kind_of(uri):
     # that plays it, which is also what the virtual box's data is.
     if (uri or '').startswith('tag:'):
         return 'tag' if uri[4:].strip() else None
+    # A channel is the box line that plays it. A feed WITH a '#guid' is one
+    # episode — a thing to play, not to activate.
+    if (uri or '').startswith('podcast+'):
+        return 'channel' if uri[8:].strip() and '#' not in uri else None
+    if (uri or '').startswith('rf:show:'):
+        return 'channel' if uri[8:].strip() else None
+    if (uri or '').startswith(('yt:playlist:', 'youtube:playlist:')):
+        return 'channel' if uri.split(':', 2)[2].strip() else None
     parts = (uri or '').split(':')
     if len(parts) < 3 or parts[0] != 'spotify' or not parts[2]:
         return None
@@ -76,7 +92,7 @@ def is_virtual(uid):
     return bool(uid) and uid.startswith(PREFIX)
 
 
-def spec(uri, name=''):
+def spec(uri, name='', option_type=None):
     """The Box field values for this object, or None when it is not activable.
 
     Separate from `build` so the policy — uid, sort, option_type — can be read and
@@ -93,7 +109,10 @@ def spec(uri, name=''):
         'description': (name or '').strip() or uri,
         # 'library' is the neutral lifecycle: it neither restricts the fill to
         # unheard tracks ('new') nor excludes it from the stats ('hidden').
-        'option_type': 'library',
+        # A channel is spoken content: 'podcast', or 'info' when the caller says
+        # its box files it as news.
+        'option_type': ((option_type if option_type in _CHANNEL_TYPES else 'podcast')
+                        if kind == 'channel' else 'library'),
         'option_sort': _SORTS[kind],
         # No budget of its own: the session's max_results applies, as it does for a
         # box that leaves the field empty.
@@ -101,9 +120,9 @@ def spec(uri, name=''):
     }
 
 
-def build(uri, name=''):
+def build(uri, name='', option_type=None):
     """An unsaved Box for this object, or None when it is not activable."""
-    s = spec(uri, name)
+    s = spec(uri, name, option_type)
     if s is None:
         return None
     from o2m_core.o2mmodels import Box   # lazy: importing the models opens the DB
@@ -164,7 +183,7 @@ def active_box_info(handler):
             if getattr(b, 'uid', None) in keep}
 
 
-def toggle(handler, uri, mode='toogle', name=''):
+def toggle(handler, uri, mode='toogle', name='', option_type=None):
     """Activate or deactivate an object, by the same truth table as a box.
 
     Mirrors `api_box_action` rather than calling it: that one is uid-keyed, and
@@ -187,7 +206,7 @@ def toggle(handler, uri, mode='toogle', name=''):
     if mode == 'add' or mode == 'toogle':
         if active:
             return {'ok': True, 'active': True, 'kind': kind, 'uri': uri, 'action': 'none'}
-        box = build(uri, name)
+        box = build(uri, name, option_type)
         handler.activeboxs.append(box)
         # An object put down is a fresh intent, exactly as a box is: it hands
         # precedence back from the dials (see note_box_activation).
