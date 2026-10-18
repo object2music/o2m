@@ -1840,9 +1840,14 @@ let _rowPending = null;   // { row, timer } — a first click waiting for a seco
    album, an artist or a tag in the Boxes column (its list and its mosaics), a
    box in a search: one click opens its detail, a double click toggles it. A
    single click used to toggle, which made a mis-tap a fill — seconds of work and
-   a changed tracklist — while every list beside it only opened. */
+   a changed tracklist — while every list beside it only opened.
+   On a touch screen the tap IS the switch, like the Basic view's actuators: a
+   phone goes from one view to the other, and two gestures for "turn this on"
+   depending on the view is worse than a mis-tap. The detail is then the eye /
+   ⓘ, which never hides on touch. */
 let _tapPending = null;   // { el, timer }
 function dualTap(el, single, double) {
+  if (matchMedia('(hover: none)').matches) { double(); return; }
   if (_tapPending && _tapPending.el === el) {
     clearTimeout(_tapPending.timer);
     _tapPending = null;

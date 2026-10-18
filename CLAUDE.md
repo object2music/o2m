@@ -1863,6 +1863,11 @@ the box — a picker, not a list.
 (list and mosaics) and a box row in a search — one click → its detail, double
 click → toggle it. Single click used to toggle, so a mis-tap launched a fill. The
 mosaic's eye and the list's ⓘ still open the detail at once.
+**On a touch screen (`hover: none`) the tap IS the toggle**, as on the Basic
+view's actuators — the same object took one tap in Basic and two in the mosaic,
+and a phone goes from one view to the other (2026-10-18). The detail is then the
+eye / ⓘ, which never hides on touch. A box row in a SEARCH keeps the list gestures:
+it is a row among tracks, not a switch.
 
 **Long press and drag moves a row in the tracklist** (`wireRowDrag`): held still
 `ROW_HOLD_MS` (400 ms) the row lifts, follows the pointer (the list scrolls near
