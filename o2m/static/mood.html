@@ -1685,7 +1685,7 @@ async function seekRelative(sec) {
     return;
   }
   if (!currentDurationMs) return;
-  let pos = await rpc('core.playback.get_time_position');
+  let pos = (await rpc('core.playback.get_time_position'))?.result;
   if (typeof pos !== 'number') pos = clockPosMs();
   const to = Math.max(0, Math.min(pos + sec * 1000, currentDurationMs - 1000));
   setClock(to, progPlaying);
@@ -2956,6 +2956,8 @@ function trackMenuItems(uri, tlid) {
   // selection, so a dislike would remove this copy and promise something it cannot
   // deliver — the same line puts it back on the next fill.
   if (!_isStreamUri(uri)) items.push({ label: 'Dislike', icon: ICON.heartOff, action: () => setTrackDislike(uri, true) });
+  const dl = offDownloadItem(uri);
+  if (dl) items.push(dl);
   items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push(addToBoxItem(uri));
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
@@ -2988,6 +2990,7 @@ function objMenuItems(uri, kind) {
   if (kind === 'box')    items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openBox(uri.replace(/^box:/, '')) });
   if (kind === 'podcast')items.push({ label: 'See episodes', icon: ICON_DETAILS, action: () => openPodcast(uri) });
   if (kind === 'playlist')items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openPlaylist(uri) });
+  if (kind === 'track' && offDownloadItem(uri)) items.push(offDownloadItem(uri));
   if (kind === 'track')  items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push(addToBoxItem(uri));
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
@@ -7256,7 +7259,7 @@ function activeSummary() {
   // includes four others is one gesture — "1 box (+4 included)", not "5 boxes".
   const n = c.box || 0;
   const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}` + (c.included ? ` (+${c.included} included)` : '')];
-  ['album', 'artist', 'playlist', 'tag'].forEach(k => {
+  ['album', 'artist', 'playlist', 'tag', 'channel'].forEach(k => {
     if (c[k]) parts.push(`${c[k]} ${c[k] === 1 ? k : k + 's'}`);
   });
   return parts.join(' · ');
@@ -7901,6 +7904,41 @@ function offQueuePlayNow(uri) {
   resetProgress();
   offPlayAt(i);
 }
+/* The track menu's Download: the same pass as the Offline button, over one
+   track. Its name, artist and length come from the tracklist when it is there,
+   else from Mopidy — a row of an album or a search is not in the tracklist, and
+   the device's inventory shows what it holds by those fields. Not offered on a
+   stream: a live radio has no file to hold. */
+const ICON_OFF_DL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+function offDownloadItem(uri) {
+  if (!uri || _isStreamUri(uri)) return null;
+  return offHas(uri)
+    ? { label: 'Remove from device', icon: ICON_OFF_DL, action: () => offForgetOne(uri) }
+    : { label: 'Download', icon: ICON_OFF_DL, action: () => offDownloadOne(uri) };
+}
+async function offDownloadOne(uri) {
+  if (OFF.downloading) { setFeedback('A download is already running'); return; }
+  let meta = (matrixTlItems || []).find(t => t.uri === uri);
+  if (!meta) {
+    meta = { uri };
+    try {
+      const r = await rpc('core.library.lookup', { uris: [uri] });
+      const t = r?.result?.[uri]?.[0];
+      if (t) Object.assign(meta, {
+        name: t.name || '', artist: artistsText(t.artists), length: t.length || 0,
+        album: (t.album && t.album.name) || '' });
+    } catch (e) {}
+  }
+  setFeedback('Downloading ' + (meta.name || 'the track') + '…');
+  await offSync([meta], { retry: true });
+}
+async function offForgetOne(uri) {
+  if (OFF.queue.some(t => t.uri === uri)) offQueueRemove(uri);
+  await offForget(uri);
+  offRenderBadges(); offPaintToggle();
+  setFeedback('Removed from this device');
+}
+
 function offTrackMenuItems(uri) {
   const items = [
     { label: 'Play next', icon: ICON_PLAYNEXT, action: () => offQueuePlayNext(uri) },
