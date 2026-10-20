@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks) and `test_lyrics.py` (LRC parsing, title cleaning). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -1674,6 +1674,24 @@ never exposed them.
 registers over HTTPS — in prod (Caddy) the shell is cached on first visit and it works;
 on an HTTP dev instance offline lives only as long as the tab stays open. Covers are not
 cached: the generated (local) cover is used instead.
+
+## Lyrics (Invert theme)
+
+`GET /api/lyrics?uri=&name=&artist=&album=&duration_ms=` (`o2m_core/lyrics.py`):
+LRCLIB first — synced LRC, matched on title, main artist, album and length, then
+by search within 5 s — and lyrics.ovh as plain text when LRCLIB has nothing or is
+down (it answers 503 for minutes at a time). The page sends what it already
+shows; the cache is in memory, keyed by the canonical uri: a week for a hit, a
+day for "nothing anywhere", ten minutes for anything decided while LRCLIB was
+down. Music only — spoken items and streams are never asked.
+
+In the page (`loadLyrics` / `paintLyrics` / `lyricsTick`, `#lyrics-pane`): Invert
+only, and only when the song has lyrics. On desktop the pane takes the tracklist
+column over (a button in each header switches, remembered per device as
+`o2m-lyrics`); on a phone it is moved to the head of `#main-cols`, above the
+accordion, with its own scroll. Synced lines follow the local clock
+(`tickProgress`), the current one in the hero accent and scrolled a third of the
+way down the pane; a tap on a line seeks there.
 
 ## The SvelteKit frontend is gone
 

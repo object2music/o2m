@@ -1259,6 +1259,31 @@ if __name__ == "__main__":
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @api.route('/api/lyrics')
+    def api_lyrics():
+        """?uri=&name=&artist=&album=&duration_ms= → the song's lyrics, synced when
+        LRCLIB has them (o2m_core/lyrics.py). The page sends what it already shows,
+        so nothing is looked up here but the lyrics; `uri` keys the cache (its
+        canonical form: a downloaded track is the same song). Music only."""
+        from flask import jsonify
+        from o2m_core import lyrics
+        a = request.args
+        uri = o2mHandler.get_spotify_uri((a.get('uri') or '').strip())
+        if not uri or o2mHandler._is_spoken_uri(uri) or o2mHandler.is_radio_uri(uri):
+            return jsonify({'uri': uri, 'found': False})
+        try:
+            dur = int(a.get('duration_ms') or 0)
+        except ValueError:
+            dur = 0
+        try:
+            res = lyrics.find(uri, a.get('name') or '', a.get('artist') or '',
+                              a.get('album') or '', dur)
+        except lyrics.Unavailable:
+            return jsonify({'uri': uri, 'found': False, 'retry': True})
+        if not res:
+            return jsonify({'uri': uri, 'found': False})
+        return jsonify({'uri': uri, 'found': True, **res})
+
     @api.route('/api/yt_videos', methods=['POST'])
     def api_yt_videos():
         """{channel, videos: [{uri, name, length}]} — a YouTube channel's videos as

@@ -303,10 +303,23 @@
 
   <!-- Col 3 : Tracklist (prioritaire) -->
   <div id="tracklist-col" class="col collapsible open">
+    <!-- Lyrics (Invert theme only): takes this column over on desktop; moved to
+         the top of #main-cols on a phone (placeLyricsPane). -->
+    <div id="lyrics-pane" hidden>
+      <div id="lyrics-label">
+        <span>Lyrics</span>
+        <div style="display:flex;align-items:center;gap:calc(8px * var(--ui));">
+          <span id="lyrics-src"></span>
+          <button id="btn-lyrics-off" type="button" title="Show the tracklist" aria-label="Show the tracklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
+        </div>
+      </div>
+      <div id="lyrics-body"></div>
+    </div>
     <div id="tracklist-section">
       <div id="tracklist-label">
         <span>Tracklist</span>
         <div style="display:flex;align-items:center;gap:calc(8px * var(--ui));">
+          <button id="btn-lyrics-on" type="button" title="Show the lyrics" aria-label="Show the lyrics" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/></svg></button>
           <span id="tracklist-count"></span>
           <button id="btn-clear-tl" title="Clear tracklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
         </div>
@@ -2557,6 +2570,100 @@ function switchNowPlayingTo(uri, { name, artist, artists, album }) {
   loadStatusBadge(uri);
   renderTrackDetails(uri);
   loadCover(uri);
+  loadLyrics(uri, { name, artist: artist || artistsText(artists), album });
+}
+
+/* ── Lyrics (Invert theme) ─────────────────────────────────────────────────
+   Read from /api/lyrics (LRCLIB, synced when it can; lyrics.ovh as plain text).
+   Synced lines follow the clock (lyricsTick, from tickProgress) and a tap on one
+   seeks there. Shown only in Invert and only when the song has lyrics: on
+   desktop the pane takes the tracklist column over (one button back to the
+   tracklist, remembered per device), on a phone it heads the main column. */
+const LYR = { uri: null, data: null, cur: -1, want: true };
+try { LYR.want = localStorage.getItem('o2m-lyrics') !== '0'; } catch (e) {}
+const isPhone = () => window.matchMedia('(max-width: 699px)').matches;
+async function loadLyrics(uri, { name, artist, album } = {}) {
+  LYR.uri = uri; LYR.data = null; LYR.cur = -1;
+  paintLyrics();
+  if (!uri || _isSpokenUri(uri) || _isStreamUri(uri) || !name) return;
+  const q = new URLSearchParams({ uri, name: name || '', artist: artist || '',
+                                  album: (album && album.name) || album || '',
+                                  duration_ms: String(currentDurationMs || 0) });
+  try {
+    const d = await fetch(API + '/lyrics?' + q).then(r => r.json());
+    if (LYR.uri !== uri) return;               // the track changed meanwhile
+    LYR.data = d && d.found && !d.instrumental ? d : null;
+    paintLyrics();
+  } catch (e) {}
+}
+function placeLyricsPane() {
+  const pane = document.getElementById('lyrics-pane');
+  if (!pane) return;
+  const host = isPhone() ? document.getElementById('main-cols') : document.getElementById('tracklist-col');
+  if (host && pane.parentElement !== host) host.insertBefore(pane, host.firstChild);
+}
+function paintLyrics() {
+  const pane = document.getElementById('lyrics-pane');
+  if (!pane) return;
+  placeLyricsPane();
+  const invert = document.documentElement.getAttribute('data-theme') === 'invert';
+  const d = invert ? LYR.data : null;
+  const show = !!d && (isPhone() || LYR.want);
+  pane.hidden = !show;
+  // Desktop: the pane REPLACES the tracklist in its column; the phone keeps both.
+  document.getElementById('tracklist-col')?.classList.toggle('lyrics-on', show && !isPhone());
+  const on = document.getElementById('btn-lyrics-on');
+  if (on) on.hidden = !(d && !LYR.want && !isPhone());
+  const off = document.getElementById('btn-lyrics-off');
+  if (off) off.hidden = isPhone();
+  if (!show) return;
+  document.getElementById('lyrics-src').textContent = d.source || '';
+  const body = document.getElementById('lyrics-body');
+  if (body.dataset.uri === LYR.uri) return;    // already drawn for this song
+  body.dataset.uri = LYR.uri;
+  body.innerHTML = d.synced
+    ? d.synced.map(([ms, t], i) => `<p class="lyr-line" data-i="${i}" data-ms="${ms}">${objEsc(t) || '&nbsp;'}</p>`).join('')
+    : `<div class="lyr-plain">${objEsc(d.plain || '')}</div>`;
+  body.scrollTop = 0;
+  LYR.cur = -1;
+  lyricsTick(clockPosMs());
+}
+function lyricsTick(pos) {
+  const d = LYR.data;
+  if (!d || !d.synced) return;
+  const body = document.getElementById('lyrics-body');
+  const pane = document.getElementById('lyrics-pane');
+  if (!body || !pane || pane.hidden) return;
+  let i = -1;
+  for (let k = 0; k < d.synced.length && d.synced[k][0] <= pos + 200; k++) i = k;
+  if (i === LYR.cur) return;
+  body.querySelector('.lyr-line.on')?.classList.remove('on');
+  LYR.cur = i;
+  const el = i >= 0 ? body.querySelector(`.lyr-line[data-i="${i}"]`) : null;
+  if (!el) return;
+  el.classList.add('on');
+  // Scroll the PANE, not the page: the current line sits a third of the way down.
+  const top = el.offsetTop - body.offsetTop - body.clientHeight / 3;
+  body.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+function setupLyrics() {
+  const set = want => {
+    LYR.want = want;
+    try { localStorage.setItem('o2m-lyrics', want ? '1' : '0'); } catch (e) {}
+    document.getElementById('lyrics-body').dataset.uri = '';
+    paintLyrics();
+  };
+  document.getElementById('btn-lyrics-on')?.addEventListener('click', e => { e.stopPropagation(); set(true); });
+  document.getElementById('btn-lyrics-off')?.addEventListener('click', e => { e.stopPropagation(); set(false); });
+  document.getElementById('lyrics-body')?.addEventListener('click', e => {
+    const line = e.target.closest('.lyr-line');
+    if (!line || OFF.on || queueLocked()) return;
+    const ms = +line.dataset.ms;
+    rpc('core.playback.seek', { time_position: ms }).then(() => { setClock(ms, progPlaying); lyricsTick(ms); });
+  });
+  window.matchMedia('(max-width: 699px)').addEventListener?.('change', () => {
+    document.getElementById('lyrics-body').dataset.uri = ''; paintLyrics();
+  });
 }
 
 /* No current track: the header goes back to its empty state — ALL of it. The old
@@ -8904,8 +9011,11 @@ function applyTheme(name) {
   readThemeColors();
   requestAnimationFrame(fitHeroTitle);
   requestAnimationFrame(syncDetailsWidth);   // standard themes: re-match details↔cover width
+  const lb = document.getElementById('lyrics-body'); if (lb) lb.dataset.uri = '';
+  paintLyrics();                              // lyrics are an Invert feature
 }
 function setupThemeSwitcher() {
+  setupLyrics();
   document.querySelectorAll('.theme-chip').forEach(c =>
     c.addEventListener('click', () => applyTheme(c.dataset.themeSet)));
   const current = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -9546,6 +9656,7 @@ function tickProgress() {
     Math.min(100, (pos / span) * 100) + '%';
   document.getElementById('prog-elapsed').textContent = msToMin(pos) || '0:00';
   if (!currentDurationMs) paintLimitEnd(pos, span);
+  lyricsTick(pos);
 }
 
 /* A radio's play limit (`play_limit_s`, set in its details) stands in for the

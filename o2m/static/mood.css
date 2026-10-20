@@ -2678,3 +2678,54 @@
     [data-theme="overprint"] #controls { gap: calc(12px * var(--ui)); padding-top: calc(6px * var(--ui)); }
     [data-theme="overprint"] #progress-wrap { padding: calc(6px * var(--ui)) 0 0; }
   }
+
+  /* ── Lyrics pane (Invert theme only; see paintLyrics) ── */
+  #lyrics-pane { display: flex; flex-direction: column; min-height: 0; }
+  #lyrics-pane[hidden] { display: none; }
+  #lyrics-label {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: calc(12px * var(--ui)); color: var(--muted); text-transform: uppercase;
+    letter-spacing: .08em; padding: calc(13px * var(--ui)) calc(12px * var(--ui)) calc(10px * var(--ui));
+    background: var(--bg); flex-shrink: 0;
+  }
+  #lyrics-label > span:first-child::before {
+    content: var(--eyebrow-mark, ""); color: var(--eyebrow-color, var(--accent));
+  }
+  #lyrics-src { font-size: var(--t-label); }
+  #btn-lyrics-on, #btn-lyrics-off {
+    background: none; border: none; color: var(--muted); cursor: pointer; padding: 0;
+    display: flex; align-items: center;
+  }
+  #btn-lyrics-on:hover, #btn-lyrics-off:hover { color: var(--text); }
+  #btn-lyrics-on svg, #btn-lyrics-off svg { width: calc(16px * var(--ui)); height: calc(16px * var(--ui)); }
+  #btn-lyrics-on[hidden], #btn-lyrics-off[hidden] { display: none; }
+  #lyrics-body {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding: calc(4px * var(--ui)) calc(12px * var(--ui)) 30vh;
+    font-family: var(--font-head); font-weight: 700; line-height: 1.25;
+    font-size: var(--t-body-l);
+  }
+  /* Synced: what is sung now in full ink, the rest receding. A line is a seek. */
+  .lyr-line {
+    margin: 0 0 calc(10px * var(--ui)); color: var(--muted); opacity: .55; cursor: pointer;
+    transition: color .3s, opacity .3s;
+  }
+  .lyr-line:hover { opacity: .85; }
+  .lyr-line.on { color: var(--hero-accent, var(--accent)); opacity: 1; }
+  .lyr-plain { white-space: pre-wrap; color: var(--text); font-weight: 500; }
+  @media (prefers-reduced-motion: reduce) { .lyr-line { transition: none; } }
+
+  @media (min-width: 700px) {
+    /* The pane takes the tracklist column over; the column stops scrolling as a
+       whole so only the lyrics scroll under their sticky label. */
+    #tracklist-col.lyrics-on { display: flex; flex-direction: column; overflow: hidden; }
+    #tracklist-col.lyrics-on #tracklist-section { display: none; }
+    #tracklist-col.lyrics-on #lyrics-pane { flex: 1; }
+    #lyrics-body { font-size: calc(22px * var(--ui)); }
+  }
+  @media (max-width: 699px) {
+    /* Heads the main column, above the accordion, with a scroll of its own. */
+    #main-cols > #lyrics-pane { flex: 0 0 auto; border-top: 1px solid var(--border); }
+    #main-cols > #lyrics-pane #lyrics-body { max-height: 34vh; padding-bottom: calc(12px * var(--ui)); }
+    #main-cols > #lyrics-pane #lyrics-label { background: var(--surface); padding: calc(10px * var(--ui)) calc(14px * var(--ui)); }
+  }
