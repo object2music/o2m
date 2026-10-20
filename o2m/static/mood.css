@@ -2783,4 +2783,11 @@
     #lyrics-col.open #lyrics-label > span:first-child::before { content: '▾'; }
     #lyrics-col:not(.open) #lyrics-body { display: none; }
     #lyrics-col.open #lyrics-body { padding: calc(10px * var(--ui)) calc(14px * var(--ui)) 30vh; }
+    /* Basic view (Invert): no tracklist on screen to take over, so the pane comes
+       under the dials, a window of a few lines that scrolls on its own. */
+    #basic-section #lyrics-pane {
+      flex: 0 0 auto; height: 42vh; border-top: 1px solid var(--border);
+    }
+    #basic-section #lyrics-label { padding-left: 0; padding-right: 0; }
+    #basic-section #lyrics-body { padding: calc(4px * var(--ui)) 0 18vh; }
   }

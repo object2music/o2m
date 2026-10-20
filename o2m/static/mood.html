@@ -2594,25 +2594,32 @@ function switchNowPlayingTo(uri, { name, artist, artists, album }) {
      o2m-lyrics-tab), every theme;
    - full view, phone: one more branch of the accordion (#lyrics-col);
    - Basic view: Invert only — on desktop the pane takes the tracklist column over
-     (one button back to the tracklist, remembered as o2m-lyrics).
+     (one button back to the tracklist, remembered as o2m-lyrics); on a phone it
+     comes under the dials.
    In Invert they come forward by themselves in the full view too: each song that
    has lyrics opens the Lyrics tab (desktop) or branch (phone) — a tab chosen by
    hand holds for the rest of that song. */
-const LYR = { uri: null, data: null, cur: -1, want: true, tab: 'mood', tabUri: null };
+const LYR = { uri: null, data: null, pending: false, cur: -1, want: true, tab: 'mood', tabUri: null };
 try { LYR.want = localStorage.getItem('o2m-lyrics') !== '0'; } catch (e) {}
 try { LYR.tab = localStorage.getItem('o2m-lyrics-tab') === 'lyrics' ? 'lyrics' : 'mood'; } catch (e) {}
 const isPhone = () => window.matchMedia('(max-width: 699px)').matches;
 const isInvert = () => document.documentElement.getAttribute('data-theme') === 'invert';
 async function loadLyrics(uri, { name, artist, album } = {}) {
+  // Until the answer comes, the pane holds its place if the last song had lyrics:
+  // hiding it meanwhile closed the phone's branch (and flipped the desktop tab)
+  // between two songs that both have some.
+  const ask = !!uri && !_isSpokenUri(uri) && !_isStreamUri(uri) && !!name;
+  LYR.pending = ask && (!!LYR.data || LYR.pending);
   LYR.uri = uri; LYR.data = null; LYR.cur = -1;
   paintLyrics();
-  if (!uri || _isSpokenUri(uri) || _isStreamUri(uri) || !name) return;
+  if (!ask) return;
   const q = new URLSearchParams({ uri, name: name || '', artist: artist || '',
                                   album: (album && album.name) || album || '',
                                   duration_ms: String(currentDurationMs || 0) });
   try {
     const d = await fetch(API + '/lyrics?' + q).then(r => r.json());
     if (LYR.uri !== uri) return;               // the track changed meanwhile
+    LYR.pending = false;
     LYR.data = d && d.found && !d.instrumental ? d : null;
     if (LYR.data && isInvert() && !isBasic() && isPhone()) {
       // Invert: the branch opens by itself — unless Boxes or Mood is being used.
@@ -2624,17 +2631,18 @@ async function loadLyrics(uri, { name, artist, album } = {}) {
       }
     }
     paintLyrics();
-  } catch (e) {}
+  } catch (e) { if (LYR.uri === uri) { LYR.pending = false; paintLyrics(); } }
 }
 function lyricsHost() {
-  if (isBasic()) return document.getElementById('tracklist-col');
+  // Basic on a phone has no tracklist on screen: the pane goes under the dials.
+  if (isBasic()) return document.getElementById(isPhone() ? 'basic-section' : 'tracklist-col');
   return document.getElementById(isPhone() ? 'lyrics-col' : 'left-panel');
 }
 function placeLyricsPane() {
   const pane = document.getElementById('lyrics-pane');
   const host = lyricsHost();
   if (!pane || !host || pane.parentElement === host) return;
-  if (host.id === 'left-panel') host.appendChild(pane);       // after the mood body
+  if (host.id === 'left-panel' || host.id === 'basic-section') host.appendChild(pane);
   else host.insertBefore(pane, host.firstChild);
 }
 function paintLyrics() {
@@ -2644,22 +2652,23 @@ function paintLyrics() {
   const basic = isBasic(), phone = isPhone();
   const invert = isInvert();
   const d = (!basic || invert) ? LYR.data : null;
+  const has = !!d || (!!LYR.pending && (!basic || invert));   // lyrics, or about to
   // Invert puts the lyrics forward on every song, unless a tab was picked for this one.
   const tab = invert && LYR.tabUri !== LYR.uri ? 'lyrics' : LYR.tab;
   let show;
-  if (basic) show = !!d && !phone && LYR.want;
-  else if (phone) show = !!d;
-  else show = !!d && tab === 'lyrics';
+  if (basic) show = has && (phone || LYR.want);
+  else if (phone) show = has;
+  else show = has && tab === 'lyrics';
   pane.hidden = !show;
   // Basic, desktop: the pane REPLACES the tracklist in its column.
   document.getElementById('tracklist-col')?.classList.toggle('lyrics-on', basic && show);
   const on = document.getElementById('btn-lyrics-on');
   if (on) on.hidden = !(basic && d && !LYR.want && !phone);
   const off = document.getElementById('btn-lyrics-off');
-  if (off) off.hidden = !basic;
+  if (off) off.hidden = !basic || phone;
   // Full, desktop: the Mood column's tabs, offered only when there are lyrics.
   const tabs = document.getElementById('mood-tabs');
-  if (tabs) tabs.hidden = basic || phone || !d;
+  if (tabs) tabs.hidden = basic || phone || !has;
   const lp = document.getElementById('left-panel');
   lp?.classList.toggle('lyrics-on', !basic && !phone && show);
   const view = !basic && !phone && show ? 'lyrics' : 'mood';
@@ -2671,7 +2680,7 @@ function paintLyrics() {
   // branch that disappears hands the screen back to the tracklist.
   const col = document.getElementById('lyrics-col');
   if (col) {
-    const gone = !(!basic && phone && d);
+    const gone = !(!basic && phone && has);
     if (gone && col.classList.contains('open') && !col.hidden) {
       col.classList.remove('open');
       document.getElementById('tracklist-col')?.classList.add('open');
@@ -2679,8 +2688,13 @@ function paintLyrics() {
     col.hidden = gone;
   }
   if (!show) return;
-  document.getElementById('lyrics-src').textContent = d.source || '';
   const body = document.getElementById('lyrics-body');
+  if (!d) {                                    // the next song's lyrics are on their way
+    body.dataset.uri = ''; body.innerHTML = '';
+    document.getElementById('lyrics-src').textContent = '';
+    return;
+  }
+  document.getElementById('lyrics-src').textContent = d.source || '';
   if (body.dataset.uri === LYR.uri) return;    // already drawn for this song
   body.dataset.uri = LYR.uri;
   body.innerHTML = d.synced

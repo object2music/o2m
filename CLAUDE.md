@@ -1697,8 +1697,12 @@ only when the song has lyrics:
   lyrics, and an open branch that disappears hands the screen back to the
   tracklist;
 - **Basic view: Invert only** — on desktop the pane takes the tracklist column
-  over (a button in each header switches, `o2m-lyrics`); on a phone the Basic
-  view has no column to put it in.
+  over (a button in each header switches, `o2m-lyrics`); on a phone, where no
+  tracklist is on screen, it comes under the dials (`#basic-section`).
+
+Between two songs the pane holds its place while the next one's lyrics load
+(`LYR.pending`, set when the last song had some): hiding it meanwhile closed the
+phone's branch at every change of song.
 
 **In Invert they come forward by themselves in the full view too**: each song
 with lyrics opens the Lyrics tab (desktop; a tab picked by hand holds for the rest
