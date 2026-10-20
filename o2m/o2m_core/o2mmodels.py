@@ -765,6 +765,30 @@ def _migration_v28(migrator):
     db.create_tables([BoxImage], safe=True)
 
 
+def _migration_v35(migrator):
+    # 'radio' becomes a box option_type, set by hand: the Basic view's Radio
+    # actuator reads it instead of guessing from stream-looking lines. The boxes
+    # that ARE radios get it here, so the actuator does not come up empty:
+    # typed library (or untyped), no auto:/box:/meta_ line, and every source
+    # line a stream. A box mixing a stream with other content ("P Vava") keeps
+    # its type. Older code reads 'radio' as before: not podcast/info, streams.
+    import re
+    import o2m_core.boxdirectives as bdir
+    stream = re.compile(r'^(?:https?://\S+\.(?:aac|mp3|m3u8)\b|https?://\S*icecast|tunein:)', re.I)
+    try:
+        for b in Box.select(Box.uid, Box.data, Box.option_type):
+            if (b.option_type or 'library') != 'library':
+                continue
+            lines = [p.strip() for _, p in bdir.iter_lines(b.data or '')
+                     if p and p.strip() and not p.strip().startswith('#')
+                     and not bdir.is_directive(p.strip())]
+            if lines and all(stream.search(l) for l in lines):
+                Box.update(option_type='radio').where(Box.uid == b.uid).execute()
+                print(f"migration v35: box {b.uid} typed radio")
+    except Exception as e:
+        print(f"migration v35: {e}")
+
+
 # The hosts the old hard-coded boost (+50% on start, x0.67 on end) applied to.
 _LEGACY_BOOST_HOSTS = ('radiofrance-podcast.net', 'podcasts.nova.fr',
                        '9851446c-d9b9-47a2-99a9-26d0a4968cc3')
@@ -859,7 +883,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 34
+SCHEMA_VERSION = 35
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -896,6 +920,7 @@ _MIGRATIONS = [
     (32, "track_isrc_column", _migration_v32),
     (33, "volume_boost_columns", _migration_v33),
     (34, "podcastchannel_box_index", _migration_v34),
+    (35, "box_type_radio", _migration_v35),
 ]
 
 

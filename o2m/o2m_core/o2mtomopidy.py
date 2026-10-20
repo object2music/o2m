@@ -994,6 +994,11 @@ class O2mToMopidy:
         option_type = active_box.option_type
         if force_option_type != None: 
             option_type=force_option_type
+        # 'radio' says what the BOX is (the Radio actuator's), not a track's
+        # lifecycle: what a radio box plays is filed as before the type existed,
+        # when such boxes were typed library.
+        if option_type == 'radio':
+            option_type = 'library'
         length = 0
 
         # Compute a default library_link when not provided to ensure robust tracking
@@ -1747,8 +1752,6 @@ class O2mToMopidy:
 #BASIC CATEGORIES (shared by /api/basic_boxes, /api/basic_toggle and the meta_* box patterns)
     _META_PATTERNS = {'meta_podcasts': 'podcast', 'meta_infos': 'info', 'meta_radios': 'radio'}
 
-    _STREAM_RE = re.compile(r'https?://\S+\.(aac|mp3|m3u8)\b|icecast', re.I)
-
     @staticmethod
     def _content_lines(data):
         """A box's lines as classification reads them: `#` lines dropped (a
@@ -1773,8 +1776,13 @@ class O2mToMopidy:
         the 4 actuators' fill sources, but counted as music when the actuators
         read what is ON, and swept up by Music OFF's catch-all (see meta_remove)
         so it doesn't get orphaned once activated some other way (Full view, NFC,
-        cascade). Commented lines are ignored throughout: a '#http://…aac' left
-        in a playlist box used to make it a RADIO box."""
+        cascade). Commented lines are ignored throughout.
+
+        'radio' is the box's TYPE (option_type='radio', migration v35), set by
+        hand like podcast and info. It used to be guessed from the content — any
+        line looking like a stream — so a playlist box holding one stream
+        ("P Vava": a playlist + Mon Petit France Inter, typed hidden) was a
+        radio, and ALL drew it as the Radio source about one time in three."""
         lines = self._content_lines(data)
         if any(l.startswith('auto:') for l in lines):
             return 'music'
@@ -1784,7 +1792,7 @@ class O2mToMopidy:
             return 'podcast'
         if option_type == 'info':
             return 'info'
-        if any(self._STREAM_RE.search(l) for l in lines):
+        if option_type == 'radio':
             return 'radio'
         return 'other'
 
@@ -1811,8 +1819,7 @@ class O2mToMopidy:
 
     def get_basic_categories(self):
         """Pinned boxes grouped into the basic-view categories (direct sources only).
-        music: data has an 'auto:' line · podcast/info: by option_type · radio: data
-        carries direct audio-stream URLs. Cascade boxes ('box:' lines), meta boxes
+        music: data has an 'auto:' line · podcast/info/radio: by option_type. Cascade boxes ('box:' lines), meta boxes
         ('meta_*' lines) and anything else uncategorized ('other') are excluded —
         they are scenarios or not a fill source, not one of the 4 direct sources."""
         cats = {'music': [], 'podcast': [], 'info': [], 'radio': []}

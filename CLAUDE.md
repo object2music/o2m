@@ -97,7 +97,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **34**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **35**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -137,7 +137,16 @@ Config is read from `/etc/mopidy/o2m.conf` (Linux) or `~/.config/mopidy/o2m.conf
 5. Mopidy events (`track_playback_ended`, `track_playback_paused`) trigger stat updates and dynamic tracklist refilling
 
 ### Box `option_type` values
-`library`, `favorites`, `new`, `incoming`, `hidden`, `trash`, `podcast`, `info`.
+`library`, `favorites`, `new`, `incoming`, `hidden`, `trash`, `podcast`, `info`, `radio`.
+
+**`radio` is set by hand, like `podcast` and `info`** (migration **v35**). It is what
+files a box under the Basic view's Radio actuator, and so what ALL draws as its radio
+source (`_box_category`). Until 2026-10-20 a radio was GUESSED from the content: any
+line looking like a stream made the box a radio, so "P Vava" — a playlist plus Mon
+Petit France Inter, typed `hidden` — was drawn by ALL about one time in three, its
+playlist with it. v35 typed `radio` the boxes whose every source line is a stream
+(here: "Radios" only). On a track the box type is filed as `library`, as before the
+type existed (`add_tracks`): `radio` describes a box, not a lifecycle.
 
 The same field on `Track` means something different — it is the track's **lifecycle**
 state, not a box type, and is what the UI shows as STATUS. Observed in prod: `new` 54,100 ·

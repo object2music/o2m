@@ -13,8 +13,7 @@ directly usable as box `data` content:
   European/French coverage. iTunes' `/search` no longer exposes `feedUrl`, so it
   cannot be used for keyword search.
 * radio          — radio-browser.info, which returns *resolved* stream URLs
-  (.aac / .m3u8 / icecast), i.e. what a radio box's data line needs and what
-  `_box_category` recognizes as a radio source.
+  (.aac / .m3u8 / icecast), i.e. what a radio box's data line needs.
 
 Every function returns a list of uniform dicts:
     {'name', 'uri', 'image', 'sub', 'source'}

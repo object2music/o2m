@@ -5232,7 +5232,7 @@ const bxOpt = (v, l, cur) => `<option value="${objEsc(v)}"${String(v) === String
 const bxNum = (id, val, attrs) => `<input class="bx-input bx-num" type="number" id="bx-${id}" value="${val == null ? '' : val}" ${attrs}>`;
 const bxChk = (id, on) => `<input type="checkbox" id="bx-${id}"${on ? ' checked' : ''}>`;
 const bxField = (label, ctrl, cls) => `<div class="obj-field${cls ? ' ' + cls : ''}"><label class="obj-field-label">${label}</label><div class="obj-field-ctrl">${ctrl}</div></div>`;
-const BX_TYPES = ['library','favorites','new','incoming','hidden','trash','podcast','info'];
+const BX_TYPES = ['library','favorites','new','incoming','hidden','trash','podcast','info','radio'];
 const bxTypeSel = cur => `<select class="bx-input" id="bx-option_type">` + BX_TYPES.map(t => bxOpt(t, t, cur)).join('') + `</select>`;
 /* Sort/order options in plain language. '' (stored NULL) and 'smart' both take
    the smart selection path; 'smart' additionally forces a reshuffle, which is
@@ -6757,11 +6757,11 @@ const WIZ_TYPE_HINTS = {
   trash:     'Content you never want to hear again.',
   podcast:   'Podcast box — episodes from channel feeds.',
   info:      'News / info flashes (short items).',
+  radio:     'Radio box — the source of the Radio switch in Basic and ALL.',
 };
-/* The 4 simple kinds. `type` is the stored option_type; radio has no dedicated
-   option_type — a box counts as radio because its data holds stream URLs (see
-   _box_category), and option_type 'info' would override that, so radio uses
-   'library'. `name` pre-fills the box name (editable). */
+/* The 4 simple kinds. `type` is the stored option_type, which is what files a
+   box under a Basic actuator (_box_category). `name` pre-fills the box name
+   (editable). */
 const WIZ_KINDS = {
   music:   { label: 'Music',    icon: ICON.music, type: 'library', name: 'Music',
              hint: 'Albums, artists, playlists and tracks.' },
@@ -6769,7 +6769,7 @@ const WIZ_KINDS = {
              hint: 'Long episodes, from channel feeds.' },
   info:    { label: 'Info',     icon: ICON.zap,   type: 'info',    name: 'Info',
              hint: 'Short news flashes.' },
-  radio:   { label: 'Radio',    icon: ICON.radio, type: 'library', name: 'Radio',
+  radio:   { label: 'Radio',    icon: ICON.radio, type: 'radio',   name: 'Radio',
              hint: 'Live streams, played as-is.' },
 };
 
