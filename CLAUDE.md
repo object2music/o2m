@@ -471,6 +471,16 @@ rate-limited cache fallback. Note the classification gap it exposed: a hidden bo
 marks a track `hidden` only when it is PLAYED from that box, so 88 of Liv's 149
 tracks still read `new` — and the anti-hidden filters read that status, not the box.
 
+**The reverse: a box NAMING a playlist keeps its hidden tracks** (`_named_line_exclusion`,
+2026-10-20). A playlist, album or artist line drops only `trash`, and nothing in a
+hidden or trash box. "Vava" is named by a hidden box and by "Auto Family": played from
+the first, 63 of its 68 tracks read hidden, so the second drew its share from the 5
+left and "A dada" came back on consecutive days — a sampler asked for as many tracks
+as its pool holds takes them all, so no cooldown can hold one back. `tag:` and the
+library buckets still drop hidden. Related: music drawn by a `podcast` / `info` box
+was filed `info` (111 tracks, 110 left unscored); `update_stat_track` now keeps its
+music status, else `library`.
+
 ## Spoken Content: Podcasts, News, Radio France
 
 Spoken items (podcast episodes, news flashes) are `Track` rows like any other, but they

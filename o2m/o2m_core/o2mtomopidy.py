@@ -2611,7 +2611,7 @@ class O2mToMopidy:
                         # Smart only: expand the artist's cached tracks and stochastically pick.
                         cached = self.dbHandler.get_artist_track_uris(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), content.strip()))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box)), content.strip()))
                         else:
                             # Basic / cache-miss: legacy top + all tracks (may hit the API)
                             tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
@@ -2620,7 +2620,7 @@ class O2mToMopidy:
                         # Smart only: expand album sub-tracks from AlbumTrack and stochastically pick.
                         cached = self.dbHandler.get_album_tracks(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), content.strip()))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box)), content.strip()))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole album
                     elif media_parts[1] == "playlist":
@@ -2631,7 +2631,7 @@ class O2mToMopidy:
                         else:
                             cached = None
                         if cached:
-                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), content.strip()))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box)), content.strip()))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole playlist
                     else:
@@ -4209,6 +4209,19 @@ class O2mToMopidy:
             self._served_at = served = {}
         return served
 
+    @staticmethod
+    def _named_line_exclusion(box):
+        """What a line NAMING a playlist, album or artist drops from it.
+
+        Naming the object is asking for it, so `hidden` stays in: that status is
+        left by whichever box played the track last, not by the object. "Vava" is
+        named by a hidden box (P Vava) and by "Auto Family"; played from the first,
+        63 of its 68 tracks read hidden, and the second drew its share from the 5
+        left — "A dada" came back every fill, cooldown or not, since a sampler asked
+        for as many tracks as the pool holds takes them all. `trash` is a rejection
+        and stays out, except in a box made of it."""
+        return False if getattr(box, 'option_type', '') in ('hidden', 'trash') else 'trash'
+
     def _selection_pool(self, uris, exclude_hidden, label):
         """Everything the samplers need about `uris`, in one query.
 
@@ -4241,7 +4254,9 @@ class O2mToMopidy:
                 if t.disliked:
                     excluded.add(t.uri)
                     continue
-                if exclude_hidden and t.option_type in ('hidden', 'trash'):
+                # exclude_hidden: True drops hidden and trash, 'trash' trash only.
+                if exclude_hidden and t.option_type in (
+                        ('trash',) if exclude_hidden == 'trash' else ('hidden', 'trash')):
                     excluded.add(t.uri)
                     continue
                 if t.energy is not None and t.valence is not None:
@@ -4523,6 +4538,12 @@ class O2mToMopidy:
         if stat is None:
             print(f"update_stat_track: no stat for {uri}, skipping")
             return None
+        # The mirror case: MUSIC drawn by a podcast or news box ("Auto Family" is
+        # typed info and includes playlists) must not be filed as spoken — it
+        # left the music scoring, the rotation and the music pools. It keeps the
+        # music status it had, else library (as a radio box's tracks are filed).
+        if option_type in ('podcast', 'info') and uri.startswith(('spotify:track:', 'local:', 'file:')):
+            option_type = stat.option_type if stat.option_type not in (None, '', 'podcast', 'info') else 'library'
 
         #Using rate reading average instead of bool
         track_finished = False
