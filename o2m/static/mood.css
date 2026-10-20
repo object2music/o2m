@@ -963,6 +963,12 @@
     :root:not([data-theme="invert"]) #track-details {
       overflow-y: auto; min-height: 0;
     }
+    /* The volume line shares #controls with the transport, and at width:100% it
+       won the flex negotiation: the buttons shrank to their icon and came out as
+       tall narrow rectangles. The buttons keep their square; the volume line takes
+       what is left, so it still ends under the progress bar's right edge. */
+    #controls > .ctrl-btn { flex-shrink: 0; }
+    #controls > #volume-row { flex: 1 1 auto; width: auto; min-width: 0; }
     /* Square, and the same size as the cover: the panel is stretched to the row
        height anyway, so aspect-ratio derives its width from that — which is exactly
        what #cover-col measures (cover height + its padding). It was pinned to

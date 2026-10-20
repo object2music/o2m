@@ -3933,7 +3933,10 @@ const objPanel = makeTrackPanel({ cellId: k => 'obj-td-' + k, canvasId: 'obj-tma
 // its own height (rows fixed, matrix capped at 200px), so the top-zone height and
 // thus the cover width stay put — no feedback loop.
 function syncDetailsWidth() {
-  const cover = document.getElementById('cover-wrap');
+  // The cover COLUMN, padding included: it is the square the eye reads as the
+  // picture block, and the header's height — so the details panel comes out
+  // square too. Measuring the bare cover left it a padding narrower than tall.
+  const cover = document.getElementById('cover-col');
   const details = document.getElementById('track-details');
   if (!cover || !details) return;
   // overprint/invert use a CSS grid (width driven by grid-template-columns) — leave them.
