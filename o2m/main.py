@@ -2502,6 +2502,8 @@ if __name__ == "__main__":
                     return ch.box_line.strip()
                 if ch.feed_url:
                     return 'podcast+' + ch.feed_url
+                if ch.kind == 'yt':          # keyed by its uploads line
+                    return ch.id
         except Exception:
             pass
         return ''

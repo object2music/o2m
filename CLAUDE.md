@@ -867,6 +867,16 @@ o2m_0 on older code or in phpMyAdmin. A row no box names any more loses
 feed's picture (`_feed_head`: `<itunes:image>`, else `<image><url>`); YouTube
 channels have none yet.
 
+**A YouTube VIDEO points at its channel too** (2026-10-20). Mopidy-YouTube names
+the channel as the video's artist (`yt:channel:UC…`, "Name (Channel)");
+`_fill_spoken_meta` stores its uploads line in `Track.channel_id` and registers the
+row (`register_yt_channel`), so the channel's Skip intro and Volume boost reach
+every video, whatever playlist it came from, and the header names the channel.
+Mopidy gives no date: `webmedia.youtube_published` reads it (yt_dlp, ~2 s, no
+format resolution) on a background worker, one a second. A spoken item no longer
+takes a music lifecycle when `add_tracks` opens its row (it was filed `new` until
+played). In the page, an artist link `yt:channel:UC…` opens the channel view.
+
 **Tags** are the genres the enrichment put on artists (`ArtistGenre` — `TrackGenre`
 is empty), ranked by the tracks they reach (`get_top_tags`, noise tags left out,
 memoised 10 min in `/api/library_browse?kind=tags`). A tag activates exactly like an

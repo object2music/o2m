@@ -3084,6 +3084,20 @@ class DatabaseHandler():
                 by_line[ch.box_line] = ch
         return list(by_line.values())
 
+    def register_yt_channel(self, line, title=''):
+        """Make sure a YouTube channel (its uploads line) has a row, so its
+        videos can point at it and it can carry settings. An existing row keeps
+        its title: a box's label or an earlier read is not overwritten."""
+        if not line:
+            return
+        try:
+            if PodcastChannel.get_or_none(PodcastChannel.id == line) is None:
+                self.upsert_podcast_channel(
+                    line, 'yt', title=title or '',
+                    url='https://www.youtube.com/playlist?list=' + line.split(':', 2)[2])
+        except Exception as e:
+            print(f"register_yt_channel: {e}")
+
     def get_channel_ad_skip(self, uri):
         """Seconds of pre-roll to skip for the channel of this uri."""
         return self.get_channel_setting(uri, 'ad_skip_s')

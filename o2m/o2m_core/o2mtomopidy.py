@@ -1255,6 +1255,15 @@ class O2mToMopidy:
                                     print(f"spoken meta ({track_uri}): {e}")
 
                             if (not getattr(stat, 'option_type', None)) and track_option_type:
+                                # Spoken content never takes a music lifecycle — the
+                                # rule update_stat_track applies at the end of a play,
+                                # applied here too: a video drawn from a 'new' box was
+                                # filed 'new' until it was played, and sat in the
+                                # music news bucket meanwhile.
+                                if self._is_spoken_uri(track_uri) and track_option_type in (
+                                        'new', 'new_mopidy', 'library', 'favorites', 'incoming', 'normal'):
+                                    track_option_type = self._spoken_type_for_uri(
+                                        track_uri, getattr(tl_track.track, 'length', None))
                                 stat.option_type = track_option_type
 
                             if library_display:
@@ -4809,6 +4818,53 @@ class O2mToMopidy:
                             feed, 'rss', title=self._feed_title(feed), url=feed, feed_url=feed)
                 except Exception:
                     pass
+        # A YouTube video: its channel is the artist Mopidy-YouTube names
+        # ('yt:channel:UC…'), stored as the line that plays its uploads — the id
+        # the channel's row already has when a box names it, so the channel's
+        # settings (Skip intro, Volume boost) reach its videos through
+        # Track.channel_id. Mopidy gives no date: it is read in the background.
+        if webmedia.youtube_video_id(uri) and uri.startswith(('yt:', 'youtube:')):
+            if not getattr(stat, 'channel_id', None):
+                artists = list(getattr(mopidy_track, 'artists', None) or [])
+                a = artists[0] if artists else None
+                line, title = webmedia.youtube_channel_of(getattr(a, 'uri', ''), getattr(a, 'name', ''))
+                if line:
+                    stat.channel_id = line
+                    self.dbHandler.register_yt_channel(line, title)
+            if not getattr(stat, 'published_at', None):
+                self._queue_yt_date(uri)
+
+    def _queue_yt_date(self, uri):
+        """Read a YouTube video's publication date off the main path: one
+        worker, one page read a second, each video asked at most once per run."""
+        lock = self.__dict__.setdefault('_yt_date_lock', threading.Lock())
+        with lock:
+            asked = self.__dict__.setdefault('_yt_date_asked', set())
+            if uri in asked:
+                return
+            asked.add(uri)
+            q = self.__dict__.setdefault('_yt_date_q', [])
+            q.append(uri)
+            if self.__dict__.get('_yt_date_running'):
+                return
+            self._yt_date_running = True
+
+        def work():
+            while True:
+                with lock:
+                    if not q:
+                        self._yt_date_running = False
+                        return
+                    u = q.pop(0)
+                try:
+                    day = webmedia.youtube_published(u)
+                    if day:
+                        Track.update(published_at=day).where(
+                            (Track.uri == u) & (Track.published_at.is_null(True))).execute()
+                except Exception as e:
+                    print(f"youtube date ({u}): {e}")
+                time.sleep(1)
+        threading.Thread(target=work, daemon=True, name='yt-dates').start()
 
     # Pre-roll ads. Neither Radio France nor the BBC marks them: no chapters
     # (psc:/podcast:), no wording in the description, and itunes:duration already

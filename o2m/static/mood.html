@@ -5136,6 +5136,11 @@ function renderArtist(uri, { name = 'Artist', image = '', genres = [], tracks = 
    live rows have none of), then the catalogue, deduplicated by uri. */
 async function openArtist(uri, seedName) {
   if (!uri) { setFeedback('No artist link'); return; }
+  // A YouTube video's "artist" is its channel: open the channel view — its
+  // videos and its settings (Skip intro, Volume boost) — under the line that
+  // plays its uploads, not an artist page that has neither.
+  const ytc = /^(?:yt|youtube):channel:UC([\w-]{22})$/.exec(uri);
+  if (ytc) return openPodcast('yt:playlist:UU' + ytc[1], { name: (seedName || '').replace(/\s*\(Channel\)$/, '') });
   objNavTo();
   const title = seedName || 'Artist';
   objSetHead('Artist', title, '');

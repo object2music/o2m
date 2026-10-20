@@ -492,6 +492,40 @@ def _expiry_of(url):
     return best
 
 
+_YT_VIDEO_ID_RE = re.compile(r'(?:video:|[?&]v=|youtu\.be/)([\w-]{11})')
+
+
+def youtube_video_id(uri):
+    """The 11-character id of a YouTube video uri ('youtube:video:<id>',
+    'yt:video:<id>', or a watch address behind 'yt:'), or ''."""
+    m = _YT_VIDEO_ID_RE.search(uri or '')
+    return m.group(1) if m else ''
+
+
+def youtube_channel_of(artist_uri, artist_name=''):
+    """(uploads line, title) of the channel Mopidy-YouTube names as a video's
+    artist ('yt:channel:UC…', 'Name (Channel)'), or ('', '')."""
+    m = re.match(r'^(?:yt|youtube):channel:(UC[\w-]{22})$', artist_uri or '')
+    if not m:
+        return '', ''
+    return channel_uploads_uri(m.group(1)), re.sub(r'\s*\(Channel\)$', '', artist_name or '').strip()
+
+
+def youtube_published(uri, timeout=None):
+    """When a YouTube video was published ('YYYY-MM-DD'), or None. Mopidy-YouTube
+    gives no date; one yt_dlp page read (~2 s) does, without resolving formats."""
+    vid = youtube_video_id(uri)
+    if not vid:
+        return None
+    import yt_dlp
+    opts = {'quiet': True, 'no_warnings': True, 'skip_download': True,
+            'socket_timeout': timeout or TIMEOUT}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info('https://www.youtube.com/watch?v=' + vid,
+                                download=False, process=False)
+    return _published_day(info or {})
+
+
 def _extract(url, referer, timeout):
     """One yt_dlp attempt. Raises — the caller decides what a failure means."""
     import yt_dlp
