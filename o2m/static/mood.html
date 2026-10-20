@@ -809,7 +809,7 @@ function updateBasicStatus() {
   const tl = document.getElementById('bs-tracks');
   const bx = document.getElementById('bs-boxes');
   if (tl) tl.textContent = `${currentTracklistLength} track${currentTracklistLength === 1 ? '' : 's'}`;
-  if (bx) bx.textContent = activeSummary(true);
+  if (bx) bx.textContent = activeSummary();
 }
 
 // Called from the now-playing refresh (10s + WS events): re-syncs the basic box
@@ -2692,8 +2692,9 @@ function paintLyrics() {
 }
 /* What is heard trails the server's clock: Mopidy reports where its pipeline is,
    and the sound still goes through its output buffer and, on a speaker, Snapcast's
-   (buffer = 2500 ms here). Lines used to light 0.5-1 s early (+200 ms lead). */
-const LYR_LAG_MS = 600;
+   (buffer = 2500 ms here), which every room speaker plays through. Lines lit
+   0.5-1 s early with a 200 ms lead, still about a line early at 600 ms behind. */
+const LYR_LAG_MS = 2600;
 function lyricsTick(pos) {
   const d = LYR.data;
   if (!d) return;
@@ -7548,14 +7549,13 @@ function recomputeAutoBox() {
    (OBJGRID's `/api/active_objects`). An album is still named an album: it fills
    the tracklist like a box but is not one, and this line is the only place the
    interface says so. */
-function activeSummary(short = false) {
+function activeSummary() {
   const c = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
   // A cascade's children are counted apart: putting down one object that
-  // includes four others is one gesture — "1 box (+4 included)", not "5 boxes".
-  // The Basic view's status line asks for the short form, "1 box +4 inc": the long
-  // one broke it over three lines on a phone.
+  // includes four others is one gesture — "1 box +4 inc", not "5 boxes". Short
+  // in every view: "(+4 included)" broke the Basic status line over three lines.
   const n = c.box || 0;
-  const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}` + (c.included ? (short ? ` +${c.included} inc` : ` (+${c.included} included)`) : '')];
+  const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}` + (c.included ? ` +${c.included} inc` : '')];
   ['album', 'artist', 'playlist', 'tag', 'channel'].forEach(k => {
     if (c[k]) parts.push(`${c[k]} ${c[k] === 1 ? k : k + 's'}`);
   });

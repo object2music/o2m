@@ -1041,7 +1041,7 @@ Other points worth knowing:
   rendering. An album is still named an album: it fills the tracklist like a box but
   is not one, and this line is the only place the interface says so.
   **A cascade's children are counted apart**: putting down one object that includes
-  four others reads `1 box (+4 included)`, not `5 boxes` — `/api/active_objects`
+  four others reads `1 box +4 inc`, not `5 boxes` — `/api/active_objects`
   returns `included` (active boxes whose `_box_parent` is active,
   `included_box_uids`), and `activeCounts` subtracts them.
 - **The four Basic actuators show what is ON, not what their own boxes are**
@@ -1707,9 +1707,10 @@ is the open branch, which is someone using it).
 
 Synced lines follow the local clock (`tickProgress`), the current one in the hero
 accent and scrolled a third of the way down the pane; a tap on a line seeks there.
-They run **`LYR_LAG_MS` (600 ms) behind** the clock: Mopidy reports its pipeline's
-position, and the sound still crosses its output buffer and Snapcast's (`buffer =
-2500`) — with a 200 ms lead instead, lines lit 0.5–1 s early. Untimed text scrolls
+They run **`LYR_LAG_MS` (2600 ms) behind** the clock: Mopidy reports its
+pipeline's position, and the sound still crosses its output buffer and Snapcast's
+(`buffer = 2500`), which every speaker plays through — with a 200 ms lead lines lit
+0.5–1 s early, and at 600 ms behind still about a line early. Untimed text scrolls
 with the song (`lyricsFollowPlain`, the words spread over the track, nothing lit;
 a scroll by hand holds it 8 s).
 
