@@ -253,7 +253,13 @@
   <!-- Col 2 : Réglages — potentiomètres + matrice + genres (repliable en mobile) -->
   <div id="left-panel" class="col collapsible">
   <div class="panel-head" id="settings-label">
-    <span>Mood</span>
+    <span id="settings-title">Mood</span>
+    <!-- Desktop full view: the column's two views, the mood controls and the
+         song's lyrics (shown only when the song has some; see paintLyrics). -->
+    <div class="pm-seg" id="mood-tabs" role="tablist" hidden>
+      <button type="button" class="pm-tab active" role="tab" data-mood-tab="mood" title="Mood" aria-label="Mood"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></button>
+      <button type="button" class="pm-tab" role="tab" data-mood-tab="lyrics" title="Lyrics" aria-label="Lyrics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/></svg></button>
+    </div>
     <button id="btn-reset-mood" type="button" title="Reset mood to defaults"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
   </div>
   <div class="panel-body">
@@ -301,10 +307,15 @@
   </div><!-- /panel-body -->
   </div><!-- /left-panel -->
 
+  <!-- Phone full view: the lyrics are one more branch of the accordion, shown
+       only when the song has some (placeLyricsPane moves the pane in here). -->
+  <div id="lyrics-col" class="col collapsible" hidden></div>
+
   <!-- Col 3 : Tracklist (prioritaire) -->
   <div id="tracklist-col" class="col collapsible open">
-    <!-- Lyrics (Invert theme only): takes this column over on desktop; moved to
-         the top of #main-cols on a phone (placeLyricsPane). -->
+    <!-- Lyrics: one pane, moved by placeLyricsPane to where the view wants it —
+         here in the Basic view (Invert only, it takes this column over), a tab of
+         the Mood column in the full view on desktop, #lyrics-col on a phone. -->
     <div id="lyrics-pane" hidden>
       <div id="lyrics-label">
         <span>Lyrics</span>
@@ -1635,6 +1646,7 @@ function switchView(toBasic, push = true) {
     }
   }
   try { fitHeroTitle(); } catch (e) {}
+  paintLyrics();                              // the pane lives in another place per view
 }
 let _fullPanelTouched = false;   // set once the user opens an accordion panel in full view
 
@@ -2573,14 +2585,18 @@ function switchNowPlayingTo(uri, { name, artist, artists, album }) {
   loadLyrics(uri, { name, artist: artist || artistsText(artists), album });
 }
 
-/* ── Lyrics (Invert theme) ─────────────────────────────────────────────────
+/* ── Lyrics ────────────────────────────────────────────────────────────────
    Read from /api/lyrics (LRCLIB, synced when it can; lyrics.ovh as plain text).
    Synced lines follow the clock (lyricsTick, from tickProgress) and a tap on one
-   seeks there. Shown only in Invert and only when the song has lyrics: on
-   desktop the pane takes the tracklist column over (one button back to the
-   tracklist, remembered per device), on a phone it heads the main column. */
-const LYR = { uri: null, data: null, cur: -1, want: true };
+   seeks there. Shown only when the song has lyrics, and where depends on the view:
+   - full view, desktop: a second tab of the Mood column (remembered per device,
+     o2m-lyrics-tab), every theme;
+   - full view, phone: one more branch of the accordion (#lyrics-col);
+   - Basic view: Invert only — on desktop the pane takes the tracklist column over
+     (one button back to the tracklist, remembered as o2m-lyrics). */
+const LYR = { uri: null, data: null, cur: -1, want: true, tab: 'mood' };
 try { LYR.want = localStorage.getItem('o2m-lyrics') !== '0'; } catch (e) {}
+try { LYR.tab = localStorage.getItem('o2m-lyrics-tab') === 'lyrics' ? 'lyrics' : 'mood'; } catch (e) {}
 const isPhone = () => window.matchMedia('(max-width: 699px)').matches;
 async function loadLyrics(uri, { name, artist, album } = {}) {
   LYR.uri = uri; LYR.data = null; LYR.cur = -1;
@@ -2596,26 +2612,56 @@ async function loadLyrics(uri, { name, artist, album } = {}) {
     paintLyrics();
   } catch (e) {}
 }
+function lyricsHost() {
+  if (isBasic()) return document.getElementById('tracklist-col');
+  return document.getElementById(isPhone() ? 'lyrics-col' : 'left-panel');
+}
 function placeLyricsPane() {
   const pane = document.getElementById('lyrics-pane');
-  if (!pane) return;
-  const host = isPhone() ? document.getElementById('main-cols') : document.getElementById('tracklist-col');
-  if (host && pane.parentElement !== host) host.insertBefore(pane, host.firstChild);
+  const host = lyricsHost();
+  if (!pane || !host || pane.parentElement === host) return;
+  if (host.id === 'left-panel') host.appendChild(pane);       // after the mood body
+  else host.insertBefore(pane, host.firstChild);
 }
 function paintLyrics() {
   const pane = document.getElementById('lyrics-pane');
   if (!pane) return;
   placeLyricsPane();
+  const basic = isBasic(), phone = isPhone();
   const invert = document.documentElement.getAttribute('data-theme') === 'invert';
-  const d = invert ? LYR.data : null;
-  const show = !!d && (isPhone() || LYR.want);
+  const d = (!basic || invert) ? LYR.data : null;
+  let show;
+  if (basic) show = !!d && !phone && LYR.want;
+  else if (phone) show = !!d;
+  else show = !!d && LYR.tab === 'lyrics';
   pane.hidden = !show;
-  // Desktop: the pane REPLACES the tracklist in its column; the phone keeps both.
-  document.getElementById('tracklist-col')?.classList.toggle('lyrics-on', show && !isPhone());
+  // Basic, desktop: the pane REPLACES the tracklist in its column.
+  document.getElementById('tracklist-col')?.classList.toggle('lyrics-on', basic && show);
   const on = document.getElementById('btn-lyrics-on');
-  if (on) on.hidden = !(d && !LYR.want && !isPhone());
+  if (on) on.hidden = !(basic && d && !LYR.want && !phone);
   const off = document.getElementById('btn-lyrics-off');
-  if (off) off.hidden = isPhone();
+  if (off) off.hidden = !basic;
+  // Full, desktop: the Mood column's tabs, offered only when there are lyrics.
+  const tabs = document.getElementById('mood-tabs');
+  if (tabs) tabs.hidden = basic || phone || !d;
+  const lp = document.getElementById('left-panel');
+  lp?.classList.toggle('lyrics-on', !basic && !phone && show);
+  const view = !basic && !phone && show ? 'lyrics' : 'mood';
+  document.querySelectorAll('#mood-tabs .pm-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.moodTab === view));
+  const title = document.getElementById('settings-title');
+  if (title) title.textContent = view === 'lyrics' ? 'Lyrics' : 'Mood';
+  // Full, phone: the accordion branch exists only while there are lyrics; an open
+  // branch that disappears hands the screen back to the tracklist.
+  const col = document.getElementById('lyrics-col');
+  if (col) {
+    const gone = !(!basic && phone && d);
+    if (gone && col.classList.contains('open') && !col.hidden) {
+      col.classList.remove('open');
+      document.getElementById('tracklist-col')?.classList.add('open');
+    }
+    col.hidden = gone;
+  }
   if (!show) return;
   document.getElementById('lyrics-src').textContent = d.source || '';
   const body = document.getElementById('lyrics-body');
@@ -2653,6 +2699,13 @@ function setupLyrics() {
     document.getElementById('lyrics-body').dataset.uri = '';
     paintLyrics();
   };
+  document.querySelectorAll('#mood-tabs .pm-tab').forEach(t => t.addEventListener('click', e => {
+    e.stopPropagation();
+    LYR.tab = t.dataset.moodTab;
+    try { localStorage.setItem('o2m-lyrics-tab', LYR.tab); } catch (e) {}
+    document.getElementById('lyrics-body').dataset.uri = '';
+    paintLyrics();
+  }));
   document.getElementById('btn-lyrics-on')?.addEventListener('click', e => { e.stopPropagation(); set(true); });
   document.getElementById('btn-lyrics-off')?.addEventListener('click', e => { e.stopPropagation(); set(false); });
   document.getElementById('lyrics-body')?.addEventListener('click', e => {
@@ -9012,7 +9065,7 @@ function applyTheme(name) {
   requestAnimationFrame(fitHeroTitle);
   requestAnimationFrame(syncDetailsWidth);   // standard themes: re-match details↔cover width
   const lb = document.getElementById('lyrics-body'); if (lb) lb.dataset.uri = '';
-  paintLyrics();                              // lyrics are an Invert feature
+  paintLyrics();                              // in the Basic view lyrics are an Invert feature
 }
 function setupThemeSwitcher() {
   setupLyrics();
@@ -9037,12 +9090,13 @@ function setupCollapsibles() {
   // Single-open accordion (mobile): opening one section closes the others, so the
   // 3 headers stay visible. On desktop the .open class has no effect (all shown).
   const heads = document.querySelectorAll(
-    '#boxes-panel .panel-head, #left-panel .panel-head, #tracklist-col #tracklist-label');
+    '#boxes-panel .panel-head, #left-panel .panel-head, #tracklist-col #tracklist-label, #lyrics-label');
   heads.forEach(h => h.addEventListener('click', (e) => {
     if (e.target.closest('#btn-clear-tl') || e.target.closest('#btn-clear-boxes')
-        || e.target.closest('#btn-reset-mood')) return;   // don't toggle on a header action
+        || e.target.closest('#btn-reset-mood') || e.target.closest('#mood-tabs')
+        || e.target.closest('#btn-lyrics-off')) return;   // don't toggle on a header action
     const panel = h.closest('.collapsible');
-    if (!panel) return;
+    if (!panel || panel.id !== 'lyrics-col' && h.id === 'lyrics-label') return;   // the label is a head only on a phone
     _fullPanelTouched = true;   // remember the user's explicit choice as prior state
     const willOpen = !panel.classList.contains('open');
     document.querySelectorAll('#main-cols .collapsible').forEach(p =>

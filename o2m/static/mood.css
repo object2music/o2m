@@ -1232,7 +1232,7 @@
 
   /* Harmonisation des titres de section (comme les tags sous le titre) */
   .panel-head, .dial-label,
-  #tracklist-label > span:first-child {
+  #tracklist-label > span:first-child, #lyrics-label > span:first-child {
     font-family: var(--font-head); font-weight: 700; font-size: var(--t-body-s);
     text-transform: uppercase; letter-spacing: .02em; color: var(--text);
   }
@@ -2709,7 +2709,7 @@
     [data-theme="overprint"] #progress-wrap { padding: calc(6px * var(--ui)) 0 0; }
   }
 
-  /* ── Lyrics pane (Invert theme only; see paintLyrics) ── */
+  /* ── Lyrics pane (see paintLyrics for where it goes in each view) ── */
   #lyrics-pane { display: flex; flex-direction: column; min-height: 0; }
   #lyrics-pane[hidden] { display: none; }
   #lyrics-label {
@@ -2745,17 +2745,42 @@
   .lyr-plain { white-space: pre-wrap; color: var(--text); font-weight: 500; }
   @media (prefers-reduced-motion: reduce) { .lyr-line { transition: none; } }
 
+  #lyrics-col[hidden] { display: none !important; }
+  #mood-tabs { margin-left: auto; }
+  #mood-tabs[hidden] { display: none; }
+  #mood-tabs + #btn-reset-mood { margin-left: 0; }
   @media (min-width: 700px) {
-    /* The pane takes the tracklist column over; the column stops scrolling as a
-       whole so only the lyrics scroll under their sticky label. */
+    #lyrics-col { display: none !important; }
+    #lyrics-body { font-size: calc(22px * var(--ui)); }
+    /* Basic view (Invert): the pane takes the tracklist column over; the column
+       stops scrolling as a whole so only the lyrics scroll under their label. */
     #tracklist-col.lyrics-on { display: flex; flex-direction: column; overflow: hidden; }
     #tracklist-col.lyrics-on #tracklist-section { display: none; }
     #tracklist-col.lyrics-on #lyrics-pane { flex: 1; }
-    #lyrics-body { font-size: calc(22px * var(--ui)); }
+    /* Full view: the Mood column's Lyrics tab. The column's own head carries the
+       tabs, so the pane's label is dropped and the mood controls make room. */
+    #left-panel.lyrics-on { display: flex; flex-direction: column; overflow: hidden; }
+    #left-panel.lyrics-on > .panel-body { display: none; }
+    #left-panel.lyrics-on #btn-reset-mood { display: none; }
+    #left-panel #lyrics-pane { flex: 1; }
+    #left-panel #lyrics-label { display: none; }
   }
   @media (max-width: 699px) {
-    /* Heads the main column, above the accordion, with a scroll of its own. */
-    #main-cols > #lyrics-pane { flex: 0 0 auto; border-top: 1px solid var(--border); }
-    #main-cols > #lyrics-pane #lyrics-body { max-height: 34vh; padding-bottom: calc(12px * var(--ui)); }
-    #main-cols > #lyrics-pane #lyrics-label { background: var(--surface); padding: calc(10px * var(--ui)) calc(14px * var(--ui)); }
+    #mood-tabs { display: none !important; }
+    /* Full view: one more accordion branch, its label as the head. */
+    #lyrics-col {
+      display: flex; flex-direction: column; min-height: 0; padding: 0;
+      border-top: 1px solid var(--border);
+    }
+    #lyrics-col #lyrics-pane { flex: 1; min-height: 0; }
+    #lyrics-col #lyrics-label {
+      cursor: pointer; padding: calc(13px * var(--ui)) calc(14px * var(--ui));
+      background: var(--surface); border-bottom: 1px solid var(--border-soft);
+    }
+    #lyrics-col #lyrics-label > span:first-child::before {
+      content: '▸'; color: var(--muted); font-size: var(--t-label); margin-right: calc(9px * var(--ui));
+    }
+    #lyrics-col.open #lyrics-label > span:first-child::before { content: '▾'; }
+    #lyrics-col:not(.open) #lyrics-body { display: none; }
+    #lyrics-col.open #lyrics-body { padding: calc(10px * var(--ui)) calc(14px * var(--ui)) 30vh; }
   }

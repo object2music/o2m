@@ -1675,7 +1675,7 @@ registers over HTTPS — in prod (Caddy) the shell is cached on first visit and 
 on an HTTP dev instance offline lives only as long as the tab stays open. Covers are not
 cached: the generated (local) cover is used instead.
 
-## Lyrics (Invert theme)
+## Lyrics
 
 `GET /api/lyrics?uri=&name=&artist=&album=&duration_ms=` (`o2m_core/lyrics.py`):
 LRCLIB first — synced LRC, matched on title, main artist, album and length, then
@@ -1685,13 +1685,22 @@ shows; the cache is in memory, keyed by the canonical uri: a week for a hit, a
 day for "nothing anywhere", ten minutes for anything decided while LRCLIB was
 down. Music only — spoken items and streams are never asked.
 
-In the page (`loadLyrics` / `paintLyrics` / `lyricsTick`, `#lyrics-pane`): Invert
-only, and only when the song has lyrics. On desktop the pane takes the tracklist
-column over (a button in each header switches, remembered per device as
-`o2m-lyrics`); on a phone it is moved to the head of `#main-cols`, above the
-accordion, with its own scroll. Synced lines follow the local clock
-(`tickProgress`), the current one in the hero accent and scrolled a third of the
-way down the pane; a tap on a line seeks there.
+In the page (`loadLyrics` / `paintLyrics` / `lyricsTick`): ONE pane,
+`#lyrics-pane`, moved by `placeLyricsPane` to where the view wants it, and shown
+only when the song has lyrics:
+- **full view, desktop** (every theme): a second tab of the Mood column
+  (`#mood-tabs`, the Boxes column's `.pm-tab` look), the column head reading
+  Lyrics while it is open; the choice is remembered per device (`o2m-lyrics-tab`)
+  and a song without lyrics shows the mood controls without forgetting it;
+- **full view, phone** (every theme): one more branch of the accordion,
+  `#lyrics-col`, between Mood and Tracklist — absent while there are no lyrics,
+  and an open branch that disappears hands the screen back to the tracklist;
+- **Basic view: Invert only** — on desktop the pane takes the tracklist column
+  over (a button in each header switches, `o2m-lyrics`); on a phone the Basic
+  view has no column to put it in.
+
+Synced lines follow the local clock (`tickProgress`), the current one in the hero
+accent and scrolled a third of the way down the pane; a tap on a line seeks there.
 
 ## The SvelteKit frontend is gone
 
