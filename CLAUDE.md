@@ -1719,8 +1719,10 @@ with the song (`lyricsFollowPlain`, the words spread over the track, nothing lit
 a scroll by hand holds it 8 s).
 
 LRCLIB often holds a song several times, one upload timed and the others not, so
-an untimed `get` is followed by a search (fielded, then free text) that prefers a
-timed row (`pick_row`). A row is only accepted within 5 s of the track's length,
+an untimed `get` is followed by a search (fielded, then free text, then by title
+alone held to 2 s of length — the artist may be a compilation act: "Freedom" filed
+under "Soundtrack of Your Life") that prefers a timed row (`pick_row`). Titles lose
+their release decorations first, `- From "Film"` included (`clean_title`). A row is only accepted within 5 s of the track's length,
 and what is left untimed is mostly that: an edit of another length ("Wonderful
 Life", 3:19 played, every timed upload ~4:47) — someone else's timing would be wrong.
 

@@ -21,6 +21,8 @@ class CleanTest(unittest.TestCase):
         self.assertEqual(lyrics.clean_title('Let It Be - Remastered 2009'), 'Let It Be')
         self.assertEqual(lyrics.clean_title('Song (feat. Someone)'), 'Song')
         self.assertEqual(lyrics.clean_title('Sit Down. Stand Up'), 'Sit Down. Stand Up')
+        self.assertEqual(lyrics.clean_title('Freedom - From "Django Unchained"'), 'Freedom')
+        self.assertEqual(lyrics.clean_title('Song (From "A Film")'), 'Song')
 
     def test_main_artist(self):
         self.assertEqual(lyrics.main_artist('D-Pulse, Hot Toddy'), 'D-Pulse')

@@ -55,12 +55,13 @@ def parse_lrc(text):
 
 _DECOR = re.compile(
     r'\s+-\s+.*\b(remaster(ed)?|live|version|edit|mix|mono|stereo|demo|acoustic|bonus)\b.*$'
-    r'|\s*[\(\[](feat\.?|ft\.?|with)\s[^\)\]]*[\)\]]', re.I)
+    r'|\s+-\s+from\s.*$'
+    r'|\s*[\(\[](feat\.?|ft\.?|with|from)\s[^\)\]]*[\)\]]', re.I)
 
 
 def clean_title(name):
-    """'Song - Remastered 2009' / 'Song (feat. X)' → 'Song': the lyrics databases
-    file the song, not the release."""
+    """'Song - Remastered 2009' / 'Song (feat. X)' / 'Song - From "Film"' → 'Song':
+    the lyrics databases file the song, not the release."""
     return _DECOR.sub('', name or '').strip() or (name or '').strip()
 
 
@@ -105,9 +106,21 @@ def _lrclib(title, artist, album, duration_s):
         # Nothing, or only untimed text: another upload of the song may be timed.
         # By title and artist first, then as free text (a "feat." or an accent
         # spelled differently defeats the fielded search).
-        rows = _lrclib_search({'track_name': title, 'artist_name': artist}, duration_s)
-        if not any(x.get('syncedLyrics') for x in rows):
-            rows += _lrclib_search({'q': '%s %s' % (artist, title)}, duration_s)
+        rows = []
+        try:
+            rows = _lrclib_search({'track_name': title, 'artist_name': artist}, duration_s)
+            if not any(x.get('syncedLyrics') for x in rows):
+                rows += _lrclib_search({'q': '%s %s' % (artist, title)}, duration_s)
+            if not any(x.get('syncedLyrics') for x in rows) and duration_s:
+                # The artist may be no artist at all: a compilation's label or a
+                # soundtrack act ("Soundtrack of Your Life" — "Freedom" is Anthony
+                # Hamilton's). By title alone, held to 2 s of length: the same
+                # recording, or a take close enough to keep the timing.
+                rows += [x for x in _lrclib_search({'track_name': title}, duration_s)
+                         if abs((x.get('duration') or 0) - duration_s) <= 2]
+        except Unavailable:
+            if not hit and not rows:
+                raise                          # nothing in hand: ask again later
         better = pick_row(rows)
         if better and (not hit or better.get('syncedLyrics')):
             hit = better
