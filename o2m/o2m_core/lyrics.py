@@ -68,6 +68,28 @@ def main_artist(artist):
     return re.split(r'\s*(?:,|&| feat\.? | ft\.? | x )\s*', artist or '', maxsplit=1)[0].strip()
 
 
+def _lrclib_search(params, duration_s):
+    r = requests.get('https://lrclib.net/api/search', params=params,
+                     headers={'User-Agent': UA}, timeout=TIMEOUT)
+    if r.status_code >= 500:
+        raise Unavailable('lrclib %s' % r.status_code)
+    rows = r.json() if r.status_code == 200 else []
+    if duration_s:
+        # The search ignores length: keep those within 5 s, nearest first.
+        rows = sorted((x for x in rows if abs((x.get('duration') or 0) - duration_s) <= 5),
+                      key=lambda x: abs((x.get('duration') or 0) - duration_s))
+    return [x for x in rows if x.get('syncedLyrics') or x.get('plainLyrics')]
+
+
+def pick_row(rows):
+    """The first SYNCED row, else the first with plain lyrics: LRCLIB often holds
+    the same song several times, one upload timed and the others not."""
+    for x in rows:
+        if x.get('syncedLyrics'):
+            return x
+    return rows[0] if rows else None
+
+
 def _lrclib(title, artist, album, duration_s):
     params = {'track_name': title, 'artist_name': artist}
     if album:
@@ -79,19 +101,16 @@ def _lrclib(title, artist, album, duration_s):
     if r.status_code >= 500:
         raise Unavailable('lrclib %s' % r.status_code)
     hit = r.json() if r.status_code == 200 else None
-    if not hit:
-        r = requests.get('https://lrclib.net/api/search',
-                         params={'track_name': title, 'artist_name': artist},
-                         headers={'User-Agent': UA}, timeout=TIMEOUT)
-        if r.status_code >= 500:
-            raise Unavailable('lrclib %s' % r.status_code)
-        rows = r.json() if r.status_code == 200 else []
-        if duration_s:
-            # The search ignores length: keep those within 5 s, nearest first.
-            rows = sorted((x for x in rows if abs((x.get('duration') or 0) - duration_s) <= 5),
-                          key=lambda x: abs((x.get('duration') or 0) - duration_s))
-        rows = [x for x in rows if x.get('syncedLyrics') or x.get('plainLyrics')]
-        hit = rows[0] if rows else None
+    if not hit or not hit.get('syncedLyrics'):
+        # Nothing, or only untimed text: another upload of the song may be timed.
+        # By title and artist first, then as free text (a "feat." or an accent
+        # spelled differently defeats the fielded search).
+        rows = _lrclib_search({'track_name': title, 'artist_name': artist}, duration_s)
+        if not any(x.get('syncedLyrics') for x in rows):
+            rows += _lrclib_search({'q': '%s %s' % (artist, title)}, duration_s)
+        better = pick_row(rows)
+        if better and (not hit or better.get('syncedLyrics')):
+            hit = better
     if not hit or hit.get('instrumental'):
         return {'instrumental': True} if hit else None
     synced = parse_lrc(hit.get('syncedLyrics') or '')

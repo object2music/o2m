@@ -26,6 +26,15 @@ class CleanTest(unittest.TestCase):
         self.assertEqual(lyrics.main_artist('D-Pulse, Hot Toddy'), 'D-Pulse')
         self.assertEqual(lyrics.main_artist('Ben Harper'), 'Ben Harper')
 
+class PickRowTest(unittest.TestCase):
+    def test_synced_upload_wins(self):
+        rows = [{'plainLyrics': 'a'}, {'syncedLyrics': '[00:01.00]a', 'plainLyrics': 'a'}]
+        self.assertIn('syncedLyrics', lyrics.pick_row(rows))
+
+    def test_plain_when_nothing_timed(self):
+        self.assertEqual(lyrics.pick_row([{'plainLyrics': 'a'}]), {'plainLyrics': 'a'})
+        self.assertIsNone(lyrics.pick_row([]))
+
 
 if __name__ == '__main__':
     unittest.main()

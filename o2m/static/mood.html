@@ -2587,8 +2587,9 @@ function switchNowPlayingTo(uri, { name, artist, artists, album }) {
 
 /* ── Lyrics ────────────────────────────────────────────────────────────────
    Read from /api/lyrics (LRCLIB, synced when it can; lyrics.ovh as plain text).
-   Synced lines follow the clock (lyricsTick, from tickProgress) and a tap on one
-   seeks there. Shown only when the song has lyrics, and where depends on the view:
+   Synced lines follow the clock (lyricsTick, from tickProgress, LYR_LAG_MS behind
+   it) and a tap on one seeks there; untimed text scrolls with the song
+   (lyricsFollowPlain). Shown only when the song has lyrics, and where depends on the view:
    - full view, desktop: a second tab of the Mood column (remembered per device,
      o2m-lyrics-tab), every theme;
    - full view, phone: one more branch of the accordion (#lyrics-col);
@@ -2689,14 +2690,19 @@ function paintLyrics() {
   LYR.cur = -1;
   lyricsTick(clockPosMs());
 }
+/* What is heard trails the server's clock: Mopidy reports where its pipeline is,
+   and the sound still goes through its output buffer and, on a speaker, Snapcast's
+   (buffer = 2500 ms here). Lines used to light 0.5-1 s early (+200 ms lead). */
+const LYR_LAG_MS = 600;
 function lyricsTick(pos) {
   const d = LYR.data;
-  if (!d || !d.synced) return;
+  if (!d) return;
   const body = document.getElementById('lyrics-body');
   const pane = document.getElementById('lyrics-pane');
   if (!body || !pane || pane.hidden) return;
+  if (!d.synced) { lyricsFollowPlain(body, pos); return; }
   let i = -1;
-  for (let k = 0; k < d.synced.length && d.synced[k][0] <= pos + 200; k++) i = k;
+  for (let k = 0; k < d.synced.length && d.synced[k][0] <= pos - LYR_LAG_MS; k++) i = k;
   if (i === LYR.cur) return;
   body.querySelector('.lyr-line.on')?.classList.remove('on');
   LYR.cur = i;
@@ -2707,7 +2713,25 @@ function lyricsTick(pos) {
   const top = el.offsetTop - body.offsetTop - body.clientHeight / 3;
   body.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 }
+/* Untimed lyrics still follow the song: the pane scrolls with the position, as
+   if the words were spread evenly over the track (a little intro and outro left
+   out). No line is lit — that would claim a timing nobody gave us. A scroll by
+   hand holds the pane for 8 s. */
+function lyricsFollowPlain(body, pos) {
+  if (!currentDurationMs || Date.now() - (LYR.userScrollAt || 0) < 8000) return;
+  const frac = Math.min(1, Math.max(0, (pos / currentDurationMs - 0.08) / 0.84));
+  const max = body.scrollHeight - body.clientHeight;
+  if (max <= 0) return;
+  const top = Math.round(frac * max);
+  if (Math.abs(top - body.scrollTop) < 2) return;
+  body.scrollTo({ top, behavior: 'smooth' });
+}
 function setupLyrics() {
+  const lb = document.getElementById('lyrics-body');
+  // A scroll that the follower did not start is the reader's: leave the pane be.
+  const mark = () => { LYR.userScrollAt = Date.now(); };
+  lb?.addEventListener('wheel', mark, { passive: true });
+  lb?.addEventListener('touchmove', mark, { passive: true });
   const set = want => {
     LYR.want = want;
     try { localStorage.setItem('o2m-lyrics', want ? '1' : '0'); } catch (e) {}

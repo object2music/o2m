@@ -1707,6 +1707,17 @@ is the open branch, which is someone using it).
 
 Synced lines follow the local clock (`tickProgress`), the current one in the hero
 accent and scrolled a third of the way down the pane; a tap on a line seeks there.
+They run **`LYR_LAG_MS` (600 ms) behind** the clock: Mopidy reports its pipeline's
+position, and the sound still crosses its output buffer and Snapcast's (`buffer =
+2500`) — with a 200 ms lead instead, lines lit 0.5–1 s early. Untimed text scrolls
+with the song (`lyricsFollowPlain`, the words spread over the track, nothing lit;
+a scroll by hand holds it 8 s).
+
+LRCLIB often holds a song several times, one upload timed and the others not, so
+an untimed `get` is followed by a search (fielded, then free text) that prefers a
+timed row (`pick_row`). A row is only accepted within 5 s of the track's length,
+and what is left untimed is mostly that: an edit of another length ("Wonderful
+Life", 3:19 played, every timed upload ~4:47) — someone else's timing would be wrong.
 
 ## The SvelteKit frontend is gone
 
