@@ -195,20 +195,16 @@
       <div class="dial-wrap">
         <div class="dial-label">Discovery</div>
         <!-- Same presentation as the Mood dial: wider viewBox, detent labels around
-             the arc (135°→405°), clickable shortcuts. 3 detents reuse the Mood
-             dial's bottom-left/top/bottom-right label positions (indices 0/2/4 of
-             its 5-slot layout land exactly there). Appearance only — still the
-             same continuous discover_level(0-10) underneath, just snapped. -->
+             the arc (135°→405°). 11 stops, one per discover_level; the 3 words
+             sit at 0/5/10, the Mood dial's bottom-left/top/bottom-right. -->
         <svg class="dial-svg o2m-dial" data-axis="opening" id="dial-bdl" width="196" height="136" viewBox="-40 -14 190 126">
           <circle class="dial-track" cx="55" cy="55" r="42" transform="rotate(135 55 55)"/>
           <circle class="dial-fill fill" id="fill-bdl" cx="55" cy="55" r="42"
                   transform="rotate(135 55 55)"/>
           <text class="bdl-lbl" data-i="0" x="16" y="99"  text-anchor="end">focused</text>
-          <text class="bdl-lbl" data-i="2" x="55" y="-4"  text-anchor="middle">regular</text>
-          <text class="bdl-lbl" data-i="4" x="94" y="99"  text-anchor="start">crazy</text>
-          <!-- 2 extra (unlabelled) detents between the 3 words -->
-          <circle class="bdl-tick" cx="16" cy="39" r="2"/>
-          <circle class="bdl-tick" cx="94" cy="39" r="2"/>
+          <text class="bdl-lbl" data-i="5" x="55" y="-4"  text-anchor="middle">regular</text>
+          <text class="bdl-lbl" data-i="10" x="94" y="99"  text-anchor="start">crazy</text>
+          <!-- the unlabelled stops' ticks are drawn by initBasicView -->
           <circle class="knob" id="knob-bdl" cx="55" cy="13" r="7"/>
           <text class="center-label" x="55" y="60" text-anchor="middle" font-weight="700" id="txt-bdl">regular</text>
         </svg>
@@ -484,23 +480,32 @@ function setDial(id, v01) {
 
 function makeDraggable(id, onChange) {
   const svg = document.getElementById('dial-' + id);
-  let active = false;
+  const track = svg.querySelector('.dial-track');
+  let active = false, last = null;
   function v01fromEvent(e) {
-    const rect = svg.getBoundingClientRect();
+    // The arc's own centre, not the svg box's: the Basic dials' viewBox is wider
+    // and taller than the arc (room for the labels), so the box centre sat off it.
+    const rect = (track || svg).getBoundingClientRect();
     const px = (e.touches ? e.touches[0].clientX : e.clientX) - (rect.left + rect.width / 2);
     const py = (e.touches ? e.touches[0].clientY : e.clientY) - (rect.top  + rect.height / 2);
     let deg = Math.atan2(py, px) * 180 / Math.PI - 135;
     if (deg < 0) deg += 360;
-    return Math.min(Math.max(deg, 0), 270) / 270;
+    // In the gap under the dial (270°-360°), the nearer end — the gap used to
+    // read as the maximum, so leaving the minimum downwards jumped to the top.
+    let v = deg <= 270 ? deg / 270 : (deg < 315 ? 1 : 0);
+    // A dial stops at its ends: a drag that goes round past one of them stays
+    // there rather than coming back in from the other side.
+    if (last != null && Math.abs(v - last) > 0.5) v = last < 0.5 ? 0 : 1;
+    return v;
   }
   svg.addEventListener('pointerdown', e => {
     if (mixBusy || serverBusy) return;
-    active = true; svg.setPointerCapture(e.pointerId);
-    const v = v01fromEvent(e); setDial(id, v); onChange(v);
+    active = true; last = null; svg.setPointerCapture(e.pointerId);
+    const v = last = v01fromEvent(e); setDial(id, v); onChange(v);
   });
   svg.addEventListener('pointermove', e => {
     if (!active) return; e.preventDefault();
-    const v = v01fromEvent(e); setDial(id, v); onChange(v);
+    const v = last = v01fromEvent(e); setDial(id, v); onChange(v);
   });
   svg.addEventListener('pointerup', () => { active = false; scheduleApply(); });
 }
@@ -717,29 +722,46 @@ const BASIC_MOODS = [
   ['energetic', 0.75, 0.25],
 ];
 let basicCats = null;
+// The dial stops twice between two named moods: 13 stops, the in-between ones
+// interpolated linearly along the path intense → calm → normy → happy →
+// energetic, so the knob crosses the plane instead of jumping corner to corner.
+// The named moods stay exact stops (every BASIC_MOOD_SUB-th), at the same angle.
+const BASIC_MOOD_SUB = 3;
+const BASIC_MOOD_STOPS = (() => {
+  const out = [];
+  for (let i = 0; i <= (BASIC_MOODS.length - 1) * BASIC_MOOD_SUB; i++) {
+    const k = Math.floor(i / BASIC_MOOD_SUB), t = (i % BASIC_MOOD_SUB) / BASIC_MOOD_SUB;
+    const [, e0, v0] = BASIC_MOODS[k], [, e1, v1] = BASIC_MOODS[Math.min(k + 1, BASIC_MOODS.length - 1)];
+    out.push([e0 + (e1 - e0) * t, v0 + (v1 - v0) * t]);
+  }
+  return out;
+})();
 
 function basicMoodIndex() {
-  let best = 2, bd = Infinity;
-  BASIC_MOODS.forEach(([, e, v], i) => {
+  let best = BASIC_MOOD_STOPS.length >> 1, bd = Infinity;
+  BASIC_MOOD_STOPS.forEach(([e, v], i) => {
     const d = Math.hypot(appState.energy - e, appState.valence - v);
     if (d < bd) { bd = d; best = i; }
   });
   return best;
 }
 function setBasicMoodDial(i) {
-  setDial('bmood', i / (BASIC_MOODS.length - 1));
+  setDial('bmood', i / (BASIC_MOOD_STOPS.length - 1));
+  // Between two moods the centre names the nearer one; its label lights only
+  // when the knob sits exactly on it.
+  const named = Math.round(i / BASIC_MOOD_SUB);
   const txt = document.getElementById('txt-bmood');
-  if (txt) txt.textContent = BASIC_MOODS[i][0];
+  if (txt) txt.textContent = BASIC_MOODS[named][0];
   document.querySelectorAll('.bmood-lbl').forEach(l =>
-    l.classList.toggle('on', Number(l.dataset.i) === i));
+    l.classList.toggle('on', i % BASIC_MOOD_SUB === 0 && Number(l.dataset.i) === named));
 }
 
 // Discovery, presented the same way as Mood (detent labels around the dial)
 // — appearance only, still the same continuous discover_level(0-10) underneath.
-// 5 detents but only 3 are labelled (focused/regular/crazy at indices 0/2/4);
-// the 2 in-between (indices 1/3) are extra stops shown as ticks, their centre
-// text is the numeric discover_level. Same underlying discover_level(0-10).
-const BASIC_DL_LEVELS = [['focused', 0], ['', 3], ['regular', 5], ['', 8], ['crazy', 10]];
+// One stop per discover_level (0-10), 3 of them labelled (focused/regular/crazy
+// at 0/5/10); the others are ticks, their centre text the numeric level.
+const BASIC_DL_LEVELS = Array.from({ length: 11 }, (_, dl) =>
+  [{ 0: 'focused', 5: 'regular', 10: 'crazy' }[dl] || '', dl]);
 function basicDlIndex() {
   let best = 2, bd = Infinity;
   BASIC_DL_LEVELS.forEach(([, dl], i) => {
@@ -1490,18 +1512,33 @@ function initBasicView() {
   document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn =>
     btn.addEventListener('click', () => requestBasicCat(btn)));
   document.getElementById('basic-all')?.addEventListener('click', (e) => toggleBasicAll(e.currentTarget));
-  // Discovery — snaps to the 3 detents (focused/regular/crazy), same
-  // interaction pattern as Mood; same underlying discover_level(0-10) value.
+  // A tick on the arc for every unlabelled stop of the two dials.
+  [['bdl', BASIC_DL_LEVELS.length, i => !BASIC_DL_LEVELS[i][0]],
+   ['bmood', BASIC_MOOD_STOPS.length, i => i % BASIC_MOOD_SUB !== 0]].forEach(([id, n, unlabelled]) => {
+    const svg = document.getElementById('dial-' + id), knob = document.getElementById('knob-' + id);
+    if (!svg || !knob) return;
+    for (let i = 0; i < n; i++) {
+      if (!unlabelled(i)) continue;
+      const a = (135 + i / (n - 1) * 270) * Math.PI / 180;
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('class', 'bdl-tick');
+      c.setAttribute('cx', (CX + R * Math.cos(a)).toFixed(1));
+      c.setAttribute('cy', (CY + R * Math.sin(a)).toFixed(1));
+      c.setAttribute('r', '1.5');
+      svg.insertBefore(c, knob);
+    }
+  });
+  // Discovery — snaps to each discover_level (0-10).
   makeDraggable('bdl', v => {
     const i = Math.round(v * (BASIC_DL_LEVELS.length - 1));
     appState.dl = BASIC_DL_LEVELS[i][1];
     setBasicDlDial(i);
     setDial('dl', appState.dl / 10);           // keep the (hidden) full dial in sync
   });
-  // Mood — snaps to the 5 detents; sets energy+valence to the detent's pair.
+  // Mood — snaps to its 13 stops; sets energy+valence to the stop's pair.
   makeDraggable('bmood', v => {
-    const i = Math.round(v * (BASIC_MOODS.length - 1));
-    const [, e, val] = BASIC_MOODS[i];
+    const i = Math.round(v * (BASIC_MOOD_STOPS.length - 1));
+    const [e, val] = BASIC_MOOD_STOPS[i];
     appState.energy = e; appState.valence = val;
     setBasicMoodDial(i);
     setDial('energy', e); setDial('valence', val);   // keep hidden full dials in sync
