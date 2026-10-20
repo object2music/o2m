@@ -307,10 +307,6 @@
   </div><!-- /panel-body -->
   </div><!-- /left-panel -->
 
-  <!-- Phone full view: the lyrics are one more branch of the accordion, shown
-       only when the song has some (placeLyricsPane moves the pane in here). -->
-  <div id="lyrics-col" class="col collapsible" hidden></div>
-
   <!-- Col 3 : Tracklist (prioritaire) -->
   <div id="tracklist-col" class="col collapsible open">
     <!-- Lyrics: one pane, moved by placeLyricsPane to where the view wants it —
@@ -338,6 +334,10 @@
       <div id="tracklist-wrap"></div>
     </div>
   </div>
+
+  <!-- Phone full view: the lyrics are the last branch of the accordion, shown
+       only when the song has some (placeLyricsPane moves the pane in here). -->
+  <div id="lyrics-col" class="col collapsible" hidden></div>
 
   </div><!-- /main-cols -->
 
@@ -2593,11 +2593,15 @@ function switchNowPlayingTo(uri, { name, artist, artists, album }) {
      o2m-lyrics-tab), every theme;
    - full view, phone: one more branch of the accordion (#lyrics-col);
    - Basic view: Invert only — on desktop the pane takes the tracklist column over
-     (one button back to the tracklist, remembered as o2m-lyrics). */
-const LYR = { uri: null, data: null, cur: -1, want: true, tab: 'mood' };
+     (one button back to the tracklist, remembered as o2m-lyrics).
+   In Invert they come forward by themselves in the full view too: each song that
+   has lyrics opens the Lyrics tab (desktop) or branch (phone) — a tab chosen by
+   hand holds for the rest of that song. */
+const LYR = { uri: null, data: null, cur: -1, want: true, tab: 'mood', tabUri: null };
 try { LYR.want = localStorage.getItem('o2m-lyrics') !== '0'; } catch (e) {}
 try { LYR.tab = localStorage.getItem('o2m-lyrics-tab') === 'lyrics' ? 'lyrics' : 'mood'; } catch (e) {}
 const isPhone = () => window.matchMedia('(max-width: 699px)').matches;
+const isInvert = () => document.documentElement.getAttribute('data-theme') === 'invert';
 async function loadLyrics(uri, { name, artist, album } = {}) {
   LYR.uri = uri; LYR.data = null; LYR.cur = -1;
   paintLyrics();
@@ -2609,6 +2613,15 @@ async function loadLyrics(uri, { name, artist, album } = {}) {
     const d = await fetch(API + '/lyrics?' + q).then(r => r.json());
     if (LYR.uri !== uri) return;               // the track changed meanwhile
     LYR.data = d && d.found && !d.instrumental ? d : null;
+    if (LYR.data && isInvert() && !isBasic() && isPhone()) {
+      // Invert: the branch opens by itself — unless Boxes or Mood is being used.
+      const open = document.querySelector('#main-cols .collapsible.open');
+      if (!open || open.id === 'tracklist-col' || open.id === 'lyrics-col') {
+        document.getElementById('lyrics-col').hidden = false;
+        document.querySelectorAll('#main-cols .collapsible').forEach(p =>
+          p.classList.toggle('open', p.id === 'lyrics-col'));
+      }
+    }
     paintLyrics();
   } catch (e) {}
 }
@@ -2628,12 +2641,14 @@ function paintLyrics() {
   if (!pane) return;
   placeLyricsPane();
   const basic = isBasic(), phone = isPhone();
-  const invert = document.documentElement.getAttribute('data-theme') === 'invert';
+  const invert = isInvert();
   const d = (!basic || invert) ? LYR.data : null;
+  // Invert puts the lyrics forward on every song, unless a tab was picked for this one.
+  const tab = invert && LYR.tabUri !== LYR.uri ? 'lyrics' : LYR.tab;
   let show;
   if (basic) show = !!d && !phone && LYR.want;
   else if (phone) show = !!d;
-  else show = !!d && LYR.tab === 'lyrics';
+  else show = !!d && tab === 'lyrics';
   pane.hidden = !show;
   // Basic, desktop: the pane REPLACES the tracklist in its column.
   document.getElementById('tracklist-col')?.classList.toggle('lyrics-on', basic && show);
@@ -2701,7 +2716,7 @@ function setupLyrics() {
   };
   document.querySelectorAll('#mood-tabs .pm-tab').forEach(t => t.addEventListener('click', e => {
     e.stopPropagation();
-    LYR.tab = t.dataset.moodTab;
+    LYR.tab = t.dataset.moodTab; LYR.tabUri = LYR.uri;
     try { localStorage.setItem('o2m-lyrics-tab', LYR.tab); } catch (e) {}
     document.getElementById('lyrics-body').dataset.uri = '';
     paintLyrics();

@@ -1693,11 +1693,17 @@ only when the song has lyrics:
   Lyrics while it is open; the choice is remembered per device (`o2m-lyrics-tab`)
   and a song without lyrics shows the mood controls without forgetting it;
 - **full view, phone** (every theme): one more branch of the accordion,
-  `#lyrics-col`, between Mood and Tracklist — absent while there are no lyrics,
-  and an open branch that disappears hands the screen back to the tracklist;
+  `#lyrics-col`, the last one, after the Tracklist — absent while there are no
+  lyrics, and an open branch that disappears hands the screen back to the
+  tracklist;
 - **Basic view: Invert only** — on desktop the pane takes the tracklist column
   over (a button in each header switches, `o2m-lyrics`); on a phone the Basic
   view has no column to put it in.
+
+**In Invert they come forward by themselves in the full view too**: each song
+with lyrics opens the Lyrics tab (desktop; a tab picked by hand holds for the rest
+of that song, `LYR.tabUri`) or the accordion branch (phone — unless Boxes or Mood
+is the open branch, which is someone using it).
 
 Synced lines follow the local clock (`tickProgress`), the current one in the hero
 accent and scrolled a third of the way down the pane; a tap on a line seeks there.
