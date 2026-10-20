@@ -5375,6 +5375,7 @@ async function _bxImageEncode(file) {
 
 function renderBoxEditor(info) {
   return bxField('Name', `<input class="bx-input bx-wide" type="text" id="bx-description" value="${objEsc(info.description || '')}">`)
+    + bxField('UID', `<span class="bx-ro" title="Read only">${objEsc(info.uid || '')}</span>`)
     + bxImageField(info.image_url, info.description)
     + bxField('Type', bxTypeSel(info.option_type))
     + bxField('Discover level', bxNum('option_discover_level', info.option_discover_level, 'min="0" max="10" step="1"'))

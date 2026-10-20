@@ -1823,6 +1823,8 @@
     color: var(--text); border: 1px solid var(--border-strong); padding: calc(3px * var(--ui)) calc(6px * var(--ui)); border-radius: 0; }
   .bx-input:focus { border-color: var(--accent); outline: none; }
   .bx-wide { width: 100%; }
+  /* A read-only value in the box form (the uid): selectable, not an input. */
+  .bx-ro { font-family: var(--font-mono); color: var(--muted); user-select: all; word-break: break-all; }
   .bx-num { width: calc(72px * var(--ui)); text-align: right; }
   select.bx-input { width: auto; }
   .bx-data { width: 100%; resize: vertical; font-size: var(--t-body); line-height: 1.7;
