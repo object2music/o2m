@@ -2371,9 +2371,9 @@
      picture even more so. All themes. */
   html.basic #basic-status { font-size: var(--t-body); letter-spacing: .06em; gap: calc(10px * var(--ui)); }
   @media (min-width: 700px) { html.basic #basic-status { gap: calc(12px * var(--ui)); } }
-  /* The two counts one step smaller: at body size "1 box (+2 included)" broke over
-     two lines on a phone and pushed the count to a second line too. "39 tracks"
-     never breaks. */
+  /* The two counts one step smaller: at body size the box count broke over two
+     lines on a phone and pushed the count to a second line too. "39 tracks"
+     never breaks; the cascade's children read "+2 inc" here (activeSummary). */
   html.basic #bs-tracks, html.basic #bs-boxes { font-size: var(--t-body-s); letter-spacing: .04em; }
   /* Desktop has the room the phone lacks: the counts and the "set by" hint go up a
      step, to balance the tile names (now lighter and smaller). */

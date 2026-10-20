@@ -809,7 +809,7 @@ function updateBasicStatus() {
   const tl = document.getElementById('bs-tracks');
   const bx = document.getElementById('bs-boxes');
   if (tl) tl.textContent = `${currentTracklistLength} track${currentTracklistLength === 1 ? '' : 's'}`;
-  if (bx) bx.textContent = activeSummary();
+  if (bx) bx.textContent = activeSummary(true);
 }
 
 // Called from the now-playing refresh (10s + WS events): re-syncs the basic box
@@ -7524,12 +7524,14 @@ function recomputeAutoBox() {
    (OBJGRID's `/api/active_objects`). An album is still named an album: it fills
    the tracklist like a box but is not one, and this line is the only place the
    interface says so. */
-function activeSummary() {
+function activeSummary(short = false) {
   const c = (typeof OBJGRID !== 'undefined') ? OBJGRID.activeCounts() : {};
   // A cascade's children are counted apart: putting down one object that
   // includes four others is one gesture — "1 box (+4 included)", not "5 boxes".
+  // The Basic view's status line asks for the short form, "1 box +4 inc": the long
+  // one broke it over three lines on a phone.
   const n = c.box || 0;
-  const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}` + (c.included ? ` (+${c.included} included)` : '')];
+  const parts = [`${n} ${n === 1 ? 'box' : 'boxes'}` + (c.included ? (short ? ` +${c.included} inc` : ` (+${c.included} included)`) : '')];
   ['album', 'artist', 'playlist', 'tag', 'channel'].forEach(k => {
     if (c[k]) parts.push(`${c[k]} ${c[k] === 1 ? k : k + 's'}`);
   });
