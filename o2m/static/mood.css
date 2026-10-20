@@ -1958,6 +1958,8 @@
      O2M objects), so make them inert — no pointer/hover, no dead clicks. */
   #now-playing.radio-np #artist-name,
   #now-playing.radio-np #album-name { cursor: default; pointer-events: none; text-decoration: none; }
+  /* An episode: only the show's name opens something (its channel view). */
+  #album-name[data-spoken] { cursor: default; }
   .box-info-btn {
     margin-left: auto; flex-shrink: 0; background: none; border: none;
     color: var(--muted); cursor: pointer; padding: calc(2px * var(--ui)); display: inline-flex;

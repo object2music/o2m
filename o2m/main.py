@@ -2485,6 +2485,27 @@ if __name__ == "__main__":
             pass
         return ''
 
+    def _channel_uri(stat, uri):
+        """What opens the channel view for this item (the line that plays the
+        channel): a feed episode carries it in its own uri, anything else goes
+        through Track.channel_id."""
+        if (uri or '').startswith('podcast+'):
+            return uri.split('#', 1)[0]
+        cid = getattr(stat, 'channel_id', None) if stat else None
+        if not cid:
+            return ''
+        try:
+            from o2m_core.o2mmodels import PodcastChannel
+            ch = PodcastChannel.get_or_none(PodcastChannel.id == cid)
+            if ch:
+                if (ch.box_line or '').strip():
+                    return ch.box_line.strip()
+                if ch.feed_url:
+                    return 'podcast+' + ch.feed_url
+        except Exception:
+            pass
+        return ''
+
     def _played_when(stat):
         # last_read_date is also stamped on rows that were never read (2026-10-11:
         # 56,158 of the 84,627 dated tracks have read_count 0 — a row opened when
@@ -2617,6 +2638,7 @@ if __name__ == "__main__":
                 'source':         source,
                 'published':      (getattr(stat, 'published_at', None) or '') if stat else '',
                 'channel':        _channel_name(stat),
+                'channel_uri':    _channel_uri(stat, uri),
                 # When it was last read (any play past the 5% artefact threshold,
                 # skips included), in LOCAL time: the database keeps UTC.
                 'last_played':    _last_played(stat),

@@ -2485,7 +2485,8 @@ function paintTrackText(name, artist, album, artists) {
   if (list.some(x => x.uri)) artistEl.innerHTML = artistsHTML(list);
   else artistEl.textContent = a;
   artistEl.classList.remove('obj-link');
-  if (albumEl) albumEl.textContent = al;
+  delete artistEl.dataset.spoken;
+  if (albumEl) { albumEl.textContent = al; delete albumEl.dataset.spoken; }
   npAnimateIn(nameEl, heroEl, document.getElementById('artist-album'));
   return true;
 }
@@ -4982,8 +4983,18 @@ async function updateSpokenHeader(track) {
     const albumEl = document.getElementById('album-name');
     const day = d.published ? fmtDay(d.published) : '';
     const changed = (line && artistEl && artistEl.textContent !== line) || (albumEl && albumEl.textContent !== day);
-    if (artistEl && line) { artistEl.textContent = line; artistEl.classList.remove('obj-link'); }
-    if (albumEl) albumEl.textContent = day;
+    if (artistEl && line) {
+      // The show's name is the link — to the channel view. The source and the
+      // date beside it open nothing: Mopidy's artist and album for an episode
+      // are the feed's author and the episode itself, not objects to browse.
+      artistEl.innerHTML = (d.channel && d.channel_uri
+          ? `<span class="obj-link" data-channel-uri="${objEsc(d.channel_uri)}">${objEsc(d.channel)}</span>`
+          : objEsc(d.channel || ''))
+        + (d.channel && d.source ? ' · ' : '') + objEsc(d.source || '');
+      artistEl.classList.remove('obj-link');
+      artistEl.dataset.spoken = '1';
+    }
+    if (albumEl) { albumEl.textContent = day; albumEl.dataset.spoken = '1'; }
     if (changed) npAnimateIn(document.getElementById('artist-album'));
   } catch (e) {}
 }
@@ -9171,12 +9182,17 @@ async function init() {
   document.getElementById('artist-name')?.addEventListener('click', (e) => {
     // The header holds one link per artist; the fallback covers the single-artist
     // case painted as plain text (no uri rendered, but the track object has one).
+    const ch = e.target.closest?.('[data-channel-uri]');
+    if (ch) { openPodcast(ch.dataset.channelUri, { name: (ch.textContent || '').trim() }); return; }
+    if (e.currentTarget.dataset.spoken) return;   // an episode: only the show is a link
     const el = e.target.closest?.('[data-artist-uri]');
     if (el) { openArtist(el.dataset.artistUri, (el.textContent || '').trim()); return; }
     const a = (currentTrackObj?.artists || [])[0];
     if (a?.uri) openArtist(a.uri, a.name);
   });
-  document.getElementById('album-name')?.addEventListener('click', openCurrentAlbum);
+  document.getElementById('album-name')?.addEventListener('click', (e) => {
+    if (!e.currentTarget.dataset.spoken) openCurrentAlbum();
+  });
   // Delegated clicks inside the overlay → info menu, drill into albums/artists/boxes,
   // or play a track. Same info badge + row pattern as the tracklist.
   document.getElementById('obj-body')?.addEventListener('click', async (e) => {
