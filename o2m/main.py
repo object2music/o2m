@@ -4,6 +4,7 @@ from mopidyapi import MopidyAPI
 from o2m_core import util
 from o2m_core import virtualbox
 from o2m_core import boxdirectives as bdir
+from o2m_core import webmedia
 from o2m_core.o2mtomopidy import O2mToMopidy
 from o2m_core.spotifyhandler import SpotifyHandler, SpotifyRateLimited
 from time import sleep
@@ -1255,6 +1256,37 @@ if __name__ == "__main__":
                              'image': ''})
             return jsonify({'items': rows, 'has_more': more,
                             'limit': limit, 'offset': offset})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/yt_videos', methods=['POST'])
+    def api_yt_videos():
+        """{channel, videos: [{uri, name, length}]} — a YouTube channel's videos as
+        Mopidy-YouTube lists them (the page asks Mopidy), filed under the channel
+        like a feed's episodes (so its settings reach them) → {dates: {uri: day}}.
+        Mopidy gives no date: those still missing are read in the background and
+        come with the next opening."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        line = (data.get('channel') or '').strip()
+        vids = [v for v in (data.get('videos') or [])[:200]
+                if isinstance(v, dict) and webmedia.youtube_video_id(v.get('uri') or '')]
+        if not line.startswith(('yt:playlist:', 'youtube:playlist:')):
+            return jsonify({'error': 'a YouTube channel line is required'}), 400
+        db = o2mHandler.dbHandler
+        try:
+            db.register_yt_channel(line, (data.get('name') or '').strip())
+            db.upsert_episodes([{'uri': v['uri'], 'name': v.get('name') or '',
+                                 'length': v.get('length') or None} for v in vids],
+                               channel_id=line, option_type=None)
+            dates = {}
+            for v in vids:
+                t = db.get_stat_by_uri(v['uri'])
+                day = (getattr(t, 'published_at', None) or '') if t else ''
+                dates[v['uri']] = day
+                if not day:
+                    o2mHandler._queue_yt_date(v['uri'])
+            return jsonify({'dates': dates})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 

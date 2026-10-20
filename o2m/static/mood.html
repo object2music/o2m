@@ -1411,7 +1411,7 @@ function renderSettings() {
       <div class="set-sub-h">Copy to a folder</div>
       <div class="set-note" id="off-dir-note">${offDirSupported()
         ? 'Every file downloaded is also written to a folder of this computer, as a plain audio file any player or the file manager can open. A copy: offline playback does not need it, and clearing the downloads leaves it there.'
-        : 'Needs Chrome or Edge, on the HTTPS address (not this one, or not this browser). The downloads stay playable offline either way.'}</div>
+        : offDirWhyNot() + ' The downloads stay playable offline either way.'}</div>
       ${offDirSupported() ? `<div class="set-row set-actions">
         <button class="wc-btn" id="off-dir-pick">Choose a folder</button>
         <button class="wc-btn" id="off-dir-reconnect" hidden>Reconnect the folder</button>
@@ -3178,7 +3178,17 @@ async function podcastEpisodes(uri, offset, limit) {
   if (/^(yt|youtube):playlist:/.test(uri)) {
     const r = await rpc('core.library.lookup', { uris: [uri] }).catch(() => null);
     const vids = ((r && r.result && r.result[uri]) || []).slice(offset || 0, (offset || 0) + (limit || 50));
-    return { rows: vids.map(t => ({ uri: t.uri, name: t.name || t.uri, sub: t.date || '' })), hasMore: false };
+    // Mopidy gives no date: the server files the videos under the channel (its
+    // settings then reach them) and answers the dates it knows.
+    let dates = {};
+    try {
+      const d = await fetch(API + '/yt_videos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: uri, videos: vids.map(t => ({ uri: t.uri, name: t.name, length: t.length })) }),
+      }).then(x => x.json());
+      dates = (d && d.dates) || {};
+    } catch (e) {}
+    return { rows: vids.map(t => ({ uri: t.uri, name: t.name || t.uri, sub: dates[t.uri] || t.date || '' })), hasMore: false };
   }
   const d = await _wcJson('/podcast_episodes?uri=' + encodeURIComponent(uri)
                           + '&limit=' + (limit || 50) + '&offset=' + (offset || 0));
@@ -7656,6 +7666,12 @@ const offBlobDel = (uri)       => offTx('readwrite', st => st.delete(uri));
    (the browser requires a gesture); a lapsed one is reported, not prompted. */
 const OFF_DIR_DB = 'o2m-offline-dir';
 function offDirSupported() { return !!(window.showDirectoryPicker && window.isSecureContext); }
+/* Why the folder copy is not offered here — each case has its own remedy. */
+function offDirWhyNot() {
+  if (!window.isSecureContext) return 'Only on the HTTPS address of o2m: browsers keep folder access from plain HTTP pages.';
+  if (navigator.brave) return 'Brave ships this switched off: enable brave://flags/#file-system-access-api, relaunch Brave, then reload this page.';
+  return 'This browser cannot write to a folder: Chrome, Edge, Chromium or Brave (with its flag on) can.';
+}
 function _offDirTx(mode, fn) {
   return new Promise((res, rej) => {
     let r;
