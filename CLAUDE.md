@@ -1585,6 +1585,14 @@ Two consequences to keep in mind:
   (`_local_refused`) so the next fill streams it straight away.
 
 ### Device side (`o2m/static/mood.html`)
+- **A copy in a real folder** (Chrome / Edge, HTTPS only — the File System Access
+  API): Settings → Offline → *Copy to a folder*. Every file downloaded is also
+  written there as a plain audio file (`offDirWrite`, `Artist - Title.ext`); the
+  folder handle sits in its own IndexedDB (`o2m-offline-dir`). A COPY, best
+  effort: the player never reads it, a failed write never fails a download, and
+  eviction / Clear downloads leave it alone. Permission is asked on a click only;
+  a lapsed one is reported (Settings, end-of-pass message), never prompted. The
+  end-of-pass message names the folder — a page cannot link to a local folder.
 - **Quota** in Settings, per device (`localStorage`), default 256 MB (the lowest choice). Eviction is LRU and
   protects both what is queued to play and what the pass in progress just downloaded —
   freeing space by deleting the track fetched a second ago is a loop, not a saving.

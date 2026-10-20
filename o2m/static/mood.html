@@ -1408,6 +1408,16 @@ function renderSettings() {
       <div class="set-row set-actions">
         <button class="wc-btn" id="off-persist">Keep when storage runs low</button>
       </div>
+      <div class="set-sub-h">Copy to a folder</div>
+      <div class="set-note" id="off-dir-note">${offDirSupported()
+        ? 'Every file downloaded is also written to a folder of this computer, as a plain audio file any player or the file manager can open. A copy: offline playback does not need it, and clearing the downloads leaves it there.'
+        : 'Needs Chrome or Edge, on the HTTPS address (not this one, or not this browser). The downloads stay playable offline either way.'}</div>
+      ${offDirSupported() ? `<div class="set-row set-actions">
+        <button class="wc-btn" id="off-dir-pick">Choose a folder</button>
+        <button class="wc-btn" id="off-dir-reconnect" hidden>Reconnect the folder</button>
+        <button class="wc-btn" id="off-dir-stop" hidden>Stop copying</button>
+        <span class="set-note" id="off-dir-state" style="margin:0"></span>
+      </div>` : ''}
     </div>
     <div class="set-sec">
       <div class="set-sec-h">Selection</div>
@@ -1453,6 +1463,36 @@ function renderSettings() {
     await offClearAll();
     setFeedback('Offline downloads cleared');
     renderSettings();
+  });
+  const paintDir = async () => {
+    const st = body.querySelector('#off-dir-state');
+    if (!st) return;
+    const h = await offDirHandle(), ds = await offDirState();
+    st.textContent = !h ? 'No folder' : ds === 'granted' ? 'Copying to “' + h.name + '”'
+                   : '“' + h.name + '” — access lapsed, reconnect it';
+    body.querySelector('#off-dir-pick').textContent = h ? 'Change folder' : 'Choose a folder';
+    body.querySelector('#off-dir-reconnect').hidden = !h || ds === 'granted';
+    body.querySelector('#off-dir-stop').hidden = !h;
+  };
+  paintDir();
+  body.querySelector('#off-dir-pick')?.addEventListener('click', async () => {
+    let h;
+    try { h = await window.showDirectoryPicker({ id: 'o2m-offline', mode: 'readwrite', startIn: 'music' }); }
+    catch (e) { return; }   // cancelled
+    await offDirSet(h); paintDir();
+    const n = Object.keys(offInv()).length;
+    if (n) setFeedback('Copying ' + n + ' file' + (n === 1 ? '' : 's') + ' to “' + h.name + '”…');
+    const done = await offDirCopyAll();
+    setFeedback(done + ' file' + (done === 1 ? '' : 's') + ' in “' + h.name + '”');
+  });
+  body.querySelector('#off-dir-reconnect')?.addEventListener('click', async () => {
+    const h = await offDirHandle();
+    try { if (h && (await h.requestPermission({ mode: 'readwrite' })) === 'granted') setFeedback('Folder reconnected'); }
+    catch (e) {}
+    paintDir();
+  });
+  body.querySelector('#off-dir-stop')?.addEventListener('click', async () => {
+    await offDirSet(null); paintDir(); setFeedback('No longer copying to a folder');
   });
   body.querySelector('#off-persist')?.addEventListener('click', async () => {
     // The one real lever over the device store: ask the browser not to evict it
@@ -1781,6 +1821,10 @@ const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 function artistList(artists) {
   return (Array.isArray(artists) ? artists : [])
     .map(a => (typeof a === 'string' ? { name: a } : (a || {})))
+    // Mopidy-YouTube names a video's channel "Name (Channel)": it is shown as the
+    // channel it is, and its link opens the channel view (openArtist).
+    .map(a => /^(?:yt|youtube):channel:/.test(a.uri || '')
+      ? { ...a, name: String(a.name || '').replace(/\s*\(Channel\)$/, '') } : a)
     .filter(a => a.name);
 }
 function artistsText(artists) { return artistList(artists).map(a => a.name).join(', '); }
@@ -7600,6 +7644,77 @@ const offBlobPut = (uri, blob) => offTx('readwrite', st => st.put(blob, uri));
 const offBlobGet = (uri)       => offTx('readonly',  st => st.get(uri));
 const offBlobDel = (uri)       => offTx('readwrite', st => st.delete(uri));
 
+/* ── A copy in a real folder (Chrome / Edge) ──────────────────────────────────
+   The store above is the browser's own database: nothing outside the page can
+   see it. Where the File System Access API exists (Chromium, secure context
+   only), a folder the person picks once also receives a copy of every file
+   downloaded, as a plain audio file the file manager and any player can open.
+   It is a COPY, best effort: the offline player never reads it, a failed write
+   never fails a download, and eviction or "Clear downloads" never touch it —
+   what lands there is the person's. The handle lives in its own small database
+   so the offline one keeps its schema. Permission is only ever ASKED on a click
+   (the browser requires a gesture); a lapsed one is reported, not prompted. */
+const OFF_DIR_DB = 'o2m-offline-dir';
+function offDirSupported() { return !!(window.showDirectoryPicker && window.isSecureContext); }
+function _offDirTx(mode, fn) {
+  return new Promise((res, rej) => {
+    let r;
+    try { r = indexedDB.open(OFF_DIR_DB, 1); } catch (e) { rej(e); return; }
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onerror = () => rej(r.error);
+    r.onsuccess = () => {
+      const tx = r.result.transaction('kv', mode);
+      const req = fn(tx.objectStore('kv'));
+      tx.oncomplete = () => res(req ? req.result : undefined);
+      tx.onerror = tx.onabort = () => rej(tx.error);
+    };
+  });
+}
+let _offDir;   // undefined = not read yet, null = none
+async function offDirHandle() {
+  if (_offDir !== undefined) return _offDir;
+  try { _offDir = (await _offDirTx('readonly', st => st.get('dir'))) || null; } catch (e) { _offDir = null; }
+  return _offDir;
+}
+async function offDirSet(h) {
+  _offDir = h || null;
+  try { await _offDirTx('readwrite', st => h ? st.put(h, 'dir') : st.delete('dir')); } catch (e) {}
+}
+/* 'granted' | 'prompt' | 'denied' | 'none' — never prompts. */
+async function offDirState() {
+  const h = await offDirHandle();
+  if (!h) return 'none';
+  try { return await h.queryPermission({ mode: 'readwrite' }); } catch (e) { return 'denied'; }
+}
+function offFileName(meta, type) {
+  const ext = /mpeg|mp3/.test(type) ? 'mp3' : /mp4|aac|m4a/.test(type) ? 'm4a'
+            : /ogg|opus/.test(type) ? 'ogg' : /webm/.test(type) ? 'webm'
+            : /flac/.test(type) ? 'flac' : /wav/.test(type) ? 'wav' : 'mp3';
+  const base = [meta.artist, meta.name].filter(Boolean).join(' - ') || meta.uri || 'track';
+  return base.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ')
+             .trim().slice(0, 150) + '.' + ext;
+}
+/* Write one file into the folder; true when it landed. Silent on any failure. */
+async function offDirWrite(meta, blob) {
+  try {
+    const h = await offDirHandle();
+    if (!h || (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') return false;
+    const fh = await h.getFileHandle(offFileName(meta, blob.type || ''), { create: true });
+    const w = await fh.createWritable();
+    await w.write(blob); await w.close();
+    return true;
+  } catch (e) { return false; }
+}
+/* Everything already on the device, into the folder (after picking it). */
+async function offDirCopyAll() {
+  let n = 0;
+  for (const [uri, m] of Object.entries(offInv())) {
+    let blob; try { blob = await offBlobGet(uri); } catch (e) { blob = null; }
+    if (blob && await offDirWrite({ ...m, uri }, blob)) n++;
+  }
+  return n;
+}
+
 /* ── Inventory and quota ──────────────────────────────────────────────────── */
 function offInv() {
   if (OFF.inv) return OFF.inv;
@@ -7700,6 +7815,7 @@ async function offStore(meta) {
     bytes: blob.size, at: Date.now(),
   };
   offInvSave();
+  if (await offDirWrite(meta, blob)) OFF.copied = (OFF.copied || 0) + 1;
   // Seed the bookmark from the server, once, at download time: a half-heard
   // episode must not restart from zero just because the network went away.
   // Spoken only (music does not resume), never over a local bookmark — that
@@ -7731,6 +7847,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
   OFF.progress = { done: 0, total: list.length };
   offPaintToggle();
   OFF.pass = new Set();
+  OFF.copied = 0;
   let got = 0, wait = 0, lost = 0, full = false;
   try {
     const r = await fetch(API + '/offline/plan', {
@@ -7762,8 +7879,16 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
   }
   OFF.downloading = false; OFF.progress = null;
   offPaintToggle(); offRenderBadges();
+  // Where the files can be seen. A page cannot open a folder of the computer,
+  // so the message names it rather than linking to it.
+  let dirNote = '';
+  if (got) {
+    const ds = await offDirState();
+    if (OFF.copied) dirNote = ' · copied to the folder “' + ((await offDirHandle())?.name || '') + '”';
+    else if (ds === 'prompt' || ds === 'denied') dirNote = ' · folder not reachable, reconnect it in Settings';
+  }
   if (!quiet) {
-    setFeedback(got + ' downloaded'
+    setFeedback(got + ' downloaded' + dirNote
       + (wait ? ' · ' + wait + ' being fetched by the server' : '')
       + (lost ? ' · ' + lost + ' cannot be downloaded' : '')
       + (full ? ' · quota full (' + offQuotaMB() + ' MB), raise it in Settings' : ''));
