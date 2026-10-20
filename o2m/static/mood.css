@@ -1534,6 +1534,20 @@
      matrix) can't grow the top-zone past the viewport and push the footer off —
      the cover already takes ~54vh above it. */
   [data-theme="invert"] #track-details { max-height: 30vh; overflow-y: auto; }
+  /* The row under the banner is as tall as the transport block, no taller: the
+     details column used to set it (up to 30vh), which left the Basic view's
+     actuator grid cut off below. `contain: size` takes the panel out of the row's
+     sizing; stretched to the row, it scrolls inside it. */
+  @media (min-width: 700px) {
+    [data-theme="invert"] #track-details {
+      contain: size; align-self: stretch; height: auto; max-height: none;
+    }
+    [data-theme="invert"] #now-playing { padding-top: calc(8px * var(--ui)); }
+    [data-theme="invert"] #controls { padding-top: calc(6px * var(--ui)); padding-bottom: calc(6px * var(--ui)); }
+  }
+  /* The Basic tiles' dots take the colour of the moment (the hero accent drawn
+     from the playing track) instead of the theme's fixed orange. */
+  [data-theme="invert"] .basic-tex { --ring-b-1: var(--hero-accent, var(--accent)); }
 
   /* Affiches en mobile : grille → bloc, détails masqués (titre en haut, pleine largeur) */
   @media (max-width: 699px) {
