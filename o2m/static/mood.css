@@ -394,8 +394,14 @@
      you read down, not steps you walk through. */
   #settings .wc-card { max-width: calc(560px * var(--ui)); }
   .set-sec { text-align: left; margin: calc(18px * var(--ui)) 0 calc(22px * var(--ui)); }
-  .set-sec-h { font-family: var(--font-mono); font-size: var(--t-label); letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted); margin: 0 0 calc(5px * var(--ui)); }
+  /* The section name is what the eye scans the page by: set large, in the
+     heading face. The buttons are the small thing (see #settings .wc-btn) —
+     it used to be the other way round, a page of loud accent blocks under
+     labels in fine print. */
+  .set-sec-h { font-family: var(--font-head); font-size: calc(22px * var(--ui)); font-weight: 800;
+    letter-spacing: -.01em; line-height: 1.15; color: var(--text);
+    margin: 0 0 calc(10px * var(--ui)); padding-top: calc(14px * var(--ui));
+    border-top: 1px solid var(--border); }
   .set-note { color: var(--muted); font-size: var(--t-body-s); line-height: 1.5; margin: 0 0 calc(12px * var(--ui)); }
   .set-bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(112px * var(--ui)), 1fr)); gap: calc(10px * var(--ui)); }
   .set-bg { aspect-ratio: 16 / 10; padding: 0; position: relative; cursor: pointer;
@@ -427,6 +433,16 @@
      than a row built around one primary action. */
   .set-actions { gap: calc(10px * var(--ui)); }
   .set-actions .wc-btn { padding: calc(10px * var(--ui)) calc(16px * var(--ui)); }
+  /* Settings buttons: small, hairline, mono — controls under a heading, not the
+     page's loudest element. */
+  #settings .wc-btn, #settings .set-actions .wc-btn {
+    padding: calc(5px * var(--ui)) calc(11px * var(--ui));
+    background: none; color: var(--text); border: 1px solid var(--border-strong, var(--border));
+    font-family: var(--font-mono); font-size: var(--t-label); font-weight: 500;
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  #settings .wc-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .set-sec:first-of-type .set-sec-h { border-top: none; padding-top: 0; }
   .set-select { font: inherit; color: inherit; background: transparent;
     border: 1px solid var(--border); border-radius: calc(6px * var(--ui)); padding: calc(9px * var(--ui)) calc(12px * var(--ui)); cursor: pointer; }
   /* Shared sheet chrome — deliberately the object panel's head, so the two families
@@ -2531,8 +2547,8 @@
   /* Offline storage readout: a key/value list, not a table — two rows do not
      earn a grid, and it has to wrap on a phone. */
   .set-sub-h {
-    font-size: calc(11px * var(--ui)); letter-spacing: .08em; text-transform: uppercase;
-    opacity: .55; margin: calc(14px * var(--ui)) 0 calc(6px * var(--ui));
+    font-family: var(--font-head); font-size: calc(16px * var(--ui)); font-weight: 700;
+    color: var(--text); margin: calc(18px * var(--ui)) 0 calc(6px * var(--ui));
   }
   .set-store { display: flex; flex-direction: column; gap: calc(6px * var(--ui)); }
   .set-details { margin-top: calc(8px * var(--ui)); font-size: calc(12px * var(--ui)); }
