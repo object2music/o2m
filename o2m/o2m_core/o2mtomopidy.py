@@ -1297,7 +1297,10 @@ class O2mToMopidy:
                     #Move at next place the lastinfo content
                     if ((option_type == "info") and (new_length - prev_length==1)):
                         index = self.mopidyHandler.tracklist.index(tl_track=tltracks_added[0])
-                        self.mopidyHandler.tracklist.move(index, index, current_index+1)
+                        # Read the position now: the one read before the add may
+                        # be a track ago, and "next" would land behind the track playing.
+                        now = self.mopidyHandler.tracklist.index()
+                        self.mopidyHandler.tracklist.move(index, index, (now if now is not None else current_index)+1)
                     
                     #print(f"\nTracks added to Box {box} with option_types {box.option_types} and library_link {box.library_link} \n")
         return (length)
@@ -3508,13 +3511,27 @@ class O2mToMopidy:
             return {'removed': 0, 'skipped': skipped}
         return {'removed': len(doomed), 'skipped': skipped}
 
+    def _shuffle_start(self, start_index):
+        """A shuffle never reaches the track playing or anything before it.
+
+        Callers compute the slice from an index read BEFORE their adds, and a fill
+        can take tens of seconds: if the track ends meanwhile, the next one plays
+        from inside the slice, and reordering it moved it — say from 9 to 40 —
+        so playback carried on from 41 and the 31 tracks put before it were never
+        heard (o2m_1, 2026-10-20, an ALL filled across a track change)."""
+        s = start_index if start_index is not None else 0
+        try:
+            cur = self.mopidyHandler.tracklist.index()
+        except Exception:
+            cur = None
+        return max(s, cur + 1) if cur is not None else s
+
     # Shuffling the tracklist
     def shuffle_tracklist(self, start_index, stop_index):
         try:
-            if start_index != None:
-                self.mopidyHandler.tracklist.shuffle(start_index, stop_index)
-            else:
-                self.mopidyHandler.tracklist.shuffle(0, stop_index)
+            s = self._shuffle_start(start_index)
+            if stop_index is None or stop_index - s > 1:
+                self.mopidyHandler.tracklist.shuffle(s, stop_index)
         except:
             print(f"error")
 
@@ -3525,7 +3542,7 @@ class O2mToMopidy:
         the first popularity recompute (all scores NULL) weights are uniform, so
         behaviour matches the previous shuffle. Any failure falls back to it."""
         try:
-            s = start_index if start_index is not None else 0
+            s = self._shuffle_start(start_index)
             tl = self.mopidyHandler.tracklist.get_tl_tracks()
             slice_tl = tl[s:stop_index]
             if len(slice_tl) <= 1:
@@ -3555,6 +3572,12 @@ class O2mToMopidy:
             for p, desired in enumerate(ordered):
                 c = cur.index(desired, p)
                 if c != p:
+                    # The moves take a while: if playback has stepped into the
+                    # slice since, stop here rather than move the track playing.
+                    now = self.mopidyHandler.tracklist.index()
+                    if now is not None and now >= s:
+                        print(f"smart_shuffle: playback reached the slice, stopped after {p} moves")
+                        return
                     self.mopidyHandler.tracklist.move(s + c, s + c + 1, s + p)
                     cur.insert(p, cur.pop(c))
         except Exception as e:
