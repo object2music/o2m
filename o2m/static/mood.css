@@ -1167,6 +1167,11 @@
       padding: calc(13px * var(--ui)) calc(14px * var(--ui)); background: var(--surface);
       border-bottom: 1px solid var(--border-soft);
     }
+    /* A closed branch is a row to tap, not a section: ~3px shorter than an open head. */
+    #boxes-panel:not(.open) #boxes-panel-label, #left-panel:not(.open) #settings-label,
+    #tracklist-col:not(.open) #tracklist-label, #lyrics-col:not(.open) #lyrics-label {
+      padding-top: calc(11.5px * var(--ui)); padding-bottom: calc(11.5px * var(--ui));
+    }
     #boxes-panel-label::before, #settings-label::before,
     #tracklist-label > span:first-child::before {
       content: '▸'; color: var(--muted); font-size: var(--t-label); margin-right: calc(9px * var(--ui));
