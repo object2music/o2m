@@ -253,8 +253,8 @@ disorienting in use: the glyph said where you were, not what the next tap would 
 and reaching a state meant walking through the others. Two toggles each say one thing
 and do it at once, which also removes the need for any settle window.
 
-A `Dislike` entry also sits in the track row menu next to `Remove`, which is the same
-gesture over one copy — a menu is a list of actions, not a state.
+The track row menu has **no** `Dislike` entry (removed 2026-10-20): it sat alone
+there, apart from the heart it is the opposite of, and duplicated the struck heart.
 
 Clearing a dislike restores the DB state (`liked`, `disliked`, `popularity`) but not
 the world: a dislike is an ACT, and undoing it does not put the track back in the
@@ -1604,8 +1604,8 @@ Two consequences to keep in mind:
 - **The row menu acts on the local queue** (`offTrackMenuItems`): offline, a row's
   `tlid` is an index into `OFF.queue`, so handing it to Mopidy — as `Remove` used to —
   removed whichever SERVER track carried that number. Play next / Play now / Remove
-  work on the queue by uri; Dislike is still the server write and, once it is taken,
-  also drops the track from the queue (the rating panel's dislike too).
+  work on the queue by uri; the rating panel's dislike is still the server write and,
+  once it is taken, also drops the track from the queue.
 - **A download pass shows its progress and cannot hang.** The Offline button pulses
   for the whole pass, which over a 99-item tracklist with hour-long episodes is many
   minutes — its tooltip now reads `Downloading n / total`. Each file is abandoned

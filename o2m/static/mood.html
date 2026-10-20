@@ -1720,7 +1720,8 @@ let lastTracklistSig = null;
    number (or eq-icon) · name + artist (+ optional status) · duration · info badge. */
 // Options trigger: a plus-in-circle (replaces the former info ⓘ) — same circular
 // footprint, used for every row's actions menu (tracklist, search, object lists).
-const TL_INFO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+// Circled dots: the row opens a menu of actions — a circled plus read as "add".
+const TL_INFO_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="7.5" cy="12" r=".6" fill="currentColor"/><circle cx="12" cy="12" r=".6" fill="currentColor"/><circle cx="16.5" cy="12" r=".6" fill="currentColor"/></svg>';
 const CHEVRON_SVG = '<svg class="obj-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
 const ICON_PLAYNEXT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>';
 const ICON_PLAYNOW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
@@ -2950,12 +2951,7 @@ function trackMenuItems(uri, tlid) {
     { label: 'Play now',  icon: ICON_PLAYNOW,  action: () => playNow(uri) },
   ];
   if (tlid != null) items.push({ label: 'Remove', icon: ICON_REMOVE, action: () => removeFromTracklist(tlid) });
-  // 'Remove' drops this copy; 'Dislike' drops the track — here and from every
-  // future fill. The two sit together because the gesture starts the same way.
-  // Not offered on a radio: a station is named by a box line, never CHOSEN by the
-  // selection, so a dislike would remove this copy and promise something it cannot
-  // deliver — the same line puts it back on the next fill.
-  if (!_isStreamUri(uri)) items.push({ label: 'Dislike', icon: ICON.heartOff, action: () => setTrackDislike(uri, true) });
+  // No 'Dislike' here: it is the struck heart of the details panel's Rating row.
   const dl = offDownloadItem(uri);
   if (dl) items.push(dl);
   items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
@@ -3028,17 +3024,6 @@ async function _libToggle(endpoint, key, uri, add, okAdd, okRemove) {
 const setAlbumInLibrary  = (uri, add) => _libToggle('/album_save',   'saved',    uri, add, 'Album added to library',  'Album removed from library');
 const setArtistInLibrary = (uri, add) => _libToggle('/artist_follow','followed', uri, add, 'Artist added to library', 'Artist removed from library');
 const setTrackFavorite   = (uri, add) => _libToggle('/track_favorite','favorite',uri, add, 'Added to favorites',      'Removed from favorites');
-// Same write from a row menu, where no panel state is held: the reply is the state.
-async function setTrackDislike(uri, down) {
-  const ok = await _libToggle('/track_dislike', 'disliked', uri, down,
-                              'Disliked — it will not come back', 'Dislike removed');
-  // The server drops it from ITS tracklist; the local player's queue is ours to
-  // drop it from.
-  if (ok && down && OFF.on) offQueueRemove(uri);
-  if (down) setTimeout(refreshNowPlaying, 300);   // it may have left the tracklist
-  if (detailsUri === uri) renderTrackDetails(uri);
-}
-
 // Live library state for a (uri, kind): true = in library, false = not, null = unknown.
 async function fetchLibState(uri, kind) {
   try {
@@ -7950,9 +7935,6 @@ function offTrackMenuItems(uri) {
   ];
   if (OFF.queue.some(t => t.uri === uri))
     items.push({ label: 'Remove', icon: ICON_REMOVE, action: () => { offQueueRemove(uri); setFeedback('Removed'); } });
-  // A dislike is a server write (it needs the network); the local queue follows
-  // only once the server has taken it.
-  if (!_isStreamUri(uri)) items.push({ label: 'Dislike', icon: ICON.heartOff, action: () => setTrackDislike(uri, true) });
   items.push({ label: 'See details', icon: ICON_DETAILS, action: () => openTrackDetailSheet(uri) });
   items.push({ label: 'Copy link', icon: ICON_COPY, action: () => copyLink(uri) });
   return items;
