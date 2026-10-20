@@ -2415,8 +2415,11 @@
     html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate { padding: calc(16px * var(--ui)) calc(28px * var(--ui)); gap: calc(10px * var(--ui)); }
     html:not([data-theme="creme"]):not([data-theme="bulletin"]) .basic-plate::before { inset: calc(-80px * var(--ui)) calc(-170px * var(--ui)); }
     .basic-toggles { gap: calc(14px * var(--ui)); }
-    #basic-all { width: calc(86px * var(--ui)); height: calc(86px * var(--ui)); font-size: var(--t-label); }
-    #basic-all svg { width: calc(27px * var(--ui)); height: calc(27px * var(--ui)); }
+    /* The tiles' register at the disc's scale: the same light mono as their names,
+       and glyph and label held apart like theirs rather than touching (gap 1px). */
+    #basic-all { width: calc(96px * var(--ui)); height: calc(96px * var(--ui));
+                 font-size: var(--t-body); font-weight: 300; gap: calc(6px * var(--ui)); }
+    #basic-all svg { width: calc(26px * var(--ui)); height: calc(26px * var(--ui)); }
     #basic-dials { gap: calc(40px * var(--ui)); }
     #dial-bmood, #dial-bdl { width: calc(224px * var(--ui)); height: calc(158px * var(--ui)); }
     #txt-bmood, #txt-bdl { font-size: var(--t-body-s); }
