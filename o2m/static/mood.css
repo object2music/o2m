@@ -2795,4 +2795,7 @@
     }
     #basic-section #lyrics-label { padding-left: 0; padding-right: 0; }
     #basic-section #lyrics-body { padding: calc(4px * var(--ui)) 0 18vh; }
+    /* The track's progress line in the header: 4px more air above and below,
+       as a margin so each theme keeps its own padding. */
+    #progress-wrap { margin-top: calc(4px * var(--ui)); margin-bottom: calc(4px * var(--ui)); }
   }
