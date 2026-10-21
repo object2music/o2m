@@ -3224,6 +3224,42 @@ if __name__ == "__main__":
     # holds as a FILE, so music goes through spotdl's cache and spoken content
     # is streamed back from its feed.
 
+    def _offline_meta(uri, spoken):
+        """What the device player needs to play an item the way the server would:
+        the channel's pre-roll skip and volume boost, and whether a spoken item
+        was already heard to the end (`read_count_end`, what the server's own
+        pools read) — the device neither downloads nor keeps those first."""
+        out = {'ad_skip': 0, 'volume_boost': 0, 'finished': False}
+        if not spoken:
+            return out
+        try:
+            out['ad_skip'] = int(o2mHandler.ad_skip_ms(uri) or 0)
+        except Exception:
+            pass
+        try:
+            out['volume_boost'] = int(o2mHandler.volume_boost_pct(uri) or 0)
+        except Exception:
+            pass
+        try:
+            if o2mHandler.dbHandler.stat_exists(uri):
+                stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
+                out['finished'] = int(getattr(stat, 'read_count_end', 0) or 0) > 0
+        except Exception:
+            pass
+        return out
+
+    @api.route('/api/offline/meta', methods=['POST'])
+    def api_offline_meta():
+        """The same settings for items the device ALREADY holds. They are read at
+        download time, so a Skip intro or a Volume boost set afterwards — or an
+        episode finished on the server since — never reached the device."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        out = {}
+        for u in [u for u in (data.get('uris') or []) if isinstance(u, str) and u][:500]:
+            out[u] = _offline_meta(u, o2mHandler._is_spoken_uri(u))
+        return jsonify({'items': out})
+
     @api.route('/api/offline/plan', methods=['POST'])
     def api_offline_plan():
         """Per-uri availability for the device's download pass.
@@ -3257,11 +3293,7 @@ if __name__ == "__main__":
                 i['length'] = int(getattr(stat, 'duration_ms', 0) or 0) if stat else 0
             except Exception:
                 i['position'], i['length'] = 0, 0
-            try:
-                i['ad_skip'] = int(o2mHandler.ad_skip_ms(i['uri']) or 0) \
-                    if i['kind'] == 'spoken' else 0
-            except Exception:
-                i['ad_skip'] = 0
+            i.update(_offline_meta(i['uri'], i['kind'] == 'spoken'))
 
         missing = [i['uri'] for i in items if i['state'] == 'pending']
 

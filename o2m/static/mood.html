@@ -2490,8 +2490,8 @@ new MutationObserver(muts => {
 }).observe(document.body, { childList: true, subtree: true });
 
 async function refreshVolume() {
-  const r = await rpc('core.mixer.get_volume');
-  const vol = r?.result ?? null;
+  // Offline the slider is the device's own volume, not the server's mixer.
+  const vol = OFF.on ? offVolume() : ((await rpc('core.mixer.get_volume'))?.result ?? null);
   if (vol === null) return;
   const slider = document.getElementById('volume-slider');
   const val = document.getElementById('volume-val');
@@ -4462,6 +4462,7 @@ document.getElementById('volume-slider').addEventListener('input', e => {
     : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`;
   document.getElementById('volume-icon').innerHTML = volSvg;
   clearTimeout(volumeTimer);
+  if (OFF.on) { offSetVolume(vol); return; }
   volumeTimer = setTimeout(() => rpc('core.mixer.set_volume', {volume: vol}), 200);
 });
 
@@ -7981,25 +7982,55 @@ async function offClearAll() {
   offRenderBadges(); offPaintToggle();
 }
 
-/* Evict least-recently-used until `bytes` fit, never touching what is queued to
-   play — freeing space by deleting the next track is not freeing space. */
+/* Evict until `bytes` fit: finished episodes first — heard to the end, here or
+   on the server, they have done their job — then the oldest downloads. */
+function offIsDone(m) { return !!(m && m.kind === 'spoken' && m.done); }
 async function offMakeRoom(bytes) {
   const inv = offInv();
   let free = offQuota() - offUsed();
   if (free >= bytes) return true;
-  // Protected: what is queued to play, and what this very pass downloaded —
-  // freeing space by deleting the track we fetched a second ago is not freeing
-  // space, it is a loop.
-  const keep = new Set([...OFF.queue.map(t => t.uri), ...OFF.pass]);
+  // Protected: what is playing, what this very pass downloaded — freeing space
+  // by deleting the track we fetched a second ago is not freeing space, it is a
+  // loop — and what is queued, unless it is a finished episode: queued or not,
+  // nobody is waiting to hear it again.
+  const cur = OFF.queue[OFF.i]?.uri;
+  const queued = new Set(OFF.queue.map(t => t.uri));
   const victims = Object.keys(inv)
-    .filter(u => !keep.has(u))
-    .sort((a, b) => (inv[a].used || inv[a].at || 0) - (inv[b].used || inv[b].at || 0));
+    .filter(u => u !== cur && !OFF.pass.has(u) && (offIsDone(inv[u]) || !queued.has(u)))
+    .sort((a, b) => (offIsDone(inv[b]) - offIsDone(inv[a]))
+                    || ((inv[a].at || 0) - (inv[b].at || 0)));
   for (const u of victims) {
     if (free >= bytes) break;
     free += inv[u].bytes || 0;
+    if (queued.has(u)) offQueueRemove(u);
     await offForget(u);
   }
   return free >= bytes;
+}
+
+/* The channel settings of what the device already holds. They are read at
+   download time, so a Skip intro or a Volume boost set afterwards — or an
+   episode finished on the server since — never reached the device. */
+async function offRefreshMeta() {
+  const inv = offInv();
+  const uris = Object.keys(inv).filter(u => inv[u].kind === 'spoken');
+  if (!uris.length) return;
+  try {
+    const r = await fetch(API + '/offline/meta', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uris }),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(OFF_STALL_MS) : undefined,
+    });
+    const items = (await r.json()).items || {};
+    for (const [u, m] of Object.entries(items)) {
+      if (!inv[u]) continue;
+      inv[u].adSkip = m.ad_skip || 0;
+      inv[u].volBoost = m.volume_boost || 0;
+      if (m.finished) inv[u].done = true;
+    }
+    offInvSave();
+    offApplyVolume();
+  } catch (e) { /* offline: what was stored stands */ }
 }
 
 /* ── Downloading ──────────────────────────────────────────────────────────── */
@@ -8042,7 +8073,7 @@ async function offStore(meta) {
   offInv()[uri] = {
     name: meta.name || '', artist: meta.artist || '', album: meta.album || '',
     length: meta.length || meta.srvLength || 0, kind: meta.kind || 'music',
-    adSkip: meta.adSkip || 0,
+    adSkip: meta.adSkip || 0, volBoost: meta.volBoost || 0,
     bytes: blob.size, at: Date.now(),
   };
   offInvSave();
@@ -8069,6 +8100,7 @@ async function offStore(meta) {
    the same unfetchable tracks are re-downloaded for ever. */
 async function offSync(items, { quiet = false, retry = false } = {}) {
   if (OFF.downloading) return;
+  offRefreshMeta();
   const list = (items || []).filter(t => t && t.uri && !offHas(t.uri));
   if (!list.length) {
     if (!quiet) setFeedback('Everything in the tracklist is already on this device');
@@ -8079,7 +8111,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
   offPaintToggle();
   OFF.pass = new Set();
   OFF.copied = 0;
-  let got = 0, wait = 0, lost = 0, full = false;
+  let got = 0, wait = 0, lost = 0, heard = 0, full = false;
   try {
     const r = await fetch(API + '/offline/plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -8096,8 +8128,12 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       if (p.state === 'pending') { OFF.pending.set(t.uri, t); wait++; continue; }
       OFF.pending.delete(t.uri);
       if (p.state !== 'ready') { lost++; continue; }
+      // An episode already heard to the end is not taken: it would only spend
+      // the quota on something nobody is waiting for.
+      if (p.kind === 'spoken' && p.finished) { heard++; continue; }
       const res = await offStore({ ...t, kind: p.kind, position: p.position || 0,
-                                  srvLength: p.length || 0, adSkip: p.ad_skip || 0 });
+                                  srvLength: p.length || 0, adSkip: p.ad_skip || 0,
+                                  volBoost: p.volume_boost || 0 });
       if (res === 'quota') { full = true; break; }
       if (res !== 'ok') continue;
       got++;
@@ -8122,6 +8158,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
     setFeedback(got + ' downloaded' + dirNote
       + (wait ? ' · ' + wait + ' being fetched by the server' : '')
       + (lost ? ' · ' + lost + ' cannot be downloaded' : '')
+      + (heard ? ' · ' + heard + ' already heard, left out' : '')
       + (full ? ' · quota full (' + offQuotaMB() + ' MB), raise it in Settings' : ''));
   }
   offSchedulePendingCheck();
@@ -8196,7 +8233,7 @@ function offLogPlay(finished) {
   // resume ten seconds before its own end for ever.
   if (finished) offPosClear(t.uri); else offPosSet(t.uri, position, t.length);
   const m = offInv()[t.uri];
-  if (m) { m.used = Date.now(); offInvSave(); }
+  if (m) { m.used = Date.now(); if (finished) m.done = true; offInvSave(); }
 }
 async function offFlushPlays() {
   const plays = offPlays();
@@ -8394,6 +8431,7 @@ async function offPlayAt(i) {
   OFF.url = URL.createObjectURL(blob);
   el.src = OFF.url;
   offSeekOnStart(el, t);
+  offApplyVolume();
   currentDurationMs = t.length || 0;
   document.getElementById('prog-duration').textContent = msToMin(currentDurationMs);
   offPaintNow(t);
@@ -8422,6 +8460,28 @@ function offSeekOnStart(el, t) {
   if (!target) return;
   const seek = () => { try { el.currentTime = target / 1000; } catch (e) {} };
   el.addEventListener('loadedmetadata', seek, { once: true });
+}
+
+/* The device's own volume, and the channel's boost on top of it — the server's
+   rule (`apply_volume_boost`): N% louder, capped at full. The slider drives
+   this while offline; it used to go on setting the SERVER's mixer, in a room
+   nobody was listening to. iOS ignores `volume` (the hardware buttons own it),
+   so neither applies there. */
+const OFF_VOL_KEY = 'o2m-offline-volume';
+function offVolume() {
+  const v = parseInt(_lsGet(OFF_VOL_KEY), 10);
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 70;
+}
+function offSetVolume(v) {
+  try { localStorage.setItem(OFF_VOL_KEY, String(v)); } catch (e) {}
+  offApplyVolume();
+}
+function offApplyVolume() {
+  const el = OFF.el;
+  if (!el || !OFF.on) return;
+  const t = OFF.queue[OFF.i];
+  const boost = (t && offInv()[t.uri]?.volBoost) || 0;
+  try { el.volume = Math.min(1, offVolume() / 100 * (1 + boost / 100)); } catch (e) {}
 }
 
 function offSkip(d) { if (OFF.queue.length) { resetProgress(); offPlayAt(OFF.i + d); } }
@@ -8559,6 +8619,7 @@ async function offStart() {
 
   OFF.queue = offBuildQueue();
   offRenderQueue();
+  refreshVolume();
   if (OFF.queue.length) offPlayAt(0);
   else setFeedback('Nothing downloaded yet — fetching what the tracklist allows');
   offSync(snapshot, { retry: true });
@@ -8580,6 +8641,7 @@ function offStop() {
   offFlushPlays();
   lastTracklistSig = null;
   setFeedback('Back to the server');
+  refreshVolume();
   refreshNowPlaying();
 }
 

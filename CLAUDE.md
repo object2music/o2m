@@ -1603,8 +1603,8 @@ Two consequences to keep in mind:
   eviction / Clear downloads leave it alone. Permission is asked on a click only;
   a lapsed one is reported (Settings, end-of-pass message), never prompted. The
   end-of-pass message names the folder — a page cannot link to a local folder.
-- **Quota** in Settings, per device (`localStorage`), default 256 MB (the lowest choice). Eviction is LRU and
-  protects both what is queued to play and what the pass in progress just downloaded —
+- **Quota** in Settings, per device (`localStorage`), default 256 MB (the lowest choice). Eviction
+  (see below) protects both what is queued to play and what the pass in progress just downloaded —
   freeing space by deleting the track fetched a second ago is a loop, not a saving.
 - **Blobs in IndexedDB, not the Cache API**: Cache needs a secure context and the dev
   instances are served over plain HTTP, so the feature would have been untestable exactly
@@ -1626,6 +1626,18 @@ Two consequences to keep in mind:
   number takes the accent colour) — *not* in `Track.local_uri`. That column means "the
   SERVER has this file" and is what the fill substitutes; writing a phone's copy into it
   would make the server believe it can play something it does not have.
+- **Channel settings follow the item offline** (2026-10-21): Skip intro and Volume
+  boost come with the download (`plan` answers `ad_skip`, `volume_boost`) and are
+  re-read for everything held at each pass (`POST /api/offline/meta`,
+  `offRefreshMeta`) — read at download time only, a setting changed afterwards never
+  reached the device. Offline the volume slider is the device's own
+  (`o2m-offline-volume`, default 70) instead of the server's mixer, and the boost is
+  the server's rule on top of it (N% louder, capped at full); iOS ignores
+  `audio.volume`, so neither applies there.
+- **A finished episode is not downloaded** (`plan` / `meta` answer `finished`:
+  `read_count_end > 0`, what the server's pools read), and the quota evicts finished
+  episodes first (`done`, set by the server or a local play to the end — even when
+  queued, never the one playing), then the OLDEST downloads (`at`, no longer LRU).
 - Plays are logged locally (same `> 0.05` artefact rule as the server) and flushed on
   reconnection. `'ended'` records the play and then skips, so the skip must not record the
   same index a second time — one index, one record (`OFF.loggedAt`).
