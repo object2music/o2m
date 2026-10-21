@@ -2634,7 +2634,8 @@ async function loadLyrics(uri, { name, artist, album } = {}) {
   } catch (e) { if (LYR.uri === uri) { LYR.pending = false; paintLyrics(); } }
 }
 function lyricsHost() {
-  // Basic on a phone has no tracklist on screen: the pane goes under the dials.
+  // Basic on a phone has no tracklist on screen: the pane goes above the
+  // actuators and the dials, at the head of the section.
   if (isBasic()) return document.getElementById(isPhone() ? 'basic-section' : 'tracklist-col');
   return document.getElementById(isPhone() ? 'lyrics-col' : 'left-panel');
 }
@@ -2642,7 +2643,7 @@ function placeLyricsPane() {
   const pane = document.getElementById('lyrics-pane');
   const host = lyricsHost();
   if (!pane || !host || pane.parentElement === host) return;
-  if (host.id === 'left-panel' || host.id === 'basic-section') host.appendChild(pane);
+  if (host.id === 'left-panel') host.appendChild(pane);
   else host.insertBefore(pane, host.firstChild);
 }
 function paintLyrics() {
@@ -2697,6 +2698,9 @@ function paintLyrics() {
   document.getElementById('lyrics-src').textContent = d.source || '';
   if (body.dataset.uri === LYR.uri) return;    // already drawn for this song
   body.dataset.uri = LYR.uri;
+  // Basic, phone: a new song's lyrics are brought into view — the section may
+  // have been scrolled down to the dials.
+  if (basic && phone) document.getElementById('basic-section')?.scrollTo({ top: 0, behavior: 'smooth' });
   body.innerHTML = d.synced
     ? d.synced.map(([ms, t], i) => `<p class="lyr-line" data-i="${i}" data-ms="${ms}">${objEsc(t) || '&nbsp;'}</p>`).join('')
     : `<div class="lyr-plain">${objEsc(d.plain || '')}</div>`;

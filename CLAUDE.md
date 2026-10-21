@@ -1720,7 +1720,8 @@ only when the song has lyrics:
   tracklist;
 - **Basic view: Invert only** — on desktop the pane takes the tracklist column
   over (a button in each header switches, `o2m-lyrics`); on a phone, where no
-  tracklist is on screen, it comes under the dials (`#basic-section`).
+  tracklist is on screen, it comes first, above the actuators and the dials
+  (`#basic-section`), and each new song scrolls the section back up to it.
 
 Between two songs the pane holds its place while the next one's lyrics load
 (`LYR.pending`, set when the last song had some): hiding it meanwhile closed the
