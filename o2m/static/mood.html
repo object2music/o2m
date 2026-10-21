@@ -1879,7 +1879,10 @@ function trackMetaHTML(m) {
   if (!m) return '';
   const bits = [];
   if (m.option_type)      bits.push(objEsc(m.option_type));
-  // Popularity leads, because it is the more trustworthy of the two: it is computed
+  // The source comes second, short (sourceShort): where the track comes from is
+  // what tells two rows of one tracklist apart.
+  if (m.source)           bits.push(`<span title="${objEsc('Source: ' + m.source)}">${objEsc(sourceShort(m.source))}</span>`);
+  // Popularity before mood, because it is the more trustworthy of the two: it is computed
   // from what was actually listened to on this install, while the mood is inferred
   // from Last.fm tags and its coverage is partial. The less certain fact reads
   // second. fmtEV is the same formatter the panel's Popularity row uses — the two
@@ -1890,8 +1893,21 @@ function trackMetaHTML(m) {
   // and edited — as a POSITION on the mood matrix, which is the form that needs no
   // legend. The mood word is what those two coordinates amount to in one glance.
   if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(moodWord(m.mood))}</span>`);
-  if (m.source)           bits.push(`<span title="Source">${objEsc(m.source)}</span>`);
   return bits.join(' · ');
+}
+/* The source in the row's few characters: the kind as a short word, the name
+   capped at SOURCE_MAX. The hover and the details panel keep the full label. */
+const SOURCE_MAX = 22;
+const SOURCE_SHORT = [
+  [/^Playlist:\s*/, 'Pl '], [/^Album:\s*/, 'Al '], [/^Artist:\s*/, 'Ar '], [/^Tag:\s*/, '#'],
+  [/^Reco after track$/, 'Reco'], [/^Saved on Spotify$/, 'Saved'], [/^Favorites$/, 'Fav'],
+  [/^New in library$/, 'New'], [/^Not finished$/, 'Unfinished'], [/^History$/, 'Hist'],
+  [/^Albums & artists$/, 'Al & Ar'],
+];
+function sourceShort(src) {
+  let s = String(src || '').trim();
+  for (const [re, short] of SOURCE_SHORT) if (re.test(s)) { s = s.replace(re, short); break; }
+  return s.length > SOURCE_MAX ? s.slice(0, SOURCE_MAX - 1).trimEnd() + '…' : s;
 }
 /* The mood category `dark` is shown as "intense", as the matrix quadrant and the
    mood editor already name it. Display only: the stored value stays `dark`. */
@@ -1902,9 +1918,9 @@ function trackMetaText(m) {
   if (!m) return '';
   const bits = [];
   if (m.option_type)        bits.push(m.option_type);
+  if (m.source)             bits.push('source ' + m.source);
   if (m.popularity != null) bits.push('popularity ' + fmtEV(m.popularity));
   if (m.mood)               bits.push('mood ' + moodWord(m.mood));
-  if (m.source)             bits.push('source ' + m.source);
   return bits.join(' · ');
 }
 const POP_HINT = 'Popularity — how completely and how often you play it, minus skips,'
