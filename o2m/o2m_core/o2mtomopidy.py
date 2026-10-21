@@ -2052,6 +2052,7 @@ class O2mToMopidy:
                     self.box_action(sub)
                 except Exception as e:
                     print(f"meta_fill({cat}) on {sub.uid}: {e}")
+                self.interleave_tracklist()
                 try:
                     return self.mopidyHandler.tracklist.get_length() - start
                 except Exception:
@@ -2095,6 +2096,7 @@ class O2mToMopidy:
                 budget -= got   # a shortfall (got < share) rolls forward; a surplus tightens the rest
                 if budget <= 0:
                     break
+            self.interleave_tracklist()
             return gained_total
 
     def meta_remove(self, cat):
@@ -3566,23 +3568,54 @@ class O2mToMopidy:
                     w = 1e-9
                 keyed.append((random.random() ** (1.0 / w), t.tlid))
             keyed.sort(reverse=True)
-            ordered = [tlid for _, tlid in keyed]
-            # Apply the permutation with selection-style moves, mirroring locally
-            cur = [t.tlid for t in slice_tl]
-            for p, desired in enumerate(ordered):
-                c = cur.index(desired, p)
-                if c != p:
-                    # The moves take a while: if playback has stepped into the
-                    # slice since, stop here rather than move the track playing.
-                    now = self.mopidyHandler.tracklist.index()
-                    if now is not None and now >= s:
-                        print(f"smart_shuffle: playback reached the slice, stopped after {p} moves")
-                        return
-                    self.mopidyHandler.tracklist.move(s + c, s + c + 1, s + p)
-                    cur.insert(p, cur.pop(c))
+            self._apply_tl_order(s, slice_tl, [tlid for _, tlid in keyed], 'smart_shuffle')
         except Exception as e:
             print(f"smart_shuffle error: {e}; falling back to plain shuffle")
             self.shuffle_tracklist(start_index, stop_index)
+
+    def _apply_tl_order(self, s, slice_tl, ordered, who):
+        """Reorder the tracklist slice starting at `s` to `ordered` (tlids), with
+        selection-style moves mirrored locally."""
+        cur = [t.tlid for t in slice_tl]
+        for p, desired in enumerate(ordered):
+            c = cur.index(desired, p)
+            if c != p:
+                # The moves take a while: if playback has stepped into the
+                # slice since, stop here rather than move the track playing.
+                now = self.mopidyHandler.tracklist.index()
+                if now is not None and now >= s:
+                    print(f"{who}: playback reached the slice, stopped after {p} moves")
+                    return
+                self.mopidyHandler.tracklist.move(s + c, s + c + 1, s + p)
+                cur.insert(p, cur.pop(c))
+
+    def interleave_tracklist(self):
+        """Alternate the types of what is queued after the track playing — music,
+        podcast, info, radio — by the category of the box each entry belongs to
+        (selection.interleave). The fills shuffle by popularity, which knows
+        nothing of types: spoken items carry no score and drew together, six or
+        seven in a row at the head of an ALL. A news item standing next keeps its
+        place: it was put there on purpose (add_tracks)."""
+        try:
+            s = self._shuffle_start(0)
+            tl = self.mopidyHandler.tracklist.get_tl_tracks()
+            slice_tl = tl[s:]
+            if len(slice_tl) <= 2:
+                return
+            cat_of = {b.uid: self._live_category(b) for b in list(self.activeboxs or [])}
+            def cat(t):
+                info = self._track_info.get(t.tlid) or {}
+                return cat_of.get(info.get('box_id')) or 'music'
+            cats = [(t.tlid, cat(t)) for t in slice_tl]
+            if len({c for _, c in cats}) < 2:
+                return
+            lead = []
+            if cats[0][1] == 'info':
+                lead, cats = [cats[0][0]], cats[1:]
+            ordered = lead + selection.interleave(cats)
+            self._apply_tl_order(s, slice_tl, ordered, 'interleave')
+        except Exception as e:
+            print(f"interleave_tracklist error: {e}")
  
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()

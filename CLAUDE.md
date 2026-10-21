@@ -32,7 +32,7 @@ docker compose --profile dev up -d
 Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 (popularity scoring), `test_boxdirectives.py` (time windows, mood/dl directives),
 `test_player_port.py` (the player port's anti-drift check), `test_selection.py`
-(the samplers and the anti-repeat cooldown), `test_webmedia.py`
+(the samplers, the anti-repeat cooldown and the type interleave), `test_webmedia.py`
 (the `web:` page reader), `test_virtualbox.py` (activating an album or an artist
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
@@ -643,6 +643,17 @@ dispatch branches against the picker).
 | `recommendation:…` | live Spotify recommendations (legacy; the API has since been restricted) |
 
 **A YouTube channel ADDRESS is not a line.** Mopidy-YouTube looks `yt:https://www.youtube.com/@x/videos` up to `[]`, and its `yt:channel:<UC id>` plays the channel's PLAYLISTS (curated, often other people's videos). A channel's own videos are the playlist whose id is the channel's with `UC` → `UU`. The Guided builder converts a pasted address to that line (`/channel/UC…` on the spot; an `@handle`, `/c/`, `/user/` through `GET /api/youtube_channel` → `webmedia.youtube_channel`, which reads the id off the page — with the `SOCS=CAI` consent cookie, or an EU request lands on consent.youtube.com). The dispatcher does not convert: a line typed raw stays what it says.
+
+**The Basic view's mix alternates its types** (`interleave_tracklist`, 2026-10-21).
+Each actuator's fill shuffles by popularity, which knows nothing of types: spoken
+items carry no score and drew together — six or seven in a row at the head of an
+ALL. After every `meta_fill` (a tile, ALL from the page, the remote or a `meta_all`
+card), once two categories are queued, what follows the track playing is reordered
+by the category of its owning box (`selection.interleave`: each category spread
+evenly over the sequence, its own order kept, a random phase per category), so
+equal shares alternate one for one and a small one is dotted through a large one. A
+news item standing next keeps its place. Counts, not durations: an hour-long
+episode and a song are one place each.
 
 There is **no `meta_music`**: `meta_fill` handles the `music` category, but
 `_META_PATTERNS` has no entry for it, so it cannot be written in a box. The BASIC view's

@@ -2721,7 +2721,9 @@ function lyricsTick(pos) {
   if (!body || !pane || pane.hidden) return;
   if (!d.synced) { lyricsFollowPlain(body, pos); return; }
   let i = -1;
-  for (let k = 0; k < d.synced.length && d.synced[k][0] <= pos - LYR_LAG_MS; k++) i = k;
+  // Offline the device plays the file itself: no Snapcast buffer to wait for.
+  const lag = OFF.on ? 0 : LYR_LAG_MS;
+  for (let k = 0; k < d.synced.length && d.synced[k][0] <= pos - lag; k++) i = k;
   if (i === LYR.cur) return;
   body.querySelector('.lyr-line.on')?.classList.remove('on');
   LYR.cur = i;
@@ -2768,8 +2770,10 @@ function setupLyrics() {
   document.getElementById('btn-lyrics-off')?.addEventListener('click', e => { e.stopPropagation(); set(false); });
   document.getElementById('lyrics-body')?.addEventListener('click', e => {
     const line = e.target.closest('.lyr-line');
-    if (!line || OFF.on || queueLocked()) return;
+    if (!line) return;
     const ms = +line.dataset.ms;
+    if (OFF.on) { offSeekAbsolute(ms); return; }
+    if (queueLocked()) return;
     rpc('core.playback.seek', { time_position: ms }).then(() => { setClock(ms, progPlaying); lyricsTick(ms); });
   });
   window.matchMedia('(max-width: 699px)').addEventListener?.('change', () => {
@@ -8513,6 +8517,9 @@ function offPaintNow(t) {
   setCoverGenerated(t.uri);      // no cover is cached: the generated one is local
   clearTrackTags();
   renderTrackDetails(null);      // the details panel is a server read; blank it
+  // The lyrics are this track's too: without it the server's last song stayed
+  // on screen. Fetched when the network is there, else the pane goes away.
+  loadLyrics(t.uri, { name: t.name || '', artist: t.artist || '', album: t.album || '' });
   setClock(0, true);
   offRenderQueue();
   updateMediaSession({ uri: t.uri, name: t.name,
@@ -8645,6 +8652,7 @@ function offStop() {
   offFlushPlays();
   lastTracklistSig = null;
   setFeedback('Back to the server');
+  _switchUri = null;      // the header, lyrics included, is the server's track again
   refreshVolume();
   refreshNowPlaying();
 }

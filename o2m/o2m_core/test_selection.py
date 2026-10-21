@@ -475,3 +475,35 @@ class TestTagProximity(unittest.TestCase):
     def test_pure_exploration_ignores_the_bonus(self):
         # DL10 is all explore — uniform by design, the bonus must not leak in.
         self.assertAlmostEqual(self._counts(10), 0.10, delta=0.03)
+
+
+class TestInterleave(unittest.TestCase):
+    """The Basic view's mix alternates its types (selection.interleave)."""
+
+    def _run(self, counts, seed=1):
+        items = [(f"{c}{i}", c) for c, n in counts.items() for i in range(n)]
+        return selection.interleave(items, rng=random.Random(seed))
+
+    def test_keeps_every_item_once(self):
+        out = self._run({'music': 7, 'podcast': 3, 'info': 2})
+        self.assertEqual(sorted(out), sorted(f"{c}{i}" for c, n in
+                                             {'music': 7, 'podcast': 3, 'info': 2}.items()
+                                             for i in range(n)))
+
+    def test_order_within_a_category_is_kept(self):
+        out = self._run({'music': 10, 'podcast': 4})
+        self.assertEqual([k for k in out if k.startswith('music')],
+                         [f"music{i}" for i in range(10)])
+
+    def test_equal_sizes_alternate(self):
+        for seed in range(20):
+            out = self._run({'music': 10, 'podcast': 10}, seed)
+            cats = [k[0] for k in out]
+            self.assertTrue(all(a != b for a, b in zip(cats, cats[1:])), out)
+
+    def test_no_clump_of_the_rarer_type(self):
+        # 30 music, 10 spoken: never two spoken in a row.
+        for seed in range(20):
+            out = self._run({'music': 30, 'podcast': 10}, seed)
+            cats = [k[0] for k in out]
+            self.assertFalse(any(a == b == 'p' for a, b in zip(cats, cats[1:])), out)

@@ -314,3 +314,25 @@ def expand_pick(pool, n, energy, valence, discover_level, served, now, now_ts,
         except Exception:
             pass
     return [u for u in uris if u in sel_set]  # source order preserved
+
+
+def interleave(items, rng=None):
+    """Order `items` — (key, category) pairs — so the categories alternate.
+
+    Each category's items are spread evenly over the whole sequence: the i-th of
+    n sits at (i + phase) / n, the phase drawn once per category, so two
+    categories of equal size alternate one for one and a small one is dotted
+    through a large one instead of clumping. Within a category the given order
+    is kept (it is the fill's own: the smart shuffle's, a feed's). Returns the
+    keys."""
+    rng = rng or random
+    groups = {}
+    for key, cat in items:
+        groups.setdefault(cat, []).append(key)
+    keyed = []
+    for keys in groups.values():
+        n, phase = len(keys), rng.random()
+        for i, key in enumerate(keys):
+            keyed.append(((i + phase) / n, rng.random(), key))
+    keyed.sort(key=lambda x: (x[0], x[1]))
+    return [k for _, _, k in keyed]
