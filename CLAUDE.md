@@ -1430,6 +1430,16 @@ transition deferred until the finger stopped; reverted on 2026-09-24 with the ra
 cycle, for the same reason — a rotating control whose glyph shows the current state
 and not the next was disorienting in use.
 
+**The offline button itself has three states since 2026-10-22**, asked for
+explicitly despite that history: off (muted) → **connected download** (teal
+`#12a4b4`, no theme's accent is near it: the tracklist is fetched now and every
+minute as it changes, `offFollow`, per device in `o2m-offline-follow`, and the
+server keeps playing) → **offline** (accent, and the glyph turns to a struck cloud)
+→ off. Each tap acts at once; colour and glyph say which state holds, the tooltip
+what the next tap does. Offline queues only what is still to be heard
+(`offBuildQueue` skips `done` episodes, `offStart` refreshes that flag first, for
+3 s at most) — a finished episode stays on the device until the quota needs it.
+
 **The Snapcast glyph also carries network health, and the separate dot is gone.** One latency probe
 still publishes `html[data-net]` (green/orange/red, `netProbe`), but it now paints the
 Snapcast button instead of a dot beside the status badge. The health of the link and where the audio

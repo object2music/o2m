@@ -7868,8 +7868,13 @@ const OFF = {
   loggedAt: -1,         // queue index whose play has already been recorded
   posAt: 0,             // last bookmark write, ms — throttles the checkpoint
   pass: new Set(),      // downloaded during the pass in progress — never evicted by it
+  follow: false,        // connected download: the tracklist is fetched as it changes
 };
+const OFF_FOLLOW_KEY = 'o2m-offline-follow';
+const OFF_FOLLOW_MS = 60000;
+let _offFollowTimer = null;
 
+const OFF_CLOUD_OFF_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></svg>`;
 const OFF_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 14.9A7 7 0 0 0 16 4a5 5 0 0 0-4.5-3A6 6 0 0 0 6 9"/><path d="M6 9a5 5 0 0 0 0 10h12"/><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/></svg>`;
 
 /* ── Blob store (IndexedDB) ───────────────────────────────────────────────── */
@@ -8298,8 +8303,10 @@ async function offFlushPlays() {
 /* ── The queue: rule is the tracklist first, the whole device second ──────── */
 function offBuildQueue() {
   const inv = offInv();
+  // An episode heard to the end stays on the device (the quota drops it first)
+  // but is not queued: offline plays what is still to be heard.
   const fromTl = (matrixTlItems || [])
-    .filter(t => t.uri && inv[t.uri])
+    .filter(t => t.uri && inv[t.uri] && !offIsDone(inv[t.uri]))
     .map(t => ({ uri: t.uri, name: t.name || inv[t.uri].name, album: t.album || '',
                  artist: t.artist || inv[t.uri].artist,
                  length: t.length || inv[t.uri].length || 0 }));
@@ -8308,6 +8315,7 @@ function offBuildQueue() {
   // everything on the device, newest first. "Full" here is about the tracklist,
   // never about the quota.
   return Object.keys(inv)
+    .filter(u => !offIsDone(inv[u]))
     .sort((a, b) => (inv[b].at || 0) - (inv[a].at || 0))
     .map(u => ({ uri: u, name: inv[u].name, artist: inv[u].artist,
                  album: inv[u].album, length: inv[u].length || 0 }));
@@ -8648,10 +8656,14 @@ async function offStart() {
   stopMediaAnchor();
 
   OFF.on = true;
+  offFollow(false);                 // offline downloads the tracklist itself, below
   document.documentElement.classList.add('offline-mode');
   offPaintToggle();
   paintBusy();
 
+  // What was finished elsewhere is not queued — asked for 3 s at most: a network
+  // that hangs is exactly when one goes offline.
+  await Promise.race([offRefreshMeta(), new Promise(r => setTimeout(r, 3000))]);
   OFF.queue = offBuildQueue();
   offRenderQueue();
   refreshVolume();
@@ -8683,7 +8695,25 @@ function offStop() {
 
 function offToggle() { return OFF.on ? offStop() : offStart(); }
 
+/* Connected download: while on, the tracklist is fetched now and again every
+   minute as it changes, and the server keeps playing. Per device, kept across a
+   reload. */
+function offFollow(on) {
+  OFF.follow = !!on;
+  try { localStorage.setItem(OFF_FOLLOW_KEY, on ? '1' : '0'); } catch (e) {}
+  clearInterval(_offFollowTimer); _offFollowTimer = null;
+  if (on) {
+    const pass = () => { if (OFF.follow && !OFF.on && !OFF.downloading)
+                           offSync((matrixTlItems || []).slice(), { quiet: true }); };
+    _offFollowTimer = setInterval(pass, OFF_FOLLOW_MS);
+  }
+  offPaintToggle();
+}
+
 function offInit() {
+  let follow = false;
+  try { follow = localStorage.getItem(OFF_FOLLOW_KEY) === '1'; } catch (e) {}
+  if (follow) offFollow(true);
   paintPlaybackTarget();
   offFlushPlays();                                   // a previous session's plays
   window.addEventListener('online', () => { offFlushPlays(); offSchedulePendingCheck(); });
@@ -8786,13 +8816,24 @@ function paintPlaybackTarget() {
   }
   const off = document.getElementById('btn-offline');
   if (off) {
+    // Three states, one tap each, in this order: off → download (connected) →
+    // offline → off. Colour AND glyph say which one holds; the title says what
+    // the next tap does.
+    const mode = OFF.on ? 'offline' : (OFF.follow ? 'sync' : 'off');
+    if (off.dataset.mode !== mode) {
+      off.dataset.mode = mode;
+      off.innerHTML = mode === 'offline' ? OFF_CLOUD_OFF_SVG : OFF_SVG;
+    }
     off.classList.toggle('on', OFF.on);
     off.classList.toggle('busy', OFF.downloading);
     const n = Object.keys(offInv()).length;
     const held = n + ' track' + (n === 1 ? '' : 's') + ' held, ' + offSizeText(offUsed())
                + ' of ' + offQuotaMB() + ' MB';
-    let title = OFF.on ? 'Offline: this device is playing its own files — tap to hand back to the server'
-                       : 'Offline: play this device\u2019s own files (' + held + ')';
+    let title = mode === 'offline'
+      ? 'Offline: this device plays its own files — tap to turn off'
+      : mode === 'sync'
+        ? 'Downloading the tracklist, still on the server (' + held + ') — tap to go offline'
+        : 'Download the tracklist to this device (' + held + ')';
     // The pulse alone cannot tell a long pass from a stuck one; the count can.
     if (OFF.progress) title += '\nDownloading ' + OFF.progress.done + ' / ' + OFF.progress.total;
     off.title = title;
@@ -8817,8 +8858,12 @@ function toggleSnapcast() {
 
 async function toggleOffline() {
   try {
-    if (OFF.on) offStop();
-    else {
+    if (OFF.on) offStop();                                  // offline → off
+    else if (!OFF.follow) {                                 // off → connected download
+      offFollow(true);
+      setFeedback('Downloading the tracklist — playback stays on the server');
+      offSync((matrixTlItems || []).slice(), { retry: true });
+    } else {                                                // connected download → offline
       localStorage.setItem('snap-autoconnect', '0');   // offStart stops the stream
       await offStart();
     }

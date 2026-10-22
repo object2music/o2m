@@ -845,7 +845,7 @@
   }
   #btn-snapcast svg { width: calc(18px * var(--ui)); height: calc(18px * var(--ui)); display: block; }
   #btn-snapcast.playing { color: var(--accent); }
-  /* Offline, beside it: its own toggle, accent when on, pulsing while a download
+  /* Offline, beside it: its own three-state button, pulsing while a download
      pass runs. */
   #btn-offline {
     background: none; border: none; color: var(--muted); cursor: pointer;
@@ -853,6 +853,9 @@
     transition: color .15s;
   }
   #btn-offline svg { width: calc(18px * var(--ui)); height: calc(18px * var(--ui)); display: block; }
+  /* Three states: off (muted), connected download (teal — no theme's accent is
+     near it), offline (accent, and a struck cloud). */
+  #btn-offline[data-mode="sync"] { color: #12a4b4; }
   #btn-offline.on { color: var(--accent); }
   #btn-offline.busy { animation: off-pulse 1.2s ease-in-out infinite; }
 
