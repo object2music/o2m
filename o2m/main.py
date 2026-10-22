@@ -3250,6 +3250,9 @@ if __name__ == "__main__":
             if o2mHandler.dbHandler.stat_exists(uri):
                 stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
                 out['finished'] = int(getattr(stat, 'read_count_end', 0) or 0) > 0
+                # A favourite episode is kept in the device's folder copy even
+                # once the device itself lets go of it.
+                out['liked'] = bool(getattr(stat, 'liked', 0))
                 if (getattr(stat, 'option_type', '') or '') == 'info':
                     out['cat'] = 'info'
         except Exception:

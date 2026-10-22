@@ -4448,6 +4448,14 @@ async function setRating(p, which) {
       setFeedback(String(d.error || 'Not saved (HTTP ' + r.status + ')').slice(0, 90));
       return;
     }
+    // A favourite episode's folder copy outlives the device's: the device row
+    // learns the new state now rather than at the next refresh.
+    const held = offHeldKey(uri);
+    if (held) { offInv()[held].liked = path === '/track_favorite' && !!body.favorite; offInvSave(); }
+    const kept = offDirKept();
+    if (kept[uri] && !(path === '/track_favorite' && body.favorite)) {
+      offDirRemove(kept[uri].names || []); delete kept[uri]; offDirKeptSave(kept);
+    }
     // The panel may have moved on to another track while this was in flight; the
     // write still stands, only the cell must not be repainted with its answer.
     if (p.getUri() === uri) {
@@ -8021,19 +8029,79 @@ function offFileName(meta, type) {
   return base.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ')
              .trim().slice(0, 150) + '.' + ext;
 }
-/* Write one file into the folder; true when it landed. Silent on any failure. */
+/* Write one file into the folder; its name when it landed, '' otherwise. Silent
+   on any failure. The name is kept on the inventory row, so the copy can be
+   found again to delete it. */
 async function offDirWrite(meta, blob) {
   try {
     const h = await offDirHandle();
-    if (!h || (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') return false;
-    const fh = await h.getFileHandle(offFileName(meta, blob.type || ''), { create: true });
+    if (!h || (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') return '';
+    const name = offFileName(meta, blob.type || '');
+    const fh = await h.getFileHandle(name, { create: true });
     const w = await fh.createWritable();
     await w.write(blob); await w.close();
-    return true;
-  } catch (e) { return false; }
+    const m = offInv()[meta.uri];
+    if (m) { m.file = name; offInvSave(); }
+    const kept = offDirKept();
+    if (kept[meta.uri]) { delete kept[meta.uri]; offDirKeptSave(kept); }   // back on the device
+    return name;
+  } catch (e) { return ''; }
+}
+
+/* The folder follows the device: what the device lets go of (quota, Clear,
+   Remove from device) leaves the folder too — except a FAVOURITE podcast
+   episode, which stays there, remembered in `o2m-offline-dir-kept` until it is
+   un-liked (offRefreshMeta asks). A deletion that cannot happen now (permission
+   lapsed) waits in `o2m-offline-dir-del` for the next time the folder is
+   writable. */
+const OFF_DIR_KEPT = 'o2m-offline-dir-kept';
+const OFF_DIR_DEL = 'o2m-offline-dir-del';
+function _lsJson(k, dflt) { try { return JSON.parse(localStorage.getItem(k) || '') || dflt; } catch (e) { return dflt; } }
+function offDirKept() { return _lsJson(OFF_DIR_KEPT, {}); }
+function offDirKeptSave(o) { try { localStorage.setItem(OFF_DIR_KEPT, JSON.stringify(o)); } catch (e) {} }
+/* The names a row's copy may carry: the one recorded at write time, else every
+   extension offFileName could have given it (rows written before it was kept). */
+function offDirNames(m) {
+  if (m.file) return [m.file];
+  return ['audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/webm', 'audio/flac', 'audio/wav']
+    .map(t => offFileName(m, t));
+}
+async function offDirRemove(names) {
+  const h = await offDirHandle();
+  if (!h) return;
+  let ok = false;
+  try { ok = (await h.queryPermission({ mode: 'readwrite' })) === 'granted'; } catch (e) {}
+  if (!ok) {
+    const later = _lsJson(OFF_DIR_DEL, []);
+    try { localStorage.setItem(OFF_DIR_DEL, JSON.stringify([...new Set([...later, ...names])])); } catch (e) {}
+    return;
+  }
+  for (const n of names) { try { await h.removeEntry(n); } catch (e) { /* not there */ } }
+}
+async function offDirFlushPending() {
+  const later = _lsJson(OFF_DIR_DEL, []);
+  if (!later.length || (await offDirState()) !== 'granted') return;
+  try { localStorage.removeItem(OFF_DIR_DEL); } catch (e) {}
+  await offDirRemove(later);
+}
+async function offDirForget(uri, m) {
+  if (!m || !(await offDirHandle())) return;
+  if (m.kind === 'spoken' && m.liked) {
+    const kept = offDirKept();
+    kept[uri] = { names: offDirNames(m), name: m.name || '' };
+    offDirKeptSave(kept);
+    return;
+  }
+  // Never a name another held item (or a kept favourite) also answers to: two
+  // versions of one song share "Artist - Title".
+  const inv = offInv(), kept = offDirKept(), taken = new Set();
+  for (const k in inv) if (k !== uri) offDirNames(inv[k]).forEach(n => taken.add(n));
+  for (const k in kept) (kept[k].names || []).forEach(n => taken.add(n));
+  await offDirRemove(offDirNames(m).filter(n => !taken.has(n)));
 }
 /* Everything already on the device, into the folder (after picking it). */
 async function offDirCopyAll() {
+  await offDirFlushPending();
   let n = 0;
   for (const [uri, m] of Object.entries(offInv())) {
     let blob; try { blob = await offBlobGet(uri); } catch (e) { blob = null; }
@@ -8067,12 +8135,16 @@ function offSizeText(b) {
 }
 
 async function offForget(uri) {
+  await offDirForget(uri, offInv()[uri]);
   try { await offBlobDel(uri); } catch (e) {}
   delete offInv()[uri];
   offInvSave();
 }
 async function offClearAll() {
-  for (const u of Object.keys(offInv())) { try { await offBlobDel(u); } catch (e) {} }
+  for (const u of Object.keys(offInv())) {
+    await offDirForget(u, offInv()[u]);
+    try { await offBlobDel(u); } catch (e) {}
+  }
   OFF.inv = {}; offInvSave();
   offRenderBadges(); offPaintToggle();
 }
@@ -8110,7 +8182,9 @@ async function offRefreshMeta() {
   const inv = offInv();
   // Every item, not only episodes: music needs its category and, when it was
   // taken as a file://, the Spotify uri a search or an album shows it under.
-  const uris = Object.keys(inv);
+  const kept = offDirKept();
+  const uris = [...new Set([...Object.keys(inv), ...Object.keys(kept)])];
+  offDirFlushPending();
   if (!uris.length) return;
   try {
     const r = await fetch(API + '/offline/meta', {
@@ -8119,14 +8193,22 @@ async function offRefreshMeta() {
       signal: AbortSignal.timeout ? AbortSignal.timeout(OFF_STALL_MS) : undefined,
     });
     const items = (await r.json()).items || {};
+    let keptMoved = false;
     for (const [u, m] of Object.entries(items)) {
+      // A folder copy kept for a favourite: un-liked since, it goes.
+      if (kept[u] && !inv[u] && !m.liked) {
+        await offDirRemove(kept[u].names || []);
+        delete kept[u]; keptMoved = true;
+      }
       if (!inv[u]) continue;
       inv[u].adSkip = m.ad_skip || 0;
       inv[u].volBoost = m.volume_boost || 0;
       if (m.finished) inv[u].done = true;
       if (m.cat) inv[u].cat = m.cat;
       if (m.canon && m.canon !== u) inv[u].canon = m.canon;
+      inv[u].liked = !!m.liked;
     }
+    if (keptMoved) offDirKeptSave(kept);
     offInvSave();
     offApplyVolume();
   } catch (e) { /* offline: what was stored stands */ }
@@ -8173,7 +8255,7 @@ async function offStore(meta) {
     name: meta.name || '', artist: meta.artist || '', album: meta.album || '',
     length: meta.length || meta.srvLength || 0, kind: meta.kind || 'music',
     adSkip: meta.adSkip || 0, volBoost: meta.volBoost || 0, cat: meta.cat || '',
-    canon: meta.canon && meta.canon !== uri ? meta.canon : '',
+    canon: meta.canon && meta.canon !== uri ? meta.canon : '', liked: !!meta.liked,
     bytes: blob.size, at: Date.now(),
   };
   offInvSave();
@@ -8234,7 +8316,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       const res = await offStore({ ...t, kind: p.kind, position: p.position || 0,
                                   srvLength: p.length || 0, adSkip: p.ad_skip || 0,
                                   volBoost: p.volume_boost || 0, cat: p.cat || '',
-                                  canon: p.canon || '' });
+                                  canon: p.canon || '', liked: !!p.liked });
       if (res === 'quota') { full = true; break; }
       if (res !== 'ok') continue;
       got++;

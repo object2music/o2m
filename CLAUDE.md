@@ -1639,8 +1639,14 @@ Two consequences to keep in mind:
   API): Settings → Offline → *Copy to a folder*. Every file downloaded is also
   written there as a plain audio file (`offDirWrite`, `Artist - Title.ext`); the
   folder handle sits in its own IndexedDB (`o2m-offline-dir`). A COPY, best
-  effort: the player never reads it, a failed write never fails a download, and
-  eviction / Clear downloads leave it alone. Permission is asked on a click only;
+  effort: the player never reads it and a failed write never fails a download.
+  **It follows the device's deletions** (quota, Clear downloads, Remove from device —
+  `offDirForget` in `offForget`), **except a favourite podcast episode** (`liked`,
+  answered by `plan` / `meta`, updated on the heart's tap), which stays in the folder,
+  remembered in `o2m-offline-dir-kept` and deleted once un-liked. The written name is
+  kept on the row (`file`); a name another held item answers to is never deleted (two
+  versions of one song); a deletion while permission has lapsed waits in
+  `o2m-offline-dir-del` for the folder to be writable again. Permission is asked on a click only;
   a lapsed one is reported (Settings, end-of-pass message), never prompted. The
   end-of-pass message names the folder — a page cannot link to a local folder.
 - **Quota** in Settings, per device (`localStorage`), default 256 MB (the lowest choice). Eviction
