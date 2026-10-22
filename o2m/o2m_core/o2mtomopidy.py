@@ -311,18 +311,12 @@ class O2mToMopidy:
     def _local_file_present(self, local_uri):
         """True if the file behind a `local_uri` is really there.
 
-        Returns True when the volume is not mounted here at all: without it we
-        cannot tell a missing file from a missing mount, and refusing to
-        substitute would break every instance that has not added the mount."""
-        import os
+        One definition, in `offline.file_present`: the download queue asks the
+        same question before queueing a track (`request_offline`), and a rule
+        with a subtlety in it — no mount means trust the database — drifts as
+        soon as it is written twice."""
         from o2m_core import offline
-        try:
-            if not os.path.isdir(offline.MUSIC_MOUNT):
-                return True                      # no mount: trust the database
-            path = offline.local_file_for(local_uri)
-            return bool(path) and os.path.isfile(path)
-        except Exception:
-            return True
+        return offline.file_present(local_uri)
 
     def _web_referer(self, uri):
         """The page an 'web:' media was found on.

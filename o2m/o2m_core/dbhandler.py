@@ -2711,13 +2711,23 @@ class DatabaseHandler():
         and even then it stops at OFFLINE_MAX_TRIES.
 
         A 'done' row whose file has since been swept by the cache cleaner IS
-        re-queued: it reached here, so it has no local_uri any more."""
+        re-queued: what is asked is whether the bytes are on THIS instance's
+        disk, not whether some instance once registered them."""
+        from o2m_core import offline
         wanted = []
         for uri in uris or []:
             if not uri or not (uri.startswith('spotify:track:')
                                or self._is_spoken_cacheable(uri)):
                 continue
-            if self.get_local_uri(uri):
+            # A registered row is not a file HERE. `local_uri` is one global column
+            # over several disks — the numbered instances share a music volume, the
+            # Raspberry Pi shares none — so a track the server downloaded reads as
+            # held by everyone. A device on an instance without that file was then
+            # never queued at all: describe() answered 'pending' and nothing ever
+            # fetched it. file_present keeps today's answer wherever the volume is
+            # not mounted, so this only changes the case it is meant to change.
+            local = self.get_local_uri(uri)
+            if local and offline.file_present(local):
                 continue
             wanted.append(uri)
         if not wanted:

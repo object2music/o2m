@@ -132,6 +132,31 @@ def local_file_for(uri: str, db=None, config=None) -> str | None:
     return None
 
 
+def file_present(uri: str, db=None, config=None) -> bool:
+    """Whether the bytes behind `uri` are on THIS instance's disk.
+
+    A `local_uri` says a file was registered; it does not say the file is here.
+    The column is global and the disks are not: several instances share one
+    database, the numbered ones share one music volume and the Raspberry Pi
+    shares neither — so a row written by one instance names a path another
+    cannot open. The cache cleaner leaves dangling rows too: it swallows the
+    error if its unregister call fails, and the instance that prunes a shared
+    tree is not always the one holding the row.
+
+    True when the volume is not mounted here at all, which is the same answer
+    `_resolve_uri` trusts: without the mount we cannot tell a missing file from
+    a missing mount, and reading that as "absent" would make every instance
+    that never added the mount re-queue the whole cache it already holds.
+    """
+    try:
+        if not os.path.isdir(MUSIC_MOUNT):
+            return True                      # no mount: trust the database
+        path = local_file_for(uri, db=db, config=config)
+        return bool(path) and os.path.isfile(path)
+    except Exception:
+        return True
+
+
 # ── Episodes the server can fetch on the device's behalf ──────────────────────
 
 _enclosures: dict[str, tuple[float, dict[str, tuple[str, int]]]] = {}
