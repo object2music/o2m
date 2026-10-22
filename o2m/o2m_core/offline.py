@@ -51,6 +51,7 @@ _MIME = {
     '.aac': 'audio/aac', '.ogg': 'audio/ogg', '.oga': 'audio/ogg',
     '.opus': 'audio/ogg', '.flac': 'audio/flac', '.wav': 'audio/wav',
     '.wma': 'audio/x-ms-wma', '.aiff': 'audio/aiff', '.m4b': 'audio/mp4',
+    '.webm': 'audio/webm',
 }
 
 
@@ -74,6 +75,14 @@ def is_music_uri(uri: str) -> bool:
 
 def is_spoken_uri(uri: str) -> bool:
     return bool(uri) and uri.startswith('podcast+')
+
+
+def is_youtube_uri(uri: str) -> bool:
+    """A single YouTube VIDEO — not a playlist or a channel, which hold many."""
+    if not uri or not uri.startswith(('yt:', 'youtube:')):
+        return False
+    from o2m_core.webmedia import youtube_video_id
+    return bool(youtube_video_id(uri)) and ':playlist:' not in uri and ':channel:' not in uri
 
 
 # ── Files the server holds ────────────────────────────────────────────────────
@@ -178,8 +187,16 @@ def describe(uri: str, db=None, config=None) -> dict:
     `ready`       — bytes are servable now, at `/api/audio?uri=…`.
     `pending`     — a music track with no file yet; spotdl has to fetch it first.
     `unavailable` — nothing can make this downloadable (a live radio has no end,
-                    a YouTube uri has no file, an episode dropped from its feed).
+                    an episode dropped from its feed).
+
+    A YouTube video is `ready` without being resolved: resolving costs ~2 s per
+    item and its url expires, so `/api/audio` does it when the bytes are asked
+    for (`webmedia.youtube_audio`). It is spoken content, as the server files it
+    (`_SPOKEN_URI_RE`): it resumes, and a finished one is not downloaded.
     """
+    if is_youtube_uri(uri):
+        return {'uri': uri, 'kind': 'spoken', 'state': 'ready', 'bytes': 0,
+                'mime': 'audio/mp4'}
     kind = 'music' if is_music_uri(uri) else ('spoken' if is_spoken_uri(uri) else 'other')
     if kind == 'music':
         path = local_file_for(uri, db=db, config=config)

@@ -3326,6 +3326,74 @@ if __name__ == "__main__":
                 i['reason'] = f'spotdl gave up after {max_tries} tries'
         return jsonify({'items': items, 'queued': queued})
 
+    _YT_CHUNK = 10 * 1024 * 1024
+
+    def _youtube_audio_response(uri):
+        """A YouTube video's audio, resolved now (yt_dlp) and relayed.
+
+        googlevideo throttles a request that asks for the whole file at once to
+        roughly real-time speed, so a full download is fetched as 10 MB ranges,
+        the way yt_dlp itself does (`http_chunk_size`). A Range from the client
+        is passed through as is."""
+        from flask import Response, stream_with_context
+        from o2m_core import webmedia
+        import requests as _rq
+        info = webmedia.youtube_audio(uri)
+        if not info:
+            return '', 404
+        headers = dict(info.get('headers') or {})
+        mime = 'audio/webm' if info.get('ext') == 'webm' else 'audio/mp4'
+        rng = request.headers.get('Range')
+        if rng:
+            try:
+                up = _rq.get(info['url'], headers=dict(headers, Range=rng),
+                             stream=True, timeout=20)
+            except Exception as e:
+                print(f"api_audio({uri}): {e}")
+                return '', 502
+            out = {'Content-Type': mime, 'Accept-Ranges': 'bytes'}
+            for h in ('Content-Length', 'Content-Range'):
+                if up.headers.get(h):
+                    out[h] = up.headers[h]
+            return Response(stream_with_context(up.iter_content(65536)),
+                            status=up.status_code, headers=out)
+
+        size = int(info.get('filesize') or 0)
+        try:
+            first = _rq.get(info['url'], headers=dict(headers, Range=f'bytes=0-{_YT_CHUNK - 1}'),
+                            stream=True, timeout=20)
+            first.raise_for_status()
+        except Exception as e:
+            print(f"api_audio({uri}): {e}")
+            return '', 502
+        # The real size is in the first answer's Content-Range ('bytes 0-x/total').
+        total = (first.headers.get('Content-Range') or '').rpartition('/')[2]
+        if total.isdigit():
+            size = int(total)
+
+        def _pump():
+            resp, start = first, 0
+            while True:
+                got = 0
+                try:
+                    for chunk in resp.iter_content(65536):
+                        got += len(chunk)
+                        yield chunk
+                finally:
+                    resp.close()
+                start += got
+                if got < _YT_CHUNK or (size and start >= size):
+                    return
+                resp = _rq.get(info['url'], stream=True, timeout=20,
+                               headers=dict(headers, Range=f'bytes={start}-{start + _YT_CHUNK - 1}'))
+                if resp.status_code not in (200, 206):
+                    resp.close()
+                    return
+        out = {'Content-Type': mime, 'Accept-Ranges': 'bytes'}
+        if size:
+            out['Content-Length'] = str(size)
+        return Response(stream_with_context(_pump()), status=200, headers=out)
+
     @api.route('/api/audio')
     def api_audio():
         """The audio bytes behind one uri: a file we hold, or an episode we fetch.
@@ -3348,6 +3416,9 @@ if __name__ == "__main__":
             resp = send_file(path, mimetype=offline.mime_for(path), conditional=True)
             resp.headers['Cache-Control'] = 'private, max-age=86400'
             return resp
+
+        if offline.is_youtube_uri(uri):
+            return _youtube_audio_response(uri)
 
         url, _size = offline.episode_media_url(uri)
         if not url:

@@ -419,3 +419,20 @@ class TestYoutubeChannel(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class YoutubeOfflineTest(unittest.TestCase):
+    """A YouTube video is downloadable for a device; a playlist or channel is not.
+    No network: `describe` must not resolve anything at plan time."""
+
+    def test_video_is_ready_without_resolving(self):
+        from o2m_core import offline
+        for u in ('yt:video:dQw4w9WgXcQ', 'youtube:video:dQw4w9WgXcQ'):
+            d = offline.describe(u)
+            self.assertEqual((d['kind'], d['state']), ('spoken', 'ready'), u)
+
+    def test_containers_are_not_videos(self):
+        from o2m_core import offline
+        for u in ('yt:playlist:UUabcdefghijklmnopqrstuv', 'yt:channel:UCabcdefghijklmnopqrstuv'):
+            self.assertFalse(offline.is_youtube_uri(u), u)
+            self.assertEqual(offline.describe(u)['state'], 'unavailable', u)

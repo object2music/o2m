@@ -1401,7 +1401,7 @@ works until the day it does not. Wheels exist for musl, so the alpine image need
 toolchain.
 
 ### Known limits
-* **No offline.** `/api/audio` does not serve `web:` yet — the signed url expires, so a
+* **No offline.** `/api/audio` does not serve `web:` yet (a YouTube video, which it does, shows the way: resolve at fetch time) — the signed url expires, so a
   download would have to re-resolve at fetch time.
 * **Video bytes.** Vimeo publishes no audio-only format, so `bestaudio/best` falls back to
   a progressive mp4 whose video track GStreamer decodes and drops. Correct, just wasteful.
@@ -1471,7 +1471,8 @@ A device can therefore only hold what the server holds as an actual *file*:
 | Podcast / news episode | always | the enclosure url in the feed, streamed back through `/api/audio` (a CDN sends no CORS header, so the browser cannot fetch it itself) |
 | Local file (`local:` / `file:`) | always | served from the music volume |
 | Spotify track | only once spotdl has fetched it | `Track.local_uri`, else queued (`pending`) |
-| Radio, YouTube | never | a live stream has no end, and there is no file |
+| YouTube video | always | resolved when the bytes are asked for (`webmedia.youtube_audio`, yt_dlp, m4a first — ~2 s), relayed by `/api/audio` in 10 MB ranges (googlevideo throttles a whole-file request to real time: an hour-long video comes down in ~8 s). Spoken, like on the server: it resumes, and a finished one is not taken |
+| Radio, YouTube playlist / channel | never | a live stream has no end; a playlist is many items, each downloadable once it is in the tracklist |
 
 This is why **the pre-existing server-side cache is the foundation, not a parallel
 feature**: `spotdl/cache.py` already downloaded the pinned boxes into `data/music` and

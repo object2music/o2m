@@ -526,7 +526,49 @@ def youtube_published(uri, timeout=None):
     return _published_day(info or {})
 
 
-def _extract(url, referer, timeout):
+def youtube_audio(uri, timeout=None):
+    """The audio file behind a YouTube video uri, for a device to hold offline:
+    {'url','headers','ext','filesize','expires_at'} or None.
+
+    m4a first: an iPhone plays AAC in an <audio> element, not always webm/opus.
+    The googlevideo url is signed and expires (`expire=` in its query, ~6 h), so
+    it is resolved when the bytes are asked for — never at plan time, which
+    would cost one extraction (~2 s) per item of the tracklist — and cached like
+    a `web:` stream. Mopidy-YouTube keeps playing the video on the server; this
+    only exists for the device."""
+    vid = youtube_video_id(uri)
+    if not vid:
+        return None
+    key = 'yt:audio:' + vid
+    hit = _cache.get(key)
+    if hit:
+        age, entry = time.time() - hit[0], hit[1]
+        if entry is None:
+            if age < _TTL_FAILURE:
+                return None
+        else:
+            exp = entry.get('expires_at')
+            if age < _TTL_STREAM and (not exp or time.time() < exp - _EXPIRY_MARGIN):
+                return entry
+    try:
+        info = _extract('https://www.youtube.com/watch?v=' + vid, None, timeout,
+                        fmt='bestaudio[ext=m4a]/bestaudio')
+    except Exception as e:
+        log.error(f'youtube_audio({vid}): {str(e)[:200]}')
+        info = None
+    if not info or not info.get('url'):
+        _cache[key] = (time.time(), None)
+        return None
+    entry = {'url': info['url'],
+             'headers': dict(info.get('http_headers') or {}),
+             'ext': info.get('ext') or 'm4a',
+             'filesize': info.get('filesize') or info.get('filesize_approx') or None,
+             'expires_at': _expiry_of(info['url'])}
+    _cache[key] = (time.time(), entry)
+    return entry
+
+
+def _extract(url, referer, timeout, fmt='bestaudio/best'):
     """One yt_dlp attempt. Raises — the caller decides what a failure means."""
     import yt_dlp
     opts = {'quiet': True, 'no_warnings': True, 'skip_download': True,
@@ -535,7 +577,7 @@ def _extract(url, referer, timeout):
             # (hls-0_aac_q2), which is the whole point. Vimeo publishes no
             # audio-only format, so `best` there is a progressive mp4 whose
             # video track GStreamer decodes and drops — correct, just wasteful.
-            'format': 'bestaudio/best'}
+            'format': fmt}
     if referer:
         opts['http_headers'] = {'Referer': referer}
     with yt_dlp.YoutubeDL(opts) as ydl:
