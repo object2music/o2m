@@ -3264,8 +3264,11 @@ if __name__ == "__main__":
         from flask import jsonify
         data = request.get_json(silent=True) or {}
         out = {}
-        for u in [u for u in (data.get('uris') or []) if isinstance(u, str) and u][:500]:
-            out[u] = _offline_meta(u, o2mHandler._is_spoken_uri(u))
+        for u in [u for u in (data.get('uris') or []) if isinstance(u, str) and u][:2000]:
+            # A file:// the server played is answered as the track it stands for,
+            # and `canon` names it, so the device can find it by that uri too.
+            canon = o2mHandler.get_spotify_uri(u) or u
+            out[u] = dict(_offline_meta(canon, o2mHandler._is_spoken_uri(canon)), canon=canon)
         return jsonify({'items': out})
 
     @api.route('/api/offline/plan', methods=['POST'])
@@ -3307,6 +3310,7 @@ if __name__ == "__main__":
             except Exception:
                 i['position'], i['length'] = 0, 0
             i.update(_offline_meta(canon, i['kind'] == 'spoken'))
+            i['canon'] = o2mHandler.get_spotify_uri(canon) or canon
 
         missing = [i['uri'] for i in items if i['state'] == 'pending']
         # Relayed now, kept for next time: an episode or a video the server does

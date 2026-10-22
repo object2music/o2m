@@ -2025,7 +2025,7 @@ function rowPlayNow(row) {
   if (kind === 'box') { toggleBox(uri.replace(/^box:/, ''), row); return; }   // a box is activated, not queued
   if (OFF.on) { offQueuePlayNow(uri); return; }
   if (kind === 'track' || kind === 'radio') playNow(uri);
-  else objPlayObject(uri, 'now');                 // album, artist, playlist, podcast
+  else objPlayObject(uri, 'now', row.dataset.name);   // album, artist, playlist, podcast
 }
 
 document.addEventListener('click', (e) => {
@@ -3397,7 +3397,8 @@ function objOpenByKind(uri, kind, name) {
 function openTrackDetailSheet(uri, seed) { renderTrackObj(uri, seed); }
 // Play an album/artist: resolve its tracks (mopidy expands album→tracks,
 // artist→all tracks, so cap it) then queue next / play now.
-async function objPlayObject(uri, mode) {
+async function objPlayObject(uri, mode, name) {
+  if (OFF.on) return offPlayObject(uri, mode, name);
   try {
     const r = await rpc('core.library.lookup', { uris: [uri] });
     let uris = (r?.result?.[uri] || []).map(t => t.uri).filter(Boolean);
@@ -3410,6 +3411,33 @@ async function objPlayObject(uri, mode) {
     if (uris.length > 40) uris = uris.slice(0, 40);
     if (mode === 'now') await playNow(uris); else await playNext(uris);
   } catch (e) { setFeedback('Play error'); }
+}
+
+/* Offline: an album, an artist, a playlist or a channel plays what the device
+   holds of it. Its tracks are asked of the server when it answers (3 s at most:
+   the network may be what is missing); else the device matches what it can by
+   name — an album by its title, an artist among the artists. */
+async function offPlayObject(uri, mode, name) {
+  let uris = [];
+  try {
+    const ask = (async () => {
+      const r = await rpc('core.library.lookup', { uris: [uri] });
+      let u = (r?.result?.[uri] || []).map(t => t.uri).filter(Boolean);
+      if (!u.length && /^(podcast\+|yt:|youtube:)/.test(String(uri)))
+        u = (await podcastEpisodes(uri, 0, 200)).rows.map(x => x.uri).filter(Boolean);
+      return u;
+    })();
+    uris = await Promise.race([ask, new Promise((_, rej) => setTimeout(() => rej(), 3000))]);
+  } catch (e) { uris = []; }
+  if (!uris.some(offHeldKey) && name) {
+    const inv = offInv(), n = String(name).toLowerCase();
+    const kind = /:album:/.test(uri) ? 'album' : (/:artist:/.test(uri) ? 'artist' : '');
+    uris = Object.keys(inv).filter(k =>
+      kind === 'album' ? (inv[k].album || '').toLowerCase() === n
+      : kind === 'artist' ? (inv[k].artist || '').toLowerCase().split(/,\s*/).includes(n)
+      : false);
+  }
+  offPlayRequest(uris, mode === 'now');
 }
 
 /* Episodes of a channel, from O2M rather than mopidy's browse.
@@ -3612,15 +3640,17 @@ async function openObjActions(btn) {
   // Three ways to start what this object holds — an album, an artist, a channel, a
   // playlist all answer the same three questions: now, after, or just one of them.
   // "One at random" is what a channel of 400 episodes is usually for.
+  // Offline, "one at random" draws among what the device holds of it.
+  const _randPool = OFF.on ? objCurrentPlayUris.filter(offHeldKey) : objCurrentPlayUris;
   if (objCurrentPlayUris.length) {
     items.push({ label: 'Play now', icon: ICON_PLAYNOW,
                  action: () => playNow(objCurrentPlayUris) });
     items.push({ label: 'Play next', icon: ICON_PLAYNEXT,
                  action: () => playNext(objCurrentPlayUris) });
-    if (objCurrentPlayUris.length > 1)
+    if (_randPool.length > 1)
       items.push({ label: 'Play one at random', icon: ICON_SHUFFLE,
-                   action: () => playNow([objCurrentPlayUris[
-                     Math.floor(Math.random() * objCurrentPlayUris.length)]]) });
+                   action: () => playNow([_randPool[
+                     Math.floor(Math.random() * _randPool.length)]]) });
   }
   if (objCurrentUri) {
     // The object the modal shows, under the name its header shows.
@@ -3646,7 +3676,27 @@ function _playNextReq(uris) {
   const qs = list.map(u => 'uri=' + encodeURIComponent(u)).join('&');
   return fetch(API + '/play_next?' + qs).then(r => r.json());
 }
+/* Offline, a play request is answered from what the device holds: the held
+   uris go to the local queue (in their order), the rest are reported. */
+function offPlayRequest(uris, now) {
+  const list = (Array.isArray(uris) ? uris : [uris]).filter(Boolean);
+  const held = list.map(offHeldKey).filter(Boolean);
+  const missing = list.length - held.length;
+  if (!held.length) {
+    setFeedback(list.length > 1 ? 'None of these is on this device' : 'Not on this device');
+    return;
+  }
+  if (now && held.length === 1) offQueuePlayNow(held[0]);   // also right when it is the current one
+  else {
+    // Inserted after the current item in reverse, so they come out in order.
+    [...held].reverse().forEach(u => offQueuePlayNext(u));
+    if (now) offSkip(1);
+  }
+  setFeedback((now ? 'Playing' : (held.length > 1 ? 'Queued ' + held.length + ' next' : 'Added to play next'))
+              + (missing ? ' · ' + missing + ' not on this device' : ''));
+}
 async function playNext(uris) {
+  if (OFF.on) return offPlayRequest(uris, false);
   if (queueLocked()) return;
   try {
     const r = await _playNextReq(uris);
@@ -3655,6 +3705,7 @@ async function playNext(uris) {
   } catch(e) { setFeedback('Queue error'); }
 }
 async function playNow(uri) {
+  if (OFF.on) return offPlayRequest(uri, true);
   if (queueLocked()) return;
   try {
     const r = await _playNextReq(uri);
@@ -8057,7 +8108,9 @@ async function offMakeRoom(bytes) {
    episode finished on the server since — never reached the device. */
 async function offRefreshMeta() {
   const inv = offInv();
-  const uris = Object.keys(inv).filter(u => inv[u].kind === 'spoken');
+  // Every item, not only episodes: music needs its category and, when it was
+  // taken as a file://, the Spotify uri a search or an album shows it under.
+  const uris = Object.keys(inv);
   if (!uris.length) return;
   try {
     const r = await fetch(API + '/offline/meta', {
@@ -8072,6 +8125,7 @@ async function offRefreshMeta() {
       inv[u].volBoost = m.volume_boost || 0;
       if (m.finished) inv[u].done = true;
       if (m.cat) inv[u].cat = m.cat;
+      if (m.canon && m.canon !== u) inv[u].canon = m.canon;
     }
     offInvSave();
     offApplyVolume();
@@ -8119,6 +8173,7 @@ async function offStore(meta) {
     name: meta.name || '', artist: meta.artist || '', album: meta.album || '',
     length: meta.length || meta.srvLength || 0, kind: meta.kind || 'music',
     adSkip: meta.adSkip || 0, volBoost: meta.volBoost || 0, cat: meta.cat || '',
+    canon: meta.canon && meta.canon !== uri ? meta.canon : '',
     bytes: blob.size, at: Date.now(),
   };
   offInvSave();
@@ -8178,7 +8233,8 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       if (p.kind === 'spoken' && p.finished) { heard++; continue; }
       const res = await offStore({ ...t, kind: p.kind, position: p.position || 0,
                                   srvLength: p.length || 0, adSkip: p.ad_skip || 0,
-                                  volBoost: p.volume_boost || 0, cat: p.cat || '' });
+                                  volBoost: p.volume_boost || 0, cat: p.cat || '',
+                                  canon: p.canon || '' });
       if (res === 'quota') { full = true; break; }
       if (res !== 'ok') continue;
       got++;
@@ -8361,7 +8417,18 @@ function offQueueRemove(uri) {
 }
 // Brings a held track into the queue if it is not there yet; its index, or -1
 // when this device does not hold it.
+/* The key the device holds a uri under, or ''. A Spotify track the server was
+   playing from its cache was taken as file://…: a search, an album or an artist
+   name it by its spotify: uri, kept beside it as `canon`. */
+function offHeldKey(uri) {
+  if (!uri) return '';
+  const inv = offInv();
+  if (inv[uri]) return uri;
+  for (const k in inv) if (inv[k].canon === uri) return k;
+  return '';
+}
 function offQueueEnsure(uri) {
+  uri = offHeldKey(uri) || uri;
   let i = OFF.queue.findIndex(t => t.uri === uri);
   if (i >= 0) return i;
   const m = offInv()[uri];

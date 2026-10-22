@@ -1693,6 +1693,14 @@ Two consequences to keep in mind:
   (`.unavail`, dimmed, tooltip says why). What only drives the server — the Basic
   dials, the mood matrix and dials, the boxes column — is dimmed and inert under
   `.offline-mode`. Leaving offline hands the tiles back to `/api/basic_boxes`.
+- **Play now / Play next play locally offline, from anywhere** — search, album,
+  artist, playlist, channel, details panel. `playNow` / `playNext` divert to
+  `offPlayRequest` (held uris into the local queue, in order; the rest reported
+  "not on this device"), objects to `offPlayObject` (their tracks asked of the
+  server for 3 s at most, intersected with what is held; with no answer, matched by
+  album title or artist name). A track is found under either uri it was taken by:
+  a Spotify track the server played from its cache is held as `file://…`, and
+  `plan` / `meta` answer its `canon` (`offHeldKey` reads both).
 - **The row menu acts on the local queue** (`offTrackMenuItems`): offline, a row's
   `tlid` is an index into `OFF.queue`, so handing it to Mopidy — as `Remove` used to —
   removed whichever SERVER track carried that number. Play next / Play now / Remove
