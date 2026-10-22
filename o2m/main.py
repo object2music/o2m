@@ -5,6 +5,7 @@ from o2m_core import util
 from o2m_core import virtualbox
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
+from o2m_core import spotifyauth
 from o2m_core.o2mtomopidy import O2mToMopidy
 from o2m_core.spotifyhandler import SpotifyHandler, SpotifyRateLimited
 from time import sleep
@@ -539,6 +540,14 @@ if __name__ == "__main__":
         expected_redirect = f'{proto}://{host}/api/spotipy_init'
         # host-only comparison; a local 127.0.0.1 access is treated as unknown (not a mismatch)
         redirect_ok = bool(cfg_host) and (host.lower() in ('127.0.0.1', 'localhost') or cfg_host == host.lower())
+        # A SECOND, independent question: the comparison above only asks whether the redirect
+        # points at the host being browsed, so a redirect can match perfectly and still be one
+        # Spotify will not register — which is what the sample config shipped for years
+        # (`http://localhost:…`, refused because the loopback form needs the IP literal). This
+        # endpoint reported redirect_ok=true on exactly that value while the login could never
+        # complete. Shape only, and offline on purpose: the dashboard's allowlist cannot be read
+        # from here. See o2m_core/spotifyauth.
+        redirect_problem = spotifyauth.redirect_uri_problem(cfg_redirect)
         # Playback needs its OWN Spotify authorisation since 2026-08-10 (login5 refuses
         # tokens minted by a third-party client_id). Report it: an instance can otherwise
         # look perfectly connected and still be unable to play a single track.
@@ -555,6 +564,8 @@ if __name__ == "__main__":
             'redirect_ok': redirect_ok,
             'redirect_configured': cfg_redirect,
             'redirect_expected': expected_redirect,
+            'redirect_problem': redirect_problem,
+            'redirect_loopback': spotifyauth.suggested_loopback(),
         })
 
     # Seed boxes pointing to the ORIGINAL owner's playlists (foreign to a new user) +

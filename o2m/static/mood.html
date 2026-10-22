@@ -9739,7 +9739,19 @@ function renderWelcome(s) {
     // the poll here, or the connect step would kill its own auto-detection on the 1st tick.)
     // Read-only diagnostic: if the app's Spotify redirect doesn't match this host, the
     // OAuth round-trip will fail. Tell the operator how to fix it — we never write secrets.
-    const mismatch = (s.redirect_ok === false && s.redirect_expected) ? `
+    // A redirect Spotify will not even REGISTER — a different and more fundamental
+    // question than the host comparison below, which used to call this value fine
+    // (redirect_ok=true on `http://localhost:…`, refused because the loopback form
+    // needs the IP literal). Shown instead of the mismatch, never stacked with it:
+    // two warnings on one field giving different advice is worse than one.
+    const shape = s.redirect_problem ? `
+      <div class="wc-warn">
+        <b>Spotify redirect cannot be registered — connecting will fail until fixed.</b>
+        <div>Configured: <code>${objEsc(s.redirect_configured || '(unset)')}</code></div>
+        <div>${objEsc(s.redirect_problem)}</div>
+        <div class="wc-warn-fix">Fix (host operator): set <code>spotipy_redirect_uri</code> in <code>o2m.conf</code> (or <code>SPOTIPY_REDIRECT_URI</code> in the instance's <code>.env</code>) to an <code>https://</code> address, or — on a machine with no domain, such as a Raspberry Pi — to <code>${objEsc(s.redirect_loopback || 'http://127.0.0.1:6681/api/spotipy_init')}</code>, reached through an SSH tunnel or a browser on the machine itself. Restart o2m, then register that exact value in the Spotify app dashboard.</div>
+      </div>` : '';
+    const mismatch = (!s.redirect_problem && s.redirect_ok === false && s.redirect_expected) ? `
       <div class="wc-warn">
         <b>Spotify redirect misconfigured — connecting will fail until fixed.</b>
         <div>Configured: <code>${objEsc(s.redirect_configured || '(unset)')}</code></div>
@@ -9750,7 +9762,7 @@ function renderWelcome(s) {
       <div class="wc-step">Step 1 / 6 · Connect</div>
       <div class="wc-title">Welcome</div>
       <div class="wc-sub">Connect your Spotify account to play your music and podcasts and sync your library. Everything else builds on this.</div>
-      ${mismatch}
+      ${shape}${mismatch}
       <button class="wc-btn" id="wc-connect">Connect Spotify</button>
       <button class="wc-skip" id="wc-recheck">I've connected — continue</button>
       <button class="wc-skip" id="wc-skip">Explore first</button>`;
