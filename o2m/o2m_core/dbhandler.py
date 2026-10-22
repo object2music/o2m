@@ -2688,6 +2688,16 @@ class DatabaseHandler():
     # runs spotdl.
 
     OFFLINE_MAX_TRIES = 3
+    # Spoken items (episodes, YouTube videos) wait under their own state. The
+    # database is shared with instances on older code, whose spotdl worker takes
+    # every 'pending' row and hands it to spotdl — which would SEARCH Spotify
+    # for a podcast uri and download whatever came back.
+    SPOKEN_PENDING = 'pending_spoken'
+
+    @staticmethod
+    def _is_spoken_cacheable(uri):
+        from o2m_core import offline
+        return (offline.is_spoken_uri(uri) and '#' in uri) or offline.is_youtube_uri(uri)
 
     def request_offline(self, uris, retry_failed=False):
         """Queue the Spotify tracks we have no file for. Returns those queued.
@@ -2704,7 +2714,8 @@ class DatabaseHandler():
         re-queued: it reached here, so it has no local_uri any more."""
         wanted = []
         for uri in uris or []:
-            if not uri or not uri.startswith('spotify:track:'):
+            if not uri or not (uri.startswith('spotify:track:')
+                               or self._is_spoken_cacheable(uri)):
                 continue
             if self.get_local_uri(uri):
                 continue
@@ -2713,28 +2724,30 @@ class DatabaseHandler():
             return []
         rows = {r.uri: r for r in OfflineRequest.select().where(OfflineRequest.uri.in_(wanted))}
         now = datetime.datetime.utcnow()
-        fresh, revive = [], []
+        fresh, revive = [], {}
         for u in wanted:
             r = rows.get(u)
+            waiting = self.SPOKEN_PENDING if self._is_spoken_cacheable(u) else 'pending'
             if r is None:
-                fresh.append({'uri': u, 'requested_at': now, 'state': 'pending', 'tries': 0})
-            elif r.state == 'pending':
+                fresh.append({'uri': u, 'requested_at': now, 'state': waiting, 'tries': 0})
+            elif r.state in ('pending', self.SPOKEN_PENDING):
                 pass                                   # already waiting; leave it alone
             elif r.state == 'done':
-                revive.append(u)                       # the file went away, fetch it again
+                revive[u] = waiting                    # the file went away, fetch it again
             elif retry_failed and (r.tries or 0) < self.OFFLINE_MAX_TRIES:
-                revive.append(u)
+                revive[u] = waiting
         if fresh:
             OfflineRequest.insert_many(fresh).on_conflict_ignore().execute()
-        if revive:
-            OfflineRequest.update(state='pending', requested_at=now).where(
-                OfflineRequest.uri.in_(revive)).execute()
-        return [r['uri'] for r in fresh] + revive
+        for waiting in set(revive.values()):
+            OfflineRequest.update(state=waiting, requested_at=now).where(
+                OfflineRequest.uri.in_([u for u, w in revive.items() if w == waiting])).execute()
+        return [r['uri'] for r in fresh] + list(revive)
 
-    def offline_queue(self, limit=25):
-        """Pending requests, oldest first — what spotdl polls for."""
+    def offline_queue(self, limit=25, spoken=False):
+        """Pending requests, oldest first — what spotdl polls for. Music and
+        spoken items are two queues: two downloaders, see SPOKEN_PENDING."""
         rows = (OfflineRequest.select()
-                .where(OfflineRequest.state == 'pending')
+                .where(OfflineRequest.state == (self.SPOKEN_PENDING if spoken else 'pending'))
                 .order_by(OfflineRequest.requested_at.asc())
                 .limit(limit))
         return [{'uri': r.uri, 'tries': r.tries or 0} for r in rows]
@@ -2758,8 +2771,25 @@ class DatabaseHandler():
         """`uri -> state` for the subset that is queued at all."""
         if not uris:
             return {}
-        return {r.uri: r.state for r in OfflineRequest.select().where(
-            OfflineRequest.uri.in_(list(uris)))}
+        return {r.uri: ('pending' if r.state == self.SPOKEN_PENDING else r.state)
+                for r in OfflineRequest.select().where(OfflineRequest.uri.in_(list(uris)))}
+
+    def finished_local_files(self, local_uris):
+        """The subset of `local_uris` whose track is a spoken item heard to the
+        end — what the cache drops first. Music has no such state: a song heard
+        to the end is a song one may want again."""
+        local_uris = [u for u in (local_uris or []) if u]
+        if not local_uris:
+            return []
+        from o2m_core import offline
+        out = []
+        for i in range(0, len(local_uris), 500):
+            for r in (Track.select(Track.uri, Track.local_uri)
+                      .where(Track.local_uri.in_(local_uris[i:i + 500]),
+                             Track.read_count_end > 0)):
+                if offline.is_spoken_uri(r.uri) or offline.is_youtube_uri(r.uri):
+                    out.append(r.local_uri)
+        return out
 
     def mark_track_liked(self, uri, liked_at=None):
         """Set liked=1 on a track row (create it if needed)."""

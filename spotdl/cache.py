@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""spotdl cache script: downloads Spotify tracks from pinned o2m boxes."""
+"""spotdl cache script: downloads Spotify tracks from pinned o2m boxes, and keeps
+the podcast episodes and YouTube videos a device asked for."""
 
+import hashlib
 import os
 import sys
 import time
@@ -43,7 +45,16 @@ PRUNE = (os.environ.get('SPOTDL_PRUNE', '1').strip().lower()
          not in ('0', 'false', 'no', 'off'))
 CACHE_MAX_GB = float(os.environ.get('SPOTDL_CACHE_MAX_GB', '10'))
 CACHE_MAX_BYTES = int(CACHE_MAX_GB * 1024 ** 3) if CACHE_MAX_GB > 0 else 0
-AUDIO_EXT = ('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav')
+AUDIO_EXT = ('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav', '.webm', '.aac', '.mp4')
+# Podcast episodes and YouTube videos a device asked for, kept so the next device
+# and Mopidy read them from disk. Fetched through o2m's own /api/audio, which
+# already knows how to reach both (feed enclosure, yt_dlp) — nothing here
+# resolves anything, and this image needs no yt_dlp of its own.
+SPOKEN_DIRNAME = 'spoken'
+SPOKEN_BATCH = int(os.environ.get('SPOTDL_SPOKEN_BATCH', '3'))
+_SPOKEN_EXT = {'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/mp4': '.m4a',
+               'audio/x-m4a': '.m4a', 'audio/m4a': '.m4a', 'audio/aac': '.aac',
+               'audio/ogg': '.ogg', 'audio/webm': '.webm', 'video/mp4': '.mp4'}
 # run_cache (main thread) and the queue worker both delete. One lock over every
 # deletion, so neither can pull a file out from under the other's stat().
 _prune_lock = threading.Lock()
@@ -263,22 +274,47 @@ def drop_file(path):
         return False
 
 
+def finished_files(entries):
+    """The cached files o2m says are spoken items heard to the end.
+
+    Asked of THIS instance's database: a file another instance (with its own
+    database) asked for is unknown here and simply ages like the rest."""
+    spoken = [f for f, _s, _m in entries if f.parent.name == SPOKEN_DIRNAME]
+    if not spoken:
+        return set()
+    by_uri = {file_to_mopidy_uri(f): f for f in spoken}
+    try:
+        r = requests.post(f"{O2M_URL}/api/offline/finished",
+                          json={'local_uris': list(by_uri)}, timeout=30)
+        r.raise_for_status()
+        return {by_uri[u] for u in (r.json() or {}).get('finished') or [] if u in by_uri}
+    except Exception as e:
+        print(f"finished check error: {e}")
+        return set()
+
+
 def clean_old_files():
-    """Delete audio files not touched in CACHE_DAYS days and unregister them."""
+    """Delete audio files not touched in CACHE_DAYS days, and every episode or
+    video already heard to the end, and unregister them."""
     if not PRUNE:
         return
     cutoff = time.time() - CACHE_DAYS * 86400
-    removed = 0
+    removed, heard = 0, 0
     with _prune_lock:
-        for f, _size, mtime in cache_entries():
-            if mtime < cutoff and drop_file(f):
+        entries = cache_entries()
+        done = finished_files(entries)
+        for f, _size, mtime in entries:
+            if (mtime < cutoff or f in done) and drop_file(f):
                 removed += 1
+                heard += f in done
     if removed:
-        print(f"Removed {removed} stale file(s) (>{CACHE_DAYS}d old)")
+        print(f"Removed {removed} file(s): {heard} heard to the end, "
+              f"{removed - heard} stale (>{CACHE_DAYS}d old)")
 
 
 def enforce_cache_cap():
-    """Delete the least recently wanted files until the cache fits the cap.
+    """Delete files until the cache fits the cap: the episodes and videos
+    already heard first, then the least recently wanted.
 
     Called after every box and every on-demand batch, not only at the end of a
     run: a nightly pass can add gigabytes, and a ceiling checked once at the
@@ -291,8 +327,11 @@ def enforce_cache_cap():
         total = sum(e[1] for e in entries)
         if total <= CACHE_MAX_BYTES:
             return 0
+        done = finished_files(entries)
         freed, removed = 0, 0
-        for f, size, _mtime in sorted(entries, key=lambda e: e[2]):   # oldest first
+        # Heard first, then oldest. mtime is "last wanted" for a box's music
+        # (touch_files) and the download time for a spoken file.
+        for f, size, _mtime in sorted(entries, key=lambda e: (e[0] not in done, e[2])):
             if total - freed <= CACHE_MAX_BYTES:
                 break
             if drop_file(f):
@@ -353,9 +392,12 @@ def run_cache():
 # and named the tracks. Same downloader, same registration path — only the
 # trigger and the urgency differ.
 
-def fetch_queue(limit=QUEUE_BATCH):
+def fetch_queue(limit=QUEUE_BATCH, kind=None):
     try:
-        r = requests.get(f"{O2M_URL}/api/offline/queue", params={'limit': limit}, timeout=10)
+        params = {'limit': limit}
+        if kind:
+            params['kind'] = kind
+        r = requests.get(f"{O2M_URL}/api/offline/queue", params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
         return data if isinstance(data, list) else []
@@ -449,6 +491,96 @@ def queue_worker():
         time.sleep(QUEUE_POLL)
 
 
+# ── Spoken queue: episodes and videos ─────────────────────────────────────────
+
+def spoken_stem(uri):
+    """The file name of one item, from its uri alone. Deterministic, so an
+    instance with its own database finds a file another instance fetched for the
+    same item and only registers it."""
+    return hashlib.sha1(uri.encode('utf-8')).hexdigest()[:20]
+
+
+def existing_spoken(uri, out_dir):
+    for f in out_dir.glob(spoken_stem(uri) + '.*'):
+        if f.suffix.lower() in AUDIO_EXT:
+            return f
+    return None
+
+
+def download_spoken(uri, out_dir):
+    """Fetch one item through o2m's /api/audio. Returns the file, or None."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tmp = out_dir / (spoken_stem(uri) + '.part')
+    try:
+        with requests.get(f"{O2M_URL}/api/audio", params={'uri': uri},
+                          stream=True, timeout=(10, 120)) as r:
+            if r.status_code != 200:
+                print(f"  {uri}: HTTP {r.status_code}")
+                return None
+            ctype = (r.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            ext = _SPOKEN_EXT.get(ctype)
+            if not ext:
+                print(f"  {uri}: not audio ({ctype or 'no type'})")
+                return None
+            with open(tmp, 'wb') as fh:
+                for chunk in r.iter_content(1 << 16):
+                    fh.write(chunk)
+        if tmp.stat().st_size < 1024:
+            tmp.unlink()
+            return None
+        path = out_dir / (spoken_stem(uri) + ext)
+        tmp.rename(path)
+        return path
+    except Exception as e:
+        print(f"  {uri}: {e}")
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return None
+
+
+def is_held(uri):
+    """Does o2m now serve this item from its own file? (`held`, see describe)."""
+    try:
+        r = requests.post(f"{O2M_URL}/api/offline/plan",
+                          json={'uris': [uri], 'fetch_missing': False}, timeout=15)
+        r.raise_for_status()
+        items = (r.json() or {}).get('items') or []
+        return bool(items) and items[0].get('held') is True
+    except Exception as e:
+        print(f"  plan check error: {e}")
+        return False
+
+
+def run_spoken_queue():
+    items = fetch_queue(SPOKEN_BATCH, kind='spoken')
+    if not items:
+        return 0
+    out_dir = CACHE_DIR / SPOKEN_DIRNAME
+    print(f"Spoken queue: {len(items)} request(s)")
+    for it in items:
+        uri = it.get('uri')
+        if not uri:
+            continue
+        path = existing_spoken(uri, out_dir) or download_spoken(uri, out_dir)
+        ok = bool(path) and register_local_track(uri, file_to_mopidy_uri(path)) and is_held(uri)
+        queue_done(uri, ok=ok, note=None if ok else 'download or registration failed')
+        print(f"  {uri[:100]}: {'ok ' + human_size(path.stat().st_size) if ok else 'FAILED'}")
+    enforce_cache_cap()
+    return len(items)
+
+
+def spoken_worker():
+    """Its own thread: a music request may hold run_queue for minutes."""
+    while True:
+        try:
+            run_spoken_queue()
+        except Exception as e:
+            print(f"spoken queue error: {e}")
+        time.sleep(QUEUE_POLL)
+
+
 def seconds_until_next_run():
     now = datetime.now()
     target = now.replace(hour=CACHE_HOUR, minute=0, second=0, microsecond=0)
@@ -462,7 +594,8 @@ if __name__ == '__main__':
         sys.exit(1)
 
     threading.Thread(target=queue_worker, daemon=True, name='offline-queue').start()
-    print(f"On-demand queue worker started (every {QUEUE_POLL}s)")
+    threading.Thread(target=spoken_worker, daemon=True, name='spoken-queue').start()
+    print(f"On-demand queue workers started, music and spoken (every {QUEUE_POLL}s)")
     print(f"Cache cap: {CACHE_MAX_GB:g} GB" if CACHE_MAX_BYTES
           else "Cache cap: disabled (SPOTDL_CACHE_MAX_GB<=0)")
     if not PRUNE:

@@ -1664,8 +1664,11 @@ if __name__ == "__main__":
         local_uri = (data.get('local_uri') or '').strip()
         if not spotify_uri or not local_uri:
             return json.dumps({'error': 'spotify_uri and local_uri required'}), 400
-        if not spotify_uri.startswith('spotify:track:'):
-            return json.dumps({'error': 'spotify_uri must be spotify:track:'}), 400
+        # A podcast episode or a YouTube video too: spotdl's spoken queue keeps
+        # them under the same column (the parameter keeps its old name).
+        if not (spotify_uri.startswith('spotify:track:')
+                or o2mHandler.dbHandler._is_spoken_cacheable(spotify_uri)):
+            return json.dumps({'error': 'spotify_uri must be spotify:track:, an episode or a video'}), 400
         try:
             o2mHandler.dbHandler.set_local_uri(spotify_uri, local_uri)
             return json.dumps({'ok': True, 'spotify_uri': spotify_uri, 'local_uri': local_uri})
@@ -3286,16 +3289,25 @@ if __name__ == "__main__":
         # zero the moment it went offline — the two sides would hold the same
         # audio and disagree about where the listener is in it.
         for i in items:
+            # Mopidy plays an episode the server keeps under its file:// path; the
+            # device must still treat it as the episode it is (resume, settings).
+            canon = o2mHandler.get_spotify_uri(i['uri']) if i['uri'].startswith('file:') else i['uri']
+            if canon != i['uri'] and o2mHandler._is_spoken_uri(canon):
+                i['kind'] = 'spoken'
             try:
-                stat = (o2mHandler.dbHandler.get_stat_by_uri(i['uri'])
-                        if o2mHandler.dbHandler.stat_exists(i['uri']) else None)
+                stat = (o2mHandler.dbHandler.get_stat_by_uri(canon)
+                        if o2mHandler.dbHandler.stat_exists(canon) else None)
                 i['position'] = int(getattr(stat, 'read_position', 0) or 0) if stat else 0
                 i['length'] = int(getattr(stat, 'duration_ms', 0) or 0) if stat else 0
             except Exception:
                 i['position'], i['length'] = 0, 0
-            i.update(_offline_meta(i['uri'], i['kind'] == 'spoken'))
+            i.update(_offline_meta(canon, i['kind'] == 'spoken'))
 
         missing = [i['uri'] for i in items if i['state'] == 'pending']
+        # Relayed now, kept for next time: an episode or a video the server does
+        # not hold yet is queued for spotdl's spoken worker. Not one already heard.
+        keep = [i['uri'] for i in items if i['kind'] == 'spoken' and i['state'] == 'ready'
+                and i.get('held') is False and not i.get('finished')]
 
         # Read the queue BEFORE touching it. Queueing first destroyed the very
         # answer this needs: request_offline would flip a 'failed' row back to
@@ -3315,7 +3327,7 @@ if __name__ == "__main__":
         queued = []
         if data.get('fetch_missing', True):
             try:
-                queued = o2mHandler.dbHandler.request_offline(missing, retry_failed=retry)
+                queued = o2mHandler.dbHandler.request_offline(missing + keep, retry_failed=retry)
             except Exception as e:
                 print(f"api_offline_plan(queue): {e}")
         # Asked for a retry but the row is spent: say so rather than promising.
@@ -3483,7 +3495,8 @@ if __name__ == "__main__":
             dict(b, partial=True) for b in (data.get('positions') or [])]
         written, skipped, logged = 0, 0, 0
         for p in plays[:200]:
-            uri = (p.get('uri') or '').strip()
+            # A device holds a file the server played as file:// under that uri.
+            uri = o2mHandler.get_spotify_uri((p.get('uri') or '').strip())
             if not uri:
                 continue
             length = int(p.get('length') or 0)
@@ -3594,7 +3607,17 @@ if __name__ == "__main__":
             limit = max(1, min(100, int(request.args.get('limit', 25))))
         except Exception:
             limit = 25
-        return jsonify(o2mHandler.dbHandler.offline_queue(limit))
+        spoken = request.args.get('kind') == 'spoken'
+        return jsonify(o2mHandler.dbHandler.offline_queue(limit, spoken=spoken))
+
+    @api.route('/api/offline/finished', methods=['POST'])
+    def api_offline_finished():
+        """Which of these cached files are spoken items heard to the end — the
+        first the cache drops when it is over its ceiling (spotdl asks)."""
+        from flask import jsonify
+        data = request.get_json(silent=True) or {}
+        files = [u for u in (data.get('local_uris') or []) if isinstance(u, str)][:20000]
+        return jsonify({'finished': o2mHandler.dbHandler.finished_local_files(files)})
 
     @api.route('/api/offline/queue_done', methods=['POST'])
     def api_offline_queue_done():

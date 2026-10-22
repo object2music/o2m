@@ -430,6 +430,7 @@ class YoutubeOfflineTest(unittest.TestCase):
         for u in ('yt:video:dQw4w9WgXcQ', 'youtube:video:dQw4w9WgXcQ'):
             d = offline.describe(u)
             self.assertEqual((d['kind'], d['state']), ('spoken', 'ready'), u)
+            self.assertIs(d['held'], False, u)   # relayed, and queued for the server to keep
 
     def test_containers_are_not_videos(self):
         from o2m_core import offline

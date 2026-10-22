@@ -1474,6 +1474,24 @@ A device can therefore only hold what the server holds as an actual *file*:
 | YouTube video | always | resolved when the bytes are asked for (`webmedia.youtube_audio`, yt_dlp, m4a first — ~2 s), relayed by `/api/audio` in 10 MB ranges (googlevideo throttles a whole-file request to real time: an hour-long video comes down in ~8 s). Spoken, like on the server: it resumes, and a finished one is not taken |
 | Radio, YouTube playlist / channel | never | a live stream has no end; a playlist is many items, each downloadable once it is in the tracklist |
 
+**The server keeps the episodes and videos a device asks for** (2026-10-22). Relayed
+at once, then queued (`OfflineRequest`, state **`pending_spoken`** — never `pending`:
+the database is shared with instances on older code, whose spotdl worker takes every
+`pending` row and would SEARCH Spotify for a podcast uri). spotdl's second worker
+(`spoken_worker`) fetches each through o2m's own `/api/audio` — no yt_dlp in that
+image — into `cache/spoken/<sha1(uri)[:20]>.<ext>` (deterministic, so an instance with
+its own database finds the file and only registers it), and registers it on
+`Track.local_uri` like a download. `describe` says `held: true` from then on, the next
+device reads the file, and `_resolve_uri` substitutes it for Mopidy too (no network,
+no expiring url; resume / ad-skip / stats read the canonical uri back). Only device
+requests feed it — not the tracklist's spoken adds, which would churn the 10 GB
+shared with music. **Expiry**: `clean_old_files` drops every episode or video heard to
+the end (`read_count_end > 0`, asked through `POST /api/offline/finished`), and
+`enforce_cache_cap` drops those first, then the oldest by mtime (= download date for a
+spoken file). In the page, a `file://` whose canonical uri is spoken reads as spoken
+(`_isSpokenUri` consults `_playedMeta`, which `patchSubstitutedNames` now fills for
+every `file://`), and takes its database title over its file name.
+
 This is why **the pre-existing server-side cache is the foundation, not a parallel
 feature**: `spotdl/cache.py` already downloaded the pinned boxes into `data/music` and
 registered `Track.local_uri`, which `_resolve_uri` substitutes at fill time. That cache

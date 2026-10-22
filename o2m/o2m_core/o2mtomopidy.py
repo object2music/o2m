@@ -276,7 +276,8 @@ class O2mToMopidy:
 
 #LOCAL CACHE RESOLUTION
     def _resolve_uri(self, uri):
-        """Return the local file URI if this Spotify track was downloaded, else original.
+        """Return the local file URI if this track (Spotify, or an episode or a video
+        the server keeps) was downloaded, else original.
 
         The file is checked before it is substituted, whenever this container can
         see the music volume. A `local_uri` outlives its file more easily than it
@@ -290,7 +291,11 @@ class O2mToMopidy:
             return uri
         if webmedia.is_web_uri(uri):
             return self._resolve_web(uri)
-        if not uri.startswith('spotify:track:'):
+        # An episode or a video the server keeps (spotdl's spoken queue) plays
+        # from its file too: no network, no expiring url. Resume, ad-skip and
+        # stats read the canonical uri back through _played_to_canonical.
+        if not (uri.startswith('spotify:track:')
+                or self.dbHandler._is_spoken_cacheable(uri)):
             return uri
         try:
             local = self.dbHandler.get_local_uri(uri)

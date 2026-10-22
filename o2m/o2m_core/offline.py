@@ -114,7 +114,9 @@ def local_file_for(uri: str, db=None, config=None) -> str | None:
     """
     if not uri:
         return None
-    if uri.startswith('spotify:track:'):
+    if uri.startswith('spotify:track:') or is_spoken_uri(uri) or is_youtube_uri(uri):
+        # An episode or a video too, once the server keeps a copy (spotdl's
+        # spoken queue): same column, same indirection.
         if db is None:
             return None
         try:
@@ -193,15 +195,24 @@ def describe(uri: str, db=None, config=None) -> dict:
     item and its url expires, so `/api/audio` does it when the bytes are asked
     for (`webmedia.youtube_audio`). It is spoken content, as the server files it
     (`_SPOKEN_URI_RE`): it resumes, and a finished one is not downloaded.
+
+    `held` says the SERVER has the file. A spoken item it does not hold is still
+    `ready` — relayed from its source — and is queued for the server to keep, so
+    the next device (and Mopidy) read it from disk instead of the network.
     """
+    if is_spoken_uri(uri) or is_youtube_uri(uri):
+        path = local_file_for(uri, db=db, config=config)
+        if path and os.path.isfile(path):
+            return {'uri': uri, 'kind': 'spoken', 'state': 'ready', 'held': True,
+                    'bytes': os.path.getsize(path), 'mime': mime_for(path)}
     if is_youtube_uri(uri):
-        return {'uri': uri, 'kind': 'spoken', 'state': 'ready', 'bytes': 0,
-                'mime': 'audio/mp4'}
+        return {'uri': uri, 'kind': 'spoken', 'state': 'ready', 'held': False,
+                'bytes': 0, 'mime': 'audio/mp4'}
     kind = 'music' if is_music_uri(uri) else ('spoken' if is_spoken_uri(uri) else 'other')
     if kind == 'music':
         path = local_file_for(uri, db=db, config=config)
         if path and os.path.isfile(path):
-            return {'uri': uri, 'kind': kind, 'state': 'ready',
+            return {'uri': uri, 'kind': kind, 'state': 'ready', 'held': True,
                     'bytes': os.path.getsize(path), 'mime': mime_for(path)}
         if uri.startswith('spotify:track:'):
             return {'uri': uri, 'kind': kind, 'state': 'pending', 'bytes': 0,
@@ -212,8 +223,8 @@ def describe(uri: str, db=None, config=None) -> dict:
     if kind == 'spoken':
         url, size = episode_media_url(uri)
         if url:
-            return {'uri': uri, 'kind': kind, 'state': 'ready', 'bytes': size,
-                    'mime': mime_for(urllib.parse.urlparse(url).path)}
+            return {'uri': uri, 'kind': kind, 'state': 'ready', 'held': False,
+                    'bytes': size, 'mime': mime_for(urllib.parse.urlparse(url).path)}
         return {'uri': uri, 'kind': kind, 'state': 'unavailable', 'bytes': 0,
                 'reason': 'no enclosure in feed'}
     return {'uri': uri, 'kind': kind, 'state': 'unavailable', 'bytes': 0,

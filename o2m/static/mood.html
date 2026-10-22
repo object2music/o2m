@@ -2821,7 +2821,8 @@ function clearNowPlayingHeader(playing) {
 const _playedMeta = new Map();          // played uri -> {uri, name, length} | null
 async function patchSubstitutedNames(tracks, current) {
   const candidates = [...new Set([current, ...(tracks || []).map(t => t && t.track)]
-    .filter(t => t && t.uri && !t.name && /^https?:/.test(t.uri) && !_playedMeta.has(t.uri))
+    .filter(t => t && t.uri && !_playedMeta.has(t.uri)
+                 && ((!t.name && /^https?:/.test(t.uri)) || t.uri.startsWith('file:')))
     .map(t => t.uri))];
   if (candidates.length) {
     try {
@@ -2838,7 +2839,9 @@ async function patchSubstitutedNames(tracks, current) {
     if (!t || !t.uri) return;
     const m = _playedMeta.get(t.uri);
     if (!m) return;
-    if (!t.name && m.name) t.name = m.name;
+    // A spoken file's own tags are whatever its source wrote (a video's audio
+    // has none, so Mopidy names it by its file): the database's title wins.
+    if (m.name && (!t.name || _SPOKEN_URI_RE.test(m.uri || ''))) t.name = m.name;
     if (!t.length && m.length) t.length = m.length;
   };
   (tracks || []).forEach(x => apply(x && x.track));
@@ -3922,7 +3925,12 @@ const TRACK_PANEL_ROWS = [
 // links with no 'podcast+' marker, so their hosts have to be named.
 const _SPOKEN_URI_RE = /podcast\+|youtube:video|(?:^|:)yt:|proxycast\.radiofrance\.fr|radiofrance-podcast\.net/i;
 function _isSpokenUri(u) {
-  return typeof u === 'string' && _SPOKEN_URI_RE.test(u);
+  if (typeof u !== 'string') return false;
+  if (_SPOKEN_URI_RE.test(u)) return true;
+  // An episode or a video the server keeps plays as file://… — what it IS comes
+  // from /api/played_meta (patchSubstitutedNames asks for every file:// uri).
+  const m = u.startsWith('file:') && _playedMeta.get(u);
+  return !!(m && m.uri && _SPOKEN_URI_RE.test(m.uri));
 }
 function _isStreamUri(u) {
   // A downloadable episode is NOT a live stream: it has a real title, a real
@@ -4065,7 +4073,7 @@ function makeTrackPanel({ cellId, canvasId, playlistsId, lifecycleId, listClass,
       const uri = getUri();
       // A downloaded Spotify track plays as file://… — still a Spotify track, and
       // /api/track_saved maps it back to its spotify: uri server-side.
-      if (uri && (uri.startsWith('spotify:track:') || uri.startsWith('file:'))) {
+      if (uri && (uri.startsWith('spotify:track:') || (uri.startsWith('file:') && !_isSpokenUri(uri)))) {
         fetch(API + '/track_saved?uri=' + encodeURIComponent(uri)).then(r => r.json())
           .then(d => {
             // The answer is about `uri`, not about whatever the panel shows when it
