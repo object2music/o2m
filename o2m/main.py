@@ -3232,7 +3232,10 @@ if __name__ == "__main__":
         the channel's pre-roll skip and volume boost, and whether a spoken item
         was already heard to the end (`read_count_end`, what the server's own
         pools read) — the device neither downloads nor keeps those first."""
-        out = {'ad_skip': 0, 'volume_boost': 0, 'finished': False}
+        # `cat` files the item under a Basic actuator offline: music, podcast or
+        # info, as the server classifies it (Track.option_type for spoken items).
+        out = {'ad_skip': 0, 'volume_boost': 0, 'finished': False,
+               'cat': 'podcast' if spoken else 'music'}
         if not spoken:
             return out
         try:
@@ -3247,6 +3250,8 @@ if __name__ == "__main__":
             if o2mHandler.dbHandler.stat_exists(uri):
                 stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
                 out['finished'] = int(getattr(stat, 'read_count_end', 0) or 0) > 0
+                if (getattr(stat, 'option_type', '') or '') == 'info':
+                    out['cat'] = 'info'
         except Exception:
             pass
         return out

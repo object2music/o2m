@@ -2335,6 +2335,15 @@
   }
   /* ══ end TEMPORARY ════════════════════════════════════════════════════════ */
   .basic-toggle:disabled { cursor: wait; animation: basic-pulse 1s ease-in-out infinite; }
+  /* Offline: a kind the device holds nothing of (always Radio), and everything
+     that only drives the server — the dials, the mood matrix, the boxes column.
+     Dimmed and inert rather than hidden, so the layout does not jump. */
+  .basic-toggle.unavail, #basic-all.unavail { opacity: .35; cursor: not-allowed; }
+  .offline-mode #basic-dials,
+  .offline-mode #matrix-section, .offline-mode #dials, .offline-mode #btn-reset-mood,
+  .offline-mode #boxes-panel .panel-body, .offline-mode #btn-clear-boxes {
+    opacity: .35; pointer-events: none; filter: grayscale(1);
+  }
   /* Waiting its turn behind the tile currently filling: drawn in the state that
      was asked for, with a dashed hairline so it reads as planned rather than
      done, and a slow pulse. A second tap cancels it. */

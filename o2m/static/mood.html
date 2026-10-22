@@ -808,8 +808,9 @@ let basicLimit = 30;   // fill target — refreshed from api_result_limit via /a
 function updateBasicStatus() {
   const tl = document.getElementById('bs-tracks');
   const bx = document.getElementById('bs-boxes');
-  if (tl) tl.textContent = `${currentTracklistLength} track${currentTracklistLength === 1 ? '' : 's'}`;
-  if (bx) bx.textContent = activeSummary();
+  const n = OFF.on ? OFF.queue.length : currentTracklistLength;
+  if (tl) tl.textContent = `${n} track${n === 1 ? '' : 's'}`;
+  if (bx) bx.textContent = OFF.on ? 'offline' : activeSummary();
 }
 
 // Called from the now-playing refresh (10s + WS events): re-syncs the basic box
@@ -835,6 +836,7 @@ function catOn(cat) {
 }
 
 async function refreshBasicToggles() {
+  if (OFF.on) return offBasicPaint();     // the server's boxes are not what plays
   if (!isBasic()) return;
   try {
     basicCats = await fetch(API + '/basic_boxes').then(r => r.json());
@@ -882,6 +884,7 @@ function shuffledCats() {
 
 let _allRunning = false;
 async function toggleBasicAll(btn) {
+  if (OFF.on) return offBasicAll();
   if (!basicCats || mixBusy || serverBusy || _catDraining) return;
   const cats = shuffledCats();
   const tileOn = c => !!document.querySelector(`.basic-toggle[data-cat="${c}"]`)?.classList.contains('on');
@@ -927,6 +930,10 @@ let _catDraining = false;
 const _capCat = c => c.charAt(0).toUpperCase() + c.slice(1);
 
 function requestBasicCat(btn) {
+  if (OFF.on) {
+    if (btn.classList.contains('unavail')) { setFeedback(btn.title); return; }
+    return offBasicToggle(btn.dataset.cat);
+  }
   if (_allRunning || !basicCats) return;
   const cat = btn.dataset.cat;
   const boxes = basicCats[cat] || [];
@@ -8064,6 +8071,7 @@ async function offRefreshMeta() {
       inv[u].adSkip = m.ad_skip || 0;
       inv[u].volBoost = m.volume_boost || 0;
       if (m.finished) inv[u].done = true;
+      if (m.cat) inv[u].cat = m.cat;
     }
     offInvSave();
     offApplyVolume();
@@ -8110,7 +8118,7 @@ async function offStore(meta) {
   offInv()[uri] = {
     name: meta.name || '', artist: meta.artist || '', album: meta.album || '',
     length: meta.length || meta.srvLength || 0, kind: meta.kind || 'music',
-    adSkip: meta.adSkip || 0, volBoost: meta.volBoost || 0,
+    adSkip: meta.adSkip || 0, volBoost: meta.volBoost || 0, cat: meta.cat || '',
     bytes: blob.size, at: Date.now(),
   };
   offInvSave();
@@ -8170,7 +8178,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       if (p.kind === 'spoken' && p.finished) { heard++; continue; }
       const res = await offStore({ ...t, kind: p.kind, position: p.position || 0,
                                   srvLength: p.length || 0, adSkip: p.ad_skip || 0,
-                                  volBoost: p.volume_boost || 0 });
+                                  volBoost: p.volume_boost || 0, cat: p.cat || '' });
       if (res === 'quota') { full = true; break; }
       if (res !== 'ok') continue;
       got++;
@@ -8570,6 +8578,106 @@ function offRenderQueue() {
   // direction repaints by itself, while a mere track change inside the queue
   // takes renderTracklist's cheap path and only moves the current row.
   renderTracklist(tracks, OFF.i);
+  offBasicPaint();
+}
+
+/* ── The Basic actuators, offline ─────────────────────────────────────────────
+   The server's boxes are out of reach, so each tile acts on what the device
+   holds: Music, Podcast and Info add or remove their items in the local queue
+   (heard episodes left out), ALL does the four at once, alternating the kinds.
+   Radio is a live stream and has no file: always unavailable here, as is a
+   category the device holds nothing of. */
+const OFF_CATS = ['music', 'podcast', 'info', 'radio'];
+function offCat(m) { return (m && m.cat) || (m && m.kind === 'spoken' ? 'podcast' : 'music'); }
+function offHeldOf(cat) {
+  const inv = offInv();
+  return Object.keys(inv).filter(u => offCat(inv[u]) === cat && !offIsDone(inv[u]));
+}
+function offQueuedOf(cat) {
+  const inv = offInv();
+  return OFF.queue.filter(t => offCat(inv[t.uri]) === cat).map(t => t.uri);
+}
+function offBasicPaint() {
+  if (!OFF.on) return;
+  let avail = 0, on = 0;
+  document.querySelectorAll('#basic-toggles .basic-toggle').forEach(btn => {
+    const cat = btn.dataset.cat;
+    const n = cat === 'radio' ? 0 : offHeldOf(cat).length;
+    const lit = offQueuedOf(cat).length > 0;
+    btn.classList.toggle('unavail', !n && !lit);
+    btn.classList.toggle('on', lit);
+    btn.classList.remove('pending');
+    btn.title = cat === 'radio' ? 'Radio needs the network'
+              : n ? n + ' on this device' : 'Nothing of this kind on this device';
+    if (n || lit) avail++;
+    if (lit) on++;
+  });
+  const all = document.getElementById('basic-all');
+  if (all) {
+    all.classList.toggle('on', avail > 0 && on === avail);
+    all.classList.toggle('unavail', !avail);
+  }
+  updateBasicStatus();
+}
+function offQueueItem(u) {
+  const m = offInv()[u] || {};
+  return { uri: u, name: m.name || '', artist: m.artist || '', album: m.album || '', length: m.length || 0 };
+}
+function offShuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+/* Batch edits of the local queue: one render, one decision about what plays.
+   Removing one by one would start each next item of the very kind being removed. */
+function offQueueAppend(uris) {
+  const have = new Set(OFF.queue.map(t => t.uri));
+  uris.filter(u => !have.has(u)).forEach(u => OFF.queue.push(offQueueItem(u)));
+  offRenderQueue();
+  if (OFF.i < 0 && OFF.queue.length) offPlayAt(0);
+}
+function offQueueDrop(uris) {
+  const gone = new Set(uris);
+  const cur = OFF.queue[OFF.i];
+  const curGone = !!cur && gone.has(cur.uri);
+  if (curGone) offLogPlay(false);              // what was heard of it still counts
+  // What plays next if the current item goes: the first kept one after it.
+  const after = curGone ? OFF.queue.slice(OFF.i + 1).find(t => !gone.has(t.uri)) : null;
+  OFF.queue = OFF.queue.filter(t => !gone.has(t.uri));
+  if (!curGone) {
+    OFF.i = cur ? OFF.queue.indexOf(cur) : -1;
+  } else if (OFF.queue.length) {
+    const i = after ? OFF.queue.indexOf(after) : 0;
+    OFF.i = i; OFF.loggedAt = i;               // already logged above
+    resetProgress();
+    offPlayAt(i);
+  } else {
+    OFF.i = -1;
+    if (OFF.el) { try { OFF.el.pause(); } catch (e) {} OFF.el.removeAttribute('src'); }
+  }
+  offRenderQueue();
+}
+function offBasicToggle(cat, wantOn) {
+  const queued = offQueuedOf(cat);
+  const turnOn = wantOn == null ? !queued.length : wantOn;
+  if (!turnOn) offQueueDrop(queued);
+  else {
+    const fresh = offShuffle(offHeldOf(cat).filter(u => !OFF.queue.some(t => t.uri === u)));
+    if (!fresh.length) { setFeedback('Nothing of this kind on this device'); return; }
+    offQueueAppend(fresh);
+  }
+}
+function offBasicAll() {
+  const cats = OFF_CATS.filter(c => c !== 'radio');
+  if (OFF.queue.length) { offQueueDrop(OFF.queue.map(t => t.uri)); return; }
+  // One of each kind in turn, like the server's interleave, until all are placed.
+  const lists = cats.map(c => offShuffle(offHeldOf(c)));
+  const order = [];
+  for (let i = 0; lists.some(l => l.length); i++) {
+    const l = lists[i % lists.length];
+    if (l.length) order.push(l.shift());
+  }
+  if (!order.length) { setFeedback('Nothing downloaded on this device'); return; }
+  offQueueAppend(order);
 }
 
 /* Which rows this device is holding — shown online too, so you can see what an
@@ -8684,6 +8792,13 @@ function offStop() {
   }
   if (OFF.url) { try { URL.revokeObjectURL(OFF.url); } catch (e) {} OFF.url = null; }
   OFF.i = -1;
+  document.querySelectorAll('#basic-toggles .basic-toggle, #basic-all').forEach(b => {
+    b.classList.remove('unavail'); b.removeAttribute('title');
+  });
+  const allBtn = document.getElementById('basic-all');
+  if (allBtn) allBtn.title = 'All on / all off';
+  _lastBasicRefresh = 0;
+  refreshBasicToggles();
   offPaintToggle();
   offFlushPlays();
   lastTracklistSig = null;

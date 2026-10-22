@@ -1681,6 +1681,18 @@ Two consequences to keep in mind:
 - Plays are logged locally (same `> 0.05` artefact rule as the server) and flushed on
   reconnection. `'ended'` records the play and then skips, so the skip must not record the
   same index a second time — one index, one record (`OFF.loggedAt`).
+- **The Basic actuators drive the local queue offline** (`offBasicToggle`,
+  `offBasicAll`, painted by `offBasicPaint` on every queue change). Each held item
+  carries its category (`cat`: music · podcast · info, from `_offline_meta` —
+  `Track.option_type` for spoken items — stored at download, refreshed by
+  `offRefreshMeta`). A tile adds what the device holds of its kind (heard episodes
+  left out) or removes it from the queue in one batch (`offQueueAppend` /
+  `offQueueDrop`: one render, and removing a kind never starts the next item of
+  that same kind); ALL clears the queue, or fills it alternating the kinds.
+  **Radio is always unavailable**, as is a kind the device holds nothing of
+  (`.unavail`, dimmed, tooltip says why). What only drives the server — the Basic
+  dials, the mood matrix and dials, the boxes column — is dimmed and inert under
+  `.offline-mode`. Leaving offline hands the tiles back to `/api/basic_boxes`.
 - **The row menu acts on the local queue** (`offTrackMenuItems`): offline, a row's
   `tlid` is an index into `OFF.queue`, so handing it to Mopidy — as `Remove` used to —
   removed whichever SERVER track carried that number. Play next / Play now / Remove
