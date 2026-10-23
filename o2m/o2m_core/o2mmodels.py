@@ -33,6 +33,33 @@ TODO
 """
 config_o2m = util.get_config_file("o2m.conf")["o2m"]
 
+
+def _db_timeout(key, default):
+    """A socket timeout for the database connection, in seconds; 0 waits for ever.
+
+    Without one, pymysql reads with no deadline, and that is not a theoretical
+    risk. Measured on the Raspberry Pi (2026-10-23): a response that never
+    arrived left the client blocked in recv() while the server reported that very
+    connection as `Sleep`, having already answered — so o2m never finished
+    starting, and no restart could get past it. `ReconnectMixin`, which exists to
+    recover from exactly a lost connection, could never fire either: a hang
+    raises nothing to recover from. A timeout turns it into
+    `OperationalError(2013, 'Lost connection ... (timed out)')`, and '2013' is in
+    that mixin's own list, so the reconnect-and-retry it was built for happens.
+
+    The default is deliberately generous rather than tight. This value is shared
+    with the instances whose database is a container on the same host, where a
+    batch pass can hold a cursor for a while, and a timeout shorter than a real
+    query would invent a failure where there was none. It is a net under a dead
+    socket, not a deadline on the work.
+    """
+    try:
+        value = int(str(config_o2m[key]).strip()) if key in config_o2m else default
+    except (TypeError, ValueError):
+        value = default
+    return value if value > 0 else None
+
+
 if "db_type" in config_o2m:
     db_type = config_o2m["db_type"]
     if db_type == "mysql":
@@ -42,7 +69,10 @@ if "db_type" in config_o2m:
         db_port = int(config_o2m["db_port"])
         db_name = config_o2m["db_name"]
         db = ReconnectMySQLDatabase(
-            db_name, host=db_host, user=db_username, password=db_password, port=db_port
+            db_name, host=db_host, user=db_username, password=db_password, port=db_port,
+            connect_timeout=_db_timeout("db_connect_timeout", 15),
+            read_timeout=_db_timeout("db_read_timeout", 180),
+            write_timeout=_db_timeout("db_write_timeout", 180),
         )
     elif db_type == "sqlite":
         database_path = config_o2m["db_sqlite_path"]
