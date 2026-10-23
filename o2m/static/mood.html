@@ -8831,6 +8831,50 @@ function offShuffle(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+
+/* Spread the categories through one another — the server's own rule.
+
+   Same arithmetic as `selection.interleave`: the i-th of n items of a category
+   sits at (i + phase) / n, the phase drawn once per category, so two categories
+   of equal size alternate one for one and a small one is dotted through a large
+   one instead of clumping. Each category keeps the order it was given, which is
+   the shuffle's.
+
+   It exists because shuffling inside a kind is not mixing: `offBasicToggle`
+   appends its block at the end, so Music then Podcast gave twenty songs and
+   THEN eight episodes — no alternation at all, while the server reorders after
+   every meta_fill. */
+function offInterleaveUris(uris) {
+  const inv = offInv();
+  const groups = new Map();
+  uris.forEach(u => {
+    const c = offCat(inv[u]) || 'other';
+    if (!groups.has(c)) groups.set(c, []);
+    groups.get(c).push(u);
+  });
+  if (groups.size < 2) return uris;          // one kind: nothing to alternate
+  const keyed = [];
+  groups.forEach(list => {
+    const n = list.length, phase = Math.random();
+    list.forEach((u, i) => keyed.push([(i + phase) / n, Math.random(), u]));
+  });
+  keyed.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  return keyed.map(k => k[2]);
+}
+
+/* The same, applied to what FOLLOWS the item playing — as on the server, where
+   the track being listened to keeps its place. OFF.i and OFF.loggedAt point at
+   or before it, so neither needs remapping. */
+function offInterleaveTail() {
+  const head = OFF.i >= 0 ? OFF.i + 1 : 0;
+  const tail = OFF.queue.slice(head);
+  if (tail.length < 2) return;
+  const byUri = new Map(tail.map(t => [t.uri, t]));
+  const order = offInterleaveUris(tail.map(t => t.uri));
+  if (order.every((u, i) => u === tail[i].uri)) return;     // nothing moved
+  OFF.queue = OFF.queue.slice(0, head).concat(order.map(u => byUri.get(u)));
+  offRenderQueue();
+}
 /* Batch edits of the local queue: one render, one decision about what plays.
    Removing one by one would start each next item of the very kind being removed. */
 function offQueueAppend(uris) {
@@ -8868,18 +8912,15 @@ function offBasicToggle(cat, wantOn) {
     const fresh = offShuffle(offHeldOf(cat).filter(u => !OFF.queue.some(t => t.uri === u)));
     if (!fresh.length) { setFeedback('Nothing of this kind on this device'); return; }
     offQueueAppend(fresh);
+    offInterleaveTail();      // a kind added is mixed in, not stacked behind
   }
 }
 function offBasicAll() {
   const cats = OFF_CATS.filter(c => c !== 'radio');
   if (OFF.queue.length) { offQueueDrop(OFF.queue.map(t => t.uri)); return; }
-  // One of each kind in turn, like the server's interleave, until all are placed.
-  const lists = cats.map(c => offShuffle(offHeldOf(c)));
-  const order = [];
-  for (let i = 0; lists.some(l => l.length); i++) {
-    const l = lists[i % lists.length];
-    if (l.length) order.push(l.shift());
-  }
+  // The same interleave as everywhere else, rather than this function's own
+  // round-robin: one rule, and it is the server's.
+  const order = offInterleaveUris(cats.reduce((a, c) => a.concat(offShuffle(offHeldOf(c))), []));
   if (!order.length) { setFeedback('Nothing downloaded on this device'); return; }
   offQueueAppend(order);
 }

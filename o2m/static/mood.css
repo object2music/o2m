@@ -856,7 +856,13 @@
   /* Three states: off (muted), connected download (teal — no theme's accent is
      near it), offline (accent, and a struck cloud). */
   #btn-offline[data-mode="sync"] { color: #12a4b4; }
-  #btn-offline.on { color: var(--accent); }
+  /* Offline is GREEN, not the accent: every theme's accent is an orange or a
+     red (#FF5A00, #ff3b00, #1A3EA0 aside), and on a button that says "this
+     device is now playing on its own" a red reads as a fault rather than as a
+     state that is working. Picked at the teal's luminance so the two lit states
+     sit at the same weight, and far enough in hue to tell apart at 18px —
+     the glyph differs too (the cloud becomes a struck cloud). */
+  #btn-offline.on { color: #13a44f; }
   #btn-offline.busy { animation: off-pulse 1.2s ease-in-out infinite; }
 
   /* Network health lives in this glyph's colour (html[data-net], one probe), which
