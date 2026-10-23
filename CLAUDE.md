@@ -1619,10 +1619,16 @@ New tables rather than a column or a new key, because an older image cannot see
 them — which is the property wanted, not a limitation. The pool is read in
 `offline.cache_pool()`, and `DatabaseHandler` branches on it in the nine methods
 that touch a file or the queue; `local_file_for` goes through `get_local_uri`,
-so `describe`, `/api/audio` and `file_present` follow for free. **Still missing**
-for a Pi to actually hold anything: a downloader running there (spotdl is a
-Docker image; the spoken worker is only an HTTP fetch and is the reachable half)
-and a local cap plus pruner — `enforce_cache_cap` lives in the spotdl code.
+so `describe`, `/api/audio` and `file_present` follow for free. **A Pi holds its own spoken cache by running the same script in its
+spoken-only shape** (`SPOTDL_SPOKEN_ONLY=1`, a systemd unit beside o2m rather
+than a container). Nothing was reimplemented: `spotdl/cache.py` imports no
+spotdl package at module level, so the half that needs none — the spoken queue,
+the expiry and the ceiling — runs natively. Its `CACHE_DIR` is the one thing to
+get right: the pruner walks `CACHE_DIR.rglob('*')` and nothing above it, so
+pointing it at `<media_dir>/cache` keeps a hand-filled library in `<media_dir>`
+entirely out of its reach. What is still missing on a Pi is only the MUSIC:
+spotdl itself (see the offline section's table — Spotify needs a downloader that
+re-finds the track elsewhere).
 
 Two consequences to keep in mind:
 - **Exactly one instance may prune a shared cache.** The expiry and the size cap delete
@@ -2188,6 +2194,12 @@ All service configuration is via `.env` file (not committed). Key variables:
   cap). See the offline section: the 30-day `SPOTDL_CACHE_DAYS` expiry is not a limit.
 - `SPOTDL_PRUNE` — may this instance delete from the cache (default `1`). Set `0` on every
   instance but one when the cache is shared.
+- `SPOTDL_SPOKEN_ONLY` — run `spotdl/cache.py` as the spoken half plus the pruner, with no
+  music queue and no nightly box pass (default `0`). What a native install uses: there is no
+  spotdl package on a Pi, and none is needed for a podcast or a video — that queue is an
+  HTTP fetch of o2m's own `/api/audio`. Same file in both shapes on purpose: one downloader,
+  one naming scheme (`spoken_stem`, a sha1 so a file is interchangeable between instances),
+  one registration path, one pruner.
 - `O2M_CACHE_POOL` — which cache pool (i.e. which DISK) this instance's downloads land on.
   Default `shared`, which is the previous behaviour; set it only on an instance that does
   not share `MUSIC_DIR` (a Raspberry Pi). Read as an environment variable rather than an

@@ -50,6 +50,20 @@ AUDIO_EXT = ('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav', '.webm', '.aac', 
 # and Mopidy read them from disk. Fetched through o2m's own /api/audio, which
 # already knows how to reach both (feed enclosure, yt_dlp) — nothing here
 # resolves anything, and this image needs no yt_dlp of its own.
+# A native install — a Raspberry Pi — has no spotdl: the package is not there,
+# and an armv7l with 923 MB of RAM is not where a per-track ffmpeg conversion
+# belongs. Its devices still want the podcasts and the videos, and those need no
+# spotdl at all: the spoken queue is an HTTP fetch of o2m's own /api/audio into a
+# file, then a registration. So this script has two shapes and this flag says
+# which — the full downloader beside a Docker instance, or the spoken half plus
+# the pruner beside an o2m that owns its disk (O2M_CACHE_POOL, see CLAUDE.md).
+#
+# Running the same file in both is deliberate. One downloader, one naming
+# scheme, one registration path and one pruner: a second implementation for the
+# Pi would be a second set of the two defects this one took a day to find
+# (spotdl takes URLs not URIs, the id lives in WOAS not COMM).
+SPOKEN_ONLY = (os.environ.get('SPOTDL_SPOKEN_ONLY', '0').strip().lower()
+               in ('1', 'true', 'yes', 'on'))
 SPOKEN_DIRNAME = 'spoken'
 SPOKEN_BATCH = int(os.environ.get('SPOTDL_SPOKEN_BATCH', '3'))
 _SPOKEN_EXT = {'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/mp4': '.m4a',
@@ -381,9 +395,15 @@ def run_cache():
         sync_downloaded_files(box_dir)
         enforce_cache_cap()
 
+    run_maintenance()
+    print(f"=== Done {datetime.now().strftime('%H:%M')} ===\n")
+
+
+def run_maintenance():
+    """The expiry and the ceiling — the half of a nightly run that needs no
+    downloader, so the spoken-only shape runs exactly this and nothing else."""
     clean_old_files()
     enforce_cache_cap()
-    print(f"=== Done {datetime.now().strftime('%H:%M')} ===\n")
 
 
 # ── On-demand queue (a device is waiting) ─────────────────────────────────────
@@ -593,14 +613,28 @@ if __name__ == '__main__':
     if not wait_for_o2m():
         sys.exit(1)
 
-    threading.Thread(target=queue_worker, daemon=True, name='offline-queue').start()
+    if not SPOKEN_ONLY:
+        threading.Thread(target=queue_worker, daemon=True, name='offline-queue').start()
     threading.Thread(target=spoken_worker, daemon=True, name='spoken-queue').start()
-    print(f"On-demand queue workers started, music and spoken (every {QUEUE_POLL}s)")
+    print("Spoken queue worker started (every %ds)" % QUEUE_POLL if SPOKEN_ONLY else
+          f"On-demand queue workers started, music and spoken (every {QUEUE_POLL}s)")
     print(f"Cache cap: {CACHE_MAX_GB:g} GB" if CACHE_MAX_BYTES
           else "Cache cap: disabled (SPOTDL_CACHE_MAX_GB<=0)")
     if not PRUNE:
         print("Pruning disabled here (SPOTDL_PRUNE=0) — another instance owns "
               f"the cleanup of {CACHE_DIR}")
+
+    if SPOKEN_ONLY:
+        # No music queue and no box pass: both go through spotdl. The ceiling
+        # still has to be enforced, and it is enforced after every spoken batch
+        # (run_spoken_queue) exactly as it is beside a Docker instance; this
+        # loop only adds the nightly expiry.
+        print(f"Spoken only: no spotdl here. Cache {CACHE_DIR}, "
+              f"cap {CACHE_MAX_GB:g} GB, expiry {CACHE_DAYS} days.")
+        run_maintenance()
+        while True:
+            time.sleep(seconds_until_next_run())
+            run_maintenance()
 
     run_cache()
 
