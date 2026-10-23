@@ -7971,7 +7971,9 @@ const OFF = {
   posAt: 0,             // last bookmark write, ms — throttles the checkpoint
   pass: new Set(),      // downloaded during the pass in progress — never evicted by it
   follow: false,        // connected download: the tracklist is fetched as it changes
-};
+  cancel: false,        // a tap asked the pass in progress to stop
+  ctl: null,            // the AbortController of the file being fetched, so it can
+};                      // be dropped mid-stream rather than after its 30s stall
 const OFF_FOLLOW_KEY = 'o2m-offline-follow';
 const OFF_FOLLOW_MS = 60000;
 let _offFollowTimer = null;
@@ -8375,6 +8377,7 @@ async function offRefreshMeta() {
 const OFF_STALL_MS = 30000;
 async function offFetchBlob(url) {
   const ctl = new AbortController();
+  OFF.ctl = ctl;          // offCancelDownload aborts this one
   let timer = setTimeout(() => ctl.abort(), OFF_STALL_MS);
   const kick = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), OFF_STALL_MS); };
   try {
@@ -8388,7 +8391,25 @@ async function offFetchBlob(url) {
       chunks.push(value); kick();
     }
     return new Blob(chunks, { type: r.headers.get('Content-Type') || '' });
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); if (OFF.ctl === ctl) OFF.ctl = null; }
+}
+
+/* Stop the pass in progress, and stand down.
+
+   There was no way out: from the download state the only next tap went to
+   OFFLINE, `offSync` refuses to start while one runs, and nothing ever set it
+   down — so the button pulsed until the last file landed, however long that
+   took. A tap now means "stop" whenever a pass is running, which is also what
+   the title says. `offFollow(false)` is what keeps it stopped: the 60s re-check
+   of what spotdl still owes is gated on follow, so without it the pass would
+   simply start again. Files already downloaded are kept — they are on the
+   device and nothing is gained by throwing them away. */
+function offCancelDownload() {
+  OFF.cancel = true;
+  try { if (OFF.ctl) OFF.ctl.abort(); } catch (e) {}
+  OFF.pending.clear();
+  offFollow(false);
+  setFeedback('Download stopped');
 }
 
 async function offStore(meta) {
@@ -8439,6 +8460,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
     return;
   }
   OFF.downloading = true;
+  OFF.cancel = false;
   OFF.progress = { done: 0, total: list.length };
   offPaintToggle();
   OFF.pass = new Set();
@@ -8454,6 +8476,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
     const by = {};
     (plan.items || []).forEach(i => { by[i.uri] = i; });
     for (const t of list) {
+      if (OFF.cancel) break;          // a tap asked to stop
       OFF.progress.done++; offPaintToggle();
       const p = by[t.uri];
       if (!p) continue;
@@ -8477,8 +8500,10 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
     // No network, or the server is gone. Nothing to sync and nothing to report:
     // being unreachable is the situation this whole feature is for.
   }
-  OFF.downloading = false; OFF.progress = null;
+  const stopped = OFF.cancel;
+  OFF.downloading = false; OFF.progress = null; OFF.cancel = false;
   offPaintToggle(); offRenderBadges();
+  if (stopped) return;            // the tap already said what happened
   // Where the files can be seen. A page cannot open a folder of the computer,
   // so the message names it rather than linking to it.
   let dirNote = '';
@@ -9130,12 +9155,24 @@ async function offStart() {
   offPaintToggle();
   paintBusy();
 
-  // What was finished elsewhere is not queued — asked for 3 s at most: a network
-  // that hangs is exactly when one goes offline.
-  await Promise.race([offRefreshMeta(), new Promise(r => setTimeout(r, 3000))]);
+  // Paint the local queue BEFORE waiting on anything. The class and the button
+  // above already say offline, and leaving the SERVER's tracklist on screen for
+  // the three seconds below read as the switch not having happened at all. The
+  // signature is reset for the same reason `offStop` resets it: a row is reused
+  // when its tlid AND uri match, a tlid is a local index here and Mopidy's
+  // there, and a row that survived the hand-over would keep the status line the
+  // server painted on it.
+  lastTracklistSig = null;
   OFF.queue = offBuildQueue();
   offRenderQueue();
   refreshVolume();
+
+  // What was finished elsewhere is not queued — asked for 3 s at most: a network
+  // that hangs is exactly when one goes offline. Nothing is playing yet, so the
+  // wait costs no wrong audio, only a moment before the first track.
+  await Promise.race([offRefreshMeta(), new Promise(r => setTimeout(r, 3000))]);
+  OFF.queue = offBuildQueue();
+  offRenderQueue();
   if (OFF.queue.length) offPlayAt(0);
   else setFeedback('Nothing downloaded yet — fetching what the tracklist allows');
   offSync(snapshot, { retry: true });
@@ -9311,7 +9348,13 @@ function paintPlaybackTarget() {
         ? 'Downloading the tracklist, still on the server (' + held + ') — tap to go offline'
         : 'Download the tracklist to this device (' + held + ')';
     // The pulse alone cannot tell a long pass from a stuck one; the count can.
-    if (OFF.progress) title += '\nDownloading ' + OFF.progress.done + ' / ' + OFF.progress.total;
+    // And while one runs, the tap means stop — so the line above would be wrong.
+    if (OFF.downloading) {
+      title = 'Downloading' + (OFF.progress
+        ? ' ' + OFF.progress.done + ' / ' + OFF.progress.total : '') + ' — tap to stop';
+    } else if (OFF.progress) {
+      title += '\nDownloading ' + OFF.progress.done + ' / ' + OFF.progress.total;
+    }
     off.title = title;
     off.setAttribute('aria-label', title);
     off.setAttribute('aria-pressed', OFF.on ? 'true' : 'false');
@@ -9334,7 +9377,10 @@ function toggleSnapcast() {
 
 async function toggleOffline() {
   try {
-    if (OFF.on) offStop();                                  // offline → off
+    // A pass in progress is what the tap stops: the cycle offered no way out of
+    // it, so the button pulsed to the end of the download whatever one pressed.
+    if (OFF.downloading) offCancelDownload();
+    else if (OFF.on) offStop();                             // offline → off
     else if (!OFF.follow) {                                 // off → connected download
       offFollow(true);
       setFeedback('Downloading the tracklist — playback stays on the server');
