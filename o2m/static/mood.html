@@ -8234,6 +8234,9 @@ async function offRefreshMeta() {
       inv[u].adSkip = m.ad_skip || 0;
       inv[u].volBoost = m.volume_boost || 0;
       if (m.finished) inv[u].done = true;
+      // A finished item has no bookmark to carry — the server retires it — and
+      // `done` above is what stops it being queued at all.
+      if (!m.finished && typeof m.position === 'number') offPosFromServer(u, m.position);
       if (m.cat) inv[u].cat = m.cat;
       if (m.canon && m.canon !== u) inv[u].canon = m.canon;
       inv[u].liked = !!m.liked;
@@ -8416,6 +8419,27 @@ function offPosSet(uri, position, length, synced) {
   offPosSave();
 }
 function offPosClear(uri) { delete offPos()[uri]; offPosSave(); }
+
+/* Apply the SERVER's bookmark, unless this device holds a newer one.
+
+   The comparison is the one `offFlushPlays` already makes, read backwards: a
+   local bookmark whose `at` still differs from its `syncedAt` has movement the
+   server has not been told about, so it IS the newer of the two and wins. Once
+   ours has been flushed, whatever the server holds is either our own value
+   echoed back or a later play elsewhere — both of which we want. That is the
+   whole rule; no clocks are compared, and the server sends no timestamp.
+
+   Stored as already synced, like `offStore` does when it seeds a bookmark at
+   download time: it came FROM the server, and sending it straight back would
+   count a read for a track nobody played here. */
+function offPosFromServer(uri, position) {
+  const playing = OFF.i >= 0 ? OFF.queue[OFF.i] : null;
+  if (playing && playing.uri === uri) return;    // playing: the live position is the truth
+  const cur = offPos()[uri];
+  if (cur && cur.at !== cur.syncedAt) return;    // ours has not been sent yet
+  if (cur && cur.position === position) return;
+  offPosSet(uri, position, (cur && cur.length) || (offInv()[uri] || {}).length || 0, true);
+}
 
 /* Write the bookmark for whatever is playing. Called on pause, on the way out
    of a track, when the page is hidden, and on a throttled tick — because the

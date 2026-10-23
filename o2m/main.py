@@ -3261,6 +3261,14 @@ if __name__ == "__main__":
             if o2mHandler.dbHandler.stat_exists(uri):
                 stat = o2mHandler.dbHandler.get_stat_by_uri(uri)
                 out['finished'] = int(getattr(stat, 'read_count_end', 0) or 0) > 0
+                # Where the server left off. Deliberately NOT in the dict above:
+                # absent means "nothing known here", 0 means "the start", and the
+                # device has to tell those apart before it overwrites a bookmark
+                # of its own. `plan` computes the same value from the same row;
+                # this is what carries it to /offline/meta, which refreshed every
+                # other per-item fact and not this one — so an episode advanced on
+                # the server after its download was never caught up with.
+                out['position'] = int(getattr(stat, 'read_position', 0) or 0)
                 # A favourite episode is kept in the device's folder copy even
                 # once the device itself lets go of it.
                 out['liked'] = bool(getattr(stat, 'liked', 0))
