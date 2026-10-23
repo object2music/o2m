@@ -94,10 +94,12 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Core**: `Box` (an NFC object: content + settings), `Track` (one row per uri — stats AND cached metadata, including `liked` / `disliked`, the central table), `Stats_Raw` (one row per play: the raw log behind hourly habits), `PlaylistLog`.
   - **Catalogue**: `Album`, `Artist`, `Genre`, `Playlist`, `TagFeature`, `CacheMeta`, and the N:N links `TrackArtist`, `AlbumArtist`, `ArtistGenre`, `TrackGenre`, `AlbumGenre`, `PlaylistTrack`, `AlbumTrack`.
   - **Spoken content**: `PodcastChannel` (one row per show or feed — see the spoken-content section), `RfTaxonomy` (Radio France subject vocabulary), `EpisodeTaxonomy` (episode ↔ subject pivot).
-  - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section).
+  - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section) For an instance with its own disk,
+    `OfflineClaim` and `LocalFile` take over, keyed `(pool, uri)` — see *One cache for
+    every instance*.
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **35**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **36**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -1590,6 +1592,38 @@ already mounted its volume at that same container path. Swapping the host direct
 behind it therefore leaves every row valid. Verified on o2m_1 across the move: same
 track, same 5,725,908 bytes, before and after; 1282 files relocated.
 
+**An instance that does NOT share the volume names its own pool**
+(`O2M_CACHE_POOL`, default `shared`, migration **v36**). The default is the whole
+safety of it: `shared` reproduces the previous behaviour bit for bit, so o2m_0 —
+which runs an older image against this same database — is unaffected, and
+isolation is opt-in exactly like `SPOTDL_PRUNE`. A pool names the **disk**, not
+the machine: the numbered instances point `MUSIC_DIR` at `/home/o2m/music`, so
+one download serving them all is right and must keep working.
+
+For a named pool, two tables take over from the shared ones, and nothing is
+migrated into them:
+- **`OfflineClaim`** (`pool`, `uri` composite key) instead of `OfflineRequest`,
+  whose primary key is the uri alone — one queue row per track in the whole
+  installation. That broke both ways, both measured on 2026-10-23: the server
+  already wanting a track made the key collide so a Pi could not ask at all;
+  and a request the Pi queued was drained by the **server's** spotdl (it polls
+  its own API, which returned every `pending` row) so the file landed on the
+  server's disk, leaving the Pi `state=done` on a path it cannot open.
+- **`LocalFile`** (`pool`, `uri`, `path`) instead of `Track.local_uri`. One
+  column on a shared row cannot answer for two disks: the last writer wins, and
+  since `_resolve_uri` substitutes that path into the Mopidy tracklist, a Pi
+  registering its own download there would make the SERVER fail to play a track
+  it would have streamed.
+
+New tables rather than a column or a new key, because an older image cannot see
+them — which is the property wanted, not a limitation. The pool is read in
+`offline.cache_pool()`, and `DatabaseHandler` branches on it in the nine methods
+that touch a file or the queue; `local_file_for` goes through `get_local_uri`,
+so `describe`, `/api/audio` and `file_present` follow for free. **Still missing**
+for a Pi to actually hold anything: a downloader running there (spotdl is a
+Docker image; the spoken worker is only an HTTP fetch and is the reachable half)
+and a local cap plus pruner — `enforce_cache_cap` lives in the spotdl code.
+
 Two consequences to keep in mind:
 - **Exactly one instance may prune a shared cache.** The expiry and the size cap delete
   files and unregister them through the *local* API, so a pruner removes files other
@@ -2154,6 +2188,11 @@ All service configuration is via `.env` file (not committed). Key variables:
   cap). See the offline section: the 30-day `SPOTDL_CACHE_DAYS` expiry is not a limit.
 - `SPOTDL_PRUNE` — may this instance delete from the cache (default `1`). Set `0` on every
   instance but one when the cache is shared.
+- `O2M_CACHE_POOL` — which cache pool (i.e. which DISK) this instance's downloads land on.
+  Default `shared`, which is the previous behaviour; set it only on an instance that does
+  not share `MUSIC_DIR` (a Raspberry Pi). Read as an environment variable rather than an
+  `o2m.conf` key so it sits beside `O2M_MUSIC_MOUNT`, which it describes the other half of:
+  on the Pi both live in the same systemd drop-in. See the offline section.
 - `LASTFM_API_KEY` — required for mood/genre enrichment via Last.fm
 - `RADIOFRANCE_API_KEY` — Radio France OpenAPI token (show catalogue, episodes, subjects).
   Without it the RF features degrade silently: livemeta (now-playing on live streams) and

@@ -2683,14 +2683,17 @@ if __name__ == "__main__":
                 except Exception:
                     pass
 
-            # `local_uri` means the SERVER holds this track as a file — spotdl put it
-            # in the cache, or it is local media. It is what _resolve_uri substitutes
-            # into the tracklist, so the audio comes off the disk instead of being
-            # streamed. (It says nothing about a phone's own offline copy, which
-            # lives in the device's IndexedDB and is deliberately never written
-            # here.) The row and the panel both name it, so it stops being a bare
-            # 'local' chip nobody could decode.
-            has_file = bool(getattr(stat, 'local_uri', None)) if stat else False
+            # `local_uri` means THIS instance holds this track as a file — spotdl
+            # put it in the cache, or it is local media. It is what _resolve_uri
+            # substitutes into the tracklist, so the audio comes off the disk
+            # instead of being streamed. (It says nothing about a phone's own
+            # offline copy, which lives in the device's IndexedDB and is
+            # deliberately never written here.) The row and the panel both name
+            # it, so it stops being a bare 'local' chip nobody could decode.
+            # Asked through get_local_uri, not read off the row: the column is
+            # the SHARED pool's answer, and on an instance with its own disk it
+            # names a path that is not there (see offline.cache_pool).
+            has_file = bool(o2mHandler.dbHandler.get_local_uri(uri)) if stat else False
             if uri.startswith(('local:', 'file:')):
                 has_file = True
             return jsonify({

@@ -9,6 +9,7 @@ from peewee import (
     FloatField,
     BooleanField,
     BlobField,
+    CompositeKey,
     Model,
     InterfaceError,
     OperationalError,
@@ -413,6 +414,61 @@ class OfflineRequest(BaseModel):
     state = CharField(default='pending', index=True)   # pending | done | failed
     tries = IntegerField(default=0)
     note = TextField(null=True)                        # last failure, for diagnosis
+
+
+class OfflineClaim(BaseModel):
+    """What one cache POOL wants — `OfflineRequest` for an instance that does
+    not share the music volume.
+
+    `OfflineRequest.uri` is the primary key, so the installation holds exactly
+    one queue row per track, and over several disks that is wrong in both
+    directions (measured 2026-10-23). The server already wanting a track means
+    a Raspberry Pi cannot ask for it at all, the key colliding. And when the Pi
+    asks first, the SERVER's spotdl drains the row — it polls its own API, which
+    reads every `pending` row — so the file lands on the server's disk and the
+    Pi is left with `state=done` pointing at a path it cannot open.
+
+    Changing that key is not available: o2m_0 runs an older image against this
+    same database and migrations here are additive only. Hence a second table
+    keyed `(pool, uri)`. An older image cannot see it, which is precisely the
+    property wanted — it keeps polling `OfflineRequest` and keeps serving the
+    shared pool, while an instance with its own disk keeps its queue to itself.
+
+    See `offline.cache_pool`: the default pool is `shared`, and for it nothing
+    here is used at all.
+    """
+    pool = CharField()                                 # offline.cache_pool()
+    uri = CharField()
+    requested_at = TimestampField(null=True, utc=True)
+    state = CharField(default='pending', index=True)   # pending | pending_spoken | done | failed
+    tries = IntegerField(default=0)
+    note = TextField(null=True)
+
+    class Meta:
+        primary_key = CompositeKey('pool', 'uri')
+
+
+class LocalFile(BaseModel):
+    """Where ONE pool holds the bytes behind a uri — `Track.local_uri` per disk.
+
+    `local_uri` is a single column on a row shared by every instance, holding
+    the path as MOPIDY sees it. Two instances with different disks cannot both
+    answer through it: the last writer wins and everyone else reads a path that
+    is not there. Worse than useless, because `_resolve_uri` substitutes that
+    path into the Mopidy tracklist — so a Pi registering its own download there
+    would make the SERVER fail to play a track it would otherwise have streamed.
+
+    `Track.local_uri` stays the answer for the shared pool. It is what spotdl,
+    the cache cleaner, `enforce_cache_cap` and every older image read and write,
+    and the numbered instances sharing /home/o2m/music are right to share it.
+    """
+    pool = CharField()                                 # offline.cache_pool()
+    uri = CharField()
+    path = CharField(index=True)                       # Mopidy-shaped, like Track.local_uri
+    at = TimestampField(null=True, utc=True)
+
+    class Meta:
+        primary_key = CompositeKey('pool', 'uri')
 
 
 class CacheMeta(BaseModel):
@@ -927,7 +983,20 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 36
+
+def _migration_v36():
+    """Per-pool offline queue and file registry — see OfflineClaim / LocalFile.
+
+    Purely additive, and deliberately so: two NEW tables rather than a column or
+    a new primary key, because o2m_0 runs an older image against this database.
+    That image cannot see these tables, so it keeps serving the shared pool
+    exactly as before, and an instance with its own disk stops being drained by
+    it. Nothing is migrated INTO them: the shared pool keeps using
+    `OfflineRequest` and `Track.local_uri`, which is what every existing row is.
+    """
+    db.create_tables([OfflineClaim, LocalFile], safe=True)
+
 
 _MIGRATIONS = [
     (1, "cache_tables_and_columns", _migration_v1),
@@ -965,6 +1034,7 @@ _MIGRATIONS = [
     (33, "volume_boost_columns", _migration_v33),
     (34, "podcastchannel_box_index", _migration_v34),
     (35, "box_type_radio", _migration_v35),
+    (36, "offline_pool_tables", _migration_v36),
 ]
 
 

@@ -43,6 +43,44 @@ import urllib.request
 MUSIC_MOUNT = os.environ.get('O2M_MUSIC_MOUNT', '/music')
 _FEED_UA = 'o2m/1.0'
 
+# ─── Which disk do my downloads land on? (the cache pool) ────────────────────
+# `Track.local_uri` is one column on a row every instance shares, and
+# `OfflineRequest` is keyed on the uri alone, so there is exactly one queue row
+# per track in the whole installation. Over several disks that breaks both ways,
+# and both were measured on 2026-10-23: a track the server downloaded reads as
+# held by everyone, and a request the Raspberry Pi queues is drained by the
+# SERVER's spotdl onto the server's disk — `state=done` with a `local_uri` the
+# Pi cannot open.
+#
+# A pool names the DISK, not the machine: the numbered instances point MUSIC_DIR
+# at /home/o2m/music and share one download, which is right and must keep
+# working. `shared` is therefore the default, because it reproduces today's
+# behaviour bit for bit — the same table, the same queue — so an instance that
+# says nothing is unaffected, including o2m_0 running an older image. Isolation
+# is opt-in, exactly like SPOTDL_PRUNE.
+#
+# An environment variable rather than an o2m.conf key, so it sits beside the
+# mount it describes: on the Pi, O2M_MUSIC_MOUNT and this one live in the same
+# systemd drop-in. Read on each call, not frozen at import: it is consulted on
+# the path of a DB lookup, a dict read costs nothing, and a test can set it the
+# way an operator does.
+SHARED_POOL = 'shared'
+
+
+def cache_pool() -> str:
+    """The name of the cache pool this instance draws from and writes to."""
+    return (os.environ.get('O2M_CACHE_POOL') or '').strip() or SHARED_POOL
+
+
+def is_shared_pool() -> bool:
+    """Whether this instance shares its music volume with the other instances.
+
+    True is the answer that keeps every pre-existing behaviour: the shared
+    `Track.local_uri` column, the shared `OfflineRequest` queue, one download
+    serving every numbered instance.
+    """
+    return cache_pool() == SHARED_POOL
+
 # Extension → what the browser is told it is receiving. A wrong type makes
 # <audio> refuse the blob, so an unknown one falls back to a generic stream
 # rather than to a guess.

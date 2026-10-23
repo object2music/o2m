@@ -16,6 +16,7 @@ from o2m_core.o2mmodels import (
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
     RfTaxonomy, PodcastChannel, EpisodeTaxonomy, OfflineRequest, BoxImage,
+    OfflineClaim, LocalFile,
     TrackAlias, DuplicateDismissed,
     setup_database,
 )
@@ -2636,8 +2637,34 @@ class DatabaseHandler():
 
     # ─── Liked tracks ──────────────────────────────────────────────────────────
 
+    # ─── Which disk am I? (the cache pool) ────────────────────────────────────
+    # Every method from here to the end of the offline section has two answers,
+    # and one question decides between them: does this instance share the music
+    # volume with the others? `shared` — the default — keeps every pre-existing
+    # behaviour, so these branches only change the case they exist for. See
+    # `offline.cache_pool`.
+
+    @property
+    def _pool(self):
+        from o2m_core import offline
+        return offline.cache_pool()
+
+    def _pool_is_shared(self):
+        from o2m_core import offline
+        return offline.is_shared_pool()
+
     def get_local_uri(self, spotify_uri):
-        """Return the local file URI for a spotify:track: URI, or None."""
+        """Return the local file URI for a spotify:track: URI, or None.
+
+        A named pool answers from its OWN registry and deliberately does not
+        fall back to `Track.local_uri`: that column holds whatever disk wrote
+        last, and reading another instance's path is exactly what made a Pi
+        report a track as held and then fail to open it.
+        """
+        if not self._pool_is_shared():
+            row = LocalFile.get_or_none(
+                (LocalFile.pool == self._pool) & (LocalFile.uri == spotify_uri))
+            return (row.path or None) if row else None
         try:
             t = Track.get_by_id(spotify_uri)
             return t.local_uri or None
@@ -2647,6 +2674,10 @@ class DatabaseHandler():
     def spotify_uri_for_local(self, local_uri):
         """The spotify:track: uri whose download is `local_uri`, or None — the
         reverse of get_local_uri, for when the in-memory map has been lost."""
+        if not self._pool_is_shared():
+            row = LocalFile.get_or_none(
+                (LocalFile.pool == self._pool) & (LocalFile.path == local_uri))
+            return row.uri if row else None
         try:
             t = Track.get_or_none(Track.local_uri == local_uri)
             if t:
@@ -2671,13 +2702,41 @@ class DatabaseHandler():
             return None
 
     def set_local_uri(self, spotify_uri, local_uri):
-        """Store (or clear) the local file URI for a spotify:track: URI."""
+        """Store (or clear) the local file URI for a spotify:track: URI.
+
+        A named pool writes its own row and never touches `Track.local_uri`:
+        that path is substituted into the Mopidy tracklist by `_resolve_uri`, so
+        writing this disk's path there would make the OTHER instances fail to
+        play a track they would have streamed.
+        """
+        if not self._pool_is_shared():
+            if not local_uri:
+                LocalFile.delete().where(
+                    (LocalFile.pool == self._pool)
+                    & (LocalFile.uri == spotify_uri)).execute()
+                return
+            # REPLACE rather than update-or-insert: the row has no column this
+            # could reset (the caution learned on `save_playlist` and
+            # `in_library` does not apply), and one statement cannot race.
+            LocalFile.replace(pool=self._pool, uri=spotify_uri, path=local_uri,
+                              at=datetime.datetime.utcnow()).execute()
+            return
         Track.insert({'uri': spotify_uri, 'local_uri': local_uri}).on_conflict(
             action='update', update={'local_uri': local_uri}
         ).execute()
 
     def clear_local_uri_by_file(self, local_uri):
-        """Set local_uri=NULL for all tracks with this local file URI."""
+        """Forget a file that has been deleted — in THIS pool only.
+
+        Unregistering is not tidiness: a row outliving its file makes
+        `_resolve_uri` substitute a path that is not there. A named pool must
+        therefore drop its own row and leave every other pool's alone.
+        """
+        if not self._pool_is_shared():
+            LocalFile.delete().where(
+                (LocalFile.pool == self._pool)
+                & (LocalFile.path == local_uri)).execute()
+            return
         Track.update(local_uri=None).where(Track.local_uri == local_uri).execute()
 
     # ─── Offline: the queue between a device and spotdl ───────────────────────
@@ -2732,7 +2791,7 @@ class DatabaseHandler():
             wanted.append(uri)
         if not wanted:
             return []
-        rows = {r.uri: r for r in OfflineRequest.select().where(OfflineRequest.uri.in_(wanted))}
+        rows = self._queue_rows(wanted)
         now = datetime.datetime.utcnow()
         fresh, revive = [], {}
         for u in wanted:
@@ -2747,24 +2806,79 @@ class DatabaseHandler():
             elif retry_failed and (r.tries or 0) < self.OFFLINE_MAX_TRIES:
                 revive[u] = waiting
         if fresh:
-            OfflineRequest.insert_many(fresh).on_conflict_ignore().execute()
+            self._queue_insert(fresh)
         for waiting in set(revive.values()):
-            OfflineRequest.update(state=waiting, requested_at=now).where(
-                OfflineRequest.uri.in_([u for u, w in revive.items() if w == waiting])).execute()
+            self._queue_revive([u for u, w in revive.items() if w == waiting], waiting, now)
         return [r['uri'] for r in fresh] + list(revive)
+
+    # The queue has two stores, and which one is used is the pool's answer:
+    # `OfflineRequest` keyed on the uri alone for the shared pool — what spotdl
+    # and every older image poll — and `OfflineClaim` keyed `(pool, uri)` for an
+    # instance with its own disk. Three operations, so three one-line branches
+    # rather than three copies of `request_offline`.
+
+    def _queue_rows(self, uris):
+        """`uri -> row` for those of `uris` already queued in this pool."""
+        if not self._pool_is_shared():
+            return {r.uri: r for r in OfflineClaim.select().where(
+                OfflineClaim.pool == self._pool, OfflineClaim.uri.in_(list(uris)))}
+        return {r.uri: r for r in OfflineRequest.select().where(
+            OfflineRequest.uri.in_(list(uris)))}
+
+    def _queue_insert(self, fresh):
+        """Add rows this pool now waits for. `fresh` is dicts without `pool`."""
+        if not self._pool_is_shared():
+            pool = self._pool
+            OfflineClaim.insert_many(
+                [dict(r, pool=pool) for r in fresh]).on_conflict_ignore().execute()
+            return
+        OfflineRequest.insert_many(fresh).on_conflict_ignore().execute()
+
+    def _queue_revive(self, uris, waiting, now):
+        """Put rows back in the waiting state — the file went away, or a retry."""
+        if not self._pool_is_shared():
+            OfflineClaim.update(state=waiting, requested_at=now).where(
+                OfflineClaim.pool == self._pool,
+                OfflineClaim.uri.in_(list(uris))).execute()
+            return
+        OfflineRequest.update(state=waiting, requested_at=now).where(
+            OfflineRequest.uri.in_(list(uris))).execute()
 
     def offline_queue(self, limit=25, spoken=False):
         """Pending requests, oldest first — what spotdl polls for. Music and
-        spoken items are two queues: two downloaders, see SPOKEN_PENDING."""
-        rows = (OfflineRequest.select()
-                .where(OfflineRequest.state == (self.SPOKEN_PENDING if spoken else 'pending'))
-                .order_by(OfflineRequest.requested_at.asc())
-                .limit(limit))
+        spoken items are two queues: two downloaders, see SPOKEN_PENDING.
+
+        A named pool serves only its OWN rows, and that is the half that stops
+        the theft: this query is what the server's spotdl reaches through its
+        own API, and asked on the shared store it returned the Pi's requests
+        too — which is how a track the Pi queued ended up on the server's disk.
+        An isolated pool likewise never takes a shared row: the file would land
+        where the asker cannot read it."""
+        waiting = self.SPOKEN_PENDING if spoken else 'pending'
+        if not self._pool_is_shared():
+            rows = (OfflineClaim.select()
+                    .where(OfflineClaim.pool == self._pool,
+                           OfflineClaim.state == waiting)
+                    .order_by(OfflineClaim.requested_at.asc())
+                    .limit(limit))
+        else:
+            rows = (OfflineRequest.select()
+                    .where(OfflineRequest.state == waiting)
+                    .order_by(OfflineRequest.requested_at.asc())
+                    .limit(limit))
         return [{'uri': r.uri, 'tries': r.tries or 0} for r in rows]
 
     def offline_request_done(self, uri, ok=True, note=None):
         """Close one request. A failure keeps the row: it is the only trace of
         a track spotdl cannot find, and the UI reads it to stop waiting."""
+        if not self._pool_is_shared():
+            OfflineClaim.update(
+                state='done' if ok else 'failed',
+                tries=OfflineClaim.tries + 1,
+                note=(note or None),
+            ).where(OfflineClaim.pool == self._pool,
+                    OfflineClaim.uri == uri).execute()
+            return
         OfflineRequest.update(
             state='done' if ok else 'failed',
             tries=OfflineRequest.tries + 1,
@@ -2772,7 +2886,12 @@ class DatabaseHandler():
         ).where(OfflineRequest.uri == uri).execute()
 
     def count_local_tracks(self):
-        """How many tracks the server holds as a file — the offline pool's size."""
+        """How many tracks THIS instance holds as a file — its offline pool."""
+        if not self._pool_is_shared():
+            return (LocalFile.select()
+                    .where(LocalFile.pool == self._pool,
+                           LocalFile.path.is_null(False), LocalFile.path != '')
+                    .count())
         return (Track.select()
                 .where(Track.local_uri.is_null(False), Track.local_uri != '')
                 .count())
@@ -2781,8 +2900,13 @@ class DatabaseHandler():
         """`uri -> state` for the subset that is queued at all."""
         if not uris:
             return {}
+        if not self._pool_is_shared():
+            rows = OfflineClaim.select().where(
+                OfflineClaim.pool == self._pool, OfflineClaim.uri.in_(list(uris)))
+        else:
+            rows = OfflineRequest.select().where(OfflineRequest.uri.in_(list(uris)))
         return {r.uri: ('pending' if r.state == self.SPOKEN_PENDING else r.state)
-                for r in OfflineRequest.select().where(OfflineRequest.uri.in_(list(uris)))}
+                for r in rows}
 
     def finished_local_files(self, local_uris):
         """The subset of `local_uris` whose track is a spoken item heard to the
