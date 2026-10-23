@@ -985,7 +985,7 @@ def _migration_v14(migrator):
 
 SCHEMA_VERSION = 36
 
-def _migration_v36():
+def _migration_v36(migrator):
     """Per-pool offline queue and file registry — see OfflineClaim / LocalFile.
 
     Purely additive, and deliberately so: two NEW tables rather than a column or
