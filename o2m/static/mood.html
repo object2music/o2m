@@ -1900,6 +1900,11 @@ function trackMetaHTML(m) {
   // and edited — as a POSITION on the mood matrix, which is the form that needs no
   // legend. The mood word is what those two coordinates amount to in one glance.
   if (m.mood)             bits.push(`<span title="Mood">${ICON.smile} ${objEsc(moodWord(m.mood))}</span>`);
+  // Offline-only facts (see offMetaFor). /api/track_info never answers these, so
+  // nothing changes online; offline they are all there is to say.
+  if (m.heard)            bits.push(`<span title="Heard to the end">${ICON.check} heard</span>`);
+  if (m.progress != null) bits.push(`<span title="Where you stopped">${ICON.clock} ${Math.round(m.progress * 100)}%</span>`);
+  if (m.bytes)            bits.push(`<span title="Held on this device">${ICON.hardDrive} ${objEsc(offSizeText(m.bytes))}</span>`);
   return bits.join(' · ');
 }
 /* The source in the row's few characters: the kind as a short word, the name
@@ -1928,6 +1933,9 @@ function trackMetaText(m) {
   if (m.source)             bits.push('source ' + m.source);
   if (m.popularity != null) bits.push('popularity ' + fmtEV(m.popularity));
   if (m.mood)               bits.push('mood ' + moodWord(m.mood));
+  if (m.heard)              bits.push('heard to the end');
+  if (m.progress != null)   bits.push('stopped at ' + Math.round(m.progress * 100) + '%');
+  if (m.bytes)              bits.push('held on this device, ' + offSizeText(m.bytes));
   return bits.join(' · ');
 }
 const POP_HINT = 'Popularity — how completely and how often you play it, minus skips,'
@@ -2430,6 +2438,12 @@ function loadStatusBadge(uri) {
    mood_legacy.html, which reads it as plain text. */
 const metaCache = new Map();   // uri → {meta, ts}
 function getCachedMeta(uri) {
+  // Offline the database is unreachable, so the inventory IS the source. Answered
+  // here rather than in each display: fetchMeta returns early on a cache hit, so
+  // the rows, the header badge and the panel are all served by this one line —
+  // and no request is made that could only fail.
+  const off = offMetaFor(uri);
+  if (off) return off;
   const e = metaCache.get(uri);
   if (!e || Date.now() - e.ts > STATUS_TTL) return null;
   return e.meta;
@@ -2437,6 +2451,8 @@ function getCachedMeta(uri) {
 // What to PAINT while a fresh read is on its way: the cached line even past its
 // TTL. A stale status is a better placeholder than an empty row that fills in.
 function peekMeta(uri) {
+  const off = offMetaFor(uri);
+  if (off) return off;
   const e = metaCache.get(uri);
   return e ? e.meta : null;
 }
@@ -8128,6 +8144,38 @@ function offUsed() {
   return Object.values(offInv()).reduce((s, m) => s + (m.bytes || 0), 0);
 }
 function offHas(uri) { return !!offInv()[uri]; }
+/* The status line's facts, from what this device actually holds.
+
+   Offline every per-track lookup misses — /api/track_info is the server's — so
+   the rows, the header badge and the panel all fell back to a bare title. What
+   the inventory holds is a subset of what the database knows, and it is rendered
+   through the SAME renderer in the same ` · ` dialect rather than as a second
+   display beside it. There is no popularity, no mood and no source here: those
+   exist only in the database, and a value invented for them would be worse than
+   their absence. Returns null when online, so every caller is a no-op there. */
+function offMetaFor(uri) {
+  if (!OFF.on) return null;
+  const inv = offInv()[uri];
+  if (!inv) return null;
+  const m = {};
+  // For a spoken item this IS the server's own option_type — it is the value
+  // that filed the item under its Basic actuator. Music carries no lifecycle
+  // state here, and 'music' is a category, never an option_type: printing it
+  // would show a word the online line never shows.
+  if (inv.kind === 'spoken' && (inv.cat === 'podcast' || inv.cat === 'info')) {
+    m.option_type = inv.cat;
+  }
+  if (offIsDone(inv)) {
+    m.heard = true;
+  } else if (inv.kind === 'spoken') {
+    const pos = offPos()[uri];
+    const len = (pos && pos.length) || inv.length || 0;
+    if (pos && pos.position > 0 && len > 0) m.progress = Math.min(1, pos.position / len);
+  }
+  if (inv.bytes) m.bytes = inv.bytes;
+  return m;
+}
+
 function offSizeText(b) {
   if (b >= 1024 * 1024 * 1024) return (b / 1073741824).toFixed(1) + ' GB';
   if (b >= 1024 * 1024) return Math.round(b / 1048576) + ' MB';
