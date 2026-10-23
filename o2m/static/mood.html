@@ -8152,6 +8152,36 @@ async function offClearAll() {
 /* Evict until `bytes` fit: finished episodes first — heard to the end, here or
    on the server, they have done their job — then the oldest downloads. */
 function offIsDone(m) { return !!(m && m.kind === 'spoken' && m.done); }
+
+/* What turns out to be already heard leaves the queue.
+
+   `offRefreshMeta` is the only way this device learns that an episode was
+   finished on the SERVER: a finished item carries no bookmark either — the
+   server retires it when the item ends — so here it is indistinguishable from
+   one never played. `offStart` stops waiting for that answer after 3 s, and
+   built the queue from the flags as they stood, so an episode heard yesterday
+   was queued and played again. This runs whenever the answer lands, early or
+   late, and `offQueueRemove` carries the two indexes into the queue.
+
+   The item PLAYING is dropped only when what has been heard of it would not
+   even count as a play (the same 5% artefact rule `offLogPlay` applies): past
+   that, someone is listening, and taking the track out from under them is
+   worse than letting it run to its end. */
+function offDropFinished() {
+  if (!OFF.on || !OFF.queue.length) return 0;
+  const inv = offInv();
+  const cur = OFF.i >= 0 ? OFF.queue[OFF.i] : null;
+  const heard = (cur && OFF.el && cur.length)
+    ? (OFF.el.currentTime * 1000) / cur.length : 1;
+  const gone = OFF.queue.filter(t => offIsDone(inv[t.uri])
+                                     && (t !== cur || heard < 0.05));
+  if (!gone.length) return 0;
+  gone.forEach(t => { if (t !== cur) offQueueRemove(t.uri); });
+  if (gone.includes(cur)) offQueueRemove(cur.uri);   // last: it starts the next one
+  setFeedback(gone.length === 1 ? 'Already heard — skipped'
+                                : gone.length + ' already heard — skipped');
+  return gone.length;
+}
 async function offMakeRoom(bytes) {
   const inv = offInv();
   let free = offQuota() - offUsed();
@@ -8211,6 +8241,7 @@ async function offRefreshMeta() {
     if (keptMoved) offDirKeptSave(kept);
     offInvSave();
     offApplyVolume();
+    offDropFinished();        // the queue may have been built before this answer
   } catch (e) { /* offline: what was stored stands */ }
 }
 
