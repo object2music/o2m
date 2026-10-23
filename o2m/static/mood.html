@@ -3963,7 +3963,12 @@ const TRACK_FIELDS = [
   // or a track spotdl downloaded into the cache — and _resolve_uri substitutes it
   // at fill time, so the track is read off the disk rather than streamed. It says
   // nothing about a phone's offline copy, which never touches this column.
-  ['Audio',      'audio',      i => i.local ? 'File on the server' : 'Streamed'],
+  // Offline the bytes are neither the server's copy nor a stream: they are here.
+  // Saying either of the other two would be false, so this row says the third
+  // thing, with the size it already knows.
+  ['Audio',      'audio',      i => i.on_device
+      ? 'File on this device' + (i.bytes ? ' · ' + offSizeText(i.bytes) : '')
+      : (i.local ? 'File on the server' : 'Streamed')],
   ['Energy',     'energy',     i => fmtEV(i.energy)],
   ['Valence',    'valence',    i => fmtEV(i.valence)],
   ['Mood',       'mood',       i => moodWord(i.mood) || '—'],
@@ -4423,6 +4428,17 @@ async function renderTrackDetails(uri) {
     requestAnimationFrame(syncDetailsWidth);
     return;
   }
+  // Offline the panel is painted from what this device holds; /api/track_info is
+  // the server's and could only fail here.
+  const offInfo = offInfoFor(uri);
+  if (offInfo) {
+    detailsUri = uri;
+    tdPanel.render(offInfo, { hero: false });
+    offHideUnknownRows(tdPanel);
+    requestAnimationFrame(syncDetailsWidth);
+    panel?.classList.remove('switching');
+    return;
+  }
   try {
     const info = await fetch(API + '/track_info?uri=' + encodeURIComponent(uri)).then(r => r.json());
     if (_detailsReq !== uri) return;
@@ -4861,8 +4877,12 @@ function lifecycleScaleHTML(info) {
   const ot = info && info.option_type;
   // Podcast/info = consume-once → listening progress, not the affinity ladder.
   if (ot === 'podcast' || ot === 'info') {
-    const done = (info.read_count_end || 0) >= 1;
-    const started = !done && (info.read_end || 0) > 0.02;
+    // `finished` / `started` carry the same two facts where the counters cannot
+    // be read — offline, from the device's inventory (see offInfoFor). Absent
+    // online, so the counters still decide there.
+    const done = info.finished != null ? !!info.finished : (info.read_count_end || 0) >= 1;
+    const started = !done && (info.started != null ? !!info.started
+                                                   : (info.read_end || 0) > 0.02);
     return _scaleHTML([['unplayed', 'Unplayed'], ['progress', 'In progress'], ['finished', 'Finished']],
       done ? 2 : (started ? 1 : 0));
   }
@@ -8174,6 +8194,54 @@ function offMetaFor(uri) {
   }
   if (inv.bytes) m.bytes = inv.bytes;
   return m;
+}
+
+/* The DETAILS panel's own shape, from what this device holds.
+
+   `renderTrackDetails` asks /api/track_info and paints `tdPanel.render(info)`;
+   offline that request can only fail, and the panel was left empty. The same
+   object is built from the inventory instead, so the panel's own rows and its
+   own completion scale do the rendering — no second panel and no new row.
+
+   Only what is true here is filled, and the rows this device cannot answer are
+   HIDDEN rather than shown as '—': four rows that are right read better than
+   twelve that are empty, and the panel already hides its Channel and Date rows
+   that way. Returns null when online. */
+function offInfoFor(uri) {
+  if (!OFF.on) return null;
+  const inv = offInv()[uri];
+  if (!inv) return null;
+  const spoken = inv.kind === 'spoken' && (inv.cat === 'podcast' || inv.cat === 'info');
+  const pos = offPos()[uri];
+  const len = (pos && pos.length) || inv.length || 0;
+  const info = { option_type: spoken ? inv.cat : '', liked: !!inv.liked,
+                 on_device: true, bytes: inv.bytes || 0 };
+  if (spoken) {
+    // The completion scale reads these two instead of the counters, which are
+    // the server's and are not here. See lifecycleScaleHTML.
+    info.finished = !!inv.done;
+    info.started = !inv.done && !!(pos && pos.position > 0 && len > 0);
+  }
+  if (inv.used) {
+    // fmtLastPlayed wants 'YYYY-MM-DD HH:MM' plus a timestamp in SECONDS. This
+    // is the device's own last play, which is the same fact the row names.
+    const d = new Date(inv.used), q = n => String(n).padStart(2, '0');
+    info.last_played = d.getFullYear() + '-' + q(d.getMonth() + 1) + '-' + q(d.getDate())
+                     + ' ' + q(d.getHours()) + ':' + q(d.getMinutes());
+    info.last_played_ts = Math.floor(inv.used / 1000);
+  }
+  return info;
+}
+
+const OFF_UNKNOWN_ROWS = ['source', 'energy', 'valence', 'mood', 'popularity',
+                          'plays', 'published', 'channel', 'playlists'];
+function offHideUnknownRows(p) {
+  const host = p.body && p.body();
+  if (!host) return;
+  OFF_UNKNOWN_ROWS.forEach(key => {
+    const row = host.querySelector('[data-row="' + key + '"]');
+    if (row) row.style.display = 'none';
+  });
 }
 
 function offSizeText(b) {
