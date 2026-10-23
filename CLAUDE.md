@@ -1563,7 +1563,19 @@ retry stops at `OFFLINE_MAX_TRIES = 3`.
   Range header included.
 - **`POST /api/offline/plan`** — per-uri availability, **and** the moment the queue is fed:
   "tell me what you have" and "then go and get the rest" are one intent, and splitting
-  them let a client ask and never queue.
+  them let a client ask and never queue. A music track is only reported `pending`
+  when something is actually serving this instance's music queue: nothing registers a
+  downloader, so **the poll IS the announcement** (`offline.note_queue_poll`, stamped on
+  `/api/offline/queue`; `music_downloader_present` allows a 10-minute grace, 20× spotdl's
+  default interval). Never polled on a process up past that grace, or a poller gone quiet
+  for it, answers `unavailable` with `no music downloader on this server`, and
+  `request_offline` refuses the row. Not knowing counts as present, which is what keeps a
+  freshly restarted healthy instance from refusing downloads before its spotdl polls.
+  Found on the Pi: 30 Spotify tracks sat `pending` with `tries=0` while the page said
+  "30 being fetched by the server" and re-asked every 60 s for ever — a queue nobody
+  reads is worse than a refusal. The page now names a reason shared by the whole batch
+  rather than printing a count (`lostWhy` in `offSync`), since one structural cause
+  reported as "30 cannot be downloaded" sends the reader looking for thirty problems.
 - **`GET /api/offline/queue`** / **`POST /api/offline/queue_done`** — what spotdl polls.
 - **`POST /api/offline/plays`** — deliberately **not** `/api/event`: that path also runs
   `add_reco_after_track_read`, so replaying an evening of offline listening through it

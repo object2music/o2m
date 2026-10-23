@@ -2788,6 +2788,13 @@ class DatabaseHandler():
             local = self.get_local_uri(uri)
             if local and offline.file_present(local):
                 continue
+            # A row nothing will ever read is not a queue, it is a leak: the
+            # device re-asks every minute and the counter never moves. An
+            # instance with no music downloader says `unavailable` through
+            # describe() instead, so refuse the row here too.
+            if (uri.startswith('spotify:track:')
+                    and not offline.music_downloader_present()):
+                continue
             wanted.append(uri)
         if not wanted:
             return []

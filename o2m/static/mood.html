@@ -8466,6 +8466,10 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
   OFF.pass = new Set();
   OFF.copied = 0;
   let got = 0, wait = 0, lost = 0, heard = 0, full = false;
+  // A whole batch refused for ONE structural reason deserves that reason, not a
+  // count: "30 cannot be downloaded" sends you looking for thirty problems when
+  // there is one (no downloader on this server, a feed that dropped its items).
+  const lostWhy = new Set();
   try {
     const r = await fetch(API + '/offline/plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -8482,7 +8486,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       if (!p) continue;
       if (p.state === 'pending') { OFF.pending.set(t.uri, t); wait++; continue; }
       OFF.pending.delete(t.uri);
-      if (p.state !== 'ready') { lost++; continue; }
+      if (p.state !== 'ready') { lost++; if (p.reason) lostWhy.add(p.reason); continue; }
       // An episode already heard to the end is not taken: it would only spend
       // the quota on something nobody is waiting for.
       if (p.kind === 'spoken' && p.finished) { heard++; continue; }
@@ -8515,7 +8519,8 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
   if (!quiet) {
     setFeedback(got + ' downloaded' + dirNote
       + (wait ? ' · ' + wait + ' being fetched by the server' : '')
-      + (lost ? ' · ' + lost + ' cannot be downloaded' : '')
+      + (lost ? ' · ' + lost + ' cannot be downloaded'
+              + (lostWhy.size === 1 ? ' (' + [...lostWhy][0] + ')' : '') : '')
       + (heard ? ' · ' + heard + ' already heard, left out' : '')
       + (full ? ' · quota full (' + offQuotaMB() + ' MB), raise it in Settings' : ''));
   }

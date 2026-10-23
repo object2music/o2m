@@ -3642,6 +3642,11 @@ if __name__ == "__main__":
         except Exception:
             limit = 25
         spoken = request.args.get('kind') == 'spoken'
+        # Asking IS announcing. Nothing registers a downloader, so this call is
+        # the only evidence one exists here, and `describe` reads it to answer
+        # honestly instead of queueing a music track to nobody.
+        from o2m_core import offline
+        offline.note_queue_poll(spoken=spoken)
         return jsonify(o2mHandler.dbHandler.offline_queue(limit, spoken=spoken))
 
     @api.route('/api/offline/finished', methods=['POST'])

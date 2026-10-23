@@ -72,6 +72,47 @@ def cache_pool() -> str:
     return (os.environ.get('O2M_CACHE_POOL') or '').strip() or SHARED_POOL
 
 
+# ─── Is anything actually serving this instance's music queue? ───────────────
+# Nothing registers a downloader, and nothing needs to: spotdl announces itself
+# by POLLING. It asks `/api/offline/queue` every SPOTDL_QUEUE_POLL seconds (30 by
+# default), so a music queue that has never been asked for, on a process up long
+# enough for that to mean something, has nobody behind it.
+#
+# Why it is worth answering: a request queued to NOBODY is worse than a refusal.
+# The device reports "being fetched by the server" and re-asks every 60 s for
+# ever. On 2026-10-23 a Raspberry Pi did exactly that with 30 Spotify tracks —
+# spotdl cannot run on its Python 3.9 — and they sat `pending` with `tries=0`
+# while the page promised a download that was never going to start.
+#
+# Held in memory on purpose. It is a fact about what has happened to THIS
+# process, not a shared one — the instances have different downloaders — and
+# CacheMeta would turn every poll into a write to a database five instances
+# share.
+_MUSIC_POLL_GRACE = 600            # 10 min, 20x spotdl's default poll interval
+_queue_polled_at: dict = {}        # 'music' | 'spoken' -> time.monotonic()
+_started_at = time.monotonic()
+
+
+def note_queue_poll(spoken: bool = False) -> None:
+    """A downloader just asked what to fetch. Called from the queue endpoint."""
+    _queue_polled_at['spoken' if spoken else 'music'] = time.monotonic()
+
+
+def music_downloader_present() -> bool:
+    """Whether anything is serving this instance's music queue.
+
+    Not knowing counts as YES, and that asymmetry is the point: in the first
+    minutes after a restart nothing has polled yet on any instance, so answering
+    no there would refuse downloads on the instances that work. The pessimistic
+    answer is only given once the process has been up past the grace with the
+    music queue never once asked for — or once a downloader that WAS polling has
+    gone quiet for that long.
+    """
+    last = _queue_polled_at.get('music')
+    ref = last if last is not None else _started_at
+    return (time.monotonic() - ref) < _MUSIC_POLL_GRACE
+
+
 def is_shared_pool() -> bool:
     """Whether this instance shares its music volume with the other instances.
 
@@ -278,6 +319,13 @@ def describe(uri: str, db=None, config=None) -> dict:
             return {'uri': uri, 'kind': kind, 'state': 'ready', 'held': True,
                     'bytes': os.path.getsize(path), 'mime': mime_for(path)}
         if uri.startswith('spotify:track:'):
+            # `pending` is a promise that something will fetch it. Without a
+            # downloader behind this instance there is nothing to wait for, and
+            # saying so is kinder than a queue nobody reads: Spotify cannot be
+            # captured from playback, so the bytes can only come from spotdl.
+            if not music_downloader_present():
+                return {'uri': uri, 'kind': kind, 'state': 'unavailable',
+                        'bytes': 0, 'reason': 'no music downloader on this server'}
             return {'uri': uri, 'kind': kind, 'state': 'pending', 'bytes': 0,
                     'reason': 'no local file yet'}
         # A local: or file: uri whose file is gone is a stale row, not a wait.
