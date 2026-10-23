@@ -10,6 +10,7 @@ from peewee import (
     BooleanField,
     BlobField,
     Model,
+    InterfaceError,
     OperationalError,
     MySQLDatabase,
     SQL,
@@ -22,7 +23,20 @@ import o2m_core.util as util
 
 
 class ReconnectMySQLDatabase(ReconnectMixin, MySQLDatabase):
-    pass
+    """MySQL, with one close-and-retry when the connection turns out to be dead.
+
+    `reconnect_errors` is widened with `InterfaceError` because the mixin's own
+    list — 2006, 2013, 2014, 4031 — does not cover the state it leaves behind
+    when its retry ALSO fails: peewee then keeps a dead connection it believes
+    is open, and every later query raises `InterfaceError(0, '')` for ever.
+    Reproduced on the Pi: after a stalled query, `SELECT 1` raised that, and the
+    same `SELECT 1` succeeded the moment the handle was closed. An empty
+    fragment matches any InterfaceError, which is what we want — it means "this
+    handle is not usable", and the answer to that is always to open a new one.
+    The mixin retries once and then propagates, so this cannot loop.
+    """
+
+    reconnect_errors = ReconnectMixin.reconnect_errors + ((InterfaceError, ''),)
 
 
 """
