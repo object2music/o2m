@@ -1441,6 +1441,17 @@ server keeps playing) → **offline** (accent, and the glyph turns to a struck c
 what the next tap does. Offline queues only what is still to be heard
 (`offBuildQueue` skips `done` episodes, `offStart` refreshes that flag first, for
 3 s at most) — a finished episode stays on the device until the quota needs it.
+The cycle is the same whether a download pass is running or not (a short-lived
+"tap to stop" state was removed, 2026-10-24): a pass carries on into offline, and
+**offline → off stops it** (`offStop` → `offCancelDownload`) **and reconnects** — a
+device that was a Snapcast speaker when it went offline (`OFF.snapBefore`) is one
+again on the same tap.
+
+**o2m knows a music downloader is there only because it keeps talking**
+(`offline.music_downloader_present`): a poll of `/api/offline/queue` or a
+`queue_done` within 10 min. Both count, because the queue is re-asked only after a
+whole batch; and an on-demand spotdl is killed after `SPOTDL_QUEUE_TIMEOUT` (300 s)
+so a hung one cannot silence it — or make o2m tell every device there is none.
 
 **The Snapcast glyph also carries network health, and the separate dot is gone.** One latency probe
 still publishes `html[data-net]` (green/orange/red, `netProbe`), but it now paints the

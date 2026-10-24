@@ -7971,7 +7971,8 @@ const OFF = {
   posAt: 0,             // last bookmark write, ms — throttles the checkpoint
   pass: new Set(),      // downloaded during the pass in progress — never evicted by it
   follow: false,        // connected download: the tracklist is fetched as it changes
-  cancel: false,        // a tap asked the pass in progress to stop
+  cancel: false,        // the pass in progress was asked to stop (offStop)
+  snapBefore: false,    // a Snapcast speaker before going offline — offStop reconnects it
   ctl: null,            // the AbortController of the file being fetched, so it can
 };                      // be dropped mid-stream rather than after its 30s stall
 const OFF_FOLLOW_KEY = 'o2m-offline-follow';
@@ -8394,22 +8395,18 @@ async function offFetchBlob(url) {
   } finally { clearTimeout(timer); if (OFF.ctl === ctl) OFF.ctl = null; }
 }
 
-/* Stop the pass in progress, and stand down.
-
-   There was no way out: from the download state the only next tap went to
-   OFFLINE, `offSync` refuses to start while one runs, and nothing ever set it
-   down — so the button pulsed until the last file landed, however long that
-   took. A tap now means "stop" whenever a pass is running, which is also what
-   the title says. `offFollow(false)` is what keeps it stopped: the 60s re-check
-   of what spotdl still owes is gated on follow, so without it the pass would
-   simply start again. Files already downloaded are kept — they are on the
+/* Stop the pass in progress, and stand down — what turning the button OFF
+   does to a download. `offFollow(false)` is what keeps it stopped: the 60s
+   re-check of what spotdl still owes is gated on follow, so without it the pass
+   would simply start again. Files already downloaded are kept — they are on the
    device and nothing is gained by throwing them away. */
 function offCancelDownload() {
-  OFF.cancel = true;
-  try { if (OFF.ctl) OFF.ctl.abort(); } catch (e) {}
+  if (OFF.downloading) {
+    OFF.cancel = true;
+    try { if (OFF.ctl) OFF.ctl.abort(); } catch (e) {}
+  }
   OFF.pending.clear();
   offFollow(false);
-  setFeedback('Download stopped');
 }
 
 async function offStore(meta) {
@@ -9149,6 +9146,9 @@ function offPaintToggle() { paintPlaybackTarget(); }
 async function offStart() {
   const snapshot = (matrixTlItems || []).slice();   // before anything stops
   try { await rpc('core.playback.pause'); } catch (e) {}
+  // Where the audio came out before, so leaving offline can put it back.
+  OFF.snapBefore = !!snapPlayer;
+  try { localStorage.setItem('snap-autoconnect', '0'); } catch (e) {}  // no reconnect on a reload while offline
   _snapStop();
   // The silent anchor exists to give WebAudio an OS media session; a real
   // <audio> has its own, and two of them fight over the notification.
@@ -9185,6 +9185,7 @@ async function offStart() {
 
 function offStop() {
   OFF.on = false;
+  offCancelDownload();      // off is off: a pass still running stops with it
   document.documentElement.classList.remove('offline-mode');
   paintBusy();
   if (OFF.el) {
@@ -9205,7 +9206,15 @@ function offStop() {
   offPaintToggle();
   offFlushPlays();
   lastTracklistSig = null;
-  setFeedback('Back to the server');
+  // Reconnect: a device that was a Snapcast speaker before going offline is one
+  // again. This runs on the tap, so the AudioContext may start sounding at once.
+  const resnap = OFF.snapBefore && snapAvailable();
+  OFF.snapBefore = false;
+  if (resnap) {
+    _snapStart();
+    try { localStorage.setItem('snap-autoconnect', '1'); } catch (e) {}
+  }
+  setFeedback(resnap ? 'Back to the server — Snapcast reconnected' : 'Back to the server');
   _switchUri = null;      // the header, lyrics included, is the server's track again
   refreshVolume();
   refreshNowPlaying();
@@ -9353,13 +9362,7 @@ function paintPlaybackTarget() {
         ? 'Downloading the tracklist, still on the server (' + held + ') — tap to go offline'
         : 'Download the tracklist to this device (' + held + ')';
     // The pulse alone cannot tell a long pass from a stuck one; the count can.
-    // And while one runs, the tap means stop — so the line above would be wrong.
-    if (OFF.downloading) {
-      title = 'Downloading' + (OFF.progress
-        ? ' ' + OFF.progress.done + ' / ' + OFF.progress.total : '') + ' — tap to stop';
-    } else if (OFF.progress) {
-      title += '\nDownloading ' + OFF.progress.done + ' / ' + OFF.progress.total;
-    }
+    if (OFF.progress) title += '\nDownloading ' + OFF.progress.done + ' / ' + OFF.progress.total;
     off.title = title;
     off.setAttribute('aria-label', title);
     off.setAttribute('aria-pressed', OFF.on ? 'true' : 'false');
@@ -9382,16 +9385,14 @@ function toggleSnapcast() {
 
 async function toggleOffline() {
   try {
-    // A pass in progress is what the tap stops: the cycle offered no way out of
-    // it, so the button pulsed to the end of the download whatever one pressed.
-    if (OFF.downloading) offCancelDownload();
-    else if (OFF.on) offStop();                             // offline → off
+    // One cycle, whatever is downloading: a pass in progress carries on into
+    // offline, and turning offline off stops it and reconnects (offStop).
+    if (OFF.on) offStop();                                  // offline → off
     else if (!OFF.follow) {                                 // off → connected download
       offFollow(true);
       setFeedback('Downloading the tracklist — playback stays on the server');
       offSync((matrixTlItems || []).slice(), { retry: true });
     } else {                                                // connected download → offline
-      localStorage.setItem('snap-autoconnect', '0');   // offStart stops the stream
       await offStart();
     }
   } catch (e) {
