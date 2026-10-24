@@ -94,7 +94,8 @@ _started_at = time.monotonic()
 
 
 def note_queue_poll(spoken: bool = False) -> None:
-    """A downloader just asked what to fetch. Called from the queue endpoint."""
+    """A downloader just asked what to fetch, or reported one done — the queue
+    endpoint and queue_done both call it."""
     _queue_polled_at['spoken' if spoken else 'music'] = time.monotonic()
 
 

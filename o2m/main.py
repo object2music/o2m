@@ -3666,6 +3666,12 @@ if __name__ == "__main__":
         uri = (data.get('uri') or '').strip()
         if not uri:
             return jsonify({'error': 'uri required'}), 400
+        # Reporting is as good a sign of life as asking. The queue is only asked
+        # again once a whole batch is through, and a batch of slow downloads can
+        # outlast the grace: without this, an instance whose spotdl is busy
+        # working would answer that it has none.
+        from o2m_core import offline
+        offline.note_queue_poll(spoken=not uri.startswith('spotify:track:'))
         o2mHandler.dbHandler.offline_request_done(
             uri, ok=bool(data.get('ok', True)), note=(data.get('note') or None))
         return jsonify({'ok': True})

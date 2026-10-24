@@ -28,6 +28,10 @@ BOX_UIDS = [u.strip() for u in os.environ.get('SPOTDL_BOX_UIDS', '').split(',') 
 # file for it. Polled between the nightly runs, because the person is waiting.
 QUEUE_POLL = int(os.environ.get('SPOTDL_QUEUE_POLL', '30'))
 QUEUE_BATCH = int(os.environ.get('SPOTDL_QUEUE_BATCH', '5'))
+# One on-demand track, at most. A hung spotdl used to hold the whole queue —
+# and, since o2m only knows a downloader is there because it keeps asking and
+# reporting, it also made o2m tell every device there was none.
+QUEUE_TRACK_TIMEOUT = int(os.environ.get('SPOTDL_QUEUE_TIMEOUT', '300'))
 ONDEMAND_DIRNAME = 'ondemand'
 # Hard ceiling on the cache, in gigabytes. Override in .env (the service reads
 # it through env_file); 0 or less disables the cap. A date-based expiry alone
@@ -223,8 +227,12 @@ def spotify_url(uri):
     return f"https://open.spotify.com/{parts[1]}/{parts[2]}"
 
 
-def run_spotdl(uri, output_dir):
-    """Download a Spotify URI to output_dir. Returns True on success."""
+def run_spotdl(uri, output_dir, timeout=None):
+    """Download a Spotify URI to output_dir. Returns True on success.
+
+    `timeout` (seconds) raises subprocess.TimeoutExpired once spent, the child
+    killed. The nightly pass leaves it unset — a playlist may legitimately take
+    an hour — but a single on-demand track has no such excuse."""
     output_dir.mkdir(parents=True, exist_ok=True)
     template = str(output_dir) + '/{artists} - {title}.{ext}'
     cmd = [
@@ -235,7 +243,7 @@ def run_spotdl(uri, output_dir):
         '--log-level', 'WARNING',
     ]
     print(f"  spotdl {uri}")
-    result = subprocess.run(cmd)
+    result = subprocess.run(cmd, timeout=timeout)
     return result.returncode == 0
 
 
@@ -477,7 +485,7 @@ def run_queue():
         if not uri:
             continue
         try:
-            run_spotdl(uri, out_dir)
+            run_spotdl(uri, out_dir, timeout=QUEUE_TRACK_TIMEOUT)
         except Exception as e:
             print(f"  spotdl error for {uri}: {e}")
             queue_done(uri, ok=False, note=str(e)[:200])
