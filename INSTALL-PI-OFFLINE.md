@@ -2,7 +2,22 @@
 
 How to give a Raspberry Pi running o2m natively its **own** offline cache: its own
 download queue, its own files, its own ceiling. Written from the deployment done on
-Pi #2 on 2026-10-23; every figure below was measured, not estimated.
+Pi #2 on 2026-10-23 and repeated on Pi #1 on 2026-10-24; every figure below was
+measured, not estimated.
+
+The two machines are **not** the same, and the difference decides §3 alone:
+
+| | Pi #2 | Pi #1 |
+|---|---|---|
+| OS | Raspbian bullseye | Raspbian **bookworm** |
+| Python | 3.9.2 | **3.11.2** |
+| Disk | 29 GB SD | 15 GB SD |
+| `media_dir` content | 5.8 GB of ripped discs | empty |
+| §1 + §2 (episodes, YouTube, local files) | works | works |
+| §3 (Spotify music) | **impossible** | **works** — spotdl 4.5.2 |
+
+So do not read §3's wall as a property of Raspberry Pis. It is a property of
+Python 3.9.
 
 Read §0 and §2's warning before typing anything. One setting in §2 can delete a music
 library.
@@ -29,7 +44,7 @@ What a native instance can hold afterwards:
 | Content | Works | Needs |
 |---|---|---|
 | Podcast / news episode | yes | §1 + §2 |
-| YouTube video | yes | §1 + §2 (`yt_dlp` in the o2m process) |
+| YouTube video | yes, but intermittently | §1 + §2 (`yt_dlp` in the o2m process) — see §3's last part |
 | Local file (`local:` / `file:`) | yes | §1 only |
 | **Spotify track** | **only on Python ≥ 3.10** | §3 — read it before hoping |
 | Radio, YouTube playlist | never | a live stream has no end |
@@ -208,7 +223,7 @@ before and after.
 
 ---
 
-## 3. Spotify music — a wall, not a to-do
+## 3. Spotify music — a wall on Python 3.9, a plain install on 3.11
 
 **Spotify cannot be captured from playback**: librespot decrypts into GStreamer, never
 into a file. A file exists only if a downloader re-finds the track elsewhere, which is
@@ -237,8 +252,10 @@ wheel including `pydantic-core` and `rapidfuzz`, **nothing compiles**, and the v
 
 ### The ways out, in order of sanity
 
-1. **Reinstall the machine on a current Raspberry Pi OS (trixie, Python 3.13).** Fixes
-   the root cause and the piwheels/glibc trap with it. Then §3 is a plain
+1. **Reinstall the machine on a newer Raspberry Pi OS.** Fixes the root cause and the
+   piwheels/glibc trap with it, and **bookworm is already enough** — that is not a
+   guess, it is Pi #1, where the whole of §3 below worked on Python 3.11.2 with no pin
+   at all. Trixie (3.13) only buys more headroom. Then §3 is a plain
    `pip install spotdl` in a venv and `SPOTDL_SPOKEN_ONLY=0`.
 2. **Install Docker on the Pi** and run the repo's existing `spotdl/Dockerfile`
    (`python:3.11-slim`, which publishes a `linux/arm/v7` variant), pointed at
@@ -249,7 +266,7 @@ wheel including `pydantic-core` and `rapidfuzz`, **nothing compiles**, and the v
 Do **not** compile Python 3.11+ from source on an armv7l with under 1 GB of RAM to get
 there — hours of build, and 99 MB of swap.
 
-### If your Python is ≥ 3.10
+### If your Python is >= 3.10 — measured on Pi #1, bookworm, 3.11.2
 
 ```bash
 python3 -m venv /home/pi/spotdl-venv
@@ -258,9 +275,58 @@ python3 -m venv /home/pi/spotdl-venv
 /home/pi/spotdl-venv/bin/spotdl --version
 ```
 
-Then in the unit of §2: `SPOTDL_SPOKEN_ONLY=0`, and add the venv to the unit's PATH so
-`run_spotdl`'s bare `spotdl` call resolves —
-`Environment=PATH=/home/pi/spotdl-venv/bin:/usr/local/bin:/usr/bin:/bin`.
+**It just works.** No pin, no blocker: spotdl **4.5.2**, yt-dlp 2026.10.21,
+ytmusicapi **1.12.3** — the very package that is the 3.9 wall, four minor versions
+past what 3.9 can install. piwheels supplies the armv7l wheels; only `brotli` had no
+wheel and compiled in about a minute. The venv is **181 MB** and nothing else was
+needed.
+
+Then in the unit of §2, three changes — and the second one is not optional:
+
+```
+Environment=SPOTDL_SPOKEN_ONLY=0
+Environment=PATH=/home/pi/spotdl-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/pi/spotdl-venv/bin/python /home/pi/o2m/spotdl/cache.py
+```
+
+* **Run `cache.py` with the venv's interpreter, not `/usr/bin/python3`.** The
+  registration reads the Spotify id out of the file's `WOAS` ID3 frame, which needs
+  **`mutagen`** — and a Pi's system Python has `requests` but not `mutagen`. The
+  symptom is the worst kind: spotdl downloads the track, the file is on disk, and the
+  run then reports `mutagen error (…): No module named 'mutagen'` followed by
+  `FAILED`. The download was fine; only the registration was lost. The venv has
+  mutagen, requests and spotdl in one interpreter, so use it for all three.
+* **PATH first, because of what may already be there.** Pi #1 carried a
+  `/usr/local/bin/spotdl` launcher from January 2023 whose module had long been
+  removed — `ModuleNotFoundError: No module named 'spotdl'`. `run_spotdl` calls a bare
+  `spotdl`, so without the venv ahead of `/usr/local/bin` every download would have
+  died on that shim. It was left in place (it is not ours to delete); the PATH line is
+  what makes it harmless.
+
+### What still does not work reliably: YouTube on this hardware
+
+spotdl finds the track on Spotify and fetches the audio from YouTube, and **that
+second half is intermittent on an armv7l Pi**. Measured on Pi #1 on 2026-10-24: the
+same uri, the same options, minutes apart, answered `Requested format is not
+available` once and `251 webm` the next time; spotdl reported `YouTube Music returned
+no usable results … after 3 attempts` from the queue and downloaded the same track
+by hand ten minutes later. One `/api/audio` request on a YouTube video 404s, the next
+serves it.
+
+yt-dlp names the cause itself: *"No supported JavaScript runtime could be found …
+YouTube extraction without a JS runtime has been deprecated, and some formats may be
+missing."* And on this hardware there is no runtime to give it:
+
+* `deno` publishes no armv7l build;
+* `node` from Raspbian bookworm is **18.20.4**, while yt-dlp's `NodeJsRuntime` sets
+  `MIN_SUPPORTED_VERSION = (22, 0, 0)`. Installing it changes nothing — tested, and
+  `--js-runtimes node` still reported no runtime found, so it was removed again.
+
+Consequence, stated plainly: a music request on a Pi lands **usually, not always**,
+and a failed claim is retried up to `OFFLINE_MAX_TRIES` (3) before it gives up. The
+same weakness affects YouTube *videos* fetched for offline, which §0's table calls
+`yes` — read that as "yes, and sometimes you ask twice". Episodes and local files are
+unaffected: they are a plain HTTP fetch with no extractor in the way.
 
 **Leave the nightly box pass off** unless the disk is large: it prefetches every pinned
 box's Spotify tracks — 28 boxes on Pi #1 — which against a 2 GB ceiling only thrashes the

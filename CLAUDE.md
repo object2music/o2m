@@ -1649,9 +1649,26 @@ spotdl package at module level, so the half that needs none — the spoken queue
 the expiry and the ceiling — runs natively. Its `CACHE_DIR` is the one thing to
 get right: the pruner walks `CACHE_DIR.rglob('*')` and nothing above it, so
 pointing it at `<media_dir>/cache` keeps a hand-filled library in `<media_dir>`
-entirely out of its reach. What is still missing on a Pi is only the MUSIC:
-spotdl itself (see the offline section's table — Spotify needs a downloader that
-re-finds the track elsewhere).
+entirely out of its reach.
+
+**Whether a Pi can also hold the MUSIC is decided by its Python**, and the two
+machines here answer differently. Pi #2 (bullseye, 3.9) cannot: `ytmusicapi`
+1.10.3 is the newest release that installs there and is already too old for
+YouTube Music, and every version that fixes it needs ≥ 3.10 — a wall, not a
+to-do. Pi #1 (bookworm, 3.11) can: `pip install spotdl` in a venv gives 4.5.2
+with no pin, and on 2026-10-24 it downloaded, registered and served a Spotify
+track to a device for the first time from a Pi (`LocalFile(pool='pi1')` written,
+`Track.local_uri` left `None`, `/api/audio` answering 206). Two traps on that
+path, both measured: `cache.py` must run under the **venv's** interpreter,
+because the registration reads the `WOAS` frame through `mutagen` and a Pi's
+system Python has only `requests` — the download succeeds and the registration
+is silently lost otherwise; and the venv must come first on PATH, since
+`run_spotdl` calls a bare `spotdl` and Pi #1 carried a broken launcher in
+`/usr/local/bin` from 2023. What stays unreliable on either is the YouTube half:
+no JS runtime exists for armv7l (deno publishes none, and Raspbian's node 18 is
+below yt-dlp's `MIN_SUPPORTED_VERSION = (22, 0, 0)`), so extraction intermittently
+returns no usable format — a music claim lands usually, not always, and is
+retried up to `OFFLINE_MAX_TRIES`.
 
 Two consequences to keep in mind:
 - **Exactly one instance may prune a shared cache.** The expiry and the size cap delete
