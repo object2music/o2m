@@ -242,7 +242,9 @@ def run_spotdl(uri, output_dir, timeout=None):
     killed. The nightly pass leaves it unset — a playlist may legitimately take
     an hour — but a single on-demand track has no such excuse."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    template = str(output_dir) + '/{artists} - {title}.{ext}'
+    # {output-ext} is spotdl's own placeholder; {ext} is not one of them and
+    # stays in the name literally, so every file was "Title.{ext}.mp3".
+    template = str(output_dir) + '/{artists} - {title}.{output-ext}'
     cmd = [
         'spotdl', 'download', spotify_url(uri),
         '--output', template,
