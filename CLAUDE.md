@@ -2223,6 +2223,12 @@ All service configuration is via `.env` file (not committed). Key variables:
   HTTP fetch of o2m's own `/api/audio`. Same file in both shapes on purpose: one downloader,
   one naming scheme (`spoken_stem`, a sha1 so a file is interchangeable between instances),
   one registration path, one pruner.
+- `SPOTDL_BOX_PASS` — may the nightly pass prefetch the pinned boxes (default `1`). Set `0`
+  on a small disk: the pass is a GUESS about what will be wanted, and against a 2 GB ceiling
+  28 pinned boxes only thrash the cache, evicting what a device actually asked for. It is
+  what `SPOTDL_BOX_UIDS` cannot say — that flag restricts WHICH boxes and never none, and a
+  uid that does not exist makes `run_cache` return *before* `run_maintenance`, taking the
+  nightly expiry with it. With the pass off, the on-demand queues and the pruner stay on.
 - `O2M_CACHE_POOL` — which cache pool (i.e. which DISK) this instance's downloads land on.
   Default `shared`, which is the previous behaviour; set it only on an instance that does
   not share `MUSIC_DIR` (a Raspberry Pi). Read as an environment variable rather than an

@@ -24,6 +24,14 @@ MOPIDY_MUSIC_DIR = os.environ.get('MOPIDY_MUSIC_DIR', '/app/Music')
 SPOTDL_MUSIC_MOUNT = os.environ.get('SPOTDL_MUSIC_MOUNT', '/music')
 # Comma-separated box UIDs to cache; empty = all pinned boxes
 BOX_UIDS = [u.strip() for u in os.environ.get('SPOTDL_BOX_UIDS', '').split(',') if u.strip()]
+# May the nightly pass prefetch the pinned boxes at all? It is a GUESS about
+# what will be wanted, and on a small disk the guess is the problem: 28 pinned
+# boxes against a 2 GB ceiling only thrash the cache, evicting what a device
+# actually asked for. `SPOTDL_BOX_UIDS` restricts WHICH boxes and can never say
+# none — naming a uid that does not exist leaves `run_cache` returning before
+# `run_maintenance`, so the nightly expiry would go with it.
+BOX_PASS = (os.environ.get('SPOTDL_BOX_PASS', '1').strip().lower()
+            not in ('0', 'false', 'no', 'off'))
 # On-demand queue: a listening device asked for a track offline and o2m has no
 # file for it. Polled between the nightly runs, because the person is waiting.
 QUEUE_POLL = int(os.environ.get('SPOTDL_QUEUE_POLL', '30'))
@@ -632,13 +640,19 @@ if __name__ == '__main__':
         print("Pruning disabled here (SPOTDL_PRUNE=0) — another instance owns "
               f"the cleanup of {CACHE_DIR}")
 
-    if SPOKEN_ONLY:
-        # No music queue and no box pass: both go through spotdl. The ceiling
-        # still has to be enforced, and it is enforced after every spoken batch
-        # (run_spoken_queue) exactly as it is beside a Docker instance; this
-        # loop only adds the nightly expiry.
-        print(f"Spoken only: no spotdl here. Cache {CACHE_DIR}, "
-              f"cap {CACHE_MAX_GB:g} GB, expiry {CACHE_DAYS} days.")
+    if SPOKEN_ONLY or not BOX_PASS:
+        # Nothing to prefetch, so the nightly run is the maintenance alone. The
+        # ceiling does not wait for it — it is enforced after every batch, music
+        # (run_queue) and spoken (run_spoken_queue) alike, exactly as it is
+        # beside a Docker instance; this loop only adds the nightly expiry.
+        if SPOKEN_ONLY:
+            # No music queue and no box pass: both go through spotdl.
+            print(f"Spoken only: no spotdl here. Cache {CACHE_DIR}, "
+                  f"cap {CACHE_MAX_GB:g} GB, expiry {CACHE_DAYS} days.")
+        else:
+            print(f"Box pass off (SPOTDL_BOX_PASS=0): on-demand only. "
+                  f"Cache {CACHE_DIR}, cap {CACHE_MAX_GB:g} GB, "
+                  f"expiry {CACHE_DAYS} days.")
         run_maintenance()
         while True:
             time.sleep(seconds_until_next_run())

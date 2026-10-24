@@ -263,8 +263,17 @@ Then in the unit of §2: `SPOTDL_SPOKEN_ONLY=0`, and add the venv to the unit's 
 `Environment=PATH=/home/pi/spotdl-venv/bin:/usr/local/bin:/usr/bin:/bin`.
 
 **Leave the nightly box pass off** unless the disk is large: it prefetches every pinned
-box's Spotify tracks, which against a 2 GB ceiling only thrashes the cache. There is no
-flag for that yet — `SPOTDL_BOX_UIDS` restricts which boxes, never none.
+box's Spotify tracks — 28 boxes on Pi #1 — which against a 2 GB ceiling only thrashes the
+cache, evicting what a device actually asked for. `SPOTDL_BOX_PASS=0` says that:
+
+```
+Environment=SPOTDL_BOX_PASS=0
+```
+
+The on-demand queues and the pruner stay on; only the guess goes. Do **not** reach for
+`SPOTDL_BOX_UIDS` instead — it restricts WHICH boxes and can never say none, and a uid
+that does not exist makes `run_cache` return *before* `run_maintenance`, so the nightly
+expiry would go with the pass.
 
 ---
 
