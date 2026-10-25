@@ -318,13 +318,15 @@ def run_spotdl(uri, output_dir, timeout=None):
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, errors='replace')
     out = result.stdout or ''
-    if result.returncode == 0:
-        return True
     if _is_throttled(out):
         raise Throttled('YouTube Music answered 403 (too many requests from here)')
+    # Shown whatever the exit code, because spotdl exits 0 on a song it could
+    # not fetch: three tracks came back from a 49-second run with code 0, no
+    # file and not a word in the journal. At --log-level WARNING a clean
+    # download says nothing, so any output at all is the reason for something.
     for line in [l.strip() for l in out.splitlines() if l.strip()][-3:]:
         print(f"    {line[:200]}")
-    return False
+    return result.returncode == 0
 
 
 def touch_files(paths):
