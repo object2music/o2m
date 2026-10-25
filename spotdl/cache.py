@@ -615,6 +615,52 @@ def _write_views(views):
                     pass
     if written or removed:
         print(f"Box views: {written} written, {removed} removed, {len(wanted)} in all")
+    _write_index(views)
+
+
+# What each cached item IS, keyed by uri — the same per-item row `/api/offline/plan`
+# and `/api/offline/meta` answer the browser, which keeps it in `o2m-offline-inv`.
+# One contract, three readers: the browser, this disk, and whatever reads this disk
+# next. The m3u8 say what a box holds and in which order; the index says what each
+# item is — its title, its length, where the server left off in it, its channel's
+# pre-roll skip and volume boost — and together they are enough to play a cache
+# with NO database, which is the whole point of writing it down.
+INDEX_PATH = CACHE_DIR / 'index.json'
+_INDEX_FIELDS = ('title', 'seconds', 'canon', 'kind', 'cat', 'ad_skip',
+                 'volume_boost', 'position', 'finished', 'liked', 'folder', 'file')
+
+
+def _write_index(views):
+    """Write `index.json` over the items these views list that are on this disk.
+
+    `local_uri` is deliberately dropped: it is Mopidy's absolute path on the
+    machine that downloaded the file, and this file is meant to travel with the
+    folder. `path`, relative to the cache root, is what replaces it.
+    """
+    items = views.get('items') or {}
+    out = {}
+    for uri, it in items.items():
+        f = mopidy_uri_to_file(it.get('local_uri'))
+        if f is None or not f.is_file():
+            continue
+        row = {k: it[k] for k in _INDEX_FIELDS if k in it}
+        try:
+            row['path'] = os.path.relpath(f, CACHE_DIR)
+        except ValueError:
+            continue              # not under the cache root: not ours to describe
+        out[uri] = row
+    if not out:
+        return                    # o2m answered nothing: describe nothing away
+    text = json.dumps({'items': out}, ensure_ascii=False,
+                      indent=1, sort_keys=True) + '\n'
+    try:
+        if INDEX_PATH.is_file() and INDEX_PATH.read_text(encoding='utf-8') == text:
+            return
+        INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+        INDEX_PATH.write_text(text, encoding='utf-8')
+        print(f"Cache index: {len(out)} item(s) described")
+    except OSError as e:
+        print(f"  index: {e}")
 
 
 def placements(files):

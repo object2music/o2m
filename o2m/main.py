@@ -3716,8 +3716,28 @@ if __name__ == "__main__":
         the page in the device's folder copy."""
         from flask import jsonify
         try:
-            return jsonify(o2mHandler.dbHandler.cache_views(
-                static_only=request.args.get('static') == '1'))
+            views = o2mHandler.dbHandler.cache_views(
+                static_only=request.args.get('static') == '1')
+            # Each HELD item carries the same per-item row `plan` and `meta`
+            # answer, from the same two functions — a third reader of one
+            # contract rather than a third format. spotdl writes it beside the
+            # views as `index.json`, which is the Pi's own `o2m-offline-inv`:
+            # the m3u8 say what a box holds, the index says what each item IS,
+            # and that is what lets a machine play its cache with no database
+            # at all. Only held items are enriched: the index describes what is
+            # on the disk, and a static line names what is not there yet.
+            for u, it in (views.get('items') or {}).items():
+                if not it.get('local_uri'):
+                    continue
+                try:
+                    canon = o2mHandler.get_spotify_uri(u) or u
+                    spoken = o2mHandler._is_spoken_uri(canon)
+                    it.update(_offline_meta(canon, spoken), canon=canon,
+                              kind='spoken' if spoken else 'music')
+                    it.update(_cache_place(u, canon, spoken))
+                except Exception:
+                    pass        # a row short of its settings still plays
+            return jsonify(views)
         except Exception as e:
             print(f"api_offline_views: {e}")
             return jsonify({'playlists': {}, 'items': {}, 'error': str(e)}), 500
