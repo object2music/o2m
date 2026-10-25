@@ -156,6 +156,10 @@ class O2mToMopidy:
         # end-of-track recommendations pick what to add next to a track belonging to
         # the child. A stack was empty by then and the inheritance silently vanished.
         self._box_parent = {}
+        # Box views of the offline cache: (uri, view path) waiting to be written.
+        self._membership_q = []
+        self._membership_lock = threading.Lock()
+        self._membership_thread = None
         # child uid -> the share of its parent's budget it was filled with
         self._box_share = {}
         # Children a cascade switched ON itself (not already active when it
@@ -571,21 +575,53 @@ class O2mToMopidy:
             return (getattr(b, 'description', '') or '').strip() or uid
         return vbox.uri_of(uid) or uid
 
-    def cache_folder_for(self, uri):
-        """The offline-cache folder of the box that queued this item — the first
-        tracklist entry holding it — else `No box` (o2m_core/cachelayout.py).
-        `mopidy_box` is not a box anyone put down: what it owns was played by
-        hand, so it files under No box like a request from outside the tracklist."""
+    def _box_chain(self, uid):
+        """The box folders of `uid` and of every box that included it, outermost
+        first — the folders of its views under Boxes/ (o2m_core/cachelayout.py)."""
         from o2m_core import cachelayout
-        canon = self.get_spotify_uri(uri) or uri
-        for info in list((getattr(self, '_track_info', None) or {}).values()):
-            u = info.get('uri') or ''
-            if u != uri and u != canon and self.get_spotify_uri(u) != canon:
-                continue
-            uid = info.get('box_id') or ''
-            if uid and uid != 'mopidy_box':
-                return cachelayout.box_folder(self.box_label(uid), uid)
-        return cachelayout.NO_BOX
+        chain, seen = [], set()
+        while uid and uid not in seen:
+            seen.add(uid)
+            chain.append(cachelayout.box_folder(self.box_label(uid), uid))
+            uid = self._box_parent.get(uid)
+        return chain[::-1]
+
+    def _note_membership(self, info):
+        """Remember that a box served this item, and from which source: what the
+        offline cache's box views list (CacheMembership). Written in the
+        background — this runs inside a fill. `mopidy_box` is not a box anyone
+        put down, so what it owns is in no view."""
+        try:
+            from o2m_core import cachelayout
+            uid = (info or {}).get('box_id') or ''
+            if not uid or uid == 'mopidy_box':
+                return
+            path = cachelayout.view_path(
+                self._box_chain(uid),
+                cachelayout.source_label(info.get('library_link'), info.get('option_type'),
+                                         info.get('library_display')))
+            uri = self.get_spotify_uri(info.get('uri')) or info.get('uri')
+            if not path or not uri:
+                return
+            with self._membership_lock:
+                self._membership_q.append((uri, path))
+                if self._membership_thread is None:
+                    self._membership_thread = threading.Thread(
+                        target=self._membership_flusher, daemon=True, name='cache-membership')
+                    self._membership_thread.start()
+        except Exception as e:
+            print(f"_note_membership: {e}")
+
+    def _membership_flusher(self):
+        while True:
+            time.sleep(20)
+            with self._membership_lock:
+                batch, self._membership_q = self._membership_q, []
+            if batch:
+                try:
+                    self.dbHandler.record_cache_membership(batch)
+                except Exception as e:
+                    print(f"record_cache_membership: {e}")
 
     def note_box_activation(self):
         """Record that an object was PUT DOWN — a fresh intent that outranks the
@@ -1246,6 +1282,7 @@ class O2mToMopidy:
                             'library_display': library_display,
                             'box_id':          active_box.uid,
                         }
+                        self._note_membership(self._track_info[tl_track.tlid])
                         try:
                             if self.dbHandler.stat_exists(track_uri):
                                 stat = self.dbHandler.get_stat_by_uri(track_uri)
@@ -3976,6 +4013,7 @@ class O2mToMopidy:
                                         'library_display': reco_display,
                                         'box_id':          box_id,
                                     }
+                                    self._note_membership(self._track_info[x.tlid])
                                 except Exception as e:
                                     print(f"Error registering reco track in _track_info: {e}")
 

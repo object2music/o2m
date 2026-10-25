@@ -13,7 +13,7 @@ import threading
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 O2M_URL = os.environ.get('O2M_URL', 'http://o2m:6681')
 CACHE_DIR = Path(os.environ.get('SPOTDL_CACHE_DIR', '/music/cache'))
@@ -41,14 +41,17 @@ QUEUE_BATCH = int(os.environ.get('SPOTDL_QUEUE_BATCH', '5'))
 # and, since o2m only knows a downloader is there because it keeps asking and
 # reporting, it also made o2m tell every device there was none.
 QUEUE_TRACK_TIMEOUT = int(os.environ.get('SPOTDL_QUEUE_TIMEOUT', '300'))
-# The cache is laid out by box: `<Box name> [<uid>]/<title> - <album>.mp3`, and
-# `No box/` for what a device asked for outside any box. The names are decided
-# by o2m (o2m_core/cachelayout.py) and come with every box and every queue row,
-# so this script never names a folder itself — it only finds one by the uid in
-# its brackets. ONDEMAND_DIRNAME and SPOKEN_DIRNAME are the layout before
-# that: what reorganize_cache() empties.
-ONDEMAND_DIRNAME = 'ondemand'
-NO_BOX = 'No box'
+# One file per item, filed by what it is; the boxes are playlists over them
+# (o2m_core/cachelayout.py):
+#   Library/<album artist>/<album>/<NN> <title>.mp3   music, spotdl's template
+#   Podcasts|Videos/<channel>/<date> <title> [tag]     named by o2m (queue rows)
+#   Boxes/<box>/[<included box>/]<source>.m3u8, All.m3u8   write_views()
+# Folders per box holding their files were tried first and given up: a track is
+# in several boxes, a tree can put it in one. The box folders of that layout,
+# `ondemand/` and `spoken/` are what reorganize_cache() empties.
+LIBRARY_DIR = CACHE_DIR / 'Library'
+BOXES_DIR = CACHE_DIR / 'Boxes'
+LIBRARY_TEMPLATE = '{album-artist}/{album}/{track-number} {title}.{output-ext}'
 # Hard ceiling on the cache, in gigabytes. Override in .env (the service reads
 # it through env_file); 0 or less disables the cap. A date-based expiry alone
 # is not a limit: the day the downloader started working the cache went from
@@ -84,7 +87,6 @@ AUDIO_EXT = ('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav', '.webm', '.aac', 
 # (spotdl takes URLs not URIs, the id lives in WOAS not COMM).
 SPOKEN_ONLY = (os.environ.get('SPOTDL_SPOKEN_ONLY', '0').strip().lower()
                in ('1', 'true', 'yes', 'on'))
-SPOKEN_DIRNAME = 'spoken'
 SPOKEN_BATCH = int(os.environ.get('SPOTDL_SPOKEN_BATCH', '3'))
 _SPOKEN_EXT = {'audio/mpeg': '.mp3', 'audio/mp3': '.mp3', 'audio/mp4': '.m4a',
                'audio/x-m4a': '.m4a', 'audio/m4a': '.m4a', 'audio/aac': '.aac',
@@ -206,17 +208,27 @@ def clear_local_track(local_uri):
         pass
 
 
-def sync_downloaded_files(output_dir):
-    """Scan output_dir for mp3 files, read Spotify URI from ID3, register with o2m."""
+# Files this process registered already. The library is one tree for every box,
+# so a box pass that re-registered all of it would make ~2,000 calls per box.
+_registered = set()
+
+
+def sync_downloaded_files(output_dir=None):
+    """Register with o2m every mp3 of the library not registered yet by this
+    process: the Spotify uri from its ID3 tags, the file as Mopidy sees it."""
+    output_dir = output_dir or LIBRARY_DIR
     if not output_dir.exists():
         return 0
     count = 0
-    for mp3_file in output_dir.glob('*.mp3'):
+    for mp3_file in output_dir.rglob('*.mp3'):
+        if mp3_file in _registered:
+            continue
         spotify_uri = extract_spotify_uri_from_mp3(mp3_file)
         if not spotify_uri:
             continue
         local_uri = file_to_mopidy_uri(mp3_file)
         if register_local_track(spotify_uri, local_uri):
+            _registered.add(mp3_file)
             count += 1
     if count:
         print(f"  registered {count} track(s)")
@@ -252,7 +264,7 @@ def run_spotdl(uri, output_dir, timeout=None):
     output_dir.mkdir(parents=True, exist_ok=True)
     # {output-ext} is spotdl's own placeholder; {ext} is not one of them and
     # stays in the name literally, so every file was "Title.{ext}.mp3".
-    template = str(output_dir) + '/{title} - {album}.{output-ext}'
+    template = str(output_dir) + '/' + LIBRARY_TEMPLATE
     cmd = [
         'spotdl', 'download', spotify_url(uri),
         '--output', template,
@@ -269,11 +281,14 @@ def run_spotdl(uri, output_dir, timeout=None):
     return result.returncode == 0
 
 
-def touch_files(directory):
-    """Update mtime of all mp3 files to now (marks them active this run)."""
+def touch_files(paths):
+    """Update the mtime of these files to now (marks them wanted this run)."""
     now = time.time()
-    for f in directory.rglob('*.mp3'):
-        os.utime(f, (now, now))
+    for f in paths:
+        try:
+            os.utime(f, (now, now))
+        except OSError:
+            pass
 
 
 def human_size(n):
@@ -402,6 +417,12 @@ def run_cache():
         print("No boxes to cache")
         return
 
+    # What the pinned boxes name outright is still wanted: stamped, so the
+    # expiry (by mtime) keeps it. One library for every box, so this is asked
+    # of o2m rather than read off a folder.
+    views = fetch_views(static=True)
+    touch_files(view_files(views))
+
     for box in boxes:
         uid = box.get('uid', '')
         desc = box.get('description') or uid
@@ -410,19 +431,13 @@ def run_cache():
             continue
 
         print(f"Box {uid} ({desc}): {len(uris)} URI(s)")
-        box_dir = folder_dir(box.get('cache_folder') or uid)
-
-        if box_dir.exists():
-            touch_files(box_dir)
-
         for uri in uris:
             try:
-                run_spotdl(uri, box_dir)
+                run_spotdl(uri, LIBRARY_DIR)
             except Exception as e:
                 print(f"  spotdl error for {uri}: {e}")
 
-        # Register all mp3 files in this box directory with the o2m API
-        sync_downloaded_files(box_dir)
+        sync_downloaded_files()
         enforce_cache_cap()
 
     run_maintenance()
@@ -434,17 +449,11 @@ def run_maintenance():
     downloader, so the spoken-only shape runs exactly this and nothing else."""
     clean_old_files()
     enforce_cache_cap()
+    write_views()
     remove_empty_dirs()
 
 
-# ── Layout: a folder per box, files named after what they are ─────────────────
-
-def folder_tag(name):
-    """The uid a folder is found by: what its trailing brackets hold, or the
-    whole name for a folder of the old layout (the bare uid) or `No box`."""
-    m = re.search(r' \[([^\[\]]+)\]$', name or '')
-    return m.group(1) if m else (name or '')
-
+# ── Layout: one file per item, a playlist per box ─────────────────────────────
 
 def relocate(src, dst, uri):
     """Move one cached file and register it where it now is. False, and the
@@ -462,44 +471,91 @@ def relocate(src, dst, uri):
     return True
 
 
-def folder_dir(folder):
-    """The directory for o2m's `folder`, taking over the one this box already
-    has under another name.
+def mopidy_uri_to_file(local_uri):
+    """The reverse of file_to_mopidy_uri: the file behind a registered uri."""
+    if not (local_uri or '').startswith('file://'):
+        return None
+    path = unquote(local_uri[len('file://'):])
+    root = MOPIDY_MUSIC_DIR.rstrip('/') + '/'
+    if not path.startswith(root):
+        return None
+    return Path(SPOTDL_MUSIC_MOUNT) / path[len(root):]
 
-    The folder of the old layout (the bare uid) is always taken over — it moves
-    once and is gone. A folder carrying an OLDER name of the box (renamed since)
-    is taken over only by the pruner: instances with their own databases share
-    this disk and may name one uid differently, and two of them renaming one
-    folder back and forth would be worse than a stale name. Another instance
-    simply uses the folder it finds."""
-    folder = folder or NO_BOX
-    target = CACHE_DIR / folder
-    tag = folder_tag(folder)
-    if not CACHE_DIR.exists():
-        return target
-    for d in sorted(CACHE_DIR.iterdir()):
-        if not d.is_dir() or d == target or folder_tag(d.name) != tag:
+
+def fetch_views(static=False):
+    try:
+        r = requests.get(f"{O2M_URL}/api/offline/views",
+                         params={'static': 1} if static else {}, timeout=60)
+        r.raise_for_status()
+        return r.json() or {}
+    except Exception as e:
+        print(f"views fetch error: {e}")
+        return {}
+
+
+def view_files(views):
+    """The files a set of views lists, those present on this disk."""
+    out = []
+    for it in (views.get('items') or {}).values():
+        f = mopidy_uri_to_file(it.get('local_uri'))
+        if f is not None and f.is_file():
+            out.append(f)
+    return out
+
+
+_views_lock = threading.Lock()
+
+
+def write_views():
+    """Write the box playlists under Boxes/ and delete those no box has any
+    more. A playlist lists only what is on this disk, by a path relative to
+    itself, so the same file plays from any machine the folder is copied to.
+    Rewritten only when its content moved. The pruner only: it is the one
+    instance that changes this tree."""
+    if not PRUNE or not CACHE_DIR.exists():
+        return
+    with _views_lock:     # three threads end a batch with this
+        _write_views(fetch_views())
+
+
+def _write_views(views):
+    if 'playlists' not in views:       # o2m did not answer: delete nothing
+        return
+    items = views.get('items') or {}
+    wanted, written = set(), 0
+    for path, uris in views['playlists'].items():
+        target = BOXES_DIR / (path + '.m3u8')
+        lines = ['#EXTM3U']
+        for u in uris:
+            it = items.get(u) or {}
+            f = mopidy_uri_to_file(it.get('local_uri'))
+            if f is None or not f.is_file():
+                continue
+            lines.append(f"#EXTINF:{int(it.get('seconds') or 0) or -1},{it.get('title') or f.stem}")
+            lines.append(os.path.relpath(f, target.parent))
+        if len(lines) == 1:
             continue
-        if d.name != tag and not PRUNE:
-            if not target.exists():
-                return d
-            continue
-        with _prune_lock:
-            if not target.exists():
+        wanted.add(target)
+        text = '\n'.join(lines) + '\n'
+        try:
+            if target.is_file() and target.read_text(encoding='utf-8') == text:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding='utf-8')
+            written += 1
+        except OSError as e:
+            print(f"  view {path}: {e}")
+    removed = 0
+    if BOXES_DIR.exists():
+        for f in BOXES_DIR.rglob('*.m3u8'):
+            if f not in wanted:
                 try:
-                    d.rename(target)
-                    print(f"Folder {d.name} -> {target.name}")
-                    sync_downloaded_files(target)
-                    continue
-                except OSError as e:
-                    print(f"  rename {d.name}: {e}")
-            moved = 0
-            for f in list(d.iterdir()):
-                if f.is_file():
-                    moved += relocate(f, target / f.name,
-                                      extract_spotify_uri_from_mp3(f) if f.suffix == '.mp3' else None)
-            print(f"Folder {d.name}: {moved} file(s) merged into {target.name}")
-    return target
+                    f.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+    if written or removed:
+        print(f"Box views: {written} written, {removed} removed, {len(wanted)} in all")
 
 
 def placements(files):
@@ -521,40 +577,27 @@ def placements(files):
 
 
 def reorganize_cache():
-    """Bring a cache laid out the old way to the current one, once per start.
+    """Bring a cache laid out another way to the current one, once per start.
 
-    Box folders get their names (`04463DD2204B80` -> `Auto music [04463DD2204B80]`),
-    `ondemand/` and `spoken/` are emptied into the folder of the box queueing
-    each item now (else `No box/`), and every file this database knows is
-    renamed `title - album` / `title - channel [tag]`. Idempotent: a file
-    already in place is not touched, so a later start costs one listing. A file
-    o2m does not know (another instance's database) keeps its name. The pruner
-    only, like every other change to a shared tree."""
+    Every file this database knows is moved to its place (`Library/...`,
+    `Podcasts/...`, `Videos/...`) through POST /api/offline/placement and
+    registered there; the box folders, `ondemand/` and `spoken/` of the
+    earlier layouts empty out and go. Idempotent: a file in place is not
+    touched. A file o2m does not know (another instance's database) stays
+    where it is and ages out with the expiry. The pruner only, like every
+    other change to a shared tree."""
     if not PRUNE or not CACHE_DIR.exists():
         return
-    try:
-        r = requests.get(f"{O2M_URL}/api/box_favorites", params={'all': 1}, timeout=30)
-        r.raise_for_status()
-        boxes = r.json() if isinstance(r.json(), list) else []
-    except Exception as e:
-        print(f"reorganize: box list error: {e}")
-        boxes = []
-    by_tag = {folder_tag(b['cache_folder']): b['cache_folder']
-              for b in boxes if b.get('cache_folder')}
-    for d in sorted(CACHE_DIR.iterdir()):
-        if d.is_dir() and folder_tag(d.name) in by_tag and d.name != by_tag[folder_tag(d.name)]:
-            folder_dir(by_tag[folder_tag(d.name)])
-
     files = [f for f, _s, _m in cache_entries()]
     moved = 0
     with _prune_lock:
         for f, p in placements(files).items():
-            parent = f.parent
-            if parent == CACHE_DIR or parent.name in (ONDEMAND_DIRNAME, SPOKEN_DIRNAME):
-                parent = CACHE_DIR / (p.get('box_folder') or NO_BOX)
-            stem = p.get('file') or f.stem
-            moved += relocate(f, parent / (stem + f.suffix.lower()), p.get('uri'))
+            if not p.get('folder') or not p.get('file'):
+                continue
+            moved += relocate(f, CACHE_DIR / p['folder'] / (p['file'] + f.suffix.lower()),
+                              p.get('uri'))
     print(f"Reorganized the cache: {moved} of {len(files)} file(s) moved or renamed")
+    write_views()
     remove_empty_dirs(min_age=0)
 
 
@@ -648,21 +691,21 @@ def run_queue():
         uri = it.get('uri')
         if not uri:
             continue
-        # The folder of the box that queued it, else `No box` — o2m decides.
-        out_dir = folder_dir(it.get('folder') or NO_BOX)
+        out_dir = LIBRARY_DIR
         try:
             run_spotdl(uri, out_dir, timeout=QUEUE_TRACK_TIMEOUT)
         except Exception as e:
             print(f"  spotdl error for {uri}: {e}")
             queue_done(uri, ok=False, note=str(e)[:200])
             continue
-        sync_downloaded_files(out_dir)
+        sync_downloaded_files()
         ok = is_registered(uri)
         # A failure is recorded, not retried forever: the UI reads it to stop
         # showing the track as "on its way" when spotdl simply cannot find it.
         queue_done(uri, ok=ok, note=None if ok else 'not found or not registered')
         print(f"  {uri}: {'ok' if ok else 'FAILED'}")
     enforce_cache_cap()
+    write_views()
     return len(items)
 
 
@@ -769,13 +812,14 @@ def run_spoken_queue():
         uri = it.get('uri')
         if not uri:
             continue
-        # `Title - Channel [<tag>]`, in the folder of the box that queued it.
+        # `Podcasts/<channel>/<date> <title> [tag]`, as o2m names it.
         path = existing_spoken(uri) or download_spoken(
-            uri, folder_dir(it.get('folder') or NO_BOX), it.get('file') or None)
+            uri, CACHE_DIR / (it.get('folder') or 'Podcasts'), it.get('file') or None)
         ok = bool(path) and register_local_track(uri, file_to_mopidy_uri(path)) and is_held(uri)
         queue_done(uri, ok=ok, note=None if ok else 'download or registration failed')
         print(f"  {uri[:100]}: {'ok ' + human_size(path.stat().st_size) if ok else 'FAILED'}")
     enforce_cache_cap()
+    write_views()
     return len(items)
 
 

@@ -3,7 +3,6 @@ import logging, subprocess, os, re, spotipy, json, threading, requests, contextl
 from mopidyapi import MopidyAPI
 from o2m_core import util
 from o2m_core import virtualbox
-from o2m_core import cachelayout
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
 from o2m_core import spotifyauth
@@ -714,8 +713,6 @@ if __name__ == "__main__":
                 b['kind'] = kinds.get(o2mHandler._box_category(b.get('data'), b.get('option_type')), 'library')
             except Exception:
                 b['kind'] = 'library'
-            # The box's folder in the offline cache (spotdl's nightly pass).
-            b['cache_folder'] = cachelayout.box_folder(b.get('description'), b.get('uid'))
         return (boxes)
 
     # ── Activating an OBJECT (album, artist) the way a box is activated ──
@@ -1399,7 +1396,6 @@ if __name__ == "__main__":
             'favorite': box.favorite,
             'public': box.public,
             'image_url': box.image_url,
-            'cache_folder': cachelayout.box_folder(box.description, box.uid),
         })
 
     BOX_OPTION_TYPES = ['library', 'favorites', 'new', 'incoming', 'hidden', 'trash', 'podcast', 'info']
@@ -3286,12 +3282,11 @@ if __name__ == "__main__":
         return out
 
     def _cache_place(raw, canon, spoken):
-        """Where an item sits in the offline cache, or would: `folder` and `file`
-        (the name without its extension), o2m_core/cachelayout.py. A file the
-        server holds answers with where it IS, so the device's folder copy
-        reproduces the server's tree; otherwise with the folder of the box that
-        queued it and the name it will be given."""
-        from o2m_core import cachelayout, offline
+        """Where an item's file sits in the offline cache, or will: `folder`
+        (under the cache root) and `file` (the name without its extension) —
+        o2m_core/cachelayout.py. A file the server holds answers with where it
+        IS, so the device's folder copy reproduces the server's tree."""
+        from o2m_core import offline
         try:
             path = offline.local_file_for(raw if raw.startswith('file:') else canon,
                                           db=o2mHandler.dbHandler, config=o2mConf)
@@ -3300,11 +3295,11 @@ if __name__ == "__main__":
         root = os.path.realpath(os.path.join(offline.MUSIC_MOUNT, 'cache'))
         if path and path.startswith(root + os.sep):
             rel = os.path.relpath(path, root)
-            return {'folder': os.path.dirname(rel) or cachelayout.NO_BOX,
+            return {'folder': os.path.dirname(rel),
                     'file': os.path.splitext(os.path.basename(rel))[0]}
-        title, second = o2mHandler.dbHandler.item_names(canon)
-        return {'folder': o2mHandler.cache_folder_for(canon),
-                'file': cachelayout.file_stem(title, second, canon if spoken else None)}
+        folder, stem = o2mHandler.dbHandler.cache_place(
+            canon, spoken=spoken, video=spoken and not canon.startswith('podcast+'))
+        return {'folder': folder, 'file': stem}
 
     @api.route('/api/offline/meta', methods=['POST'])
     def api_offline_meta():
@@ -3694,11 +3689,10 @@ if __name__ == "__main__":
     @api.route('/api/offline/placement', methods=['POST'])
     def api_offline_placement():
         """For files already in the cache (`local_uris`, as registered): the item
-        each one stands for, the name it should carry and the folder of the box
-        queueing it now (`box_folder`). What spotdl reads to tidy a cache laid
-        out the old way. A file this database does not know is left out."""
+        each one stands for and the place it should have (`folder` under the
+        cache root, `file` without extension). What spotdl reads to tidy a cache
+        laid out another way. A file this database does not know is left out."""
         from flask import jsonify
-        from o2m_core import cachelayout
         data = request.get_json(silent=True) or {}
         out = {}
         for lu in [u for u in (data.get('local_uris') or []) if isinstance(u, str) and u][:500]:
@@ -3707,15 +3701,26 @@ if __name__ == "__main__":
                 if not canon or canon == lu:
                     continue
                 spoken = o2mHandler._is_spoken_uri(canon)
-                title, second = o2mHandler.dbHandler.item_names(canon)
-                if not title:
-                    continue
-                out[lu] = {'uri': canon,
-                           'file': cachelayout.file_stem(title, second, canon if spoken else None),
-                           'box_folder': o2mHandler.cache_folder_for(canon)}
+                folder, stem = o2mHandler.dbHandler.cache_place(
+                    canon, spoken=spoken, video=spoken and not canon.startswith('podcast+'))
+                out[lu] = {'uri': canon, 'folder': folder, 'file': stem}
             except Exception as e:
                 print(f"api_offline_placement({lu}): {e}")
         return jsonify({'items': out})
+
+    @api.route('/api/offline/views')
+    def api_offline_views():
+        """The box views of the offline cache: `.m3u8` playlists under Boxes/,
+        one per box, included box and source, over what this pool holds
+        (DatabaseHandler.cache_views). spotdl writes them on the server's disk,
+        the page in the device's folder copy."""
+        from flask import jsonify
+        try:
+            return jsonify(o2mHandler.dbHandler.cache_views(
+                static_only=request.args.get('static') == '1'))
+        except Exception as e:
+            print(f"api_offline_views: {e}")
+            return jsonify({'playlists': {}, 'items': {}, 'error': str(e)}), 500
 
     @api.route('/api/offline/finished', methods=['POST'])
     def api_offline_finished():

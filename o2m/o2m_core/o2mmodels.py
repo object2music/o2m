@@ -471,6 +471,24 @@ class LocalFile(BaseModel):
         primary_key = CompositeKey('pool', 'uri')
 
 
+class CacheMembership(BaseModel):
+    """One item served by one box, from one source — what the offline cache's
+    box views are written from (o2m_core/cachelayout.py, scenario B).
+
+    A file lives ONCE in the cache (`Library/Artist/Album/…`); which boxes hold
+    it is a graph, not a tree, so it is said by `.m3u8` playlists under
+    `Boxes/`, and this table is what they list. `path` is the playlist's place:
+    the box chain as folders (an included box under the box that included it)
+    and the source last — `Auto music [A]/Chansons [C]/Playlist X`, or the box
+    chain alone when the line names no source. Accumulates: a box holds what it
+    ever served that is still in the cache; the expiry of the FILE is what makes
+    an item leave every view."""
+    key = CharField(primary_key=True)                  # sha1(uri + '\n' + path)
+    uri = CharField(index=True)
+    path = TextField()
+    served_at = TimestampField(null=True, utc=True)
+
+
 class CacheMeta(BaseModel):
     """Key/value store for cache health metrics and schema versioning.
     Reserved key: 'schema_version' (value_int = current schema version).
@@ -983,7 +1001,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 36
+SCHEMA_VERSION = 37
 
 def _migration_v36(migrator):
     """Per-pool offline queue and file registry — see OfflineClaim / LocalFile.
@@ -996,6 +1014,12 @@ def _migration_v36(migrator):
     `OfflineRequest` and `Track.local_uri`, which is what every existing row is.
     """
     db.create_tables([OfflineClaim, LocalFile], safe=True)
+
+
+def _migration_v37(migrator):
+    """The offline cache's box views — see CacheMembership. A new table: an
+    older image cannot see it and loses nothing."""
+    db.create_tables([CacheMembership], safe=True)
 
 
 _MIGRATIONS = [
@@ -1035,6 +1059,7 @@ _MIGRATIONS = [
     (34, "podcastchannel_box_index", _migration_v34),
     (35, "box_type_radio", _migration_v35),
     (36, "offline_pool_tables", _migration_v36),
+    (37, "cache_membership_table", _migration_v37),
 ]
 
 

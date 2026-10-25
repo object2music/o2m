@@ -1,38 +1,44 @@
-"""Where a downloaded file lives in the offline cache, and what it is called.
+"""Where a downloaded file lives in the offline cache, and how the boxes see it.
 
-The server's cache (`<music>/cache`, filled by spotdl) and the device's folder
-copy (Settings → Offline → Copy to a folder) are laid out by this one module,
-so the two read the same:
+One file per item, filed by what it IS; the boxes are playlists over them:
 
     cache/
-      Auto music [04463DD2204B80]/
-        Dans Un Camion - Le Vent Dans Les Plaines.mp3
-        Le journal de 8h - France Inter [3fa2c1d9e04b7a6c1f2e].mp3
-      No box/
-        …                      what a device asked for outside any box
+      Library/Brigitte Fontaine/Comme a la radio/03 Dans un camion.mp3
+      Podcasts/France Inter - Le journal/2026-10-24 Le journal de 8h [3fa2c1d9e04b7a6c1f2e].mp3
+      Videos/Arte/2026-10-20 Un film [9b1e…].m4a
+      Boxes/Auto music [04AD43D2204B80]/All.m3u8
+      Boxes/Auto music [04AD43D2204B80]/Favorites.m3u8
+      Boxes/Auto music [04AD43D2204B80]/Chansons [04D444D2204B80]/All.m3u8
+      Boxes/Auto music [04AD43D2204B80]/Chansons [04D444D2204B80]/Playlist X.m3u8
 
-* **A folder per box, named first, id last.** The name is what a person looks
-  for; the uid is what the code finds the folder by (`folder_matches`), so a
-  renamed box keeps its folder and two boxes of one name never share one. The
-  folders used to be the bare uid (`04463DD2204B80`), plus `ondemand/` (music
-  a device asked for) and `spoken/` (episodes and videos a device asked for):
-  three ways of saying "what the cache holds" that only the code could read.
-* **A file is `title - album` for music, `title - channel` for an episode or a
-  video.** A spoken item also ends with a hash of its uri in brackets: the same
-  name is the same file for every instance sharing the disk, each with its own
-  database (`spoken_tag`), and a title alone does not identify an episode — a
-  daily news bulletin has one title every day.
+Why not a folder per box holding its files (tried first, 2026-10-25): which
+boxes hold a track is a GRAPH — "Dans un camion" is in Favorites, in a
+playlist, in an included box — and a tree can only put it in one place. Every
+other place either copies the file or does not show it, and the file moves
+whenever a box changes, each move a re-registration other databases on the
+same disk do not see. Filed by artist and album the path never changes, and
+the `.m3u8` views can go as deep as the boxes do: box › included box › source.
 
-Pure: no database, no filesystem. The callers (main.py, spotdl/cache.py through
-the API) supply the names.
+Both the server's cache and the device's folder copy follow this module: the
+names are computed here and travel through the API, never re-derived.
+
+Pure: no database, no filesystem.
 """
 
 from __future__ import annotations
 
 import hashlib
+import posixpath
 import re
 
-NO_BOX = 'No box'
+LIBRARY = 'Library'
+PODCASTS = 'Podcasts'
+VIDEOS = 'Videos'
+BOXES = 'Boxes'
+ALL = 'All'                       # a box folder's playlist of everything below it
+UNKNOWN_ARTIST = 'Unknown artist'
+UNKNOWN_ALBUM = 'Unknown album'
+UNKNOWN_CHANNEL = 'Unknown channel'
 
 # Refused by at least one of the filesystems a copy lands on (ext4 refuses only
 # '/', but the device folder may be FAT or NTFS, and a ':' is refused there).
@@ -48,26 +54,25 @@ def safe_name(text, limit=100) -> str:
     return s[:limit].rstrip(' .')
 
 
-def box_folder(name, uid) -> str:
-    """`Name [uid]`, or the uid alone when the box has no name of its own."""
-    tag = safe_name(uid, 80)
-    if not tag:
-        return NO_BOX
-    label = safe_name(name, 80)
-    return f"{label} [{tag}]" if label and label != tag else tag
+# ── The files ─────────────────────────────────────────────────────────────────
 
-
-def folder_matches(folder, uid) -> bool:
-    """Is `folder` the folder of this box, whatever name it carries? A bare uid
-    is the layout before names were added, and still that box's folder."""
-    tag = safe_name(uid, 80)
-    return bool(tag) and (folder == tag or folder.endswith(f' [{tag}]'))
+def music_place(artist, album, number, title):
+    """(folder, stem) of a music file: `Library/<album artist>/<album>`,
+    `<NN> <title>` — the shape spotdl's own template gives a new download."""
+    folder = posixpath.join(LIBRARY, safe_name(artist, 80) or UNKNOWN_ARTIST,
+                            safe_name(album, 100) or UNKNOWN_ALBUM)
+    title = safe_name(title, 150) or 'Track'
+    try:
+        n = int(number or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return folder, (f"{n:02d} {title}" if n > 0 else title)
 
 
 def spoken_tag(uri) -> str:
     """The 20 hex digits a spoken file ends with. Deterministic, so an instance
     with its own database finds the file another instance fetched for the same
-    item. It was the whole file name before (`<tag>.mp3`)."""
+    item — and a daily bulletin has one title every day."""
     return hashlib.sha1(str(uri).encode('utf-8')).hexdigest()[:20]
 
 
@@ -80,12 +85,106 @@ def tag_of(stem) -> str:
     return m.group(1) if m else ''
 
 
-def file_stem(title, second, spoken_uri=None) -> str:
-    """The file name without its extension: `title - album` for music,
-    `title - channel [tag]` for a spoken item (pass its uri)."""
-    parts = [p for p in (safe_name(title, 120), safe_name(second, 80)) if p]
-    base = ' - '.join(parts)
-    if spoken_uri:
-        tag = spoken_tag(spoken_uri)
-        return f"{base} [{tag}]" if base else tag
-    return base or 'track'
+def spoken_place(uri, channel, published, title, video=False):
+    """(folder, stem) of an episode (`Podcasts/<channel>`) or a video
+    (`Videos/<channel>`), `<YYYY-MM-DD> <title> [tag]`."""
+    folder = posixpath.join(VIDEOS if video else PODCASTS,
+                            safe_name(channel, 100) or UNKNOWN_CHANNEL)
+    day = (published or '')[:10] if re.match(r'\d{4}-\d\d-\d\d', published or '') else ''
+    parts = [p for p in (day, safe_name(title, 150)) if p]
+    base = ' '.join(parts)
+    tag = spoken_tag(uri)
+    return folder, (f"{base} [{tag}]" if base else tag)
+
+
+# ── The box views ─────────────────────────────────────────────────────────────
+
+def box_folder(name, uid) -> str:
+    """`Name [uid]`, or the uid alone when the box has no name of its own. The
+    uid makes two boxes of one name two folders."""
+    tag = safe_name(uid, 80)
+    if not tag:
+        return ''
+    label = safe_name(name, 80)
+    return f"{label} [{tag}]" if label and label != tag else tag
+
+
+# The AUTO mix's buckets, by the library_link its add_tracks calls pass.
+_BUCKET_LINKS = {
+    'o2m:favorites': 'Favorites', 'spotify:favorites': 'Favorites',
+    'o2m:history': 'Habits', 'o2m:podcast': 'Podcasts',
+    'spotify:album': 'Albums & artists', 'spotify:artist': 'Albums & artists',
+}
+_BUCKET_TYPES = {'favorites': 'Favorites', 'incoming': 'Incoming', 'new': 'New'}
+
+
+def source_label(library_link, bucket='', display='') -> str:
+    """The last level of a view: where in the box the item came from.
+
+    An AUTO bucket by its name (Favorites, Incoming, New, Habits…), a tag as
+    `Tag <name>`, a playlist, album or artist by the name the details panel
+    already shows (`display`); a recommendation as Recommendations. '' when
+    nothing names one — the item is then only in its box's All."""
+    link = library_link or ''
+    if display == 'Reco':
+        return 'Recommendations'
+    if link in _BUCKET_LINKS:
+        return _BUCKET_LINKS[link]
+    if bucket in _BUCKET_TYPES and not link.startswith('spotify:playlist:'):
+        return _BUCKET_TYPES[bucket]
+    if link.startswith('tag:'):
+        return safe_name('Tag ' + link[4:], 100)
+    name = display or ''
+    # get_library_display may answer `playlist:<name>` or a bare id when Spotify
+    # cannot name it: the type prefix is noise in a file name.
+    name = re.sub(r'^(playlist|album|artist):', '', name).strip()
+    if not name or name.startswith('spotify:'):
+        return ''
+    # A trailing [..] is how a BOX folder is told from a source (playlists()):
+    # "Best of [2020]" must not read as a box.
+    return safe_name(re.sub(r'\[([^\[\]]*)\]$', r'(\1)', name), 100)
+
+
+def view_path(chain, source='') -> str:
+    """Where a membership's playlist sits under Boxes/: the box chain as
+    folders (outermost first, each `box_folder`), then the source. A chain
+    with no source is the box itself — its All."""
+    parts = [c for c in chain if c]
+    if not parts:
+        return ''
+    if source and source != ALL:
+        parts.append(safe_name(source, 100))
+    return posixpath.join(*parts)
+
+
+def playlists(memberships):
+    """{playlist path under Boxes/ (no extension): [item keys]} for a set of
+    (view_path, key) pairs, in the order given.
+
+    A box folder's `All` lists everything at or below it, so a box that
+    includes others lists their items too: All of Auto music is what Auto
+    music played. A source path is its own playlist, and also feeds the All of
+    each box above it. A box chain alone (no source) feeds only Alls.
+
+    Whether the last part of a path is a box or a source is told by the uid in
+    brackets — the one thing a source label cannot end with, since a box
+    folder is the only place `box_folder` writes one."""
+    out = {}
+
+    def add(path, key):
+        lst = out.setdefault(path, [])
+        if key not in lst:
+            lst.append(key)
+
+    for path, key in memberships:
+        parts = path.split('/')
+        boxes = parts if _is_box(parts[-1]) else parts[:-1]
+        if len(boxes) < len(parts):
+            add(path, key)
+        for i in range(1, len(boxes) + 1):
+            add(posixpath.join(*boxes[:i], ALL), key)
+    return out
+
+
+def _is_box(part) -> bool:
+    return bool(re.search(r"\[[^\[\]]+\]$", part or ""))

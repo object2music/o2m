@@ -2653,28 +2653,136 @@ class DatabaseHandler():
         from o2m_core import offline
         return offline.is_shared_pool()
 
-    def item_names(self, uri):
-        """(title, album or channel) of one item, '' where unknown — what its file
-        is named after in the offline cache (o2m_core/cachelayout.py)."""
-        title, second = '', ''
+    def cache_place(self, uri, spoken=False, video=False):
+        """(folder, stem) an item's file is given in the offline cache — the
+        facts it is named after, read here, the naming in o2m_core/cachelayout.py."""
+        from o2m_core import cachelayout
+        row, album, artist, channel = None, None, '', ''
         try:
-            row = (Track.select(Track.name, Track.album_id, Track.channel_id)
+            row = (Track.select(Track.name, Track.album_id, Track.channel_id,
+                                Track.track_number, Track.published_at)
                    .where(Track.uri == uri).first())
-            if row is None:
-                return title, second
-            title = row.name or ''
-            if row.album_id:
-                alb = Album.select(Album.name).where(Album.id == row.album_id).first()
-                second = (alb.name if alb else '') or ''
-            if not second:
-                ids = self._channels_for(uri) or ([row.channel_id] if row.channel_id else [])
+            if row is not None and row.album_id and not spoken:
+                album = Album.select(Album.name, Album.artist_name).where(Album.id == row.album_id).first()
+            if row is not None and not spoken and not (album and album.artist_name):
+                a = (Artist.select(Artist.name)
+                     .join(TrackArtist, on=(TrackArtist.artist_id == Artist.id))
+                     .where(TrackArtist.track_uri == uri)
+                     .order_by(TrackArtist.position).first())
+                artist = a.name if a else ''
+            if spoken:
+                ids = self._channels_for(uri) or ([row.channel_id] if row is not None and row.channel_id else [])
                 if ids:
                     ch = (PodcastChannel.select(PodcastChannel.title)
                           .where(PodcastChannel.id.in_(ids)).first())
-                    second = (ch.title if ch else '') or ''
+                    channel = (ch.title if ch else '') or ''
         except Exception as e:
-            print(f"item_names({uri}): {e}")
-        return title, second
+            print(f"cache_place({uri}): {e}")
+        title = (row.name if row is not None else '') or ''
+        if spoken:
+            return cachelayout.spoken_place(uri, channel, getattr(row, 'published_at', '') or '',
+                                            title, video=video)
+        return cachelayout.music_place((album.artist_name if album else '') or artist,
+                                       (album.name if album else '') or '',
+                                       getattr(row, 'track_number', 0), title)
+
+    def record_cache_membership(self, pairs):
+        """(uri, view path) pairs a fill served — CacheMembership. Re-serving
+        moves `served_at`, which orders a box's playlists newest first."""
+        from o2m_core.o2mmodels import CacheMembership
+        import hashlib
+        now = datetime.datetime.utcnow()
+        rows = {}
+        for uri, path in pairs:
+            if uri and path:
+                key = hashlib.sha1(f"{uri}\n{path}".encode('utf-8')).hexdigest()
+                rows[key] = {'key': key, 'uri': uri, 'path': path, 'served_at': now}
+        if not rows:
+            return 0
+        (CacheMembership.insert_many(list(rows.values()))
+         .on_conflict(update={CacheMembership.served_at: now}).execute())
+        return len(rows)
+
+    def _held_files(self):
+        """{uri: local_uri} of everything this pool holds a file for."""
+        if not self._pool_is_shared():
+            return {r.uri: r.path for r in LocalFile.select(LocalFile.uri, LocalFile.path)
+                    .where(LocalFile.pool == self._pool) if r.path}
+        return {r.uri: r.local_uri for r in Track.select(Track.uri, Track.local_uri)
+                .where(Track.local_uri.is_null(False) & (Track.local_uri != '')) if r.local_uri}
+
+    def _static_memberships(self, held):
+        """(view path, uri) for the held tracks a PINNED box names outright — a
+        playlist, an album, an artist line. What the nightly pass downloads for
+        the box: it belongs to the box whether or not it has been served yet."""
+        from o2m_core import cachelayout
+        out = []
+        for box in Box.select(Box.uid, Box.description, Box.data).where(Box.favorite == 1):
+            folder = cachelayout.box_folder(box.description, box.uid)
+            for _now, line in boxdirectives.iter_lines(box.data or ''):
+                parts = line.split(':')
+                if len(parts) < 3 or parts[0] != 'spotify':
+                    continue
+                kind, cid = parts[1], parts[2]
+                try:
+                    if kind == 'playlist':
+                        pl = Playlist.get_or_none(Playlist.id == cid)
+                        name = pl.name if pl else ''
+                        uris = [r.track_uri for r in PlaylistTrack.select(PlaylistTrack.track_uri)
+                                .where(PlaylistTrack.playlist_id == cid).order_by(PlaylistTrack.position)]
+                    elif kind == 'album':
+                        al = Album.get_or_none(Album.id == cid)
+                        name = al.name if al else ''
+                        uris = [r.track_uri for r in AlbumTrack.select(AlbumTrack.track_uri)
+                                .where(AlbumTrack.album_id == cid).order_by(AlbumTrack.position)]
+                    elif kind == 'artist':
+                        ar = Artist.get_or_none(Artist.id == cid)
+                        name = ar.name if ar else ''
+                        uris = [r.track_uri for r in TrackArtist.select(TrackArtist.track_uri)
+                                .where(TrackArtist.artist_id == cid)]
+                    elif kind == 'track':
+                        name, uris = '', [line]
+                    else:
+                        continue
+                except Exception as e:
+                    print(f"_static_memberships({line}): {e}")
+                    continue
+                path = cachelayout.view_path([folder], cachelayout.source_label('', '', name))
+                out.extend((path, u) for u in uris if u in held)
+        return out
+
+    def cache_views(self, static_only=False):
+        """The offline cache's box views: {'playlists': {path under Boxes/: [uri]},
+        'items': {uri: {local_uri, title, seconds}}} — every playlist over what
+        THIS pool holds. Served first is listed first; a box's static lines
+        (what the nightly pass fetched for it) after what it served.
+
+        `static_only`: the static lines alone — what spotdl stamps as still
+        wanted before a nightly pass, since what a box once SERVED accumulates
+        and stamping it would keep every file for ever."""
+        from o2m_core import cachelayout
+        from o2m_core.o2mmodels import CacheMembership
+        held = self._held_files()
+        pairs = []
+        uris = [] if static_only else list(held)
+        for i in range(0, len(uris), 500):
+            for m in (CacheMembership.select(CacheMembership.uri, CacheMembership.path)
+                      .where(CacheMembership.uri.in_(uris[i:i + 500]))
+                      .order_by(CacheMembership.served_at.desc())):
+                pairs.append((m.path, m.uri))
+        pairs.extend(self._static_memberships(held))
+        lists = cachelayout.playlists(pairs)
+        listed = {u for lst in lists.values() for u in lst}
+        items = {}
+        listed = list(listed)
+        for i in range(0, len(listed), 500):
+            for t in (Track.select(Track.uri, Track.name, Track.duration_ms)
+                      .where(Track.uri.in_(listed[i:i + 500]))):
+                items[t.uri] = {'local_uri': held.get(t.uri), 'title': t.name or '',
+                                'seconds': int((t.duration_ms or 0) / 1000)}
+        for u in listed:
+            items.setdefault(u, {'local_uri': held.get(u), 'title': '', 'seconds': 0})
+        return {'playlists': lists, 'items': items}
 
     def get_local_uri(self, spotify_uri):
         """Return the local file URI for a spotify:track: URI, or None.

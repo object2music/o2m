@@ -97,9 +97,10 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline**: `OfflineRequest` (a track a device wants and the server has no file for — the hand-off to spotdl; see the offline section) For an instance with its own disk,
     `OfflineClaim` and `LocalFile` take over, keyed `(pool, uri)` — see *One cache for
     every instance*.
+  - **Offline views**: `CacheMembership` (an item served by a box, from a source — see *The cache's layout*).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **36**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **37**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -1614,35 +1615,47 @@ the host. `local_uri` holds Mopidy's path (`/app/Music/…`), so every path is r
 **`docker-compose.yml` is skip-worktree (one per instance), so this line has to be added
 by hand on every instance that wants the feature.**
 
-### The cache's layout: a folder per box, files named after what they are
+### The cache's layout: one file per item, a playlist per box
 `o2m_core/cachelayout.py` names everything, and the server's cache and the
 device's folder copy follow it alike (2026-10-25):
 
-    cache/Auto music [04463DD2204B80]/Dans Un Camion - Le Vent Dans Les Plaines.mp3
-    cache/Auto music [04463DD2204B80]/Le journal de 8h - France Inter [3fa2c1d9e04b7a6c1f2e].mp3
-    cache/No box/…        what a device asked for outside any box
+    cache/Library/Brigitte Fontaine/Comme à la radio/03 Dans un camion.mp3
+    cache/Podcasts/France Inter/2026-10-24 Le journal de 8h [3fa2c1d9e04b7a6c1f2e].mp3
+    cache/Videos/<channel>/…
+    cache/Boxes/Auto music [04AD…]/All.m3u8          everything the box holds
+    cache/Boxes/Auto music [04AD…]/Favorites.m3u8    a source: AUTO bucket, playlist, album, tag
+    cache/Boxes/Auto music [04AD…]/Chansons [04D4…]/All.m3u8   an included box, nested
 
-- **Folder `Name [uid]`**: found by the uid in its brackets, so a renamed box keeps
-  its folder; only the pruner renames one (instances with their own databases share
-  the disk and may name a uid differently). A request goes to the folder of the box
-  that queued the item in the tracklist (`cache_folder_for`), else `No box`.
-- **File `title - album`** (music, spotdl's template), **`title - channel [tag]`**
-  (episodes, videos): the tag is `sha1(uri)[:20]`, what another instance finds the
-  file by and what tells two bulletins of one title apart.
-- **Before**: bare-uid folders, `ondemand/` (music a device asked for), `spoken/`
-  (episodes and videos a device asked for, named by the tag alone), files
-  `Artist - Title`. `reorganize_cache()` (spotdl, pruner only, every start,
-  idempotent) moves them over through `POST /api/offline/placement` and re-registers
-  each file. spotdl runs with `--scan-for-songs`, so a renamed file is recognised by
-  the Spotify url in its tags and never downloaded again.
-- **Empty folders are removed** (`remove_empty_dirs`, pruner only, nightly; 10 min
-  of age, spotdl creating its folder before its first file), and on the device when
-  its last copy goes.
-- The names travel with the data: `cache_folder` on `/api/box_favorites` and
-  `/api/box_info`, `folder` / `file` on `/api/offline/queue`, `plan` and `meta`. A
-  file the server holds answers with where it IS, so the device's copy reproduces
-  the server's tree. Copies written flat before this keep their path (`file` on the
-  row).
+- **Why not a folder per box holding its files** (the first version, same day,
+  never applied): which boxes hold a track is a graph — a favourite is in
+  Favorites, in a playlist, in an included box — and a tree puts it in one place
+  only. Filed by what it is, a file never moves when a box changes, and the views
+  go as deep as the boxes do: box › included box › source.
+- **Files**: music `Library/<album artist>/<album>/<NN> <title>` (spotdl's
+  template, `--scan-for-songs` so a file renamed or moved is recognised by the
+  Spotify url in its tags and never downloaded again); episodes and videos
+  `Podcasts|Videos/<channel>/<date> <title> [tag]`, the tag `sha1(uri)[:20]`, what
+  another instance finds the file by and what tells two bulletins apart.
+- **Views**: `CacheMembership` (migration **v37**) records every (item, box chain,
+  source) a fill serves (`_note_membership`, written in the background), plus the
+  playlist / album / artist lines of the pinned boxes, read at view time — what the
+  nightly pass downloads for them. **A box holds what it ever served that is still
+  in the cache**: the expiry of the file is what takes an item out of every view.
+  `GET /api/offline/views` gives the playlists and their items; spotdl writes them
+  (`write_views`, pruner only, after every batch and nightly) and deletes those no
+  box has any more; the page writes the same into the device's copy, over the files
+  THAT copy holds (`offDirWriteViews`). Paths in a playlist are relative, so it plays
+  from wherever the folder is copied. `?static=1` is the pinned boxes' lines alone:
+  what a nightly pass stamps as still wanted — stamping what boxes once served
+  would keep every file for ever.
+- **Before**: bare-uid box folders, `ondemand/` (music a device asked for),
+  `spoken/` (episodes and videos a device asked for, named by the tag alone).
+  `reorganize_cache()` (spotdl, pruner only, every start, idempotent) moves every
+  file the database knows to its place through `POST /api/offline/placement` and
+  re-registers it; a file only another database knows stays and ages out.
+- **Empty folders are removed** (`remove_empty_dirs`, pruner only; 10 min of age,
+  spotdl creating a folder before its first file), and on the device when its last
+  file goes. Copies written there before this keep their path (`file` on the row).
 - spotdl/cache.py is baked into the spotdl image: a change there needs
   `docker compose build spotdl && docker compose up -d spotdl`, not a restart.
 

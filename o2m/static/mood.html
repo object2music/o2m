@@ -8127,15 +8127,16 @@ function _offSafe(s, n) {
   return String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ')
     .trim().slice(0, n);
 }
-/* Where the copy goes: `<Box name> [uid]/<title> - <album>.ext`, the layout of
-   the server's own cache, as the server names it (`folder` and `stem`, from
-   plan / meta — o2m_core/cachelayout.py). With no answer, the title and album
-   at the top of the folder. */
+/* Where the copy goes: the server cache's own layout, as the server names it
+   (`folder` and `stem`, from plan / meta — o2m_core/cachelayout.py):
+   `Library/<artist>/<album>/<NN> <title>.mp3`, `Podcasts/<channel>/…`. The boxes
+   are playlists over those files, under Boxes/ (offDirWriteViews). With no
+   answer, `title - album` at the top of the folder. */
 function offFileName(meta, type) {
   const base = _offSafe(meta.stem, 200)
     || _offSafe([meta.name, meta.album].filter(Boolean).join(' - '), 150)
     || _offSafe(meta.uri, 150) || 'track';
-  const folder = _offSafe(meta.folder, 120);
+  const folder = String(meta.folder || '').split('/').map(p => _offSafe(p, 120)).filter(Boolean).join('/');
   return (folder ? folder + '/' : '') + base + '.' + _offExt(type);
 }
 /* The flat `Artist - Title.ext` a copy was given before the folders: what a
@@ -8144,12 +8145,26 @@ function offFileNameFlat(meta, type) {
   return _offSafe([meta.artist, meta.name].filter(Boolean).join(' - ') || meta.uri || 'track', 150)
     + '.' + _offExt(type);
 }
-/* The folder handle a copy's path sits in, and its file name. */
+/* The folder handle a copy's path sits in, its file name, and the chain of
+   folders above it (root first) — what a deletion walks back up. */
 async function _offDirAt(root, path, create) {
   const parts = path.split('/'), name = parts.pop();
   let dir = root;
-  for (const p of parts) dir = await dir.getDirectoryHandle(p, { create });
-  return { dir, name, parents: parts };
+  const chain = [{ dir: root, name: '' }];
+  for (const p of parts) { dir = await dir.getDirectoryHandle(p, { create }); chain.push({ dir, name: p }); }
+  return { dir, name, chain };
+}
+/* Remove one file of the copy, then every folder it leaves empty — like the
+   server, which keeps no empty folder either. */
+async function _offDirUnlink(root, path) {
+  const at = await _offDirAt(root, path, false);
+  await at.dir.removeEntry(at.name);
+  for (let i = at.chain.length - 1; i > 0; i--) {
+    let empty = true;
+    for await (const _ of at.chain[i].dir.keys()) { empty = false; break; }
+    if (!empty) break;
+    await at.chain[i - 1].dir.removeEntry(at.chain[i].name);
+  }
 }
 /* Write one file into the folder; its name when it landed, '' otherwise. Silent
    on any failure. The name is kept on the inventory row, so the copy can be
@@ -8200,17 +8215,50 @@ async function offDirRemove(names) {
     return;
   }
   for (const n of names) {
-    try {
-      const at = await _offDirAt(h, n, false);
-      await at.dir.removeEntry(at.name);
-      // A box folder left empty goes too, like on the server.
-      if (at.parents.length) {
-        let empty = true;
-        for await (const _ of at.dir.keys()) { empty = false; break; }
-        if (empty) await h.removeEntry(at.parents[0], { recursive: false });
-      }
-    } catch (e) { /* not there */ }
+    try { await _offDirUnlink(h, n); } catch (e) { /* not there */ }
   }
+}
+
+/* The boxes, as playlists over what the copy holds: `Boxes/<box>/All.m3u8`,
+   `Boxes/<box>/<included box>/<source>.m3u8` — the same views the server writes
+   over its cache (GET /api/offline/views), each listing only the files THIS
+   copy holds, by a path relative to the playlist. A playlist no box has any
+   more is deleted (the names written are kept in o2m-offline-dir-views). */
+const OFF_DIR_VIEWS = 'o2m-offline-dir-views';
+async function offDirWriteViews() {
+  try {
+    const h = await offDirHandle();
+    if (!h || (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') return;
+    const r = await fetch(API + '/offline/views', {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(OFF_STALL_MS) : undefined });
+    if (!r.ok) return;
+    const v = await r.json();
+    if (!v || !v.playlists) return;
+    const inv = offInv(), byUri = {};
+    for (const [u, m] of Object.entries(inv)) {
+      if (!m.file) continue;
+      byUri[u] = m;
+      if (m.canon) byUri[m.canon] = m;
+    }
+    const before = new Set(_lsJson(OFF_DIR_VIEWS, [])), now = [];
+    for (const [path, uris] of Object.entries(v.playlists)) {
+      const rows = uris.map(u => byUri[u]).filter(Boolean);
+      if (!rows.length) continue;
+      const file = 'Boxes/' + path + '.m3u8';
+      const up = '../'.repeat(file.split('/').length - 1);
+      const text = '#EXTM3U\n' + rows.map(m =>
+        '#EXTINF:' + (Math.round((m.length || 0) / 1000) || -1) + ',' + (m.name || '') + '\n' + up + m.file
+      ).join('\n') + '\n';
+      try {
+        const at = await _offDirAt(h, file, true);
+        const w = await (await at.dir.getFileHandle(at.name, { create: true })).createWritable();
+        await w.write(new Blob([text], { type: 'audio/x-mpegurl' })); await w.close();
+        now.push(file); before.delete(file);
+      } catch (e) { /* best effort, like every write here */ }
+    }
+    for (const f of before) { try { await _offDirUnlink(h, f); } catch (e) {} }
+    try { localStorage.setItem(OFF_DIR_VIEWS, JSON.stringify(now)); } catch (e) {}
+  } catch (e) { /* the views are a convenience: never fail a pass over them */ }
 }
 async function offDirFlushPending() {
   const later = _lsJson(OFF_DIR_DEL, []);
@@ -8241,6 +8289,7 @@ async function offDirCopyAll() {
     let blob; try { blob = await offBlobGet(uri); } catch (e) { blob = null; }
     if (blob && await offDirWrite({ ...m, uri }, blob)) n++;
   }
+  await offDirWriteViews();
   return n;
 }
 
@@ -8607,6 +8656,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
   // Where the files can be seen. A page cannot open a folder of the computer,
   // so the message names it rather than linking to it.
   let dirNote = '';
+  if (OFF.copied) await offDirWriteViews();
   if (got) {
     const ds = await offDirState();
     if (OFF.copied) dirNote = ' · copied to the folder “' + ((await offDirHandle())?.name || '') + '”';
