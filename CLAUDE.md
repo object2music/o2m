@@ -1741,10 +1741,29 @@ of 12: the failure was the hammering, not the tracks.
 So `run_spotdl` captures spotdl's output, and a throttle marker in it raises
 `Throttled` instead of returning a failure: the row is left pending with its
 tries untouched, the batch stops, and the worker waits `SPOTDL_THROTTLE_WAIT`
-(300 s). Tracks are paced `SPOTDL_QUEUE_PAUSE` (10 s) apart. The same
-distinction the `web:` reader draws between a page that declined and a page that
-holds nothing, and the one `_playlist_is_gone` draws between a 404 and a 403 —
-only definitive proof may remove something nobody asked to remove.
+(300 s), **doubling while the refusals follow one another** up to
+`SPOTDL_THROTTLE_MAX` (1800 s) and back to the first wait on the next track that
+lands. Tracks are paced `SPOTDL_QUEUE_PAUSE` (10 s) apart. The same distinction
+the `web:` reader draws between a page that declined and a page that holds
+nothing, and the one `_playlist_is_gone` draws between a 404 and a 403 — only
+definitive proof may remove something nobody asked to remove.
+
+**A run asks YouTube Music several times, which is why the rate looks so much
+worse than the API's.** One call by hand answered 6 of 6 and 7 of 8 while five
+consecutive `spotdl download` runs failed: a run makes its own check, then the
+search, so at roughly one refusal in eight calls a whole run fails about half
+the time. Measured, not assumed — and two plausible culprits were ruled out on
+the way. A `~/.spotdl/config.json` dated January 2023 (`load_config: true`,
+`audio_providers: ["youtube-music"]`) is not the cause: with `HOME` isolated the
+same `JSONDecodeError` comes back, only later, after `Processing query` — the
+refusal lands on whichever call draws it. And `--audio youtube`, which would
+skip the check altogether, walks into the other wall instead (`Requested format
+is not available`, the missing JS runtime above), so it is no escape.
+
+**`spotdl` exits 0 on a song it could not fetch** — three tracks came back from a
+49-second run with code 0, no file and not a word in the journal. The output is
+therefore printed whatever the exit code: at `--log-level WARNING` a clean
+download says nothing, so any output at all is the reason for something.
 
 Two consequences to keep in mind:
 - **Exactly one instance may prune a shared cache.** The expiry and the size cap delete

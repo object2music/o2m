@@ -50,6 +50,14 @@ QUEUE_TRACK_TIMEOUT = int(os.environ.get('SPOTDL_QUEUE_TIMEOUT', '300'))
 # instead of a trackload of rows.
 QUEUE_TRACK_PAUSE = int(os.environ.get('SPOTDL_QUEUE_PAUSE', '10'))
 QUEUE_THROTTLE_WAIT = int(os.environ.get('SPOTDL_THROTTLE_WAIT', '300'))
+QUEUE_THROTTLE_MAX = int(os.environ.get('SPOTDL_THROTTLE_MAX', '1800'))
+# Doubles while the refusals follow one another, back to the first wait on the
+# next track that lands. One run asks YouTube Music several times — its own
+# check, then the search — so at roughly one refusal in eight calls a whole run
+# fails about half the time, and under load nearly always; a fixed wait was
+# measured going round three times on the same track. The pressure is the cause,
+# so the answer is to take it off.
+_throttles = 0
 # One file per item, filed by what it is; the boxes are playlists over them
 # (o2m_core/cachelayout.py):
 #   Library/<album artist>/<album>/<NN> <title>.mp3   music, spotdl's template
@@ -734,6 +742,7 @@ def run_queue():
     song therefore fails honestly instead of being served to a device as the
     track it wanted.
     """
+    global _throttles
     items = fetch_queue()
     if not items:
         return 0
@@ -751,8 +760,11 @@ def run_queue():
             # The row is left exactly as it was — still pending, its tries
             # untouched — and the batch stops: asking again at once is how the
             # refusal was earned.
-            print(f"  {uri}: throttled ({e}); backing off {QUEUE_THROTTLE_WAIT}s")
-            time.sleep(QUEUE_THROTTLE_WAIT)
+            _throttles += 1
+            wait = min(QUEUE_THROTTLE_WAIT * 2 ** (_throttles - 1), QUEUE_THROTTLE_MAX)
+            print(f"  {uri}: throttled ({e}); backing off {wait}s "
+                  f"(refusal {_throttles} in a row)")
+            time.sleep(wait)
             break
         except Exception as e:
             print(f"  spotdl error for {uri}: {e}")
@@ -762,6 +774,8 @@ def run_queue():
         ok = is_registered(uri)
         # A failure is recorded, not retried forever: the UI reads it to stop
         # showing the track as "on its way" when spotdl simply cannot find it.
+        if ok:
+            _throttles = 0     # the pressure is off; start the next wait small
         queue_done(uri, ok=ok, note=None if ok else 'not found or not registered')
         print(f"  {uri}: {'ok' if ok else 'FAILED'}")
     enforce_cache_cap()
