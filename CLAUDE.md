@@ -1648,6 +1648,36 @@ device's folder copy follow it alike (2026-10-25):
   from wherever the folder is copied. `?static=1` is the pinned boxes' lines alone:
   what a nightly pass stamps as still wanted — stamping what boxes once served
   would keep every file for ever.
+- **`index.json`: what each item IS, so a cache can be played with no database**
+  (2026-10-25). The views say what a box holds and in which order, and that is
+  half of what playing it takes — the other half is the item's title, its
+  length, where the server left off in it, its channel's pre-roll skip and
+  volume boost. **The browser has had exactly that since the start**
+  (`o2m-offline-inv`, one row per held uri, fed by `/api/offline/plan` and
+  refreshed by `POST /api/offline/meta`), and it is what lets a phone play its
+  copies with the server out of the loop. `/api/offline/views` now answers that
+  same row for every HELD item, assembled by the same two functions `plan` and
+  `meta` already share (`_offline_meta`, `_cache_place`) — a third reader of one
+  contract, not a third format — and `write_views` writes it to
+  `cache/index.json`, keyed by uri. `local_uri` is dropped (Mopidy's absolute
+  path on the machine that downloaded the file) and a `path` relative to the
+  cache root replaces it, so the file travels with the folder. Only held items
+  are described: the index says what is on the disk, while a static line names
+  what is not there yet.
+
+  **Why it matters on a Pi.** pi1/pi2 play to a local output and read the
+  database **remotely, over the internet**, so such an instance can hold every
+  byte it needs and still not start a box without the network — the base is
+  what says which boxes exist and what they hold. The m3u8 answer the first
+  half of that (**the NFC uid is in the box folder's name**, `cachelayout.box_folder`,
+  so uid → folder → `All.m3u8` needs no query) and the index answers the second.
+  Together they are a degraded but real offline mode — no popularity, no mood,
+  no DL, no anti-repeat, the order being the view's own — which is the same
+  bargain the browser already strikes: **its inventory holds what it takes to
+  PLAY an item, never what it takes to CHOOSE one**, which is why its offline
+  queue is "the local subset of the current tracklist, else everything held,
+  newest first" rather than the AUTO mix. The engine does not run offline; what
+  runs is a selection the server already made.
 - **Before**: bare-uid box folders, `ondemand/` (music a device asked for),
   `spoken/` (episodes and videos a device asked for, named by the tag alone).
   `reorganize_cache()` (spotdl, pruner only, every start, idempotent) moves every
