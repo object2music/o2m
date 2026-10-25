@@ -9381,6 +9381,11 @@ function offStop() {
   }
   setFeedback(resnap ? 'Back to the server — Snapcast reconnected' : 'Back to the server');
   _switchUri = null;      // the header, lyrics included, is the server's track again
+  // The header repaints only on a track change, measured against lastNpUri —
+  // which the local player never moves. The server usually still sits on the
+  // track it was paused at, so without forgetting it the local header stayed
+  // up until the next track.
+  lastNpUri = null; _npEmptyPainted = false; _mediaMetaSig = null;
   refreshVolume();
   refreshNowPlaying();
 }
