@@ -31,6 +31,7 @@ endpoint the browser flushes to, since this is the same journal).
 
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import tempfile
@@ -74,6 +75,25 @@ class LocalStats:
         self.clock = clock
         self.max_plays = max(1, int(max_plays))
 
+    # ── when ─────────────────────────────────────────────────────────────────
+    #
+    # Timestamps are ISO 8601 in UTC, spelled exactly as the browser spells
+    # them (`new Date().toISOString()`), and this is not cosmetic: the receiving
+    # end does `datetime.fromisoformat(at.replace('Z', '+00:00'))` and, when
+    # that raises, **falls back to now without a word**. An epoch integer would
+    # therefore be accepted, silently credited to the flush, and would teach the
+    # hourly habits that the listener listens when the network came back — the
+    # one error this whole module exists to avoid, arriving as a success.
+    # They also sort lexicographically, being fixed-width UTC, which is what
+    # lets `pending()` find the oldest with a plain `min()`.
+
+    def _iso(self, when=None):
+        if isinstance(when, str) and when:
+            return when
+        ts = self.clock() if when is None else float(when)
+        return (datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+                .isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
+
     # ── where things are ─────────────────────────────────────────────────────
 
     @property
@@ -104,7 +124,7 @@ class LocalStats:
             'uri': uri,
             'position': position_ms,
             'length': int(length_ms),
-            'at': int(at if at is not None else self.clock()),
+            'at': self._iso(at),
             'complete': position_ms / float(length_ms) >= COMPLETE_FRACTION,
         }
         if not self._append(row):
@@ -207,14 +227,16 @@ class LocalStats:
         """
         if not uri:
             return False
-        now = int(self.clock())
+        now = self._iso()
         rows = self.positions()
         rows[uri] = {
             'position': max(0, int(position_ms)),
             'length': max(0, int(length_ms)),
             'at': now,
-            'synced_at': now if synced else int(
-                (rows.get(uri) or {}).get('synced_at') or 0),
+            # None, not the same string, for a bookmark never sent — the
+            # browser writes `syncedAt: null` there for the same reason: a
+            # bookmark equal to its own send time is one the server already has.
+            'synced_at': now if synced else (rows.get(uri) or {}).get('synced_at'),
         }
         self._write(self.positions_path, rows)
         return True
@@ -239,7 +261,7 @@ class LocalStats:
     def unsent_positions(self):
         """The bookmarks that moved since the last successful flush."""
         return {u: r for u, r in self.positions().items()
-                if int(r.get('at') or 0) != int(r.get('synced_at') or 0)}
+                if r.get('at') != r.get('synced_at')}
 
     def mark_positions_sent(self, uris):
         """Stamp these as flushed, without touching a position that moved while
@@ -250,7 +272,7 @@ class LocalStats:
             r = rows.get(u)
             if r is None:
                 continue
-            r['synced_at'] = int(r.get('at') or 0)
+            r['synced_at'] = r.get('at')
             touched = True
         if touched:
             self._write(self.positions_path, rows)
@@ -268,7 +290,7 @@ class LocalStats:
             'plays': len(plays),
             'positions': len(pos),
             'positions_unsent': len(self.unsent_positions()),
-            'oldest_play_at': min((p.get('at') or 0 for p in plays), default=0),
+            'oldest_play_at': min((p.get('at') or '' for p in plays), default=''),
         }
 
     # ── disk ─────────────────────────────────────────────────────────────────

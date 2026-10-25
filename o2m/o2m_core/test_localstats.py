@@ -47,7 +47,11 @@ class TestPlaysAreEvents(_Base):
 
     def test_an_explicit_timestamp_is_kept(self):
         self.st.record_play('spotify:track:a', 200_000, 200_000, at=1_600_000_000)
-        self.assertEqual(self.st.plays()[0]['at'], 1_600_000_000)
+        self.assertEqual(self.st.plays()[0]['at'], '2020-09-13T12:26:40.000Z')
+
+    def test_a_timestamp_already_iso_is_passed_through(self):
+        self.st.record_play('a', 200_000, 200_000, at='2026-10-25T18:44:56.000Z')
+        self.assertEqual(self.st.plays()[0]['at'], '2026-10-25T18:44:56.000Z')
 
     def test_an_artefact_is_not_recorded(self):
         """A tap that starts the wrong item and is corrected at once."""
@@ -221,22 +225,71 @@ class TestDurability(_Base):
         self.assertEqual([p['uri'] for p in self.st.plays()], ['a'])
 
 
+class TestTheWireContract(_Base):
+    """`/api/offline/plays` parses `at` with
+    `datetime.fromisoformat(at.replace('Z', '+00:00'))` and, when that raises,
+    **falls back to now without a word**. So a wrong shape here is not an error
+    anywhere: it is a silent loss of every timestamp, which would teach the
+    hourly habits that the listener listens at flush time. These tests are the
+    only thing standing between that and a release."""
+
+    def _as_the_server_does(self, at):
+        import datetime as _dt
+        return _dt.datetime.fromisoformat(at.replace('Z', '+00:00'))
+
+    def test_a_plays_timestamp_parses_the_way_the_endpoint_parses_it(self):
+        self.st.record_play('a', 200_000, 200_000)
+        at = self.st.plays()[0]['at']
+        self.assertEqual(self._as_the_server_does(at).timestamp(), float(self.now))
+
+    def test_it_is_spelled_as_the_browser_spells_it(self):
+        # new Date().toISOString() -> 2026-10-25T18:44:56.000Z
+        self.st.record_play('a', 200_000, 200_000)
+        at = self.st.plays()[0]['at']
+        self.assertRegex(at, r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$')
+
+    def test_it_is_not_an_epoch_number(self):
+        """The regression this module was already shipping before the endpoint
+        was read: an int is valid JSON, accepted, and silently discarded."""
+        self.st.record_play('a', 200_000, 200_000)
+        at = self.st.plays()[0]['at']
+        self.assertIsInstance(at, str)
+        with self.assertRaises((TypeError, ValueError)):
+            self._as_the_server_does(str(int(self.now)))
+
+    def test_the_payload_a_flush_would_post(self):
+        """Shape for shape what the browser posts: {plays, positions}, each
+        record carrying uri, position, length and at."""
+        self.st.record_play('spotify:track:a', 190_000, 200_000)
+        self.st.set_position('podcast+f#g', 120_000, 600_000)
+        body = {'plays': self.st.plays(),
+                'positions': [dict(r, uri=u)
+                              for u, r in self.st.unsent_positions().items()]}
+        self.assertEqual(len(body['plays']), 1)
+        self.assertEqual(len(body['positions']), 1)
+        for rec in body['plays'] + body['positions']:
+            self.assertTrue(rec['uri'])
+            self.assertIn('position', rec)
+            self.assertIn('length', rec)
+            self._as_the_server_does(rec['at'])        # raises if malformed
+
+
 class TestPending(_Base):
 
     def test_it_counts_without_handing_over_the_records(self):
         self.st.record_play('a', 200_000, 200_000, at=1_000)
-        self.st.record_play('b', 200_000, 200_000, at=2_000)
+        self.st.record_play('b', 200_000, 200_000, at=2_000)   # ISO sorts, so min() finds it
         self.st.set_position('podcast+f#g', 10_000, 600_000)
         self.st.set_position('podcast+f#h', 10_000, 600_000, synced=True)
         self.assertEqual(self.st.pending(), {
             'plays': 2, 'positions': 2, 'positions_unsent': 1,
-            'oldest_play_at': 1_000,
+            'oldest_play_at': '1970-01-01T00:16:40.000Z',
         })
 
     def test_an_empty_root_is_all_zeros(self):
         self.assertEqual(self.st.pending(), {
             'plays': 0, 'positions': 0, 'positions_unsent': 0,
-            'oldest_play_at': 0,
+            'oldest_play_at': '',
         })
 
 
