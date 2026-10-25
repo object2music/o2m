@@ -1849,6 +1849,29 @@ skipped a track in a room nobody was listening to while the phone carried on. `p
 `seekforward` and `stop` are wired for the local player only, the server transport having
 never exposed them.
 
+**An OS `pause` is not always a command, and a plain remote must not obey it**
+(`osPauseFromSession`, 2026-10-25). The action arrives identically from a deliberate press
+— a headset button, the notification — and from a desktop putting every media player down
+before it suspends, which is what closing a laptop lid does. Forwarded blindly it stopped
+the music in the room every time someone shut the computer showing the control page:
+reproduced by sending an MPRIS `Pause` to the browser, which took a Pi from `playing` to
+`paused`. The page is a player in the OS's eyes because of the **media anchor**, and the
+anchor is audible on purpose since `46671bb` (2026-07-14) so that Chrome auto-pauses it
+when an output dies — which is how a Snapcast speaker learns it lost its route. One
+property bought the wanted behaviour and this one together.
+
+The question that separates them is not where the pause came from but **whether this
+device is making the sound**. A speaker or the offline player is, so the pause is about
+its own audio and acts at once, unchanged — that is the Snapcast behaviour and it is
+wanted. A plain remote produces nothing, so an OS pause describes this machine's silence
+and has no business reaching the server. Rather than assume an order of events, the remote
+case decides **late** (`OS_PAUSE_DEFER_MS`, 350 ms) and the delay separates the cases by
+itself: a suspend freezes the timer with the machine and the server is never told, whatever
+order the desktop chose; a screen that merely locks has hidden the page by the time it
+fires; a real press with the page in front of you is forwarded 350 ms later, imperceptible
+for a pause. A staleness check (2 s) drops a timer that fires on resume, and the `play`
+action cancels one still waiting.
+
 **Known limits.** Reloading the page while offline needs the service worker, which only
 registers over HTTPS — in prod (Caddy) the shell is cached on first visit and it works;
 on an HTTP dev instance offline lives only as long as the tab stays open. Covers are not

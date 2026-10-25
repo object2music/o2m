@@ -2955,13 +2955,14 @@ function initMediaSession() {
   if (!('mediaSession' in navigator)) return;
   const setH = (name, fn) => { try { navigator.mediaSession.setActionHandler(name, fn); } catch(e) {} };
   setH('play',          async () => {
+    osPauseCancel();                     // a pause still waiting is not wanted
     if (OFF.on) { offTogglePlay(); return; }
     // Through the server's play_or_resume, like the on-screen button: a bare
     // resume() does nothing when Mopidy sits at 'paused' with no current track.
     await fetch(API + '/toogle_play');   setTimeout(refreshNowPlaying, 300); });
-  setH('pause',         async () => {
+  setH('pause',         () => {
     if (OFF.on) { offTogglePlay(); return; }
-    await rpc('core.playback.pause');    setTimeout(refreshNowPlaying, 300); });
+    osPauseFromSession(); });            // see why this is not a plain rpc
   setH('previoustrack', async () => {
     if (OFF.on) { offSkip(-1); return; }
     if (queueLocked()) return;
@@ -3091,6 +3092,63 @@ function pauseFromRouteLoss(source) {
   armMediaAnchor();
   setFeedback('Paused (' + source + ') — play to hear it on this device');
   setTimeout(refreshNowPlaying, 300);
+}
+
+/* An OS pause — and whether it is a command at all.
+   ─────────────────────────────────────────────────
+   The Media Session's `pause` action arrives from two places that mean opposite
+   things, and the API does not say which: a DELIBERATE press (a headset button,
+   the notification) and a desktop putting every media player down before it
+   suspends — which is what closing a laptop lid does. Forwarded blindly, the
+   second one stopped the music in the room every time someone shut the computer
+   showing the control page. Measured on 2026-10-25: an MPRIS `Pause` sent to the
+   browser put the Pi from `playing` to `paused`.
+
+   The page is a player in the OS's eyes because of the media anchor, and the
+   anchor is deliberately AUDIBLE (46671bb, 2026-07-14) so that Chrome auto-pauses
+   it when an output dies — which is how a Snapcast speaker learns it lost its
+   route. One property bought both behaviours; only one of them is wanted.
+
+   So the question is not where the pause came from, it is **whether this device
+   is making the sound**:
+   * a Snapcast speaker (or the offline player) is — the pause is about its own
+     audio and acts at once, unchanged;
+   * a plain remote produces nothing, so an OS pause tells us about THIS machine's
+     audio, which is silence, and has no business reaching the server.
+
+   Rather than guess the order of events, the remote case decides LATE, and the
+   delay is what separates the two cases by itself:
+   * the machine suspends → this timer is frozen with it and the server is never
+     told, whatever order the desktop chose;
+   * the screen merely locks → the page is hidden by the time it fires;
+   * a real press with the page in front of you → forwarded, 350 ms later, which
+     is imperceptible for a pause.
+   The staleness check catches the timer firing on resume, hours later. */
+const OS_PAUSE_DEFER_MS = 350;
+const OS_PAUSE_STALE_MS = 2000;
+let _osPauseTimer = null;
+
+function osPauseCancel() { clearTimeout(_osPauseTimer); _osPauseTimer = null; }
+
+function _pauseServerFromOS(why) {
+  console.log('[os-pause] forwarding to the server (' + why + ')');
+  rpc('core.playback.pause').catch(() => {});
+  setTimeout(refreshNowPlaying, 300);
+}
+
+function osPauseFromSession() {
+  if (snapPlayer) { _pauseServerFromOS('this device is a speaker'); return; }
+  osPauseCancel();
+  const asked = Date.now();
+  _osPauseTimer = setTimeout(() => {
+    _osPauseTimer = null;
+    const late = Date.now() - asked;
+    if (document.visibilityState !== 'visible')
+      return console.log('[os-pause] ignored: page hidden — locking or suspending');
+    if (late > OS_PAUSE_STALE_MS)
+      return console.log('[os-pause] ignored: ' + late + 'ms late — this machine was asleep');
+    _pauseServerFromOS('deliberate press, page in front');
+  }, OS_PAUSE_DEFER_MS);
 }
 
 /* Publish the playback header's height as --sheet-top. Every bottom sheet (track
