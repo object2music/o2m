@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning) and `test_cachelayout.py` (the offline cache's folder and file names). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database) and `test_localstats.py` (the two journals kept while the database is away). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -1686,6 +1686,53 @@ device's folder copy follow it alike (2026-10-25):
 - **Empty folders are removed** (`remove_empty_dirs`, pruner only; 10 min of age,
   spotdl creating a folder before its first file), and on the device when its last
   file goes. Copies written there before this keep their path (`file` on the row).
+- **Reading that cache without a database** (`o2m_core/localcache.py` +
+  `localstats.py`, 2026-10-25). Everywhere else, deciding what to play starts
+  with a query — the box, its lines, the tracks, their popularity. On an
+  instance whose database is somewhere else (pi1/pi2 read theirs **over the
+  internet**) that makes holding every byte useless the moment the link goes.
+  `localcache` turns a cache root into boxes, views and playable entries,
+  touching no database, no network and no Mopidy, which is what lets it be
+  tested without any of them. Four decisions in it are load-bearing:
+  - **Nothing may require `index.json`.** A file whose row is missing still
+    plays, on the title and length its `#EXTINF` carries, and a broken index is
+    an empty one rather than an error — the degraded mode must not depend on
+    the freshness it exists to do without. Where both speak the index wins: it
+    came from the database, the `#EXTINF` from whenever the view was rewritten.
+  - **A line whose file is gone is dropped**, a view being rewritten only when
+    its content moves and so able to outlive a file the expiry took. Dropping
+    it must clear the pending `#EXTINF`, which is read BEFORE the path it
+    describes and would otherwise be inherited by the next line.
+  - **The order is the box's `option_sort`, shuffled when it states none** —
+    `add_tracks`' own rule, borrowed. An explicit order is the one statement a
+    box makes about sequence; a view without one is an accumulation whose
+    written order would replay identically every time.
+  - **Where playback starts is the server's rule, and its halves differ**:
+    music at zero always (a track played to the end carries
+    `read_position == its duration`), a started spoken item 10s before its
+    bookmark, a fresh one past its channel's pre-roll — and a resume beats the
+    pre-roll, which sits behind the bookmark by definition.
+
+  `localstats` is the write half, and it is the browser's bookkeeping in a
+  file: **`plays.jsonl` appends events, `positions.json` replaces state**, apart
+  because the server counts a read per record received and `read_count` feeds
+  popularity and the cooldown — merged, a bookmark written every ten seconds
+  would multiply one listen by its checkpoints. A play carries the timestamp of
+  when it HAPPENED (the habits read `read_hour`); only a bookmark that moved is
+  sent (`at != synced_at`); one seeded from the server is stored already-sent;
+  finishing retires it. `clear_plays` drops a COUNT, never matching uris — a
+  flush posts a prefix and a second listen recorded in flight sits after it.
+  Plays are JSON Lines because the first version rewrote one array per listen
+  with an fsync: 38s for 5000 plays, measured, on the slowest disk we run on.
+  An append writes a leading newline when the file lacks one, without which a
+  line truncated by a power cut would swallow the next record too.
+
+  **What none of this can do, on purpose**: an inventory holds what it takes to
+  PLAY an item, never what it takes to CHOOSE one. No popularity, no mood, no
+  DL, no history, no cooldown. It replays a selection the server made earlier —
+  the same bargain the browser's offline mode strikes, which is why its queue
+  is "the local subset of the current tracklist, else everything held, newest
+  first" and not the AUTO mix. **The engine does not run offline.**
 - spotdl/cache.py is baked into the spotdl image: a change there needs
   `docker compose build spotdl && docker compose up -d spotdl`, not a restart.
 
