@@ -2653,6 +2653,29 @@ class DatabaseHandler():
         from o2m_core import offline
         return offline.is_shared_pool()
 
+    def item_names(self, uri):
+        """(title, album or channel) of one item, '' where unknown — what its file
+        is named after in the offline cache (o2m_core/cachelayout.py)."""
+        title, second = '', ''
+        try:
+            row = (Track.select(Track.name, Track.album_id, Track.channel_id)
+                   .where(Track.uri == uri).first())
+            if row is None:
+                return title, second
+            title = row.name or ''
+            if row.album_id:
+                alb = Album.select(Album.name).where(Album.id == row.album_id).first()
+                second = (alb.name if alb else '') or ''
+            if not second:
+                ids = self._channels_for(uri) or ([row.channel_id] if row.channel_id else [])
+                if ids:
+                    ch = (PodcastChannel.select(PodcastChannel.title)
+                          .where(PodcastChannel.id.in_(ids)).first())
+                    second = (ch.title if ch else '') or ''
+        except Exception as e:
+            print(f"item_names({uri}): {e}")
+        return title, second
+
     def get_local_uri(self, spotify_uri):
         """Return the local file URI for a spotify:track: URI, or None.
 

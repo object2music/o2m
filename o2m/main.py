@@ -3,6 +3,7 @@ import logging, subprocess, os, re, spotipy, json, threading, requests, contextl
 from mopidyapi import MopidyAPI
 from o2m_core import util
 from o2m_core import virtualbox
+from o2m_core import cachelayout
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
 from o2m_core import spotifyauth
@@ -713,6 +714,8 @@ if __name__ == "__main__":
                 b['kind'] = kinds.get(o2mHandler._box_category(b.get('data'), b.get('option_type')), 'library')
             except Exception:
                 b['kind'] = 'library'
+            # The box's folder in the offline cache (spotdl's nightly pass).
+            b['cache_folder'] = cachelayout.box_folder(b.get('description'), b.get('uid'))
         return (boxes)
 
     # ── Activating an OBJECT (album, artist) the way a box is activated ──
@@ -1396,6 +1399,7 @@ if __name__ == "__main__":
             'favorite': box.favorite,
             'public': box.public,
             'image_url': box.image_url,
+            'cache_folder': cachelayout.box_folder(box.description, box.uid),
         })
 
     BOX_OPTION_TYPES = ['library', 'favorites', 'new', 'incoming', 'hidden', 'trash', 'podcast', 'info']
@@ -3281,6 +3285,27 @@ if __name__ == "__main__":
             pass
         return out
 
+    def _cache_place(raw, canon, spoken):
+        """Where an item sits in the offline cache, or would: `folder` and `file`
+        (the name without its extension), o2m_core/cachelayout.py. A file the
+        server holds answers with where it IS, so the device's folder copy
+        reproduces the server's tree; otherwise with the folder of the box that
+        queued it and the name it will be given."""
+        from o2m_core import cachelayout, offline
+        try:
+            path = offline.local_file_for(raw if raw.startswith('file:') else canon,
+                                          db=o2mHandler.dbHandler, config=o2mConf)
+        except Exception:
+            path = None
+        root = os.path.realpath(os.path.join(offline.MUSIC_MOUNT, 'cache'))
+        if path and path.startswith(root + os.sep):
+            rel = os.path.relpath(path, root)
+            return {'folder': os.path.dirname(rel) or cachelayout.NO_BOX,
+                    'file': os.path.splitext(os.path.basename(rel))[0]}
+        title, second = o2mHandler.dbHandler.item_names(canon)
+        return {'folder': o2mHandler.cache_folder_for(canon),
+                'file': cachelayout.file_stem(title, second, canon if spoken else None)}
+
     @api.route('/api/offline/meta', methods=['POST'])
     def api_offline_meta():
         """The same settings for items the device ALREADY holds. They are read at
@@ -3293,7 +3318,12 @@ if __name__ == "__main__":
             # A file:// the server played is answered as the track it stands for,
             # and `canon` names it, so the device can find it by that uri too.
             canon = o2mHandler.get_spotify_uri(u) or u
-            out[u] = dict(_offline_meta(canon, o2mHandler._is_spoken_uri(canon)), canon=canon)
+            spoken = o2mHandler._is_spoken_uri(canon)
+            out[u] = dict(_offline_meta(canon, spoken), canon=canon)
+            try:
+                out[u].update(_cache_place(u, canon, spoken))   # the folder copy's layout
+            except Exception:
+                pass
         return jsonify({'items': out})
 
     @api.route('/api/offline/plan', methods=['POST'])
@@ -3336,6 +3366,10 @@ if __name__ == "__main__":
                 i['position'], i['length'] = 0, 0
             i.update(_offline_meta(canon, i['kind'] == 'spoken'))
             i['canon'] = o2mHandler.get_spotify_uri(canon) or canon
+            try:
+                i.update(_cache_place(i['uri'], i['canon'], i['kind'] == 'spoken'))
+            except Exception as e:
+                print(f"api_offline_plan(place {i['uri']}): {e}")
 
         missing = [i['uri'] for i in items if i['state'] == 'pending']
         # Relayed now, kept for next time: an episode or a video the server does
@@ -3647,7 +3681,41 @@ if __name__ == "__main__":
         # honestly instead of queueing a music track to nobody.
         from o2m_core import offline
         offline.note_queue_poll(spoken=spoken)
-        return jsonify(o2mHandler.dbHandler.offline_queue(limit, spoken=spoken))
+        rows = o2mHandler.dbHandler.offline_queue(limit, spoken=spoken)
+        # Where spotdl puts each file and what it calls it: decided here, once,
+        # so the cache and the device's folder copy cannot drift apart.
+        for r in rows:
+            try:
+                r.update(_cache_place(r['uri'], r['uri'], spoken))
+            except Exception as e:
+                print(f"api_offline_queue(place {r['uri']}): {e}")
+        return jsonify(rows)
+
+    @api.route('/api/offline/placement', methods=['POST'])
+    def api_offline_placement():
+        """For files already in the cache (`local_uris`, as registered): the item
+        each one stands for, the name it should carry and the folder of the box
+        queueing it now (`box_folder`). What spotdl reads to tidy a cache laid
+        out the old way. A file this database does not know is left out."""
+        from flask import jsonify
+        from o2m_core import cachelayout
+        data = request.get_json(silent=True) or {}
+        out = {}
+        for lu in [u for u in (data.get('local_uris') or []) if isinstance(u, str) and u][:500]:
+            try:
+                canon = o2mHandler.get_spotify_uri(lu)
+                if not canon or canon == lu:
+                    continue
+                spoken = o2mHandler._is_spoken_uri(canon)
+                title, second = o2mHandler.dbHandler.item_names(canon)
+                if not title:
+                    continue
+                out[lu] = {'uri': canon,
+                           'file': cachelayout.file_stem(title, second, canon if spoken else None),
+                           'box_folder': o2mHandler.cache_folder_for(canon)}
+            except Exception as e:
+                print(f"api_offline_placement({lu}): {e}")
+        return jsonify({'items': out})
 
     @api.route('/api/offline/finished', methods=['POST'])
     def api_offline_finished():

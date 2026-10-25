@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks) and `test_lyrics.py` (LRC parsing, title cleaning). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning) and `test_cachelayout.py` (the offline cache's folder and file names). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -1613,6 +1613,38 @@ the host. `local_uri` holds Mopidy's path (`/app/Music/…`), so every path is r
 `[local] media_dir` onto that mount — the same translation spotdl does in reverse.
 **`docker-compose.yml` is skip-worktree (one per instance), so this line has to be added
 by hand on every instance that wants the feature.**
+
+### The cache's layout: a folder per box, files named after what they are
+`o2m_core/cachelayout.py` names everything, and the server's cache and the
+device's folder copy follow it alike (2026-10-25):
+
+    cache/Auto music [04463DD2204B80]/Dans Un Camion - Le Vent Dans Les Plaines.mp3
+    cache/Auto music [04463DD2204B80]/Le journal de 8h - France Inter [3fa2c1d9e04b7a6c1f2e].mp3
+    cache/No box/…        what a device asked for outside any box
+
+- **Folder `Name [uid]`**: found by the uid in its brackets, so a renamed box keeps
+  its folder; only the pruner renames one (instances with their own databases share
+  the disk and may name a uid differently). A request goes to the folder of the box
+  that queued the item in the tracklist (`cache_folder_for`), else `No box`.
+- **File `title - album`** (music, spotdl's template), **`title - channel [tag]`**
+  (episodes, videos): the tag is `sha1(uri)[:20]`, what another instance finds the
+  file by and what tells two bulletins of one title apart.
+- **Before**: bare-uid folders, `ondemand/` (music a device asked for), `spoken/`
+  (episodes and videos a device asked for, named by the tag alone), files
+  `Artist - Title`. `reorganize_cache()` (spotdl, pruner only, every start,
+  idempotent) moves them over through `POST /api/offline/placement` and re-registers
+  each file. spotdl runs with `--scan-for-songs`, so a renamed file is recognised by
+  the Spotify url in its tags and never downloaded again.
+- **Empty folders are removed** (`remove_empty_dirs`, pruner only, nightly; 10 min
+  of age, spotdl creating its folder before its first file), and on the device when
+  its last copy goes.
+- The names travel with the data: `cache_folder` on `/api/box_favorites` and
+  `/api/box_info`, `folder` / `file` on `/api/offline/queue`, `plan` and `meta`. A
+  file the server holds answers with where it IS, so the device's copy reproduces
+  the server's tree. Copies written flat before this keep their path (`file` on the
+  row).
+- spotdl/cache.py is baked into the spotdl image: a change there needs
+  `docker compose build spotdl && docker compose up -d spotdl`, not a restart.
 
 ### One cache for every instance
 `MUSIC_DIR` (`.env`, default `./data/music`) is the HOST directory behind the three

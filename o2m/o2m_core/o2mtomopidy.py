@@ -571,6 +571,22 @@ class O2mToMopidy:
             return (getattr(b, 'description', '') or '').strip() or uid
         return vbox.uri_of(uid) or uid
 
+    def cache_folder_for(self, uri):
+        """The offline-cache folder of the box that queued this item — the first
+        tracklist entry holding it — else `No box` (o2m_core/cachelayout.py).
+        `mopidy_box` is not a box anyone put down: what it owns was played by
+        hand, so it files under No box like a request from outside the tracklist."""
+        from o2m_core import cachelayout
+        canon = self.get_spotify_uri(uri) or uri
+        for info in list((getattr(self, '_track_info', None) or {}).values()):
+            u = info.get('uri') or ''
+            if u != uri and u != canon and self.get_spotify_uri(u) != canon:
+                continue
+            uid = info.get('box_id') or ''
+            if uid and uid != 'mopidy_box':
+                return cachelayout.box_folder(self.box_label(uid), uid)
+        return cachelayout.NO_BOX
+
     def note_box_activation(self):
         """Record that an object was PUT DOWN — a fresh intent that outranks the
         dials again.

@@ -8118,13 +8118,38 @@ async function offDirState() {
   if (!h) return 'none';
   try { return await h.queryPermission({ mode: 'readwrite' }); } catch (e) { return 'denied'; }
 }
+function _offExt(type) {
+  return /mpeg|mp3/.test(type) ? 'mp3' : /mp4|aac|m4a/.test(type) ? 'm4a'
+       : /ogg|opus/.test(type) ? 'ogg' : /webm/.test(type) ? 'webm'
+       : /flac/.test(type) ? 'flac' : /wav/.test(type) ? 'wav' : 'mp3';
+}
+function _offSafe(s, n) {
+  return String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ')
+    .trim().slice(0, n);
+}
+/* Where the copy goes: `<Box name> [uid]/<title> - <album>.ext`, the layout of
+   the server's own cache, as the server names it (`folder` and `stem`, from
+   plan / meta — o2m_core/cachelayout.py). With no answer, the title and album
+   at the top of the folder. */
 function offFileName(meta, type) {
-  const ext = /mpeg|mp3/.test(type) ? 'mp3' : /mp4|aac|m4a/.test(type) ? 'm4a'
-            : /ogg|opus/.test(type) ? 'ogg' : /webm/.test(type) ? 'webm'
-            : /flac/.test(type) ? 'flac' : /wav/.test(type) ? 'wav' : 'mp3';
-  const base = [meta.artist, meta.name].filter(Boolean).join(' - ') || meta.uri || 'track';
-  return base.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ')
-             .trim().slice(0, 150) + '.' + ext;
+  const base = _offSafe(meta.stem, 200)
+    || _offSafe([meta.name, meta.album].filter(Boolean).join(' - '), 150)
+    || _offSafe(meta.uri, 150) || 'track';
+  const folder = _offSafe(meta.folder, 120);
+  return (folder ? folder + '/' : '') + base + '.' + _offExt(type);
+}
+/* The flat `Artist - Title.ext` a copy was given before the folders: what a
+   row written then, with no name kept, answers to. */
+function offFileNameFlat(meta, type) {
+  return _offSafe([meta.artist, meta.name].filter(Boolean).join(' - ') || meta.uri || 'track', 150)
+    + '.' + _offExt(type);
+}
+/* The folder handle a copy's path sits in, and its file name. */
+async function _offDirAt(root, path, create) {
+  const parts = path.split('/'), name = parts.pop();
+  let dir = root;
+  for (const p of parts) dir = await dir.getDirectoryHandle(p, { create });
+  return { dir, name, parents: parts };
 }
 /* Write one file into the folder; its name when it landed, '' otherwise. Silent
    on any failure. The name is kept on the inventory row, so the copy can be
@@ -8134,7 +8159,8 @@ async function offDirWrite(meta, blob) {
     const h = await offDirHandle();
     if (!h || (await h.queryPermission({ mode: 'readwrite' })) !== 'granted') return '';
     const name = offFileName(meta, blob.type || '');
-    const fh = await h.getFileHandle(name, { create: true });
+    const at = await _offDirAt(h, name, true);
+    const fh = await at.dir.getFileHandle(at.name, { create: true });
     const w = await fh.createWritable();
     await w.write(blob); await w.close();
     const m = offInv()[meta.uri];
@@ -8161,7 +8187,7 @@ function offDirKeptSave(o) { try { localStorage.setItem(OFF_DIR_KEPT, JSON.strin
 function offDirNames(m) {
   if (m.file) return [m.file];
   return ['audio/mpeg', 'audio/mp4', 'audio/ogg', 'audio/webm', 'audio/flac', 'audio/wav']
-    .map(t => offFileName(m, t));
+    .map(t => offFileNameFlat(m, t));
 }
 async function offDirRemove(names) {
   const h = await offDirHandle();
@@ -8173,7 +8199,18 @@ async function offDirRemove(names) {
     try { localStorage.setItem(OFF_DIR_DEL, JSON.stringify([...new Set([...later, ...names])])); } catch (e) {}
     return;
   }
-  for (const n of names) { try { await h.removeEntry(n); } catch (e) { /* not there */ } }
+  for (const n of names) {
+    try {
+      const at = await _offDirAt(h, n, false);
+      await at.dir.removeEntry(at.name);
+      // A box folder left empty goes too, like on the server.
+      if (at.parents.length) {
+        let empty = true;
+        for await (const _ of at.dir.keys()) { empty = false; break; }
+        if (empty) await h.removeEntry(at.parents[0], { recursive: false });
+      }
+    } catch (e) { /* not there */ }
+  }
 }
 async function offDirFlushPending() {
   const later = _lsJson(OFF_DIR_DEL, []);
@@ -8416,6 +8453,8 @@ async function offRefreshMeta() {
       if (!m.finished && typeof m.position === 'number') offPosFromServer(u, m.position);
       if (m.cat) inv[u].cat = m.cat;
       if (m.canon && m.canon !== u) inv[u].canon = m.canon;
+      // Where a copy not yet written would go (one already written keeps its path, `file`).
+      if (m.folder) { inv[u].folder = m.folder; inv[u].stem = m.file || ''; }
       inv[u].liked = !!m.liked;
     }
     if (keptMoved) offDirKeptSave(kept);
@@ -8482,6 +8521,7 @@ async function offStore(meta) {
     length: meta.length || meta.srvLength || 0, kind: meta.kind || 'music',
     adSkip: meta.adSkip || 0, volBoost: meta.volBoost || 0, cat: meta.cat || '',
     canon: meta.canon && meta.canon !== uri ? meta.canon : '', liked: !!meta.liked,
+    folder: meta.folder || '', stem: meta.stem || '',
     bytes: blob.size, at: Date.now(),
   };
   offInvSave();
@@ -8548,7 +8588,8 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       const res = await offStore({ ...t, kind: p.kind, position: p.position || 0,
                                   srvLength: p.length || 0, adSkip: p.ad_skip || 0,
                                   volBoost: p.volume_boost || 0, cat: p.cat || '',
-                                  canon: p.canon || '', liked: !!p.liked });
+                                  canon: p.canon || '', liked: !!p.liked,
+                                  folder: p.folder || '', stem: p.file || '' });
       if (res === 'quota') { full = true; break; }
       if (res !== 'ok') continue;
       got++;
