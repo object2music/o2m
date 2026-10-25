@@ -41,6 +41,15 @@ QUEUE_BATCH = int(os.environ.get('SPOTDL_QUEUE_BATCH', '5'))
 # and, since o2m only knows a downloader is there because it keeps asking and
 # reporting, it also made o2m tell every device there was none.
 QUEUE_TRACK_TIMEOUT = int(os.environ.get('SPOTDL_QUEUE_TIMEOUT', '300'))
+# Between two on-demand tracks, and after YouTube has refused us. Every spotdl
+# invocation opens a YouTube Music session and searches it twice (its own
+# liveness check, then the track), so a queue served flat out is a burst of
+# requests from one address: on the Pi, 30 tracks armed on a phone brought back
+# `403 Sorry...` for 32 of 33 attempts, each recorded as "this track cannot be
+# found". Pacing is the fix; the backoff is what makes a refusal cost minutes
+# instead of a trackload of rows.
+QUEUE_TRACK_PAUSE = int(os.environ.get('SPOTDL_QUEUE_PAUSE', '10'))
+QUEUE_THROTTLE_WAIT = int(os.environ.get('SPOTDL_THROTTLE_WAIT', '300'))
 # One file per item, filed by what it is; the boxes are playlists over them
 # (o2m_core/cachelayout.py):
 #   Library/<album artist>/<album>/<NN> <title>.mp3   music, spotdl's template
@@ -255,6 +264,34 @@ def spotify_url(uri):
     return f"https://open.spotify.com/{parts[1]}/{parts[2]}"
 
 
+class Throttled(Exception):
+    """YouTube refused US, which says nothing about the track asked for.
+
+    The same distinction the `web:` reader draws between a page that declined
+    and a page that holds nothing: reported as a failure, the track's row goes
+    to `failed` and the device is told it cannot be downloaded — a verdict on
+    a song over a rate limit that will be gone in a minute.
+    """
+
+
+# Spotdl means its YouTube Music check to be advisory ("without stopping
+# downloads", entry_point.py) but lets the exception out, so one non-JSON
+# answer — Google's `Sorry...` page — kills the run before it looks at the
+# track. These are the markers of that answer, none of which a real
+# "no match for this song" carries.
+_THROTTLE_MARKERS = (
+    'check_ytmusic_connection',
+    'JSONDecodeError',
+    'Expecting value: line 1 column 1',
+    'HTTP Error 429',
+    'Sign in to confirm',
+)
+
+
+def _is_throttled(output):
+    return any(m in output for m in _THROTTLE_MARKERS)
+
+
 def run_spotdl(uri, output_dir, timeout=None):
     """Download a Spotify URI to output_dir. Returns True on success.
 
@@ -277,8 +314,17 @@ def run_spotdl(uri, output_dir, timeout=None):
         '--log-level', 'WARNING',
     ]
     print(f"  spotdl {uri}")
-    result = subprocess.run(cmd, timeout=timeout)
-    return result.returncode == 0
+    result = subprocess.run(cmd, timeout=timeout, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, errors='replace')
+    out = result.stdout or ''
+    if result.returncode == 0:
+        return True
+    if _is_throttled(out):
+        raise Throttled('YouTube Music answered 403 (too many requests from here)')
+    for line in [l.strip() for l in out.splitlines() if l.strip()][-3:]:
+        print(f"    {line[:200]}")
+    return False
 
 
 def touch_files(paths):
@@ -434,6 +480,9 @@ def run_cache():
         for uri in uris:
             try:
                 run_spotdl(uri, LIBRARY_DIR)
+            except Throttled as e:
+                print(f"  throttled ({e}); backing off {QUEUE_THROTTLE_WAIT}s")
+                time.sleep(QUEUE_THROTTLE_WAIT)
             except Exception as e:
                 print(f"  spotdl error for {uri}: {e}")
 
@@ -687,13 +736,22 @@ def run_queue():
     if not items:
         return 0
     print(f"On-demand queue: {len(items)} request(s)")
-    for it in items:
+    for n, it in enumerate(items):
         uri = it.get('uri')
         if not uri:
             continue
+        if n and QUEUE_TRACK_PAUSE > 0:
+            time.sleep(QUEUE_TRACK_PAUSE)
         out_dir = LIBRARY_DIR
         try:
             run_spotdl(uri, out_dir, timeout=QUEUE_TRACK_TIMEOUT)
+        except Throttled as e:
+            # The row is left exactly as it was — still pending, its tries
+            # untouched — and the batch stops: asking again at once is how the
+            # refusal was earned.
+            print(f"  {uri}: throttled ({e}); backing off {QUEUE_THROTTLE_WAIT}s")
+            time.sleep(QUEUE_THROTTLE_WAIT)
+            break
         except Exception as e:
             print(f"  spotdl error for {uri}: {e}")
             queue_done(uri, ok=False, note=str(e)[:200])

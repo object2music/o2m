@@ -1726,6 +1726,26 @@ below yt-dlp's `MIN_SUPPORTED_VERSION = (22, 0, 0)`), so extraction intermittent
 returns no usable format — a music claim lands usually, not always, and is
 retried up to `OFFLINE_MAX_TRIES`.
 
+**A refusal from YouTube is not a verdict on the track** (2026-10-25). Every
+`spotdl` invocation opens a YouTube Music session and searches it twice — its own
+liveness check (`check_ytmusic_connection`), then the track — and spotdl means
+that check to be advisory ("without stopping downloads") but lets its exception
+out, so Google's `403 Sorry...` page, parsed as JSON, kills the run before it
+ever looks at the track. Served flat out, the queue earns that refusal: 30 tracks
+armed on a phone gave **32 FAILED against 1 ok**, every one of them a
+`JSONDecodeError` — and `offline_request_done(ok=False)` writes `state='failed'`
+at once, so each 403 retired a song the device wanted and the page reported it as
+undownloadable. Asked by hand a minute later, the same API answered 11 times out
+of 12: the failure was the hammering, not the tracks.
+
+So `run_spotdl` captures spotdl's output, and a throttle marker in it raises
+`Throttled` instead of returning a failure: the row is left pending with its
+tries untouched, the batch stops, and the worker waits `SPOTDL_THROTTLE_WAIT`
+(300 s). Tracks are paced `SPOTDL_QUEUE_PAUSE` (10 s) apart. The same
+distinction the `web:` reader draws between a page that declined and a page that
+holds nothing, and the one `_playlist_is_gone` draws between a 404 and a 403 —
+only definitive proof may remove something nobody asked to remove.
+
 Two consequences to keep in mind:
 - **Exactly one instance may prune a shared cache.** The expiry and the size cap delete
   files and unregister them through the *local* API, so a pruner removes files other
@@ -2313,6 +2333,9 @@ All service configuration is via `.env` file (not committed). Key variables:
   cap). See the offline section: the 30-day `SPOTDL_CACHE_DAYS` expiry is not a limit.
 - `SPOTDL_PRUNE` — may this instance delete from the cache (default `1`). Set `0` on every
   instance but one when the cache is shared.
+- `SPOTDL_QUEUE_PAUSE` (default `10`) / `SPOTDL_THROTTLE_WAIT` (default `300`) — seconds
+  between two on-demand tracks, and after YouTube has refused us. See the Pi paragraph
+  above: a queue served flat out is what earns the refusal.
 - `SPOTDL_SPOKEN_ONLY` — run `spotdl/cache.py` as the spoken half plus the pruner, with no
   music queue and no nightly box pass (default `0`). What a native install uses: there is no
   spotdl package on a Pi, and none is needed for a podcast or a video — that queue is an
