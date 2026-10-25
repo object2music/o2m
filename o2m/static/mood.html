@@ -8685,7 +8685,7 @@ function offQueueRemove(uri) {
     if (OFF.queue.length) {
       OFF.i = i; OFF.loggedAt = i;             // already logged above: no second record
       resetProgress();
-      offPlayAt(i);                            // wraps to the head past the end
+      offPlayAt(i);                            // past the end, the queue ends
     } else {
       OFF.i = -1;
       if (OFF.el) { try { OFF.el.pause(); } catch (e) {} OFF.el.removeAttribute('src'); }
@@ -8807,7 +8807,12 @@ function offAudio() {
 
 async function offPlayAt(i) {
   if (!OFF.queue.length) return;
-  const t = OFF.queue[((i % OFF.queue.length) + OFF.queue.length) % OFF.queue.length];
+  // The queue ENDS, it does not wrap. Wrapping replayed the same few held items
+  // for as long as nobody stopped it — six of them for over an hour on
+  // 2026-10-22 — and every lap was flushed to the server as a play, inflating
+  // read_count and popularity, so those tracks then came back online too.
+  if (i >= OFF.queue.length) return offQueueEnded();
+  const t = OFF.queue[Math.max(0, i)];
   if (!t) return;
   if (OFF.i >= 0) offLogPlay(false);          // what was playing ends here
   OFF.i = OFF.queue.indexOf(t);
@@ -8879,6 +8884,17 @@ function offApplyVolume() {
   try { el.volume = Math.min(1, offVolume() / 100 * (1 + boost / 100)); } catch (e) {}
 }
 
+// Past the last item: stop on it, as Mopidy stops at the end of a tracklist.
+// Play then starts the last item again; previous walks back from it.
+function offQueueEnded() {
+  if (OFF.i >= 0) offLogPlay(false);           // no second record: loggedAt guards it
+  OFF.i = OFF.queue.length - 1;
+  OFF.loggedAt = OFF.i;
+  if (OFF.el) { try { OFF.el.pause(); } catch (e) {} OFF.el.removeAttribute('src'); }
+  resetProgress();
+  offRenderQueue();
+  setFeedback('End of the queue');
+}
 function offSkip(d) { if (OFF.queue.length) { resetProgress(); offPlayAt(OFF.i + d); } }
 function offTogglePlay() {
   const el = offAudio();
@@ -9037,7 +9053,7 @@ function offQueueDrop(uris) {
   if (!curGone) {
     OFF.i = cur ? OFF.queue.indexOf(cur) : -1;
   } else if (OFF.queue.length) {
-    const i = after ? OFF.queue.indexOf(after) : 0;
+    const i = after ? OFF.queue.indexOf(after) : OFF.queue.length;   // none after: the queue ends
     OFF.i = i; OFF.loggedAt = i;               // already logged above
     resetProgress();
     offPlayAt(i);
