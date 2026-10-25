@@ -42,7 +42,7 @@ def _old_cooldown_factor(uri, last_read_at, now, now_ts, served, read_count, las
             age_days = (now - lr).total_seconds() / 86400.0
             cd_days = T.cooldown_days * stretch
             if 0.0 <= age_days < cd_days:
-                f = min(f, T.cooldown_mult + (1.0 - T.cooldown_mult) * (age_days / cd_days))
+                f = min(f, T.cooldown_mult + (1.0 - T.cooldown_mult) * (age_days / cd_days) ** T.cooldown_curve)
         except Exception:
             pass
     if last_seq and seq_tail:
@@ -51,7 +51,7 @@ def _old_cooldown_factor(uri, last_read_at, now, now_ts, served, read_count, las
             since = len(seq_tail) - bisect.bisect_right(seq_tail, int(last_seq))
             cd_plays = T.cooldown_plays * stretch
             if 0 <= since < cd_plays:
-                f = min(f, T.cooldown_mult + (1.0 - T.cooldown_mult) * (since / cd_plays))
+                f = min(f, T.cooldown_mult + (1.0 - T.cooldown_mult) * (since / cd_plays) ** T.cooldown_curve)
         except Exception:
             pass
     sa = served.get(uri)
@@ -308,6 +308,18 @@ class TestCooldown(unittest.TestCase):
         self.assertAlmostEqual(
             selection.cooldown_factor('u', pool, NOW, NOW_TS, served, tun), tun.served_mult)
 
+    def test_the_curve_keeps_a_favourite_down_mid_window(self):
+        """The case that tightened it: a 21-play favourite back after 4.1 days
+        and 206 other plays. Linear over 3 days / 80 plays it weighed 0.70."""
+        tun = selection.Tunables()
+        pool = self._pool(last_read={'u': NOW - datetime.timedelta(days=4.1)},
+                          read_count={'u': 21}, seq={'u': 794},
+                          seq_tail=list(range(795, 1001)))
+        f = selection.cooldown_factor('u', pool, NOW, NOW_TS, {}, tun)
+        self.assertLess(f, 0.25)
+        linear = selection.Tunables(cooldown_curve=1.0)
+        self.assertLess(f, selection.cooldown_factor('u', pool, NOW, NOW_TS, {}, linear))
+
     def test_no_last_seq_falls_back_to_time_alone(self):
         tun = selection.Tunables()
         pool = self._pool(last_read={'u': NOW - datetime.timedelta(days=30)},
@@ -420,11 +432,12 @@ class TestTunables(unittest.TestCase):
 
     def test_defaults_match_the_engine(self):
         """These are the values the running engine uses; CLAUDE.md documents
-        them and the doubling of both windows was a deliberate change."""
+        them, and each widening of the windows was a deliberate change."""
         tun = selection.Tunables()
-        self.assertEqual(tun.cooldown_days, 3.0)
-        self.assertEqual(tun.cooldown_plays, 80)
-        self.assertEqual(tun.seq_window, 200)
+        self.assertEqual(tun.cooldown_days, 5.0)
+        self.assertEqual(tun.cooldown_plays, 150)
+        self.assertEqual(tun.cooldown_curve, 2.0)
+        self.assertEqual(tun.seq_window, 375)
 
 
 if __name__ == '__main__':

@@ -337,11 +337,11 @@ Down-weight in (0,1]. **Two clocks measure "recently", and the stricter one wins
 track twice for one offence.
 
 - **Elapsed time**, graduated: a just-played track sits at `cooldown_mult=0.05` and eases
-  linearly back to 1.0 over `cooldown_days=3`, stretched up to ~2× for heavy-rotation
-  tracks (`read_count → cooldown_rc_ref=20`) — so up to 6 days. (Replaced the old hard 8h
+  back to 1.0 over `cooldown_days=5`, stretched up to ~2× for heavy-rotation
+  tracks (`read_count → cooldown_rc_ref=20`) — so up to 10 days. (Replaced the old hard 8h
   step — `cooldown_hours` kept for reference.)
-- **Rotation depth**: how much OTHER music has played since, over `cooldown_plays=80`
-  (up to 160 stretched). `Track.last_play_seq` records the `stats_raw.id` of a track's last
+- **Rotation depth**: how much OTHER music has played since, over `cooldown_plays=150`
+  (up to 300 stretched). `Track.last_play_seq` records the `stats_raw.id` of a track's last
   play; `recent_music_play_seq` reads the last `cooldown_seq_window` music-play ids once
   per fill, and a bisect per candidate gives the count. That window is **derived**, not
   set: `max(200, cooldown_plays × 2 × 1.25)`. A ruler shorter than the widest depth window
@@ -353,6 +353,17 @@ came back at 4.6 days and 115 intervening plays, i.e. just past both windows. Si
 before applying: that track goes from factor 1.000 to 0.733, and the braked population of
 the sequence window from 98 to 159 tracks (29 → 45 strongly). A fill still returns 59
 distinct tracks with no empty-pool warning, so the pool is not starved.
+
+**Then widened again and curved (2026-10-25): `cooldown_days` 3 → 5, `cooldown_plays`
+80 → 150, and the ramp of both clocks squared** (`cooldown_curve=2`, `selection._ramp`:
+`mult + (1 − mult)·x²` over the fraction x of the window). At ~35 complete music plays
+a day, 160 plays went by in 4–5 days, and the LINEAR ramp gave a favourite 0.70 of its
+weight two thirds into its window — while `popularity^k` (k=2 at low DL) gives a
+popularity-1 track a 1.5× edge over a 0.8 one, so the brake lost: "Dans un Camion"
+came back every 4 days, about 30 tracks within 3–5 days over two weeks. Recomputed on
+those real returns: 0.70 → 0.21, 0.79 → 0.26, 0.83 → 0.28 — roughly a third as likely.
+The cooldown only weights, it never removes, so a small box is not starved: it just
+draws its least recently played first.
 - **Served (intra-session)**: just-selected tracks ×`served_mult=0.1` for
   `served_cooldown_min=30`min. This one multiplies — it answers a different question.
 

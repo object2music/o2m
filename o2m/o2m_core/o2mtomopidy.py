@@ -41,9 +41,10 @@ class O2mToMopidy:
     expand_pick_mode = "hybrid"  # smart-selection variant: hybrid (P0) | temp (P1) | band (P2)
     cooldown_hours = 8.0         # (legacy) kept for reference; the played cooldown is now multi-day (cooldown_days)
     cooldown_mult = 0.05         # weight floor: multiplier at age 0 (just played), ramps back to 1 over the window
-    cooldown_days = 3.0          # base played-cooldown window (days); a just-played track eases back to full over this
+    cooldown_days = 5.0          # base played-cooldown window (days); a just-played track eases back to full over this
     cooldown_rc_ref = 20         # read_count giving the max window stretch (heavy-rotation tracks rest ~2× longer)
-    cooldown_plays = 80          # rotation depth: OTHER music plays a track must wait out, stretched like cooldown_days
+    cooldown_plays = 150         # rotation depth: OTHER music plays a track must wait out, stretched like cooldown_days
+    cooldown_curve = 2.0         # ramp exponent of both windows (1 = linear); see selection._ramp
     exploit_sharpness = 1.3      # P0 exploit weight exponent (affinity**this); 2 was too repetitive
     served_cooldown_min = 30.0   # minutes; tracks just SERVED (selected) are down-weighted
     served_mult = 0.1            # weight multiplier applied within the served-cooldown window
@@ -4228,6 +4229,7 @@ class O2mToMopidy:
             cooldown_days=self.cooldown_days,
             cooldown_rc_ref=self.cooldown_rc_ref,
             cooldown_plays=self.cooldown_plays,
+            cooldown_curve=self.cooldown_curve,
             exploit_sharpness=self.exploit_sharpness,
             served_cooldown_min=self.served_cooldown_min,
             served_mult=self.served_mult,

@@ -31,9 +31,10 @@ class Tunables:
     """
 
     cooldown_mult: float = 0.05       # weight at age 0 (just played), ramps back to 1
-    cooldown_days: float = 3.0        # elapsed-time window, in days
+    cooldown_days: float = 5.0        # elapsed-time window, in days
     cooldown_rc_ref: int = 20         # read_count giving the maximum window stretch (~2x)
-    cooldown_plays: int = 80          # rotation-depth window, in OTHER music plays
+    cooldown_plays: int = 150         # rotation-depth window, in OTHER music plays
+    cooldown_curve: float = 2.0       # ramp exponent: 1 = linear, 2 = stays low, frees late
     exploit_sharpness: float = 1.3    # hybrid exploit exponent (affinity ** this)
     served_cooldown_min: float = 30.0 # minutes a just-served track stays demoted
     served_mult: float = 0.1          # multiplier applied inside that window
@@ -71,12 +72,24 @@ class Pool:
     tag_sim: dict = field(default_factory=dict)     # uri -> tag similarity to a seed, [0,1]
 
 
+def _ramp(x, tun):
+    """Weight at fraction x in [0,1) of a cooldown window.
+
+    A curve, not a straight line. Linear, a heavy-rotation favourite was back at
+    0.70 of its weight two thirds into its window, while popularity**2 at low DL
+    already gives it a 1.5x edge over an ordinary track — so the brake lost and
+    "Dans un Camion" came back every four days (Oct 2026, ~35 complete music
+    plays a day). Squared, it sits at 0.21 at that point and frees itself late.
+    """
+    return tun.cooldown_mult + (1.0 - tun.cooldown_mult) * (x ** tun.cooldown_curve)
+
+
 def cooldown_factor(uri, pool, now, now_ts, served, tun):
     """Combined anti-repeat down-weight in (0,1].
 
     TWO clocks measure "recently", and the stricter one wins:
 
-    - ELAPSED TIME, graduated over cooldown_days, stretched up to ~2x for
+    - ELAPSED TIME, eased back (see _ramp) over cooldown_days, stretched up to ~2x for
       heavy-rotation tracks (read_count -> cooldown_rc_ref).
     - ROTATION DEPTH: how much OTHER music has played since, over cooldown_plays,
       stretched the same way.
@@ -111,7 +124,7 @@ def cooldown_factor(uri, pool, now, now_ts, served, tun):
             age_days = (now - lr).total_seconds() / 86400.0
             cd_days = tun.cooldown_days * stretch
             if 0.0 <= age_days < cd_days:
-                f = min(f, tun.cooldown_mult + (1.0 - tun.cooldown_mult) * (age_days / cd_days))
+                f = min(f, _ramp(age_days / cd_days, tun))
         except Exception:
             pass
 
@@ -122,7 +135,7 @@ def cooldown_factor(uri, pool, now, now_ts, served, tun):
             since = len(pool.seq_tail) - bisect.bisect_right(pool.seq_tail, int(last_seq))
             cd_plays = tun.cooldown_plays * stretch
             if 0 <= since < cd_plays:
-                f = min(f, tun.cooldown_mult + (1.0 - tun.cooldown_mult) * (since / cd_plays))
+                f = min(f, _ramp(since / cd_plays, tun))
         except Exception:
             pass
 
