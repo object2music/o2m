@@ -109,6 +109,24 @@ def box_folder(name, uid) -> str:
     return f"{label} [{tag}]" if label and label != tag else tag
 
 
+def parse_box_folder(part):
+    """`(label, uid)` for a box folder name, or None when it is not one.
+
+    The inverse of `box_folder`, and the reason it can exist: an NFC uid is
+    written into the folder name, so a tag put down can be answered **from the
+    disk alone** — no query, which is the whole point on a machine whose
+    database is somewhere else. `o2m_core/localcache.py` is what uses it.
+    """
+    part = (part or '').strip()
+    if not part:
+        return None
+    m = re.search(r"\[([^\[\]]+)\]$", part)
+    if m:
+        return part[:m.start()].strip(), m.group(1).strip()
+    # A folder may be the uid alone, when the box has no name of its own.
+    return '', part
+
+
 # The AUTO mix's buckets, by the library_link its add_tracks calls pass.
 _BUCKET_LINKS = {
     'o2m:favorites': 'Favorites', 'spotify:favorites': 'Favorites',
