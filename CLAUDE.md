@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) and `test_dbstate.py` (whether the database is reachable, and how often that is asked). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) and `test_snapwatch.py` (the last Snapcast listener leaving). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -2102,6 +2102,21 @@ order the desktop chose; a screen that merely locks has hidden the page by the t
 fires; a real press with the page in front of you is forwarded 350 ms later, imperceptible
 for a pause. A staleness check (2 s) drops a timer that fires on resume, and the `play`
 action cancels one still waiting.
+
+**Who stops the music when a device goes away depends on where the audio comes out**
+(`o2m_core/snapwatch.py`, 2026-10-26). On a **Snapcast** instance (`AUDIO_OUTPUT` feeds
+the snap fifo) the room hears only through snapclients — in practice the browser pages
+that are speakers. A Bluetooth cut pauses from the page (`pauseFromRouteLoss`, the
+client stays connected and re-routes); a browser **closed for good** cannot say so —
+its last JavaScript is not guaranteed and a reload looks the same from inside — so the
+server watches snapserver (`Server.GetStatus` every 3 s): once a listener was there and
+none has been for 10 s, a playing Mopidy is paused. The grace covers a reload; a page in
+the background keeps its socket and is still a listener; one of two speakers leaving
+changes nothing. On a **local output** (a Pi) the page is only a remote: the watcher is
+not started, and `osPauseFromSession` keeps an OS pause from reaching the server.
+Side effects to know: switching the last speaker off by hand pauses too (nobody hears
+the fifo anyway), and so does a snapserver restart. Measured on o2m_1: snapclient killed
+at :24, Mopidy paused at :37.
 
 **Known limits.** Reloading the page while offline needs the service worker, which only
 registers over HTTPS — in prod (Caddy) the shell is cached on first visit and it works;

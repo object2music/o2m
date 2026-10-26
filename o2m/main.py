@@ -303,6 +303,18 @@ if __name__ == "__main__":
 
     threading.Thread(target=_pending_writes_flusher, daemon=True).start()
 
+    # Snapcast output only: the last speaker leaving (a browser closed for good)
+    # pauses the server. On a local output (a Pi) the page is only a remote and
+    # losing it changes nothing, so the watcher is not started. See snapwatch.py.
+    from o2m_core import snapwatch
+    if snapwatch.snap_output_enabled(os.environ.get('AUDIO_OUTPUT')):
+        _snap_rpc = os.environ.get('SNAPSERVER_RPC_URL', 'http://snapserver:1780/jsonrpc')
+        threading.Thread(target=snapwatch.run, daemon=True, args=(
+            _snap_rpc,
+            lambda: o2mHandler.mopidyHandler.playback.get_state(),
+            lambda: o2mHandler.mopidyHandler.playback.pause(),
+        )).start()
+
     # Radio now-playing watcher (stream title for all radios + auto-save on FIP).
     try:
         o2mHandler.start_radio_watcher()
