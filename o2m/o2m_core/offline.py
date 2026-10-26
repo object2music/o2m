@@ -67,6 +67,49 @@ _FEED_UA = 'o2m/1.0'
 SHARED_POOL = 'shared'
 
 
+# ─── Where the offline cache sits, as THIS process sees it ───────────────────
+# The same directory `SPOTDL_CACHE_DIR` names (`<media_dir>/cache`), reached
+# through this process's own view of the volume. It is what `localcache` reads
+# when the database cannot be asked what a box holds.
+CACHE_SUBDIR = 'cache'
+
+
+def cache_root() -> str:
+    return os.path.join(MUSIC_MOUNT, CACHE_SUBDIR)
+
+
+def mopidy_uris_for_file(path, config=None):
+    """The `file://` uris to offer Mopidy for a local file, best first.
+
+    Two views of one volume, and o2m can only verify one of them: the path it
+    can `stat`. So the path THIS process sees comes first — that is evidence —
+    and the rebase onto `[local] media_dir` follows as a guess about another
+    container's namespace. On pi1 the two are the same real directory while
+    `o2m.conf` still says `/app/Music`, so preferring the rebase would hand
+    Mopidy a path that does not exist there; verified by asking Mopidy, which
+    resolves `file:///home/pi/Music/cache/…` and knows nothing of `/app/Music`.
+    A caller adds the first and tries the next only if Mopidy added nothing —
+    the same self-correction `_add_resolved` already does for a substitution.
+    """
+    out, seen = [], set()
+    for candidate in (path, _mopidy_view(path, config)):
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        out.append('file://' + urllib.parse.quote(candidate))
+    return out
+
+
+def _mopidy_view(path, config=None):
+    """`path` rebased from this process's mount onto the one Mopidy carries in
+    `local_uri`, or None when they are the same or the path is elsewhere."""
+    root = media_dir(config)
+    mount = MUSIC_MOUNT.rstrip('/')
+    if not path.startswith(mount + '/') or root.rstrip('/') == mount:
+        return None
+    return root.rstrip('/') + path[len(mount):]
+
+
 def cache_pool() -> str:
     """The name of the cache pool this instance draws from and writes to."""
     return (os.environ.get('O2M_CACHE_POOL') or '').strip() or SHARED_POOL

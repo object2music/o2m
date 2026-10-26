@@ -238,6 +238,11 @@ class O2mToMopidy:
 
         self.default_box_uid = self.configO2M.get("default_box_uid", "").strip() or None
         self._health_check_last = 0  # cooldown gate for check_active_boxes_health
+        # The degraded player: the cache read with no database, and the uid it
+        # is playing right now (see play_from_cache). Empty on every instance
+        # whose database answers, which is all of them until one does not.
+        self._cache_reader = None
+        self._cache_playing = ''
 
         if "shuffle" in self.configO2M:
             self.shuffle = self.clean_bool(self.configO2M["shuffle"])
@@ -436,6 +441,131 @@ class O2mToMopidy:
         # fill intact — handing Mopidy an 'web:' uri it has no backend for would
         # lose the track just as surely, only without a word in the log.
         return [u for u in (self._resolve_uri(u) for u in uris) if u]
+
+    # ── Playing from the disk, with no database ──────────────────────────────
+
+    def cache_reader(self):
+        """The offline cache, read as a playable thing (o2m_core/localcache.py).
+
+        Built on demand and kept, since it caches `index.json` by mtime and a
+        tag put down twice should not re-read it.
+        """
+        if getattr(self, '_cache_reader', None) is None:
+            from o2m_core import localcache, offline as offl
+            self._cache_reader = localcache.LocalCache(offl.cache_root())
+        return self._cache_reader
+
+    def play_from_cache(self, uid, mode='toogle'):
+        """Answer a tag from the disk alone: no database, no engine, no network.
+
+        This is the degraded mode pi1 and pi2 exist to have. Their database is
+        read over the internet, so holding every byte was useless the moment the
+        link went: the base is what says which boxes exist and what they hold.
+        The cache answers both — **the NFC uid is in the box folder's name** —
+        and this is where that becomes audible.
+
+        It deliberately does NOT go through `box_action`: the engine queries at
+        every step (popularity, mood, cooldown, the anti-repeat ladder), so
+        reaching it would only rediscover that the base is away, slowly. What
+        plays is the view's own order, which is a selection the server made
+        earlier — the same bargain the browser's offline mode strikes.
+
+        Returns a dict a route can answer with: `action`, `count`, `label`.
+        """
+        want = (uid or '').strip()
+        if not want:
+            return {'action': 'none', 'count': 0, 'label': ''}
+        playing = getattr(self, '_cache_playing', '') or ''
+        if playing.lower() == want.lower() and mode in ('toogle', 'remove'):
+            return self._stop_cache_playback()
+        if mode == 'remove':
+            return {'action': 'none', 'count': 0, 'label': ''}
+
+        reader = self.cache_reader()
+        box = reader.box(want)
+        if box is None:
+            return {'action': 'unknown', 'count': 0, 'label': ''}
+        entries = reader.queue(box)
+        if not entries:
+            # The folder is there and holds nothing playable: an honest answer,
+            # and a different one from a tag the disk has never heard of.
+            return {'action': 'empty', 'count': 0, 'label': box.name}
+        return self._queue_cache_entries(box, entries)
+
+    def _queue_cache_entries(self, box, entries):
+        from o2m_core import offline as offl
+        with self._box_ops_lock(), self.filling():
+            self._mark_interrupted()
+            try:
+                self.mopidyHandler.tracklist.clear()
+                self._track_info.clear()
+            except Exception as e:
+                print(f"play_from_cache: clearing the tracklist: {e}")
+            added, first_start = 0, 0
+            for entry in entries:
+                tl = self._add_cache_entry(entry, offl)
+                if not tl:
+                    continue
+                if not added:
+                    first_start = entry.start_ms()
+                added += 1
+            if not added:
+                print(f"play_from_cache: Mopidy refused every file of {box.name}")
+                return {'action': 'refused', 'count': 0, 'label': box.name}
+            self._cache_playing = box.uid
+            try:
+                self.mopidyHandler.playback.play()
+                if first_start > 0:
+                    # A spoken item resumes where the server left off, on the
+                    # bookmark the index carried — the one piece of the server's
+                    # judgement that survives on the disk.
+                    self.mopidyHandler.playback.seek(int(first_start))
+            except Exception as e:
+                print(f"play_from_cache: starting playback: {e}")
+            print(f"play_from_cache: {box.name} — {added} file(s) from the disk")
+            return {'action': 'add', 'count': added, 'label': box.name}
+
+    def _add_cache_entry(self, entry, offl):
+        """Add one file, trying the second spelling only if the first added
+        nothing — Mopidy answers an empty list for a path it cannot open, and
+        the two views of the volume are not interchangeable."""
+        for uri in offl.mopidy_uris_for_file(entry.file):
+            try:
+                added = self.mopidyHandler.tracklist.add(uris=[uri]) or []
+            except Exception as e:
+                print(f"play_from_cache: add {uri[:80]}: {e}")
+                continue
+            if added:
+                tl = added[0]
+                tlid = getattr(tl, 'tlid', None)
+                if tlid is not None:
+                    # Owned by the box the disk named, so a deactivation can
+                    # find it and the details panel has something to say.
+                    self._track_info[tlid] = {
+                        'uri': entry.uri or uri, 'option_type': entry.cat or '',
+                        'library_link': '', 'box_id': self._cache_playing or ''}
+                return added
+        return []
+
+    def _stop_cache_playback(self):
+        label = ''
+        try:
+            reader = self.cache_reader()
+            box = reader.box(self._cache_playing)
+            label = box.name if box else ''
+        except Exception:
+            pass
+        with self._box_ops_lock():
+            self._mark_interrupted()
+            for call in (self.mopidyHandler.playback.stop,
+                         self.mopidyHandler.tracklist.clear):
+                try:
+                    call()
+                except Exception as e:
+                    print(f"play_from_cache: stopping: {e}")
+            self._track_info.clear()
+            self._cache_playing = ''
+        return {'action': 'remove', 'count': 0, 'label': label}
 
     def _add_resolved(self, uris, at_position=None):
         """tracklist.add of `uris` after substitution — and a second chance for

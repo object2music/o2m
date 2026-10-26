@@ -312,6 +312,22 @@ if __name__ == "__main__":
 #API DEF AND LISTENER (to be move in a dedicated part)
     #API BOX ACTION (mode : toogle, add, remove) AND SHOW
     def api_box_action(uid='',option_type='',mode='toogle'):
+        # With the database out of reach, a tag is answered FROM THE DISK — the
+        # uid is in the cache's box folder name, so no query is needed to know
+        # what it names. This is the degraded mode pi1 and pi2 exist to have:
+        # they read their base over the internet, so without this they hold
+        # every byte and can play none of them. Asked before `get_box_by_uid`,
+        # which not only queries but CREATES a row for a uid it does not find.
+        if uid != '' and not o2mHandler.dbHandler.db_available():
+            r = o2mHandler.play_from_cache(uid, mode)
+            label = r.get('label') or uid
+            return {
+                'add': f"TAG added from the disk ({r.get('count')} file(s))",
+                'remove': 'TAG removed',
+                'empty': f"{label}: nothing playable on the disk",
+                'refused': f"{label}: Mopidy refused the files",
+                'unknown': 'no TAG on the disk',
+            }.get(r.get('action'), 'No action')
         box = None
         if uid!='':
             box = o2mHandler.dbHandler.get_box_by_uid(uid)
@@ -3715,6 +3731,12 @@ if __name__ == "__main__":
         (DatabaseHandler.cache_views). spotdl writes them on the server's disk,
         the page in the device's folder copy."""
         from flask import jsonify
+        # With the base away, the disk describes itself: the m3u8 say what each
+        # box holds and `index.json` what each item is, which is the whole point
+        # of having written them down. Answered in the same shape, so a reader
+        # cannot tell which half of the day it is asking in.
+        if not o2mHandler.dbHandler.db_available():
+            return jsonify(_views_from_disk())
         try:
             views = o2mHandler.dbHandler.cache_views(
                 static_only=request.args.get('static') == '1')
@@ -3741,6 +3763,35 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"api_offline_views: {e}")
             return jsonify({'playlists': {}, 'items': {}, 'error': str(e)}), 500
+
+    def _views_from_disk():
+        """`/api/offline/views` answered by `localcache`, with no database.
+
+        Deliberately NOT the same code as `cache_views`: that one asks which
+        boxes hold what, and the answer to that is in the base. This one reads
+        what was already written down — so it can only describe boxes the cache
+        already has a folder for, which is exactly the honest degraded answer.
+        """
+        reader = o2mHandler.cache_reader()
+        out = {'playlists': {}, 'items': {}, 'degraded': True}
+        try:
+            index = reader.index()
+            for box in reader.boxes():
+                for view in reader.views(box):
+                    entries = reader.entries(view)
+                    if not entries:
+                        continue
+                    key = view[:-len('.m3u8')] if view.endswith('.m3u8') else view
+                    out['playlists'][key] = [e.uri for e in entries if e.uri]
+                    for e in entries:
+                        if e.uri and e.uri not in out['items']:
+                            out['items'][e.uri] = dict(index.get(e.uri) or {},
+                                                       title=e.title,
+                                                       seconds=e.seconds)
+        except Exception as e:
+            print(f"_views_from_disk: {e}")
+            out['error'] = str(e)
+        return out
 
     @api.route('/api/offline/finished', methods=['POST'])
     def api_offline_finished():
