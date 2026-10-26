@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database) and `test_localstats.py` (the two journals kept while the database is away). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) and `test_dbstate.py` (whether the database is reachable, and how often that is asked). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -1733,6 +1733,76 @@ device's folder copy follow it alike (2026-10-25):
   the same bargain the browser's offline mode strikes, which is why its queue
   is "the local subset of the current tracklist, else everything held, newest
   first" and not the AUTO mix. **The engine does not run offline.**
+- **Starting, and answering a tag, with no database at all** (2026-10-26).
+  Holding every byte was still useless on pi1/pi2, for two separate reasons,
+  and both are now closed.
+
+  **It could not start.** `DatabaseHandler.__init__` runs `setup_database()`
+  and `get_all_boxs()`, and `O2mToMopidy.__init__` ends on
+  `stats_average()` — fifteen averages — so a failure left main.py's retry
+  loop sleeping ten seconds for ever and **Flask never came up**. Measured
+  first, because the shape of the failure decides the design: no route (the
+  connect timeout), a refused port (0.0s) and an unresolvable name (0.0s) all
+  arrive as one `peewee.OperationalError`. Each is guarded now, and
+  `o2m_core/dbstate.py` holds the verdict: `up` is trusted outright so an
+  instance that HAS its database pays nothing; `down` is re-probed at most
+  every 30s; unknown probes at once, since a degraded mode must never be
+  reported unverified. Only failures are reported in, by code that caught
+  one — which needs no hook in the hundreds of places that query. The probe
+  is a 2s socket to the host (`offline.probe_reachable`), not a connection:
+  `db_connect_timeout` is 15s by design and paying it per call on a request
+  path is not acceptable — and if the host answers while MySQL is broken, the
+  first real query is the better witness anyway. **Guarding alone was not
+  enough**: every one of the fifteen averages paid the timeout again to
+  rediscover what the first knew, so both startup and the averages ask the
+  verdict ONCE. Measured on pi1 against a blackholed address: Flask answers
+  **200 after 10s**, where it used to answer never. The schema is caught up
+  when the link returns (`catch_up_schema`), before anything this process
+  writes can land on a schema it could not verify. And the degraded average is
+  **infinity, not zero**: every rule consuming it compares with `>` or `>=`,
+  so zero would mean "every track beats its cohort" and the first thing played
+  on a silent database would be promoted to favourites.
+  - **A tag reached nothing.** `api_box_action` asks the verdict before
+    `get_box_by_uid`, which not only queries but CREATES a row for a uid it
+    does not know, and goes through `O2mToMopidy.play_from_cache`: the uid is
+    in the box folder's name, `localcache` turns it into a queue, and the files
+    go to Mopidy so **the sound comes out of the Pi's own speakers**. That is
+    the one-stage shape this deployment always wanted — here the browser is a
+    remote, and the Offline button takes the audio the other way. It
+    deliberately does not go through `box_action`: the engine queries at every
+    step, so reaching it would only rediscover the absence, slowly. Verified on
+    pi1 with its base blackholed: a tag put down queued 3 files and played,
+    taking it off stopped, an unknown uid answered honestly and left no row.
+    `/api/offline/views` answers from the disk too, in the same shape.
+  - **Which `file://` to hand Mopidy is not obvious, and was measured.** o2m
+    can `stat` its own view of the volume and only guess Mopidy's, so the path
+    this process sees comes first and the rebase onto `[local] media_dir`
+    follows (`offline.mopidy_uris_for_file`). On pi1 the two are one real
+    directory while `o2m.conf` still says `/app/Music`: asked directly, Mopidy
+    resolves `file:///home/pi/Music/cache/…` and knows nothing of
+    `/app/Music`. A file that adds nothing falls through to the next spelling.
+  - **Nothing changes on an instance whose database answers**, which is the
+    whole safety of it: verified on the Pi's live service after the change —
+    schema up to date, the normal STATS, the normal views.
+  - **Still open**: the write half. A play or a bookmark made while the base is
+    away goes nowhere yet — `localstats` exists and is tested, but the Mopidy
+    event handlers still write straight to the database. And the browser's
+    Offline button is unchanged: on an instance with no Snapcast it still takes
+    the audio to the device rather than driving this.
+- **A renamed box kept two folders in the cache, and that is fixed on the read
+  side.** `CacheMembership.path` freezes `box_folder(label, uid)`, so renaming
+  a box forked its views: both names answered as wanted, each folder holding
+  only the memberships of its own era, and the pruner could take neither. Found
+  on pi1, which held `Tone [3A1A9219]` and `P Tone [3A1A9219]` side by side.
+  It matters most here, because `localcache.box(uid)` has to pick ONE folder
+  for a tag and with both at the same depth that is the alphabetical order of a
+  stale label — so a tag could play the half of the box frozen in the past.
+  `cache_views` re-decorates every box level with the name the box has today
+  (`cachelayout.relabel_view_path`, `_box_labels`); nothing is migrated, the
+  two collapse into one, and the stale one stops being wanted and is deleted by
+  the pruner that already removes unwanted views (measured: 2 views and 9 empty
+  folders gone). The static half already used `box.description`, i.e. today's
+  name.
 - spotdl/cache.py is baked into the spotdl image: a change there needs
   `docker compose build spotdl && docker compose up -d spotdl`, not a restart.
 
