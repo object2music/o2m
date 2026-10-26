@@ -10,6 +10,7 @@ from playhouse.shortcuts import model_to_dict, dict_to_model
 from o2m_core import virtualbox
 from o2m_core import boxdirectives
 from o2m_core import boximage
+from o2m_core.dbstate import DbState
 from o2m_core.o2mmodels import (
     Box, Track, Stats_Raw, PlaylistLog, db,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
@@ -19,6 +20,7 @@ from o2m_core.o2mmodels import (
     OfflineClaim, LocalFile,
     TrackAlias, DuplicateDismissed,
     setup_database,
+    probe_reachable,
 )
 
 # ── Genre normalization ────────────────────────────────────────────────────────
@@ -109,8 +111,70 @@ class DatabaseHandler():
     def __init__(self):
         self.log = logging.getLogger(__name__)
         self.log.info('DATABASE HANDLER INITIALIZATION')
-        setup_database()
-        self.boxs = self.get_all_boxs()
+        # Is the database reachable? On every instance that holds its own it is,
+        # once, and nothing here is paid again. pi1 and pi2 read theirs over the
+        # internet, and for them this is the difference between starting and not:
+        # both calls below query, so a failure used to leave main.py's retry loop
+        # sleeping ten seconds for ever and Flask never came up — a machine
+        # holding every byte it needs, unable to play one of them.
+        self.state = DbState(probe_reachable)
+        try:
+            setup_database()
+        except Exception as e:
+            # Not fatal, and deliberately not retried here: the schema is a
+            # thing to catch up on when the link returns, not a reason to
+            # refuse to start. Nothing below writes, so nothing can land on a
+            # schema this process could not verify.
+            self.state.note_failure(e)
+            print(f"[DB] schema not verified, degraded mode: {e}")
+        try:
+            self.boxs = self.get_all_boxs()
+            self.state.note_success()
+        except Exception as e:
+            self.state.note_failure(e)
+            self.boxs = []
+        self._schema_ready = not self.state.degraded
+
+    # ── the database's reachability ──────────────────────────────────────────
+
+    def db_available(self):
+        """Can the database be reached right now? Probes at most once a cadence.
+
+        What the degraded paths ask before choosing to read the disk instead —
+        and the reason the question is asked HERE and not by each of them: the
+        verdict has to be shared, or the first caller's timeout is paid again by
+        the next.
+        """
+        return self.state.available()
+
+    def db_degraded(self):
+        """Is the database KNOWN to be away? Never probes — a status line, a
+        header or a log may read it as often as it likes."""
+        return self.state.degraded
+
+    def db_note_failure(self, exc=None):
+        """A query just failed with what looks like an unreachable database."""
+        self.state.note_failure(exc)
+
+    def catch_up_schema(self):
+        """Apply the migrations that were skipped because the link was down.
+
+        A process that started degraded never verified the schema, so it must
+        do it once the database answers — and before anything it writes lands
+        on a schema it has not checked. Idempotent, and a no-op on the
+        overwhelming case of a process that started normally.
+        """
+        if self._schema_ready or not self.db_available():
+            return self._schema_ready
+        try:
+            setup_database()
+            self._schema_ready = True
+            self.boxs = self.get_all_boxs()
+            self.state.note_success()
+            print("[DB] schema verified after the link came back")
+        except Exception as e:
+            self.state.note_failure(e)
+        return self._schema_ready
 
     #MISC Functions
 

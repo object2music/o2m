@@ -98,6 +98,31 @@ if db == None:
     db = SqliteDatabase("data.db")
 
 
+# Where the database is, for the one question that must be answerable without
+# connecting to it: is it reachable at all. None for sqlite, which is a file.
+DB_ENDPOINT = ((db_host, db_port)
+               if isinstance(db, MySQLDatabase) else None)
+
+# A probe must be BOUNDED, and `connect_timeout` is 15s by default — a net
+# under a dead socket, deliberately generous because it is shared with the
+# instances whose database is a container on the same host. Paying that on a
+# request path, every cadence, is not acceptable, so the probe asks the only
+# question it needs: can this host be reached. A plain socket, no driver, no
+# credentials. If the host answers but MySQL is broken, the first real query
+# says so (`DbState.note_failure`) — which is the better witness anyway.
+PROBE_TIMEOUT = 2.0
+
+
+def probe_reachable(timeout=PROBE_TIMEOUT):
+    """Raise unless the database can be reached. Cheap, bounded, silent."""
+    if DB_ENDPOINT is None:
+        return True                     # a local file: there is no link to lose
+    import socket
+    host, port = DB_ENDPOINT
+    with socket.create_connection((host, int(port)), timeout=timeout):
+        return True
+
+
 """
     MODEL STRUCTURE
 """
