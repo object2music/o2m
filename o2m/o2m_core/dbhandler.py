@@ -2751,6 +2751,17 @@ class DatabaseHandler():
                 out.extend((path, u) for u in uris if u in held)
         return out
 
+    def _box_labels(self):
+        """`{uid: name}` for every stored box — what a view folder is called
+        today. One query: a cache may hold a hundred memberships over a dozen
+        boxes, and the name is the one part of a view path that can move."""
+        try:
+            return {b.uid: (b.description or '')
+                    for b in Box.select(Box.uid, Box.description)}
+        except Exception as e:
+            print(f"_box_labels: {e}")
+            return {}
+
     def cache_views(self, static_only=False):
         """The offline cache's box views: {'playlists': {path under Boxes/: [uri]},
         'items': {uri: {local_uri, title, seconds}}} — every playlist over what
@@ -2765,11 +2776,17 @@ class DatabaseHandler():
         held = self._held_files()
         pairs = []
         uris = [] if static_only else list(held)
+        # A stored path carries the box's label as it was when the item was
+        # served, so a renamed box would answer under BOTH names, each folder
+        # holding only its own era's memberships. The current name is read
+        # once and the paths are re-decorated with it; the static half below
+        # already uses `box.description`, i.e. the name today.
+        label_for = self._box_labels().get if uris else (lambda _uid: '')
         for i in range(0, len(uris), 500):
             for m in (CacheMembership.select(CacheMembership.uri, CacheMembership.path)
                       .where(CacheMembership.uri.in_(uris[i:i + 500]))
                       .order_by(CacheMembership.served_at.desc())):
-                pairs.append((m.path, m.uri))
+                pairs.append((cachelayout.relabel_view_path(m.path, label_for), m.uri))
         pairs.extend(self._static_memberships(held))
         lists = cachelayout.playlists(pairs)
         listed = {u for lst in lists.values() for u in lst}

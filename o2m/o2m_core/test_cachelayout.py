@@ -87,5 +87,66 @@ class TestViews(unittest.TestCase):
         self.assertEqual(lists[f'{self.A}/Habits'], ['u'])
 
 
+class TestARenamedBoxKeepsOneFolder(unittest.TestCase):
+    """A box's label is decoration; its uid is its identity.
+
+    Measured on the Pi (2026-10-26): "Tone [3A1A9219]" and "P Tone [3A1A9219]"
+    both on the disk, both answered as wanted, so neither could be pruned — and
+    each held only the memberships of its own era.
+    """
+
+    NOW = {'3A1A9219': 'P Tone', '04CE': 'Jazz'}
+
+    def label(self, uid):
+        return self.NOW.get(uid, '')
+
+    def test_the_current_name_replaces_the_stored_one(self):
+        self.assertEqual(cl.relabel_view_path('Tone [3A1A9219]', self.label),
+                         'P Tone [3A1A9219]')
+
+    def test_a_box_that_was_unnamed_gains_its_name(self):
+        """A box with no name is filed under its uid alone, and naming it later
+        must not leave that folder behind either."""
+        self.assertEqual(cl.relabel_view_path('3A1A9219', self.label),
+                         'P Tone [3A1A9219]')
+
+    def test_the_source_level_is_left_alone(self):
+        """A source label is not a box folder, and `label_for` not knowing it is
+        the same answer as it not being one."""
+        self.assertEqual(cl.relabel_view_path('Tone [3A1A9219]/Favorites', self.label),
+                         'P Tone [3A1A9219]/Favorites')
+        self.assertEqual(cl.relabel_view_path('Tone [3A1A9219]/Best of (2020)', self.label),
+                         'P Tone [3A1A9219]/Best of (2020)')
+
+    def test_every_box_of_a_cascade_is_relabelled(self):
+        self.assertEqual(
+            cl.relabel_view_path('Old [3A1A9219]/Was [04CE]/Playlist X', self.label),
+            'P Tone [3A1A9219]/Jazz [04CE]/Playlist X')
+
+    def test_a_deleted_box_keeps_the_name_it_had(self):
+        """There is nothing better to say about it, and the files are still
+        there: dropping the label would file them under a bare uid."""
+        self.assertEqual(cl.relabel_view_path('Gone [FFFF]', self.label), 'Gone [FFFF]')
+
+    def test_the_two_eras_of_one_box_become_one_playlist(self):
+        """The point of the whole thing: two stored paths, one view, both
+        items — instead of two half views one of which a tag would pick."""
+        pairs = [(cl.relabel_view_path(p, self.label), u) for p, u in [
+            ('Tone [3A1A9219]/Tone', 'before-the-rename'),
+            ('P Tone [3A1A9219]/Tone', 'after-the-rename'),
+        ]]
+        lists = cl.playlists(pairs)
+        self.assertEqual(lists['P Tone [3A1A9219]/Tone'],
+                         ['before-the-rename', 'after-the-rename'])
+        self.assertEqual(lists['P Tone [3A1A9219]/All'],
+                         ['before-the-rename', 'after-the-rename'])
+        self.assertNotIn('Tone [3A1A9219]/Tone', lists)
+
+    def test_nothing_moves_when_no_name_moved(self):
+        self.assertEqual(cl.relabel_view_path('P Tone [3A1A9219]/All', self.label),
+                         'P Tone [3A1A9219]/All')
+        self.assertEqual(cl.relabel_view_path('', self.label), '')
+
+
 if __name__ == '__main__':
     unittest.main()

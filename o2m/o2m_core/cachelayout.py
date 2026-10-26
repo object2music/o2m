@@ -127,6 +127,39 @@ def parse_box_folder(part):
     return '', part
 
 
+def relabel_view_path(path, label_for) -> str:
+    """`path` with every box folder re-decorated with the box's CURRENT name.
+
+    A membership records where an item sat when it was served, and that path
+    carries the box's label (`box_folder`). The label is decoration — the uid is
+    the identity — but a stored path freezes it, so renaming a box forks its
+    views into two folders that each hold only the memberships of their era: a
+    tag then resolves to whichever one sorts first, which may be the half frozen
+    in the past. Measured on this install, where "Tone [3A1A9219]" and "P Tone
+    [3A1A9219]" both existed and both were answered as wanted, so the pruner
+    could not take either.
+
+    Fixed on the READ side on purpose: nothing is migrated, the two folders
+    collapse into the current one, and the stale one stops being wanted and is
+    deleted by the pruner that already removes unwanted views.
+
+    `label_for(uid)` gives the box's name today, or '' / None when no box has
+    that uid any more — and then the stored label is kept, there being nothing
+    better to say. A part that is not a box folder (a source label) is left
+    exactly as it is: `label_for` does not know it, which is the same answer.
+    """
+    out = []
+    for part in (path or '').split('/'):
+        parsed = parse_box_folder(part) if part else None
+        if parsed:
+            label, uid = parsed
+            now = (label_for(uid) or '') if uid else ''
+            if now and now != label:
+                part = box_folder(now, uid) or part
+        out.append(part)
+    return '/'.join(out)
+
+
 # The AUTO mix's buckets, by the library_link its add_tracks calls pass.
 _BUCKET_LINKS = {
     'o2m:favorites': 'Favorites', 'spotify:favorites': 'Favorites',
