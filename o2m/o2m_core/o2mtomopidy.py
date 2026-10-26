@@ -287,9 +287,19 @@ class O2mToMopidy:
         """
         stats = {}
         missed = 0
+        # Ask the verdict ONCE. Guarding each query is what keeps the handler
+        # buildable; it is not what makes it quick, because every one of the
+        # fifteen then pays the connect timeout over again to rediscover what
+        # the first already knew — measured on pi1 against a blackholed address
+        # at a 3s timeout, and `db_connect_timeout` is 15 in production.
+        known_away = not self.dbHandler.db_available()
         for i in {'new','library','incoming','favorites','hidden'}:
             stats2 = {}
             for j in {'read_end','read_count','read_count_end'}:
+                if known_away:
+                    missed += 1
+                    stats2[j] = float('inf')
+                    continue
                 try:
                     value = self.dbHandler.get_avg_stat(option_type=i,column=j)
                 except Exception as e:

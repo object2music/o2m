@@ -118,6 +118,16 @@ class DatabaseHandler():
         # sleeping ten seconds for ever and Flask never came up — a machine
         # holding every byte it needs, unable to play one of them.
         self.state = DbState(probe_reachable)
+        # The probe first, because it is the cheap question: a 2s socket against
+        # the host, where each of the calls below would instead pay
+        # `db_connect_timeout` (15s by default) to learn the same thing. A
+        # degraded start is then seconds rather than a minute, and an instance
+        # whose database answers pays one socket connect, once, at startup.
+        if not self.state.available():
+            print("[DB] not reachable at startup: starting in degraded mode")
+            self.boxs = []
+            self._schema_ready = False
+            return
         try:
             setup_database()
         except Exception as e:
