@@ -268,13 +268,44 @@ class O2mToMopidy:
             return False
 
     def stats_average(self):
+        """The cohort averages a play is compared against (promotion, demotion).
+
+        Fifteen queries, and they were the LAST thing __init__ did — so on an
+        instance whose database is somewhere else they were the last thing
+        standing between it and starting at all: the handler could not be built,
+        main.py's retry loop slept ten seconds and went round again, and Flask
+        never came up. Guarded per query, so a link that dies halfway through
+        still leaves a usable structure.
+
+        **An average nobody could read must not read as zero.** Every rule that
+        consumes this compares with `>` or `>=`, so zero means "every track
+        beats its cohort" and the first thing played would be promoted to
+        favourites on a database that simply was not answering. Infinity is what
+        "not known" means here: nothing crosses it, in either direction. A
+        genuinely empty cohort still reads 0, as it always did — that is a
+        measurement, not a hole.
+        """
         stats = {}
+        missed = 0
         for i in {'new','library','incoming','favorites','hidden'}:
             stats2 = {}
             for j in {'read_end','read_count','read_count_end'}:
-                stats2[j]=self.dbHandler.get_avg_stat(option_type=i,column=j)
-                if stats2[j] == None: stats2[j]=0
+                try:
+                    value = self.dbHandler.get_avg_stat(option_type=i,column=j)
+                except Exception as e:
+                    if not missed:
+                        self.dbHandler.db_note_failure(e)
+                    missed += 1
+                    value = float('inf')
+                else:
+                    if value is None:
+                        value = 0
+                stats2[j]=value
             stats[i]=stats2
+        if missed:
+            print(f"\n\nSTATS unavailable ({missed} of 15 averages): nothing is "
+                  f"promoted or demoted until the database answers")
+            return stats
         print("\n\nSTATS")
         print("\n".join("{} {}".format(k, v) for k, v in stats.items()))
         return stats
