@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) and `test_snapwatch.py` (the last Snapcast listener leaving). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) and `test_mopidywatch.py` (a Mopidy that came up without Spotify). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -2195,6 +2195,56 @@ README.
 
 `mopidy/mopidy_spotify_backend5.py` is bind-mounted over `mopidy_spotify/backend.py` to
 carry O2M's streaming identity and a resilient login.
+
+### A Mopidy that starts without Spotify stays without it, silently
+mopidy-spotify loads the account profile ONCE, when the backend starts. If that
+fails — and the ordinary cause is simply that the machine had no network that
+second — the backend **latches**: `[]` for every `spotify:` lookup, `Spotify
+search aborted: Spotify is offline` in its log, for the whole life of the
+process. Nothing retries, and nothing reports it.
+
+Measured on pi1 (2026-10-28), whose network drops repeatedly. Mopidy started at
+23:49 the night before, inside one of those drops:
+
+    ERROR mopidy_spotify.web OAuth token refresh failed: Unknown error.
+    ERROR mopidy_spotify.web Failed to load Spotify user profile
+
+Twenty-two hours later every bucket of the AUTO mix added nothing —
+`AUTO: 1 tracks queued for a target of 30` — because at DL 0 every bucket is
+Spotify tracks and Mopidy returned `[]` for all of them. The one track that
+played came from the machine's own offline cache, which is the only reason it
+was not silence. **There is no error anywhere**: the symptom is a fill that
+quietly queues one track for thirty. A restart of Mopidy cured it at once
+(`Logged into Spotify Web API as …`, 41 playlists refreshed,
+`AUTO: 30 tracks queued for a target of 30`).
+
+`o2m_core/mopidywatch.py` (+ `test_mopidywatch.py`, whose fixtures are those two
+real journals) decides; `samples/mopidy-spotify-watchdog.py` plus its
+`.service`/`.timer` gather and act, on a native instance, every 2 minutes.
+Five decisions in it are load-bearing:
+- **It reads Mopidy's own words, not Spotify.** The request quota is shared by
+  every instance of the installation and has stopped the whole app for 17 h
+  once; and the state is latched per PROCESS, so asking twice a minute would
+  learn nothing one question answers. The journal is free, local and the
+  authority.
+- **The last decisive line wins.** The backend retries its token around
+  startup, so reading the FIRST line would restart a perfectly healthy Mopidy.
+- **`unknown` is a real answer and must do nothing** — the extension disabled,
+  a version wording it differently, a journal already rotated. A watchdog that
+  acts on its own blind spot is worse than none.
+- **Attempts are counted over an HOUR, never per process.** A restart makes a
+  new PID, so a counter kept against the PID resets on the very event it is
+  counting and the cap caps nothing. Three an hour, then it names the account
+  as the likely cause and holds — a revoked token looks identical from here and
+  no restart cures it.
+- **It never restarts into the same outage**, and a grace keeps it off a Mopidy
+  that just started (each restart makes a young one, which would make the next).
+  Verified on pi1: against the healthy process it says nothing and leaves
+  `NRestarts=0`; against the previous night's journal it decides `restart`.
+
+Kept apart from `mopidy-watchdog.sh`, already on that machine, which watches a
+different fault: that one restarts a Mopidy whose core stopped answering, this
+one a Mopidy that answers perfectly and simply has no Spotify.
 
 **The Iris integration is gone.** `o2m.js` / `o2m.css` used to be copied into
 `mopidy_iris/static/` at image build time, alongside a 7.5 MB `app.js`; Iris was never
