@@ -10745,7 +10745,58 @@ function toggleFullscreen() {
 }
 function updateFsBtn() {
   document.getElementById('btn-fullscreen')?.classList.toggle('on', isFullscreen());
+  screenDiag();
 }
+/* TEMPORARY screen diagnostic (2026-10-28): the black band at the top of a phone
+   in fullscreen cannot be measured without devtools on the phone, so this prints
+   the figures on screen. Turned on per device by opening /mood?diag=1 once
+   (?diag=0 turns it off); the installed app shares the setting. Remove once the
+   cause is known. */
+function screenDiag() {
+  try {
+    const q = new URLSearchParams(location.search).get('diag');
+    if (q === '1') localStorage.setItem('o2m-diag', '1');
+    if (q === '0') localStorage.removeItem('o2m-diag');
+    if (localStorage.getItem('o2m-diag') !== '1') return;
+  } catch (e) { return; }
+  const probe = css => {
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:0;top:0;width:1px;visibility:hidden;pointer-events:none;' + css;
+    document.body.appendChild(d);
+    const r = d.getBoundingClientRect(); d.remove(); return r;
+  };
+  const inset = side => Math.round(probe('height:env(safe-area-inset-' + side + ',0px)').height);
+  const mode = ['fullscreen', 'standalone', 'minimal-ui', 'browser']
+    .find(m => matchMedia('(display-mode: ' + m + ')').matches) || '?';
+  const vv = window.visualViewport;
+  const tz = document.getElementById('top-zone');
+  const lines = [
+    'mode=' + mode + ' fsApi=' + isFullscreen() + ' dpr=' + devicePixelRatio,
+    'screen=' + screen.width + 'x' + screen.height + ' avail=' + screen.availHeight,
+    'inner=' + innerWidth + 'x' + innerHeight + ' outer=' + outerHeight + ' client=' + document.documentElement.clientHeight,
+    'vv=' + (vv ? Math.round(vv.height) + ' top=' + Math.round(vv.offsetTop) : '-') + ' scrollY=' + scrollY,
+    'svh=' + Math.round(probe('height:100svh').height) + ' dvh=' + Math.round(probe('height:100dvh').height) + ' lvh=' + Math.round(probe('height:100lvh').height),
+    'inset t=' + inset('top') + ' b=' + inset('bottom') + ' l=' + inset('left') + ' r=' + inset('right'),
+    'body=' + Math.round(document.body.getBoundingClientRect().height) + ' topzone y=' + (tz ? Math.round(tz.getBoundingClientRect().top) + ' pad=' + getComputedStyle(tz).paddingTop : '-'),
+  ];
+  let el = document.getElementById('screen-diag');
+  if (!el) {
+    el = document.createElement('pre');
+    el.id = 'screen-diag';
+    el.style.cssText = 'position:fixed;left:0;right:0;top:50%;z-index:99999;margin:0;padding:6px 8px;'
+      + 'background:#ff0;color:#000;font:11px/1.35 monospace;white-space:pre-wrap;pointer-events:none;';
+    document.body.appendChild(el);
+    // Bands that show where the page itself starts and ends, under any system bar.
+    for (const pos of ['top', 'bottom']) {
+      const b = document.createElement('div');
+      b.style.cssText = 'position:fixed;left:0;right:0;height:4px;z-index:99999;pointer-events:none;background:#0f0;' + pos + ':0';
+      document.body.appendChild(b);
+    }
+  }
+  el.textContent = lines.join('\n');
+}
+screenDiag();
+window.addEventListener('resize', () => setTimeout(screenDiag, 100));
 
 init();
 
