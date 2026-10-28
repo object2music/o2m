@@ -263,6 +263,12 @@
             unlike dvh which some mobile browsers mis-measure on load → the footer was
             pushed just below the fold until a reflow (refresh) fixed it. */
          height: 100svh;
+         /* …and the real window height once the page knows it (syncAppHeight in
+            mood.html). svh is the viewport WITH the browser UI shown, and Chrome on
+            Android keeps that figure in fullscreen and in an installed PWA, where
+            there is no UI: the page stopped short of the screen's bottom and the
+            rest was a dead strip of ground. innerHeight is what is actually there. */
+         height: var(--app-h, 100svh);
          transition: background .25s, color .25s; }
   /* NB: do NOT add horizontal padding to <body> — several rows use a full-bleed
      width:100vw trick (e.g. mobile #controls) that would then overflow by the

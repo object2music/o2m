@@ -10745,7 +10745,18 @@ function toggleFullscreen() {
 }
 function updateFsBtn() {
   document.getElementById('btn-fullscreen')?.classList.toggle('on', isFullscreen());
+  syncAppHeight();
 }
+/* The page's height is the window's, measured (see body in mood.css): entering or
+   leaving fullscreen, rotating, the URL bar sliding — each moves innerHeight, and
+   a resize is what all of them send. Read on the next frame for fullscreen, whose
+   change event can arrive before the window has its new size. */
+function syncAppHeight() {
+  const set = () => document.documentElement.style.setProperty('--app-h', window.innerHeight + 'px');
+  set(); requestAnimationFrame(set);
+}
+syncAppHeight();
+window.addEventListener('resize', syncAppHeight);
 
 init();
 
