@@ -9970,10 +9970,21 @@ function applyTheme(name) {
   // per-theme. Same picture, no re-draw — only initBasicBackground draws one.
   tuneBasicBackdrop(_basicBgUrl);
   readThemeColors();
+  syncStatusBarColor();
   requestAnimationFrame(fitHeroTitle);
   requestAnimationFrame(syncDetailsWidth);   // standard themes: re-match details↔cover width
   const lb = document.getElementById('lyrics-body'); if (lb) lb.dataset.uri = '';
   paintLyrics();                              // in the Basic view lyrics are an Invert feature
+}
+/* The installed app shows the phone's status bar (clock, battery) — fullscreen
+   only left a dead black strip around the camera, since Chrome letterboxes the
+   cutout there. The bar takes the header's own ground, so it reads as part of it. */
+function syncStatusBarColor() {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  const tz = document.getElementById('top-zone');
+  if (!meta || !tz) return;
+  const c = getComputedStyle(tz).backgroundColor;
+  if (c && c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent') meta.setAttribute('content', c);
 }
 function setupThemeSwitcher() {
   setupLyrics();
