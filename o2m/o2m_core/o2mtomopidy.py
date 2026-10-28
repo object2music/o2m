@@ -2378,8 +2378,10 @@ class O2mToMopidy:
             return order
 
     def toggle_all(self, mode='toggle'):
-        """ALL. `toggle`: any category on -> everything off; nothing on -> every
-        category on, then playback started. `on` / `off` state the wanted
+        """ALL. `toggle`: every category on -> everything off; otherwise the
+        categories still off are turned on, then playback started — ALL is lit
+        only when everything is on, so a press while it is unlit must never turn
+        off what is playing (music alone on used to be switched off). `on` / `off` state the wanted
         result. Categories with no box are left out, as the button leaves them.
         One operation under one hold of the box lock, and a toggle repeated
         within a second (a remote key held down, a card read twice) is dropped."""
@@ -2389,7 +2391,8 @@ class O2mToMopidy:
                 return {'ok': True, 'action': 'ignored', 'reason': 'repeat'}
             with self._box_ops_lock(), self.filling():
                 cats, on = self._all_categories()
-                if mode == 'off' or (mode == 'toggle' and on):
+                all_on = bool(on) and all(c in on for c in cats)
+                if mode == 'off' or (mode == 'toggle' and all_on):
                     order = list(on)
                     random.shuffle(order)
                     for c in order:

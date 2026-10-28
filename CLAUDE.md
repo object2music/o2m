@@ -672,7 +672,7 @@ episode and a song are one place each.
 There is **no `meta_music`**: `meta_fill` handles the `music` category, but
 `_META_PATTERNS` has no entry for it, so it cannot be written in a box. The BASIC view's
 ALL as an object is `meta_all` above: `/api/basic_all` (the remote) and a `meta_all`
-box both go through `O2mToMopidy.toggle_all`. The page's own button applies the same
+box both go through `O2mToMopidy.toggle_all`. **ALL switches off only when everything is on** — it is lit only then; unlit, a press turns on the categories still off and leaves the rest playing (until 2026-10-28 any category on made it switch all off, so ALL unlit with music alone on stopped the music). Offline, `offBasicAll` follows the same rule. The page's own button applies the same
 rule client-side, category by category (`toggleBasicAll` → `/api/basic_toggle`).
 
 ### 3. Settings — read BEFORE the box is filled

@@ -870,7 +870,9 @@ function syncAllButton() {
   allBtn.classList.toggle('on', tiles.length > 0 && tiles.every(t => t.classList.contains('on')));
 }
 
-// ALL meta-button: any category active → everything off; nothing active → everything on.
+// ALL meta-button: every category active → everything off; otherwise the ones
+// still off are turned on. It is lit only when all are on, so an unlit ALL never
+// switches anything off.
 /* The four categories, in a random order. They are activated one after another
    and the queue keeps that order, so a fixed list always opened on music. */
 function shuffledCats() {
@@ -888,8 +890,10 @@ async function toggleBasicAll(btn) {
   if (!basicCats || mixBusy || serverBusy || _catDraining) return;
   const cats = shuffledCats();
   const tileOn = c => !!document.querySelector(`.basic-toggle[data-cat="${c}"]`)?.classList.contains('on');
-  // Read from the tiles, like everything else: the user is acting on what is shown.
-  const anyActive = cats.some(tileOn);
+  // Read from the tiles, like everything else: the user is acting on what is shown
+  // — and on what ALL itself shows (syncAllButton: lit = every tile that has a box,
+  // or is on, is on).
+  const allActive = document.getElementById('basic-all')?.classList.contains('on');
   // ALL is a sequence over the four tiles, so it and the tiles are mutually
   // exclusive: the tiles are parked for the run (a tap meanwhile would race it).
   const tiles = [...document.querySelectorAll('#basic-toggles .basic-toggle')];
@@ -903,7 +907,8 @@ async function toggleBasicAll(btn) {
       // OFF pass: only categories currently on; ON pass: only those off. The target
       // is stated rather than toggled, so a category that changed under us is a
       // no-op instead of a flip in the wrong direction.
-      if (cbtn && anyActive === tileOn(c)) await toggleBasicCat(cbtn, !anyActive);
+      if (cbtn && allActive === tileOn(c)
+          && (allActive || ((basicCats[c] || []).length))) await toggleBasicCat(cbtn, !allActive);
       syncAllButton();   // the disc fills in as the sequence advances
     }
   } finally {
@@ -9225,12 +9230,19 @@ function offBasicToggle(cat, wantOn) {
 }
 function offBasicAll() {
   const cats = OFF_CATS.filter(c => c !== 'radio');
-  if (OFF.queue.length) { offQueueDrop(OFF.queue.map(t => t.uri)); return; }
+  // The server's rule: everything on → clear; otherwise add the kinds still off,
+  // and never drop what is queued. "On" is what offBasicPaint lights ALL by.
+  const avail = cats.filter(c => offHeldOf(c).length || offQueuedOf(c).length);
+  const missing = avail.filter(c => !offQueuedOf(c).length);
+  if (OFF.queue.length && !missing.length) { offQueueDrop(OFF.queue.map(t => t.uri)); return; }
   // The same interleave as everywhere else, rather than this function's own
   // round-robin: one rule, and it is the server's.
-  const order = offInterleaveUris(cats.reduce((a, c) => a.concat(offShuffle(offHeldOf(c))), []));
+  const order = offInterleaveUris(missing.reduce((a, c) => a.concat(offShuffle(offHeldOf(c))), []))
+    .filter(u => !OFF.queue.some(t => t.uri === u));
   if (!order.length) { setFeedback('Nothing downloaded on this device'); return; }
+  const mixIn = OFF.queue.length > 0;
   offQueueAppend(order);
+  if (mixIn) offInterleaveTail();   // kinds added to a queue are mixed in, not stacked
 }
 
 /* Which rows this device is holding — shown online too, so you can see what an
