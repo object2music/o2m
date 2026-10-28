@@ -1139,13 +1139,7 @@
     #track-tags-row { grid-area: tags; }
     #progress-wrap  { grid-area: prog; }
     #controls       { grid-area: ctrl; }
-    /* The camera strip is not reserved across the whole width any more: the cutout
-       is a hole in the MIDDLE of the status bar, so the cover (left) and the edit
-       button (right) rise into the strip beside it, and only the text column — the
-       one that runs under the hole — starts below it. The whole strip used to be
-       left empty, which read as a black band under the camera. */
-    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #top-zone       { padding-top: 0; }
-    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #status-line    { padding-top: calc(calc(10px * var(--ui)) + env(safe-area-inset-top, 0px)); }
+    :root:not([data-theme="overprint"]):not([data-theme="invert"]) #status-line    { padding-top: calc(10px * var(--ui)); }
     :root:not([data-theme="overprint"]):not([data-theme="invert"]) #artist-album   { padding-bottom: calc(10px * var(--ui)); }
     :root:not([data-theme="overprint"]):not([data-theme="invert"]) #btn-details    { justify-self: end; margin: calc(10px * var(--ui)) calc(12px * var(--ui)) 0 0; }
     :root:not([data-theme="overprint"]):not([data-theme="invert"]) #track-tags-row { padding: 0 calc(12px * var(--ui)) calc(10px * var(--ui)); }
