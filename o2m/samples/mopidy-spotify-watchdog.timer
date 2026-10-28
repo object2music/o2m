@@ -1,0 +1,12 @@
+[Unit]
+Description=Check every 2 minutes that Mopidy still has Spotify
+
+[Timer]
+# The state is latched for the life of the Mopidy process, so this is not a
+# poll of anything that moves: it is there to notice a bad start, and to notice
+# the network coming back after one.
+OnBootSec=4min
+OnUnitInactiveSec=2min
+
+[Install]
+WantedBy=timers.target

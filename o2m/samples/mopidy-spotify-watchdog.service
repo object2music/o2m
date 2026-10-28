@@ -1,0 +1,7 @@
+[Unit]
+Description=Restart Mopidy if it came up without Spotify
+After=mopidy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mopidy-spotify-watchdog.py
