@@ -2282,7 +2282,8 @@ function paintTvNow(tv) {
   if (!TV.st) { el.hidden = true; el.innerHTML = ''; return; }
   const t = TV.st;
   // With a limit reached, Next would only start the video that closes YouTube.
-  const more = !t.limit || t.played < t.limit;
+  // The video just cast counts before the watcher has seen it.
+  const more = !t.limit || Math.max(t.played, 1) < t.limit;
   const count = t.limit ? ` · ${Math.min(t.played, t.limit)}/${t.limit}` : '';
   el.innerHTML = `<div class="tl-item tv-item">
       <div class="tl-num tv-badge" title="On the TV">${TV_SVG}</div>
