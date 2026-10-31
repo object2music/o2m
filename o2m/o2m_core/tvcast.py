@@ -231,8 +231,9 @@ def box_action(box, mode, config, pause_music=None):
                 print(f"TV stop error: {e}")
                 return f"TV: {e}"
             return "TV removed"
-        if on and mode == 'add':
-            return "No action"
+        # An `add` while already on casts again rather than answering "No
+        # action": the TV may have been switched off or YouTube closed with the
+        # remote since, and a tag put down means "the video, now".
         refs = [(r, parse_youtube(r)) for r in tv_refs(box.data)]
         refs = [(r, p) for r, p in refs if p]
         if not refs:

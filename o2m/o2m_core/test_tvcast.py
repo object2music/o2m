@@ -71,7 +71,9 @@ class TestBoxAction(unittest.TestCase):
             self.assertEqual(tv.box_action(self.box, 'add', _config(), lambda: paused.append(1)), 'TV added')
             play.assert_called_once_with('192.168.1.137', 'rwalpfPkQvk', 'PLM0sCcbvupIa3uPDa8lxDo6KgMnqcjajr')
             self.assertEqual(paused, [1])
-            self.assertEqual(tv.box_action(self.box, 'add', _config()), 'No action')
+            # Put down again: cast again — the TV may have been closed meanwhile.
+            self.assertEqual(tv.box_action(self.box, 'add', _config()), 'TV added')
+            self.assertEqual(play.call_count, 2)
             self.assertEqual(tv.box_action(self.box, 'remove', _config()), 'TV removed')
             stop.assert_called_once_with('192.168.1.137')
             self.assertEqual(tv.box_action(self.box, 'remove', _config()), 'No action')
