@@ -144,6 +144,13 @@ class TestPicking(unittest.TestCase):
             starts = [tv.pick_start(None, 'PL') for _ in range(8)]
         self.assertTrue(all(a != b for a, b in zip(starts, starts[1:])), starts)
 
+    def test_unavailable_entries_are_never_drawn(self):
+        # Flat entries as yt_dlp returns them for a playlist holding dead videos.
+        self.assertTrue(tv.playable_entry({'id': 'YY3MvhTNO38', 'title': "L'Etoile Mysterieuse"}))
+        for e in ({'id': 'ebGSyc0VBBU', 'title': None}, {'id': 'x', 'title': ''},
+                  {'id': 'x', 'title': '[Private video]'}, {'title': 'no id'}, None):
+            self.assertFalse(tv.playable_entry(e), e)
+
     def test_unreadable_playlist_starts_at_the_named_video(self):
         with mock.patch.object(tv, 'playlist_entries', return_value=None):
             self.assertEqual(tv.pick_start('v', 'PL'), 'v')

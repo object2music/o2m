@@ -159,6 +159,17 @@ _playlists = {}                 # playlist id -> (expires, [video ids] or None)
 _last_start = {}                # playlist id -> the video it last started at
 
 
+def playable_entry(entry):
+    """Can the TV play this flat playlist entry? A video deleted or made private
+    by its uploader stays listed, with NO title (and no duration) — 26 of the 35
+    of one playlist here, every one "Video unavailable". Started on one, the TV
+    shows YouTube's error screen instead of the cartoon."""
+    if not entry or not entry.get('id'):
+        return False
+    title = (entry.get('title') or '').strip()
+    return bool(title) and title not in ('[Deleted video]', '[Private video]')
+
+
 def playlist_entries(playlist_id):
     """The video ids of a playlist, or None when it cannot be read — a PRIVATE
     playlist answers "The playlist does not exist" to anyone but its owner, even
@@ -174,7 +185,7 @@ def playlist_entries(playlist_id):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/playlist?list={playlist_id}',
                                     download=False)
-        ids = [e['id'] for e in (info.get('entries') or []) if e and e.get('id')] or None
+        ids = [e['id'] for e in (info.get('entries') or []) if playable_entry(e)] or None
     except Exception as e:
         print(f"TV: playlist {playlist_id} unreadable: {str(e)[:120]}")
     _playlists[playlist_id] = (time.time() + (_PLAYLIST_TTL if ids else _PLAYLIST_FAIL_TTL), ids)
