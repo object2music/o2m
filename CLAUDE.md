@@ -683,6 +683,38 @@ is skipped by the dispatcher.
   above the tracklist (`#tv-now`, outside `#tracklist-wrap`: Mopidy never holds
   it, so no row gesture applies), with Next (`POST /api/tv_next`) and Stop (the
   box's own remove). A watcher ending on its own (app closed, limit) unlights it.
+- **A sleeping box is woken over Bluetooth** (2026-10-31). In deep standby the
+  Mi Box leaves the Wi-Fi altogether — no ping, no Cast, every port closed,
+  from a few minutes to two hours after it is switched off — so no network
+  command can reach it, and a tag put down in the evening did nothing. Its
+  paired Bluetooth remotes keep their link through that standby, and a key on
+  it brought the box back on Cast in **6 s**. So the Pi is one of those
+  remotes: `samples/tv-remote/o2m-tv-remote.py`, a BlueZ HID-over-GATT
+  peripheral (root, systemd, python3-dbus/gi), takes key names on a FIFO;
+  `tvcast` writes `[tv] wake_key` there when the receiver is off the network
+  (`wake_fifo`, then waits `wake_wait` for it), or in standby on it.
+  **`power` is a toggle**: it would SLEEP a box that is awake, and
+  `is_stand_by` also reads true for a box left on another HDMI input, so it is
+  sent only to a box off the network; `wakeup` (System Wake Up → Android
+  `KEYCODE_WAKEUP`) only ever wakes. Four traps, all measured, behind the
+  two units:
+  - **Dual-mode advertising hid it.** Discoverable on Bluetooth classic too
+    (with no device class), the Pi was listed and pairing never even reached
+    LE: the box tried classic. LE only (`btmgmt bredr off`, and
+    `ControllerMode = le` in `/etc/bluetooth/main.conf` so bluetoothd does not
+    turn classic back on).
+  - **The box remembers an address as classic.** Back on the same address in
+    LE only, it still never connected; a NEW address was seen as new.
+  - **A static random address pairs and then fails.** The box connected, bonded
+    and asked for the services — and nothing answered, then the kernel dropped
+    the idle link (reason 0x16): bluetoothd's ATT server listens on the PUBLIC
+    address. The controller's public address is rewritten instead
+    (`btmgmt public-addr`, `o2m-tv-remote-address.service`, after `bthelper`
+    — which writes the factory one — and before bluetoothd). It does not
+    survive a reboot, hence the unit; change it and the box must pair again.
+  - **Pairing is done once on the box**: Settings → Remotes & accessories →
+    Add accessory → "o2m remote". The report map is cached with the bond:
+    adding a key to it needs a new pairing.
 - The NFC reader sends `add` on insert and `remove` on removal; a `toogle` from
   the page works too. The active state is in memory (`tvcast._active`), so
   neither gesture trusts it: an `add` always

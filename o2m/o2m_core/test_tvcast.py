@@ -1,5 +1,7 @@
 import configparser
 import datetime
+import os
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -251,6 +253,84 @@ class TestPageState(unittest.TestCase):
         w._halt.wait = lambda t: False          # one round: app_id is not YouTube
         w.run()
         self.assertNotIn('U1', tv._active)
+
+
+class TestWake(unittest.TestCase):
+    """Waking a sleeping receiver through the Bluetooth remote's FIFO."""
+
+    def setUp(self):
+        self.keys = []
+        self.saved = dict(tv._wake)
+        tv._wake.update(fifo='/run/x.fifo', key='wakeup', wait=3)
+        self.addCleanup(tv._wake.update, self.saved)
+        for name, kw in (('send_key', {'side_effect': lambda w: self.keys.append(w) or True}),
+                         ('_until', {'return_value': True}),
+                         ('_connect', {'return_value': SimpleNamespace(status=SimpleNamespace(is_stand_by=False))})):
+            p = mock.patch.object(tv, name, **kw)
+            setattr(self, name.strip('_'), p.start())
+            self.addCleanup(p.stop)
+
+    def test_an_awake_box_gets_no_key(self):
+        with mock.patch.object(tv, '_reachable', return_value=True):
+            tv._connect_awake('10.0.0.5')
+        self.assertEqual(self.keys, [])
+
+    def test_a_box_off_the_network_is_woken_then_connected(self):
+        answers = iter([False, False, True])
+        with mock.patch.object(tv, '_reachable', side_effect=lambda h: next(answers)), \
+                mock.patch.object(tv.time, 'sleep'):
+            tv._connect_awake('10.0.0.5')
+        self.assertEqual(self.keys, ['wakeup'])
+        self.connect.assert_called_once_with('10.0.0.5')
+
+    def test_power_is_sent_to_a_box_off_the_network(self):
+        tv._wake['key'] = 'power'
+        with mock.patch.object(tv, '_reachable', side_effect=[False, True]):
+            tv._connect_awake('10.0.0.5')
+        self.assertEqual(self.keys, ['power'])
+
+    def test_standby_on_the_network_gets_wakeup_never_power(self):
+        self.connect.return_value = SimpleNamespace(status=SimpleNamespace(is_stand_by=True))
+        with mock.patch.object(tv, '_reachable', return_value=True):
+            tv._connect_awake('10.0.0.5')
+            self.assertEqual(self.keys, ['wakeup'])
+            tv._wake['key'] = 'power'           # a toggle: may be a box on another input
+            tv._connect_awake('10.0.0.5')
+        self.assertEqual(self.keys, ['wakeup'])
+
+    def test_no_remote_means_the_usual_error(self):
+        self.send_key.side_effect = lambda w: False
+        self.connect.side_effect = RuntimeError('unreachable')
+        with mock.patch.object(tv, '_reachable', return_value=False):
+            with self.assertRaises(RuntimeError):
+                tv._connect_awake('10.0.0.5')
+
+    def test_stop_leaves_a_sleeping_box_alone(self):
+        with mock.patch.object(tv, '_reachable', return_value=False):
+            self.assertFalse(tv.stop('10.0.0.5'))
+        self.connect.assert_not_called()
+
+
+class TestSendKey(unittest.TestCase):
+    def setUp(self):
+        self.saved = dict(tv._wake)
+        self.addCleanup(tv._wake.update, self.saved)
+
+    def test_no_daemon_reading_does_not_hang(self):
+        with tempfile.TemporaryDirectory() as d:
+            tv._wake['fifo'] = os.path.join(d, 'remote.fifo')
+            os.mkfifo(tv._wake['fifo'])
+            self.assertFalse(tv.send_key('wakeup'))
+
+    def test_unconfigured(self):
+        tv._wake['fifo'] = ''
+        self.assertFalse(tv.send_key('wakeup'))
+
+    def test_config(self):
+        c = configparser.ConfigParser()
+        c.read_dict({'tv': {'wake_fifo': '/run/r.fifo', 'wake_key': 'power', 'wake_wait': '20'}})
+        tv._configure(c)
+        self.assertEqual(tv._wake, {'fifo': '/run/r.fifo', 'key': 'power', 'wait': 20})
 
 
 if __name__ == '__main__':

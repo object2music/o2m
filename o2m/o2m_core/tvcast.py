@@ -34,10 +34,21 @@ Config, o2m.conf:
     [tv]
     cast_host = 192.168.1.137    # an IP, or the receiver's Cast name ("WunderFull")
     pause_music = true           # pause Mopidy when a video starts
+    wake_fifo = /run/o2m-tv-remote.fifo   # the Bluetooth remote that wakes the box
+    wake_key = wakeup            # `power` toggles: sent only when the box is off the network
+    wake_wait = 30               # seconds to wait for it back on the network
+
+A box in deep standby is OFF the network (no ping, no Cast), so no network
+command reaches it; a key on its Bluetooth link wakes it, back on Cast ~6 s
+later (measured on the Mi Box). That key comes from samples/tv-remote, a daemon
+that makes the Pi a paired Bluetooth LE remote; here it is a word written to its
+FIFO. Without `wake_fifo`, a sleeping box simply answers "unreachable".
 """
 
+import os
 import random
 import re
+import socket
 import threading
 import time
 import urllib.parse
@@ -156,6 +167,100 @@ def _connect(target):
     return cast
 
 
+_wake = {'fifo': '', 'key': 'wakeup', 'wait': 30}
+
+
+def _configure(config):
+    try:
+        _wake['fifo'] = config.get('tv', 'wake_fifo', fallback='').strip()
+        _wake['key'] = config.get('tv', 'wake_key', fallback='wakeup').strip() or 'wakeup'
+        _wake['wait'] = config.getint('tv', 'wake_wait', fallback=30)
+    except Exception as e:
+        print(f"TV: [tv] wake settings unreadable: {e}")
+
+
+def send_key(word):
+    """Hand a key to the Bluetooth remote daemon. Non-blocking: with no daemon
+    reading the FIFO, opening it fails (ENXIO) instead of hanging the request."""
+    fifo = _wake['fifo']
+    if not fifo:
+        return False
+    try:
+        fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError as e:
+        print(f"TV: key {word} not sent, {fifo}: {e}")
+        return False
+    try:
+        os.write(fd, (word + '\n').encode())
+    finally:
+        os.close(fd)
+    return True
+
+
+def _reachable(host, timeout=1.5):
+    try:
+        socket.create_connection((host, 8009), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def _known_host(target):
+    return target if _IP_RE.match(target) else _host_cache.get(target)
+
+
+def _until(cond, seconds, step=0.5):
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if cond():
+            return True
+        time.sleep(step)
+    return cond()
+
+
+def _standby(cast):
+    st = cast.status
+    return bool(st is not None and st.is_stand_by)
+
+
+def _connect_awake(target):
+    """Connect to the receiver, waking it first when it sleeps.
+
+    Two sleeps, two answers. Off the network (deep standby) the wake key is
+    sent whatever it is: `power` then cannot be switching OFF a box that is on.
+    On the network but in standby (Cast answers, the screen is off — launching
+    an app there timed out, measured), only a key that never sleeps is sent:
+    `is_stand_by` also reads true for a box left on another HDMI input."""
+    host = _known_host(target)
+    if host is None:
+        try:
+            host = _resolve_host(target)   # mDNS finds nothing while it sleeps
+        except Exception:
+            pass
+    if host and _reachable(host):
+        cast = _connect(target)
+        if _standby(cast) and _wake['key'] != 'power' and send_key(_wake['key']):
+            _until(lambda: not _standby(cast), 10)
+        return cast
+    if not send_key(_wake['key']):
+        return _connect(target)             # the usual "unreachable" error
+    print(f"TV: receiver asleep, {_wake['key']} sent over Bluetooth")
+    deadline = time.time() + _wake['wait']
+    while time.time() < deadline:
+        if host and _reachable(host):
+            break
+        if host is None:
+            try:
+                host = _resolve_host(target)
+            except Exception:
+                pass
+        else:
+            time.sleep(1)
+    cast = _connect(target)
+    _until(lambda: not _standby(cast), 10)
+    return cast
+
+
 _PLAYLIST_TTL = 6 * 3600       # a playlist changes over days
 _PLAYLIST_FAIL_TTL = 3600       # an unreadable one is asked again within the hour
 _playlists = {}                 # playlist id -> (expires, [video ids] or None)
@@ -215,7 +320,7 @@ def pick_start(video_id, playlist_id, rng=random):
 def play(target, video_id, playlist_id=None):
     """Start a video (and the playlist after it) on the receiver's YouTube app.
     Returns the connected Chromecast, left open for the watcher."""
-    cast = _connect(target)
+    cast = _connect_awake(target)
     try:
         yt = YouTubeController()
         cast.register_handler(yt)
@@ -238,6 +343,10 @@ def stop(target, cast=None):
     """Close the YouTube app, which brings the TV back to its home screen. Any
     other app is left alone: the tag only takes off what it put on."""
     own = cast is None
+    if own:
+        host = _known_host(target)
+        if host and not _reachable(host):
+            return False                    # asleep: nothing is playing
     cast = cast or _connect(target)
     try:
         if cast.app_id == YOUTUBE_APP_ID:
@@ -432,6 +541,7 @@ def box_action(box, mode, config, pause_music=None, on_play=None):
         pass
     if not target:
         return "TV: no [tv] cast_host in o2m.conf"
+    _configure(config)
     with _lock:
         on = box.uid in _active
         # A remove closes YouTube even when this box is not marked on: the mark
