@@ -5,6 +5,7 @@ from o2m_core import util
 from o2m_core import virtualbox
 from o2m_core import boxdirectives as bdir
 from o2m_core import webmedia
+from o2m_core import tvcast
 from o2m_core import spotifyauth
 from o2m_core.o2mtomopidy import O2mToMopidy
 from o2m_core.spotifyhandler import SpotifyHandler, SpotifyRateLimited
@@ -356,6 +357,15 @@ if __name__ == "__main__":
         if mode in ('toogle', 'add') and bdir.is_all_trigger(box.data):
             r = o2mHandler.toggle_all('toggle' if mode == 'toogle' else 'on')
             return f"ALL {r.get('action')}"
+        # A box holding only `tv:` lines casts a video to the TV instead of
+        # filling the tracklist (o2m_core/tvcast.py). It never joins activeboxs:
+        # it owns no track, and a deactivation sweep must not touch it.
+        if tvcast.is_tv_box(box.data):
+            with o2mHandler.trigger('box:' + box.uid) if mode == 'toogle' else contextlib.nullcontext(True) as go:
+                if not go:
+                    return "No action"
+                return tvcast.box_action(box, mode, o2mConf,
+                                         pause_music=lambda: o2mHandler.mopidyHandler.playback.pause())
         # The decision (is it on?) and the action are taken under the same lock:
         # read outside it, two requests close together both saw "off" and both
         # added. A toggle repeated while the first is still running is dropped.

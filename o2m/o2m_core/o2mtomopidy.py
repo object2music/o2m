@@ -2598,6 +2598,12 @@ class O2mToMopidy:
                     else:
                         print(f"tag:{_tag}: no track carries it — skipped")
 
+                # tv: — a video cast to the TV. A box holding only tv: lines never
+                # gets here (/api/box hands it to tvcast); one mixed into a music
+                # box has nothing to add to the tracklist.
+                elif content.startswith('tv:'):
+                    pass
+
                 #Other box called (cascade include)
                 elif "box:" in content :
                     box_uid = content.split(":", 1)[1].strip()

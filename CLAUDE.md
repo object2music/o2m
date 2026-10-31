@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) and `test_mopidywatch.py` (a Mopidy that came up without Spotify). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) `test_mopidywatch.py` (a Mopidy that came up without Spotify) and `test_tvcast.py` (`tv:` boxes: parsing, the add/remove truth table). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -631,6 +631,38 @@ dispatch branches against the picker).
 | `yt:…` · `youtube:…` | YouTube — a video, `yt:playlist:<id>`, or a channel's uploads as `yt:playlist:UU…` |
 | `box:<uid>` | **another box**, included whole (cascade) |
 | `web:<page url>` | **whatever media that web page holds** — experimental, see below |
+
+### `tv:` — a box that plays on the TV, not in the tracklist
+A box holding only `tv:` lines (labels, directives, windows aside) is a TV
+trigger, the way a `meta_all`-only box is the ALL button: `/api/box` hands it to
+**`o2m_core/tvcast.py`** (+ `test_tvcast.py`) before anything fills. Putting the
+tag down casts a YouTube video — and the playlist after it — to the Cast
+receiver in `o2m.conf [tv] cast_host` (an IP or its Cast name); taking it off
+closes the YouTube app. `pause_music` (default true) pauses Mopidy when a video
+starts. Several lines → one at random among those whose window applies now;
+none → the tag does nothing, which is how a window says "no TV after 7pm". It
+never joins `activeboxs` (it owns no track); a `tv:` line mixed into a music box
+is skipped by the dispatcher.
+
+    tv:https://www.youtube.com/watch?v=<id>&list=<playlist>
+    08:00-19:00 > tv:https://www.youtube.com/playlist?list=UU<channel>
+
+- **The TV fetches the stream itself**, driven through its YouTube app's lounge
+  API (pychromecast `YouTubeController`): nothing resolves a video here. `catt`,
+  which resolves through yt_dlp first, was refused by YouTube on the first try.
+  Only a playlist given WITHOUT a video needs yt_dlp (its first entry: the
+  lounge API starts a playlist at a video) — and that only works for a public
+  list; an unlisted one answers "The playlist does not exist", so give it a `v=`.
+- **The app must be running before the lounge call**: launched and asked at
+  once, the pairing fails with `screen_ids parameter error` (measured on a
+  MIBOX4). `play` launches, waits for the screen id, then plays: ~2 s.
+- **`pychromecast` is optional and NOT in `requirements.txt`**: Cast only reaches
+  the local network, so only the instance beside the TV can use it, and it needs
+  Python ≥ 3.11 (Pi #2 runs 3.9). Absent, a TV box answers so and nothing else
+  changes. Installed on Pi #1 (`pip --break-system-packages`, 2026-10-31).
+- The NFC reader sends `add` on insert and `remove` on removal; a `toogle` from
+  the page works too. The active state is in memory (`tvcast._active`) and is not
+  painted in the Boxes column yet.
 
 ### 2. Smart patterns — a rule that resolves to tracks at fill time
 | Pattern | What it draws |
