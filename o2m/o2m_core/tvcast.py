@@ -230,7 +230,14 @@ def _connect_awake(target):
     sent whatever it is: `power` then cannot be switching OFF a box that is on.
     On the network but in standby (Cast answers, the screen is off — launching
     an app there timed out, measured), only a key that never sleeps is sent:
-    `is_stand_by` also reads true for a box left on another HDMI input."""
+    `is_stand_by` also reads true for a box left on another HDMI input.
+
+    A key that never sleeps goes out FIRST, before anything is asked of the
+    network: an awake box ignores it, and a sleeping one starts waking while
+    the mDNS lookup of a name not yet known waits its 8 s for nothing (an o2m
+    restart forgets the address: measured 12 s lost before the key, 38 s from
+    the tag to the video)."""
+    sent = _wake['key'] != 'power' and send_key(_wake['key'])
     host = _known_host(target)
     if host is None:
         try:
@@ -239,10 +246,10 @@ def _connect_awake(target):
             pass
     if host and _reachable(host):
         cast = _connect(target)
-        if _standby(cast) and _wake['key'] != 'power' and send_key(_wake['key']):
+        if sent and _standby(cast):
             _until(lambda: not _standby(cast), 10)
         return cast
-    if not send_key(_wake['key']):
+    if not (sent or send_key(_wake['key'])):
         return _connect(target)             # the usual "unreachable" error
     print(f"TV: receiver asleep, {_wake['key']} sent over Bluetooth")
     deadline = time.time() + _wake['wait']

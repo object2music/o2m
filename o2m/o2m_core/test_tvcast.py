@@ -270,7 +270,13 @@ class TestWake(unittest.TestCase):
             setattr(self, name.strip('_'), p.start())
             self.addCleanup(p.stop)
 
-    def test_an_awake_box_gets_no_key(self):
+    def test_wakeup_goes_first_and_once(self):
+        with mock.patch.object(tv, '_reachable', return_value=True):
+            tv._connect_awake('10.0.0.5')
+        self.assertEqual(self.keys, ['wakeup'])
+
+    def test_an_awake_box_gets_no_power(self):
+        tv._wake['key'] = 'power'
         with mock.patch.object(tv, '_reachable', return_value=True):
             tv._connect_awake('10.0.0.5')
         self.assertEqual(self.keys, [])
