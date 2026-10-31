@@ -156,6 +156,7 @@ def _connect(target):
 _PLAYLIST_TTL = 6 * 3600       # a playlist changes over days
 _PLAYLIST_FAIL_TTL = 3600       # an unreadable one is asked again within the hour
 _playlists = {}                 # playlist id -> (expires, [video ids] or None)
+_last_start = {}                # playlist id -> the video it last started at
 
 
 def playlist_entries(playlist_id):
@@ -188,7 +189,10 @@ def pick_start(video_id, playlist_id, rng=random):
     if playlist_id:
         ids = playlist_entries(playlist_id)
         if ids:
-            return rng.choice(ids)
+            # Not the video it started at last time: 7 videos repeat one in 7.
+            pool = [i for i in ids if i != _last_start.get(playlist_id)] or ids
+            _last_start[playlist_id] = pick = rng.choice(pool)
+            return pick
     if not video_id:
         raise RuntimeError(f"playlist {playlist_id} cannot be read and the line names no video")
     return video_id

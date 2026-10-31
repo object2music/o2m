@@ -138,6 +138,12 @@ class TestPicking(unittest.TestCase):
             rng = mock.Mock(choice=lambda ids: ids[-1])
             self.assertEqual(tv.pick_start('v', 'PL', rng), 'x3')
 
+    def test_start_never_repeats_the_last_one(self):
+        tv._last_start.clear()
+        with mock.patch.object(tv, 'playlist_entries', return_value=['x1', 'x2']):
+            starts = [tv.pick_start(None, 'PL') for _ in range(8)]
+        self.assertTrue(all(a != b for a, b in zip(starts, starts[1:])), starts)
+
     def test_unreadable_playlist_starts_at_the_named_video(self):
         with mock.patch.object(tv, 'playlist_entries', return_value=None):
             self.assertEqual(tv.pick_start('v', 'PL'), 'v')
