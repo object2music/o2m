@@ -236,6 +236,7 @@ def stop(target, cast=None):
 URI_PREFIX = 'tv:yt:'           # a Track row per video watched on the TV
 POLL_S = 5
 MIN_WATCH_MS = 20000            # less than this is a zap, not a viewing
+MIN_SHARE = 0.05                # update_stat_track's own artefact threshold
 
 
 def play_record(video, title, duration_s, position_s):
@@ -252,6 +253,10 @@ def play_record(video, title, duration_s, position_s):
     pos = int((position_s or 0) * 1000)
     length = int(duration_s * 1000) if duration_s else None
     if pos < MIN_WATCH_MS and not (length and pos >= 0.9 * length):
+        return None
+    # update_stat_track drops under 5% as an artefact — AFTER opening the row,
+    # which left empty `new` rows behind (a 45 s look at an hour-long video).
+    if length and pos < MIN_SHARE * length:
         return None
     return URI_PREFIX + video, title, length, pos
 

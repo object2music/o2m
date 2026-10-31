@@ -152,6 +152,8 @@ class TestPlayRecord(unittest.TestCase):
 
     def test_a_zap_is_not(self):
         self.assertIsNone(tv.play_record('abc', 'Tintin', 1500.0, 5))
+        # 45 s of an hour: under update_stat_track's 5% artefact threshold.
+        self.assertIsNone(tv.play_record('abc', 'Octonauts', 3600.0, 45))
         self.assertIsNone(tv.play_record(None, None, None, 100))
 
     def test_a_short_video_seen_to_the_end_is(self):
