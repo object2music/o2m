@@ -1301,6 +1301,21 @@
   .tl-artist { font-size: calc(12px * var(--ui)); color: var(--muted); white-space: nowrap;
                overflow: hidden; text-overflow: ellipsis; margin-top: calc(2px * var(--ui)); }
   .tl-dur { font-size: calc(12px * var(--ui)); color: var(--muted); flex-shrink: 0; }
+  /* The TV strip above the tracklist (paintTvNow): a row's look, not a row. */
+  #tv-now { border-bottom: 1px solid var(--border); margin-bottom: calc(6px * var(--ui)); }
+  #tv-now[hidden] { display: none; }
+  #tv-now .tv-item { cursor: default; align-items: center; }
+  #tv-now .tv-badge { color: var(--accent); opacity: 1; }
+  #tv-now .tv-badge svg { width: calc(20px * var(--ui)); height: calc(20px * var(--ui)); }
+  #tv-now .tv-thumb { width: calc(53px * var(--ui)); height: calc(30px * var(--ui)); flex-shrink: 0; }
+  #tv-now .tl-name { color: var(--accent); }
+  .tv-bar { height: calc(2px * var(--ui)); background: var(--border); margin-top: calc(5px * var(--ui)); }
+  .tv-bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
+  .tv-btn { background: none; border: 0; padding: calc(4px * var(--ui)); color: var(--muted);
+            cursor: pointer; flex-shrink: 0; display: flex; }
+  .tv-btn:hover { color: var(--text); }
+  .tv-btn:disabled { opacity: .4; cursor: default; }
+  .tv-btn svg { width: calc(18px * var(--ui)); height: calc(18px * var(--ui)); }
   .tl-status {
     font-size: var(--t-label); color: var(--muted); margin-top: calc(2px * var(--ui));
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

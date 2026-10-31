@@ -612,6 +612,8 @@ const OBJGRID = (() => {
       state.activeBoxes = new Set((d && d.boxes) || []);
       state.included = new Set((d && d.included) || []);
       state.boxInfo = new Map(Object.entries((d && d.box_info) || {}));
+      // What a tv: box casts, drawn above the tracklist (mood.html).
+      if (typeof paintTvNow === 'function') paintTvNow(d && d.tv);
       // A fill running server-side, whoever started it (see setServerBusy).
       if (typeof setServerBusy === 'function') setServerBusy(!!(d && d.busy), askedAt);
     } catch (e) { return; }

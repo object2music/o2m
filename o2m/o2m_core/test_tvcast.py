@@ -210,5 +210,48 @@ class TestWatcherLimit(unittest.TestCase):
             self.assertIsNone(w._sample())
 
 
+class TestPageState(unittest.TestCase):
+    def setUp(self):
+        tv._active.clear()
+        self.addCleanup(tv._active.clear)
+        self.addCleanup(setattr, tv, '_watcher', None)
+
+    def _watcher(self, content_id, start=None):
+        st = SimpleNamespace(content_id=content_id, title='Tintin', duration=2600.0,
+                             adjusted_current_time=120.0, current_time=118.0,
+                             player_state='PLAYING')
+        cast = SimpleNamespace(media_controller=SimpleNamespace(status=st),
+                               app_id=None, disconnect=lambda: None)
+        w = tv._Watcher(cast, None, 1, start, 'U1')
+        w.is_alive = lambda: True
+        return w
+
+    def test_nothing_on(self):
+        self.assertIsNone(tv.status())
+        self.assertEqual(tv.active_boxes(), {})
+
+    def test_what_the_tv_plays(self):
+        tv._active['U1'] = {'ref': 'r', 'name': 'Vidéos Vava', 'image': ''}
+        tv._watcher = self._watcher('v1')
+        st = tv.status()
+        self.assertEqual((st['box_uid'], st['box_name'], st['video'], st['title'], st['position']),
+                         ('U1', 'Vidéos Vava', 'v1', 'Tintin', 120.0))
+        self.assertEqual(st['thumb'], 'https://i.ytimg.com/vi/v1/mqdefault.jpg')
+        self.assertEqual(tv.active_boxes(), {'U1': {'name': 'Vidéos Vava', 'image': ''}})
+
+    def test_just_cast_shows_the_new_video_not_the_old_one(self):
+        tv._active['U1'] = {'ref': 'r', 'name': 'n', 'image': ''}
+        tv._watcher = self._watcher('old', start='v1')
+        st = tv.status()
+        self.assertEqual((st['video'], st['title'], st['state']), ('v1', '', 'BUFFERING'))
+
+    def test_the_box_goes_dark_when_youtube_closes_by_itself(self):
+        tv._active['U1'] = {'ref': 'r', 'name': 'n', 'image': ''}
+        w = self._watcher('v1')
+        w._halt.wait = lambda t: False          # one round: app_id is not YouTube
+        w.run()
+        self.assertNotIn('U1', tv._active)
+
+
 if __name__ == '__main__':
     unittest.main()

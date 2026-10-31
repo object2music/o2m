@@ -807,15 +807,37 @@ if __name__ == "__main__":
         try:
             # `busy`: a fill is running, whoever started it — the page holds its
             # dials while it is true, which it cannot know from its own requests.
+            boxes = virtualbox.active_box_uids(o2mHandler)
+            box_info = virtualbox.active_box_info(o2mHandler)
+            # A TV box lights like a box though it holds no track (tvcast.py);
+            # `tv` is what the TV plays, drawn above the tracklist.
+            tv_boxes = tvcast.active_boxes()
+            boxes += [u for u in tv_boxes if u not in boxes]
+            box_info.update(tv_boxes)
+            try:
+                tv = tvcast.status()
+            except Exception:
+                tv = None
             return jsonify({'items': virtualbox.active_objects(o2mHandler),
-                            'boxes': virtualbox.active_box_uids(o2mHandler),
+                            'boxes': boxes,
                             # their names and pictures, for a view that lists no boxes
-                            'box_info': virtualbox.active_box_info(o2mHandler),
+                            'box_info': box_info,
                             # boxes an active cascade included: counted apart
                             'included': o2mHandler.included_box_uids(),
+                            'tv': tv,
                             'busy': o2mHandler.is_filling()})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+    @api.route('/api/tv_next', methods=['POST'])
+    def api_tv_next():
+        """Next video of the playlist on the TV (tvcast.py). Stopping is the
+        box's own remove, like taking the tag off."""
+        from flask import jsonify
+        try:
+            return jsonify({'ok': tvcast.next_video()})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
 
     #Return a single box's data without triggering playback (used by spotdl cache service)
     @api.route('/api/newrecent')

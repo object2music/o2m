@@ -284,9 +284,9 @@ class _Watcher(threading.Thread):
     when the next one starts, when the app closes, or when the tag is taken off.
     The receiver pushes its media status; this only reads the latest one."""
 
-    def __init__(self, cast, on_play, limit=None, start=None):
+    def __init__(self, cast, on_play, limit=None, start=None, uid=None):
         super().__init__(daemon=True)
-        self.cast, self.on_play, self.limit = cast, on_play, limit
+        self.cast, self.on_play, self.limit, self.uid = cast, on_play, limit, uid
         # Until the video just cast shows up, the receiver may still report the
         # one it was playing before; counted, it would spend a limit of 1.
         self.start_id = start
@@ -308,6 +308,9 @@ class _Watcher(threading.Thread):
         finally:
             self._flush()
             if not self._halt.is_set():
+                # Ended on its own (the app closed, the limit reached): the box
+                # is no longer lit. Halted by box_action, that one decides.
+                _active.pop(self.uid, None)
                 self.cast.disconnect()
 
     def _sample(self):
@@ -351,13 +354,52 @@ class _Watcher(threading.Thread):
 # ─── The box action ──────────────────────────────────────────────────────────
 
 _lock = threading.Lock()
-_active = {}  # box uid -> the reference it cast
+_active = {}  # box uid -> {'ref', 'name', 'image'}: what it cast, how to draw it
 _last = {}    # box uid -> the reference it cast last, on or off
 _watcher = None
 
 
 def is_active(uid):
     return uid in _active
+
+
+def active_boxes():
+    """uid -> {name, image} of the TV box on, for the Boxes column. A TV box
+    never joins activeboxs (it owns no track), so this is how it lights."""
+    return {uid: {'name': a['name'], 'image': a['image']} for uid, a in list(_active.items())}
+
+
+def status():
+    """What the TV is playing for a box, for the page: None when nothing is."""
+    w = _watcher
+    if not w or not w.is_alive() or w.uid not in _active:
+        return None
+    st = w.cast.media_controller.status
+    vid = getattr(st, 'content_id', None)
+    if not vid or (w.start_id and vid != w.start_id):
+        vid = w.start_id   # just cast: the receiver still describes the previous one
+        st = None
+    return {
+        'box_uid': w.uid,
+        'box_name': _active[w.uid]['name'],
+        'video': vid,
+        'title': (st and st.title) or '',
+        'duration': (st and st.duration) or None,
+        'position': (st and (st.adjusted_current_time or st.current_time)) or 0,
+        'state': (st and st.player_state) or 'BUFFERING',
+        'thumb': f'https://i.ytimg.com/vi/{vid}/mqdefault.jpg' if vid else '',
+        'played': w.seen,
+        'limit': w.limit,
+    }
+
+
+def next_video():
+    """Skip to the next video of the playlist on the TV."""
+    w = _watcher
+    if not w or not w.is_alive():
+        return False
+    w.cast.media_controller.queue_next()
+    return True
 
 
 def pick_ref(uid, refs, rng=random):
@@ -426,9 +468,12 @@ def box_action(box, mode, config, pause_music=None, on_play=None):
             return f"TV: {e}"
         # One screen, one video: another TV box still marked on was replaced.
         _active.clear()
-        _active[box.uid] = ref
+        _active[box.uid] = {'ref': ref,
+                            'name': getattr(box, 'description', '') or box.uid,
+                            'image': getattr(box, 'image_url', '') or ''}
         _last[box.uid] = ref
-        _watcher = _Watcher(cast, on_play, getattr(box, 'option_max_results', None) or None, start)
+        _watcher = _Watcher(cast, on_play, getattr(box, 'option_max_results', None) or None,
+                            start, box.uid)
         _watcher.start()
         print(f"TV: {box.uid} cast {start} from {ref}")
         try:

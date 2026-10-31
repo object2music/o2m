@@ -331,6 +331,8 @@
           <button id="btn-clear-tl" title="Clear tracklist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
         </div>
       </div>
+      <!-- What a tv: box casts to the TV (paintTvNow) — not a tracklist entry. -->
+      <div id="tv-now" hidden></div>
       <div id="tracklist-wrap"></div>
     </div>
   </div>
@@ -2244,6 +2246,87 @@ function updateCurrentRow(wrap, activeTlid) {
     requestAnimationFrame(() => scrollTracklistToCurrent(cur));
   }
 }
+
+/* ── The TV ──────────────────────────────────────────────────────────────────
+   What a `tv:` box casts (o2m_core/tvcast.py), drawn above the tracklist with a
+   row's look. It is NOT a tracklist entry — Mopidy never holds it, the TV plays
+   it — so it lives outside #tracklist-wrap and none of the row gestures apply.
+   Fed by OBJGRID.refreshActive (`tv` in /api/active_objects, every 10 s); the
+   bar runs on the local clock in between. */
+const TV = { st: null, at: 0, timer: null };
+const TV_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"/><polyline points="17 2 12 7 7 2"/></svg>`;
+const TV_NEXT_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>`;
+const TV_STOP_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>`;
+
+function tvClock(s) {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+function tvPosition() {
+  const t = TV.st;
+  if (!t) return 0;
+  let p = t.position || 0;
+  if (t.state === 'PLAYING') p += (performance.now() - TV.at) / 1000;
+  return t.duration ? Math.min(p, t.duration) : p;
+}
+
+function paintTvNow(tv) {
+  const el = document.getElementById('tv-now');
+  if (!el) return;
+  // Offline, the page describes this device: the TV is the room's.
+  TV.st = (typeof OFF !== 'undefined' && OFF.on) ? null : (tv || null);
+  TV.at = performance.now();
+  clearInterval(TV.timer); TV.timer = null;
+  if (!TV.st) { el.hidden = true; el.innerHTML = ''; return; }
+  const t = TV.st;
+  // With a limit reached, Next would only start the video that closes YouTube.
+  const more = !t.limit || t.played < t.limit;
+  const count = t.limit ? ` · ${Math.min(t.played, t.limit)}/${t.limit}` : '';
+  el.innerHTML = `<div class="tl-item tv-item">
+      <div class="tl-num tv-badge" title="On the TV">${TV_SVG}</div>
+      ${t.thumb ? `<img class="tl-thumb tv-thumb" src="${objEsc(t.thumb)}" alt="" loading="lazy">` : ''}
+      <div class="tl-texts">
+        <div class="tl-name">${objEsc(t.title || 'Starting on the TV…')}</div>
+        <div class="tl-artist">TV · ${objEsc(t.box_name || '')}${count}</div>
+        <div class="tv-bar"><span></span></div>
+      </div>
+      <div class="tl-dur tv-time"></div>
+      ${more ? `<button class="tv-btn" type="button" data-tv="next" title="Next video" aria-label="Next video">${TV_NEXT_SVG}</button>` : ''}
+      <button class="tv-btn" type="button" data-tv="stop" title="Stop the TV" aria-label="Stop the TV">${TV_STOP_SVG}</button>
+    </div>`;
+  el.hidden = false;
+  tvTick();
+  if (t.state === 'PLAYING') TV.timer = setInterval(tvTick, 1000);
+}
+
+function tvTick() {
+  const el = document.getElementById('tv-now'), t = TV.st;
+  if (!el || !t) return;
+  const p = tvPosition();
+  const bar = el.querySelector('.tv-bar span');
+  if (bar) bar.style.width = t.duration ? (100 * p / t.duration).toFixed(1) + '%' : '0';
+  const tm = el.querySelector('.tv-time');
+  if (tm) tm.textContent = t.state === 'PAUSED' ? 'Paused'
+    : t.duration ? `${tvClock(p)} / ${tvClock(t.duration)}` : '';
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('#tv-now [data-tv]');
+  if (!b || !TV.st) return;
+  e.stopPropagation();
+  const uid = TV.st.box_uid, act = b.dataset.tv;
+  b.disabled = true;
+  try {
+    // Stop is the box's own remove — what taking the tag off sends.
+    if (act === 'next') await fetch(API + '/tv_next', { method: 'POST' });
+    else await fetch(API + '/box?uid=' + encodeURIComponent(uid) + '&mode=remove');
+  } catch (_) {}
+  // The receiver needs a moment to announce the next video.
+  setTimeout(() => { if (typeof OBJGRID !== 'undefined') OBJGRID.refreshActive(); },
+             act === 'next' ? 2500 : 0);
+});
 
 function renderTracklist(tracks, activeTlid) {
   const wrap = document.getElementById('tracklist-wrap');

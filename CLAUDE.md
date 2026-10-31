@@ -677,9 +677,15 @@ is skipped by the dispatcher.
   the local network, so only the instance beside the TV can use it, and it needs
   Python ≥ 3.11 (Pi #2 runs 3.9). Absent, a TV box answers so and nothing else
   changes. Installed on Pi #1 (`pip --break-system-packages`, 2026-10-31).
+- **In the page, the TV is shown, not queued**: `/api/active_objects` adds the
+  TV box to `boxes` / `box_info` (it lights in the Boxes column like any box)
+  and answers `tv` — what plays, from the watcher — which `paintTvNow` draws
+  above the tracklist (`#tv-now`, outside `#tracklist-wrap`: Mopidy never holds
+  it, so no row gesture applies), with Next (`POST /api/tv_next`) and Stop (the
+  box's own remove). A watcher ending on its own (app closed, limit) unlights it.
 - The NFC reader sends `add` on insert and `remove` on removal; a `toogle` from
-  the page works too. The active state is in memory (`tvcast._active`) and is not
-  painted in the Boxes column yet — so neither gesture trusts it: an `add` always
+  the page works too. The active state is in memory (`tvcast._active`), so
+  neither gesture trusts it: an `add` always
   casts (the TV may have been closed with the remote since), a `remove` always
   closes YouTube (an o2m restart forgot the mark, and the video kept playing).
 
