@@ -177,5 +177,38 @@ class TestPlayRecord(unittest.TestCase):
         self.assertFalse(tv.URI_PREFIX.startswith(('yt:', 'youtube:', 'podcast+', 'web:')))
 
 
+class TestWatcherLimit(unittest.TestCase):
+    def _watcher(self, limit, start=None):
+        st = SimpleNamespace(content_id=None, title='t', duration=600.0,
+                             adjusted_current_time=300.0, current_time=300.0)
+        cast = SimpleNamespace(media_controller=SimpleNamespace(status=st))
+        recs = []
+        return tv._Watcher(cast, lambda *r: recs.append(r), limit, start), st, recs
+
+    def test_the_video_past_the_limit_stops_it(self):
+        w, st, recs = self._watcher(1)
+        st.content_id = 'v1'
+        self.assertIsNone(w._sample())
+        st.content_id = 'v2'                    # playlist goes on / autoplay
+        self.assertEqual(w._sample(), 'limit')
+        self.assertEqual([r[0] for r in recs], ['tv:yt:v1'])   # v1 still recorded
+
+    def test_the_previous_video_is_not_counted(self):
+        w, st, recs = self._watcher(1, start='v1')
+        st.content_id = 'old'                   # still reported just after the cast
+        self.assertIsNone(w._sample())
+        st.content_id = 'v1'
+        self.assertIsNone(w._sample())
+        st.content_id = 'v2'
+        self.assertEqual(w._sample(), 'limit')
+        self.assertEqual([r[0] for r in recs], ['tv:yt:v1'])
+
+    def test_no_limit(self):
+        w, st, _ = self._watcher(None)
+        for v in ('v1', 'v2', 'v3'):
+            st.content_id = v
+            self.assertIsNone(w._sample())
+
+
 if __name__ == '__main__':
     unittest.main()

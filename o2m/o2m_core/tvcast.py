@@ -9,6 +9,9 @@ the Cast receiver named in o2m.conf; taking it off closes the YouTube app.
     tv:https://www.youtube.com/playlist?list=UU...      (a channel's uploads)
     08:00-19:00 > tv:https://youtu.be/rwalpfPkQvk     (no TV after 7pm)
 
+The box's `option_max_results` is a number of videos: past it, the watcher
+closes YouTube (the playlist going on, or the app's autoplay). Unset = no limit.
+
 Several lines → one drawn at random among those whose window applies now, never
 the one the box played last. When none applies, the tag does nothing: that is
 how a time window says "not now". A playlist starts at a random video when it
@@ -281,18 +284,25 @@ class _Watcher(threading.Thread):
     when the next one starts, when the app closes, or when the tag is taken off.
     The receiver pushes its media status; this only reads the latest one."""
 
-    def __init__(self, cast, on_play):
+    def __init__(self, cast, on_play, limit=None, start=None):
         super().__init__(daemon=True)
-        self.cast, self.on_play = cast, on_play
+        self.cast, self.on_play, self.limit = cast, on_play, limit
+        # Until the video just cast shows up, the receiver may still report the
+        # one it was playing before; counted, it would spend a limit of 1.
+        self.start_id = start
         self._halt = threading.Event()
         self.cur = None
+        self.seen = 0
 
     def run(self):
         try:
             while not self._halt.wait(POLL_S):
                 if self.cast.app_id != YOUTUBE_APP_ID:
                     break
-                self._sample()
+                if self._sample() == 'limit':
+                    print(f"TV: {self.limit} video(s) played, closing YouTube")
+                    self.cast.quit_app()
+                    break
         except Exception as e:
             print(f"TV watcher error: {e}")
         finally:
@@ -305,9 +315,18 @@ class _Watcher(threading.Thread):
         vid = getattr(st, 'content_id', None)
         if not vid:
             return
+        if self.start_id:
+            if vid != self.start_id:
+                return
+            self.start_id = None
         if self.cur and self.cur['id'] != vid:
             self._flush()
         if not self.cur:
+            # The box's max results is a number of VIDEOS: the one past it is
+            # the playlist going on, or YouTube's autoplay once it ends.
+            if self.limit and self.seen >= self.limit:
+                return 'limit'
+            self.seen += 1
             self.cur = {'id': vid, 'title': None, 'dur': None, 'pos': 0}
         self.cur['title'] = st.title or self.cur['title']
         self.cur['dur'] = st.duration or self.cur['dur']
@@ -409,7 +428,7 @@ def box_action(box, mode, config, pause_music=None, on_play=None):
         _active.clear()
         _active[box.uid] = ref
         _last[box.uid] = ref
-        _watcher = _Watcher(cast, on_play)
+        _watcher = _Watcher(cast, on_play, getattr(box, 'option_max_results', None) or None, start)
         _watcher.start()
         print(f"TV: {box.uid} cast {start} from {ref}")
         try:

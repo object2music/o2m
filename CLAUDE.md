@@ -666,6 +666,10 @@ is skipped by the dispatcher.
   half-heard, so a cartoon half-watched would come back as AUDIO in a music box
   — on o2m_0's older code too. No `stats_raw` row either: `now:library` draws
   from it. Under 20 s is a zap and not recorded.
+- **The box's `option_max_results` is a number of VIDEOS**: when the one past it
+  starts (the playlist going on, or the app's autoplay), the watcher closes
+  YouTube. It counts nothing before the video just cast shows up — the receiver
+  reports the previous one for a few seconds, which would spend a limit of 1.
 - **The app must be running before the lounge call**: launched and asked at
   once, the pairing fails with `screen_ids parameter error` (measured on a
   MIBOX4). `play` launches, waits for the screen id, then plays: ~2 s.
