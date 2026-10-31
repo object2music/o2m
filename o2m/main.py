@@ -365,7 +365,16 @@ if __name__ == "__main__":
                 if not go:
                     return "No action"
                 return tvcast.box_action(box, mode, o2mConf,
-                                         pause_music=lambda: o2mHandler.mopidyHandler.playback.pause())
+                                         pause_music=lambda: o2mHandler.mopidyHandler.playback.pause(),
+                                         on_play=_tv_play)
+
+    def _tv_play(uri, name, length, position):
+        """A video watched on the TV, as a play: Track row, counters, bookmark.
+        Typed `tv`, which no pool reads; no stats_raw row, since the hourly
+        habits (now:library) draw from it and would serve a cartoon's sound."""
+        from types import SimpleNamespace
+        track = SimpleNamespace(uri=uri, name=name, length=length, track_no=None)
+        o2mHandler.update_stat_track(track, position, 'tv', '')
         # The decision (is it on?) and the action are taken under the same lock:
         # read outside it, two requests close together both saw "off" and both
         # added. A toggle repeated while the first is still running is dropped.

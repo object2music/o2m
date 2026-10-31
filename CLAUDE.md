@@ -639,8 +639,12 @@ trigger, the way a `meta_all`-only box is the ALL button: `/api/box` hands it to
 tag down casts a YouTube video — and the playlist after it — to the Cast
 receiver in `o2m.conf [tv] cast_host` (an IP or its Cast name); taking it off
 closes the YouTube app. `pause_music` (default true) pauses Mopidy when a video
-starts. Several lines → one at random among those whose window applies now;
-none → the tag does nothing, which is how a window says "no TV after 7pm". It
+starts. Several lines → one at random among those whose window applies now,
+never the line the box played last (with two, a fair draw repeated one half the
+time and read as a dead tag); none → the tag does nothing, which is how a window
+says "no TV after 7pm". A playlist starts at a RANDOM video when yt_dlp can read
+it (flat, memoised 6 h); the lounge API ignores a start index (measured), so
+randomness needs the ids, and a private playlist starts at the named video. It
 never joins `activeboxs` (it owns no track); a `tv:` line mixed into a music box
 is skipped by the dispatcher.
 
@@ -652,7 +656,16 @@ is skipped by the dispatcher.
   which resolves through yt_dlp first, was refused by YouTube on the first try.
   Only a playlist given WITHOUT a video needs yt_dlp (its first entry: the
   lounge API starts a playlist at a video) — and that only works for a public
-  list; an unlisted one answers "The playlist does not exist", so give it a `v=`.
+  or unlisted list; a PRIVATE one answers "The playlist does not exist" to all
+  but its owner, though the TV, signed in, plays it — so give it a `v=`.
+- **What the TV plays is indexed**: a watcher holds the Cast connection while the
+  YouTube app runs and reports each video (when the next starts, the app closes
+  or the tag comes off) to `update_stat_track` — name, duration, read counters,
+  bookmark. Under **`tv:yt:<id>`** typed **`tv`**, not `yt:video:<id>`: the pools
+  match `yt:%` by prefix and `podcasts:unfinished` takes any long video
+  half-heard, so a cartoon half-watched would come back as AUDIO in a music box
+  — on o2m_0's older code too. No `stats_raw` row either: `now:library` draws
+  from it. Under 20 s is a zap and not recorded.
 - **The app must be running before the lounge call**: launched and asked at
   once, the pairing fails with `screen_ids parameter error` (measured on a
   MIBOX4). `play` launches, waits for the screen id, then plays: ~2 s.
