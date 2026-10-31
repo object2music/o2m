@@ -662,7 +662,9 @@ is skipped by the dispatcher.
   changes. Installed on Pi #1 (`pip --break-system-packages`, 2026-10-31).
 - The NFC reader sends `add` on insert and `remove` on removal; a `toogle` from
   the page works too. The active state is in memory (`tvcast._active`) and is not
-  painted in the Boxes column yet.
+  painted in the Boxes column yet — so neither gesture trusts it: an `add` always
+  casts (the TV may have been closed with the remote since), a `remove` always
+  closes YouTube (an o2m restart forgot the mark, and the video kept playing).
 
 ### 2. Smart patterns — a rule that resolves to tracks at fill time
 | Pattern | What it draws |
