@@ -221,16 +221,17 @@ def box_action(box, mode, config, pause_music=None):
         return "TV: no [tv] cast_host in o2m.conf"
     with _lock:
         on = box.uid in _active
+        # A remove closes YouTube even when this box is not marked on: the mark
+        # is in memory, so after an o2m restart a tag taken off would otherwise
+        # leave the video playing. stop() touches YouTube only.
         if mode == 'remove' or (mode == 'toogle' and on):
-            if not on:
-                return "No action"
-            del _active[box.uid]
+            _active.pop(box.uid, None)
             try:
-                stop(target)
+                closed = stop(target)
             except Exception as e:
                 print(f"TV stop error: {e}")
                 return f"TV: {e}"
-            return "TV removed"
+            return "TV removed" if (closed or on) else "No action"
         # An `add` while already on casts again rather than answering "No
         # action": the TV may have been switched off or YouTube closed with the
         # remote since, and a tag put down means "the video, now".

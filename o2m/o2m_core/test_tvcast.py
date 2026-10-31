@@ -76,7 +76,12 @@ class TestBoxAction(unittest.TestCase):
             self.assertEqual(play.call_count, 2)
             self.assertEqual(tv.box_action(self.box, 'remove', _config()), 'TV removed')
             stop.assert_called_once_with('192.168.1.137')
+            # Not marked on (e.g. after an o2m restart): YouTube is still closed.
+            stop.return_value = True
+            self.assertEqual(tv.box_action(self.box, 'remove', _config()), 'TV removed')
+            stop.return_value = False
             self.assertEqual(tv.box_action(self.box, 'remove', _config()), 'No action')
+            self.assertEqual(stop.call_count, 3)
 
     def test_toggle(self):
         with mock.patch.object(tv, 'play'), mock.patch.object(tv, 'stop') as stop:
