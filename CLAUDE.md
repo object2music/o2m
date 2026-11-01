@@ -725,6 +725,22 @@ is skipped by the dispatcher.
     box in standby that no key reached then also failed with a meaningless
     `411 Length Required` (no screen id, so the lounge pairing POSTs no
     body); `play` now says the YouTube app did not start.
+  - **bluetoothd forgets the box's subscription at every restart**, and the
+    Pi reboots daily. A notification goes only to a client that wrote the
+    CCC during THIS bluetoothd's life; the bonded box trusts the server to
+    remember and never writes it again (captured: a reconnection, even a
+    full Service Changed rediscovery, and not one CCC write). Every key was
+    then "NOT sent: no box connected". With no subscriber the daemon writes
+    the key straight onto the LE link as a raw ATT notification (HCI
+    socket): the box's HID host listens to its report handles whatever the
+    CCC says, and it woke from deep standby in a second. So the GATT
+    handles are PINNED to the layout the box paired against (report 3 at
+    0x0027): bluetoothd moved them on every daemon restart (0x0045).
+  - **`is_stand_by` is not a verdict**: it stayed true with the box awake on
+    its ambient screen and the TV on. And YouTube's first start after a
+    wake took ~20 s, past the one screen-id question pychromecast asks at
+    launch, so `play` re-asks for up to 40 s. Measured after both: tag to
+    video 19 s, box awake.
 - The NFC reader sends `add` on insert and `remove` on removal; a `toogle` from
   the page works too. The active state is in memory (`tvcast._active`), so
   neither gesture trusts it: an `add` always
