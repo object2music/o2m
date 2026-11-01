@@ -366,7 +366,8 @@ if __name__ == "__main__":
                     return "No action"
                 return tvcast.box_action(box, mode, o2mConf,
                                          pause_music=lambda: o2mHandler.mopidyHandler.playback.pause(),
-                                         on_play=_tv_play)
+                                         on_play=_tv_play, on_bookmark=_tv_bookmark,
+                                         resume=_tv_resume)
 
         # The decision (is it on?) and the action are taken under the same lock:
         # read outside it, two requests close together both saw "off" and both
@@ -382,8 +383,45 @@ if __name__ == "__main__":
         Typed `tv`, which no pool reads; no stats_raw row, since the hourly
         habits (now:library) draw from it and would serve a cartoon's sound."""
         from types import SimpleNamespace
+        from o2m_core.o2mmodels import Track
+        done = tvcast.video_finished(length, position)
+        # update_stat_track counts past 90% as finished; a film is finished at
+        # its credits (video_finished). Hand it a position on the right side of
+        # its rule, then put the real bookmark back: 0 once over, as a spoken
+        # item's (finishing retires it).
+        pos = length if done else (min(position, int(0.89 * length)) if length else position)
         track = SimpleNamespace(uri=uri, name=name, length=length, track_no=None)
-        o2mHandler.update_stat_track(track, position, 'tv', '')
+        o2mHandler.update_stat_track(track, pos, 'tv', '')
+        Track.update(read_position=0 if done else position).where(Track.uri == uri).execute()
+
+    def _tv_bookmark(uri, name, length, position):
+        """The position of the video playing on the TV, saved as it goes. Not a
+        play: `interrupted` opens the row and moves its date without counting a
+        read or a skip — and returns before it types the row or names it, which
+        a video first seen here needs (the next _tv_play would do both)."""
+        from types import SimpleNamespace
+        from o2m_core.o2mmodels import Track
+        track = SimpleNamespace(uri=uri, name=name, length=length, track_no=None)
+        o2mHandler.update_stat_track(track, position, 'tv', '', interrupted=True)
+        Track.update(read_position=position, option_type='tv').where(Track.uri == uri).execute()
+        if name:
+            Track.update(name=name[:512]).where(Track.uri == uri, Track.name.is_null()).execute()
+
+    def _tv_resume(ids):
+        """(video id, bookmark ms) of the unfinished video watched last among
+        `ids`, within tvcast.RESUME_DAYS — older, it is no longer "the one we
+        were watching". Under a minute in, it was a look, not a viewing."""
+        import datetime
+        from o2m_core.o2mmodels import Track
+        # last_read_date is written in UTC
+        since = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+                 - datetime.timedelta(days=tvcast.RESUME_DAYS))
+        row = (Track.select(Track.uri, Track.read_position)
+               .where(Track.uri.in_([tvcast.URI_PREFIX + i for i in ids]),
+                      Track.read_position >= 60000,
+                      Track.last_read_date >= since)
+               .order_by(Track.last_read_date.desc()).first())
+        return row and (row.uri[len(tvcast.URI_PREFIX):], row.read_position)
 
     def _box_action_decided(box, mode):
         #Active Toogle  Add     Remove

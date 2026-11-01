@@ -80,7 +80,7 @@ class TestBoxAction(unittest.TestCase):
         paused = []
         with mock.patch.object(tv, 'play') as play, mock.patch.object(tv, 'stop') as stop:
             self.assertEqual(tv.box_action(self.box, 'add', _config(), lambda: paused.append(1)), 'TV added')
-            play.assert_called_once_with('192.168.1.137', 'rwalpfPkQvk', 'PLM0sCcbvupIa3uPDa8lxDo6KgMnqcjajr')
+            play.assert_called_once_with('192.168.1.137', 'rwalpfPkQvk', 'PLM0sCcbvupIa3uPDa8lxDo6KgMnqcjajr', 0)
             self.assertEqual(paused, [1])
             # Put down again: cast again — the TV may have been closed meanwhile.
             self.assertEqual(tv.box_action(self.box, 'add', _config()), 'TV added')
@@ -94,6 +94,29 @@ class TestBoxAction(unittest.TestCase):
             self.assertEqual(tv.box_action(self.box, 'remove', _config()), 'No action')
             self.assertEqual(stop.call_count, 3)
             stop.assert_called_with('192.168.1.137', None)
+
+    def test_an_unfinished_video_resumes_before_its_bookmark(self):
+        asked = []
+        def resume(ids):
+            asked.append(ids)
+            return ('zzz', 2726682)
+        with mock.patch.object(tv, 'play') as play, mock.patch.object(tv, 'stop'):
+            tv.box_action(self.box, 'add', _config(), resume=resume)
+        # The playlist cannot be read here: only the line's video is asked.
+        self.assertEqual(asked, [['rwalpfPkQvk']])
+        play.assert_called_once_with('192.168.1.137', 'zzz', 'PLM0sCcbvupIa3uPDa8lxDo6KgMnqcjajr', 2716)
+
+    def test_nothing_to_resume_starts_as_before(self):
+        with mock.patch.object(tv, 'play') as play, mock.patch.object(tv, 'stop'):
+            tv.box_action(self.box, 'add', _config(), resume=lambda ids: None)
+        play.assert_called_once_with('192.168.1.137', 'rwalpfPkQvk', 'PLM0sCcbvupIa3uPDa8lxDo6KgMnqcjajr', 0)
+
+    def test_a_failed_lookup_does_not_stop_the_cast(self):
+        def resume(ids):
+            raise RuntimeError('db away')
+        with mock.patch.object(tv, 'play') as play, mock.patch.object(tv, 'stop'):
+            self.assertEqual(tv.box_action(self.box, 'add', _config(), resume=resume), 'TV added')
+        self.assertEqual(play.call_args[0][3], 0)
 
     def test_toggle(self):
         with mock.patch.object(tv, 'play'), mock.patch.object(tv, 'stop') as stop:
@@ -174,6 +197,15 @@ class TestPlayRecord(unittest.TestCase):
     def test_a_short_video_seen_to_the_end_is(self):
         self.assertIsNotNone(tv.play_record('abc', 'jingle', 15.0, 14.5))
 
+    def test_a_film_ends_at_its_credits_not_at_90_percent(self):
+        hour = 3600000
+        self.assertFalse(tv.video_finished(hour, 0.91 * hour))      # 5 min left
+        self.assertTrue(tv.video_finished(hour, hour - 170000))
+        # A cartoon of 7 min: its last 10%.
+        self.assertFalse(tv.video_finished(420000, 370000))
+        self.assertTrue(tv.video_finished(420000, 380000))
+        self.assertFalse(tv.video_finished(None, 100000))
+
     def test_the_prefix_stays_out_of_the_yt_pools(self):
         # The pools match 'yt:%' / 'youtube:%' by PREFIX (dbhandler).
         self.assertFalse(tv.URI_PREFIX.startswith(('yt:', 'youtube:', 'podcast+', 'web:')))
@@ -210,6 +242,41 @@ class TestWatcherLimit(unittest.TestCase):
         for v in ('v1', 'v2', 'v3'):
             st.content_id = v
             self.assertIsNone(w._sample())
+
+
+class TestWatcherBookmark(unittest.TestCase):
+    def _watcher(self):
+        st = SimpleNamespace(content_id='v1', title='t', duration=3800.0,
+                             adjusted_current_time=600.0, current_time=600.0,
+                             player_state='PLAYING')
+        cast = SimpleNamespace(media_controller=SimpleNamespace(status=st))
+        marks = []
+        w = tv._Watcher(cast, None, None, None, 'U1', lambda *r: marks.append(r))
+        return w, st, marks
+
+    def test_a_pause_saves_the_position_once(self):
+        w, st, marks = self._watcher()
+        w._sample()
+        self.assertEqual(marks, [])                  # playing, under a minute
+        st.player_state = 'PAUSED'
+        w._sample()
+        w._sample()
+        self.assertEqual(marks, [('tv:yt:v1', 't', 3800000, 600000)])
+
+    def test_playing_saves_every_minute(self):
+        w, st, marks = self._watcher()
+        w._sample()
+        w.cur['mark_t'] -= tv.BOOKMARK_S
+        st.adjusted_current_time = 660.0
+        w._sample()
+        self.assertEqual([m[3] for m in marks], [660000])
+
+    def test_a_zap_is_not_saved(self):
+        w, st, marks = self._watcher()
+        st.adjusted_current_time = st.current_time = 10.0
+        st.player_state = 'PAUSED'
+        w._sample()
+        self.assertEqual(marks, [])
 
 
 class TestPageState(unittest.TestCase):

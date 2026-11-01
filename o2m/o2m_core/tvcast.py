@@ -325,9 +325,10 @@ def pick_start(video_id, playlist_id, rng=random):
     return video_id
 
 
-def play(target, video_id, playlist_id=None):
-    """Start a video (and the playlist after it) on the receiver's YouTube app.
-    Returns the connected Chromecast, left open for the watcher."""
+def play(target, video_id, playlist_id=None, start_s=0):
+    """Start a video (and the playlist after it) on the receiver's YouTube app,
+    `start_s` seconds in. Returns the connected Chromecast, left open for the
+    watcher."""
     cast = _connect_awake(target)
     try:
         yt = YouTubeController()
@@ -352,7 +353,13 @@ def play(target, video_id, playlist_id=None):
             # that no wake key reached).
             raise RuntimeError('the YouTube app did not start on the receiver'
                                + (' (in standby)' if _standby(cast) else ''))
-        yt.play_video(video_id, playlist_id=playlist_id)
+        if start_s:
+            # pychromecast's play_video has no start time; the lounge call
+            # under it does (casttube's `_currentTime`).
+            yt.start_session_if_none()
+            yt._session.play_video(video_id, playlist_id or '', start_time=str(int(start_s)))
+        else:
+            yt.play_video(video_id, playlist_id=playlist_id)
     except Exception:
         cast.disconnect()
         raise
@@ -384,6 +391,39 @@ URI_PREFIX = 'tv:yt:'           # a Track row per video watched on the TV
 POLL_S = 5
 MIN_WATCH_MS = 20000            # less than this is a zap, not a viewing
 MIN_SHARE = 0.05                # update_stat_track's own artefact threshold
+END_MARGIN_MS = 180000          # a film is over at its credits, not at 90%
+BOOKMARK_S = 60                 # how often the position is saved while it plays
+RESUME_BACK_S = 10              # a resume starts this much before the bookmark
+RESUME_DAYS = 14                # an unfinished video older than this is not resumed
+
+
+def video_finished(length_ms, position_ms):
+    """Was this video watched to its end? update_stat_track's 90% is right for
+    a song and wrong for a film: 90% of an hour-long one leaves six minutes. So
+    the end is the last 3 minutes, or the last 10% of a video shorter than 30."""
+    if not length_ms:
+        return False
+    return position_ms >= length_ms - min(END_MARGIN_MS, 0.1 * length_ms)
+
+
+def resume_point(resume, video_id, playlist_id):
+    """(video id, seconds) to resume at, or None. `resume(ids)` answers the
+    unfinished video most recently watched among `ids` and its bookmark (ms):
+    the ids of the line's playlist when it can be read, else its own video."""
+    if not resume:
+        return None
+    ids = (playlist_entries(playlist_id) if playlist_id else None) or ([video_id] if video_id else [])
+    if not ids:
+        return None
+    try:
+        hit = resume(ids)
+    except Exception as e:
+        print(f"TV resume lookup error: {e}")
+        return None
+    if not hit:
+        return None
+    vid, pos_ms = hit
+    return vid, max(0, int(pos_ms / 1000) - RESUME_BACK_S)
 
 
 def play_record(video, title, duration_s, position_s):
@@ -413,9 +453,12 @@ class _Watcher(threading.Thread):
     when the next one starts, when the app closes, or when the tag is taken off.
     The receiver pushes its media status; this only reads the latest one."""
 
-    def __init__(self, cast, on_play, limit=None, start=None, uid=None):
+    def __init__(self, cast, on_play, limit=None, start=None, uid=None, on_bookmark=None):
         super().__init__(daemon=True)
         self.cast, self.on_play, self.limit, self.uid = cast, on_play, limit, uid
+        # The position, saved while the video plays: until it is reported a
+        # pause lives in memory only, and the Pi reboots every day.
+        self.on_bookmark = on_bookmark
         # Until the video just cast shows up, the receiver may still report the
         # one it was playing before; counted, it would spend a limit of 1.
         self.start_id = start
@@ -459,10 +502,28 @@ class _Watcher(threading.Thread):
             if self.limit and self.seen >= self.limit:
                 return 'limit'
             self.seen += 1
-            self.cur = {'id': vid, 'title': None, 'dur': None, 'pos': 0}
+            self.cur = {'id': vid, 'title': None, 'dur': None, 'pos': 0,
+                        'marked': 0, 'mark_t': time.time()}
         self.cur['title'] = st.title or self.cur['title']
         self.cur['dur'] = st.duration or self.cur['dur']
         self.cur['pos'] = max(self.cur['pos'], st.adjusted_current_time or st.current_time or 0)
+        self._bookmark(st)
+
+    def _bookmark(self, st):
+        """Save the position on a pause, and every BOOKMARK_S while it plays."""
+        c = self.cur
+        if not self.on_bookmark or c['pos'] == c['marked']:
+            return
+        if st.player_state != 'PAUSED' and time.time() - c['mark_t'] < BOOKMARK_S:
+            return
+        rec = play_record(c['id'], c['title'], c['dur'], c['pos'])
+        if not rec:
+            return
+        c['marked'], c['mark_t'] = c['pos'], time.time()
+        try:
+            self.on_bookmark(*rec)
+        except Exception as e:
+            print(f"TV bookmark error ({rec[0]}): {e}")
 
     def _flush(self):
         c, self.cur = self.cur, None
@@ -547,9 +608,12 @@ def _halt_watcher():
     return w
 
 
-def box_action(box, mode, config, pause_music=None, on_play=None):
+def box_action(box, mode, config, pause_music=None, on_play=None, on_bookmark=None,
+               resume=None):
     """Toggle / add / remove a TV box, with the same truth table as a box.
-    `on_play(uri, name, length_ms, position_ms)` records each video watched.
+    `on_play(uri, name, length_ms, position_ms)` records each video watched,
+    `on_bookmark` (same arguments) saves its position while it plays, and
+    `resume` finds an unfinished video to go back to (see resume_point).
     Returns the sentence /api/box answers."""
     global _watcher
     if not available():
@@ -591,8 +655,11 @@ def box_action(box, mode, config, pause_music=None, on_play=None):
         if w:
             w.cast.disconnect()
         try:
-            start = pick_start(video, playlist)
-            cast = play(target, start, playlist)
+            # The video left unfinished comes back first, where it stopped;
+            # otherwise a random one of the playlist.
+            back = resume_point(resume, video, playlist)
+            start, at = back or (pick_start(video, playlist), 0)
+            cast = play(target, start, playlist, at)
         except Exception as e:
             print(f"TV play error ({ref}): {e}")
             return f"TV: {e}"
@@ -603,9 +670,9 @@ def box_action(box, mode, config, pause_music=None, on_play=None):
                             'image': getattr(box, 'image_url', '') or ''}
         _last[box.uid] = ref
         _watcher = _Watcher(cast, on_play, getattr(box, 'option_max_results', None) or None,
-                            start, box.uid)
+                            start, box.uid, on_bookmark)
         _watcher.start()
-        print(f"TV: {box.uid} cast {start} from {ref}")
+        print(f"TV: {box.uid} cast {start}" + (f" at {at} s" if at else '') + f" from {ref}")
         try:
             if pause_music and config.getboolean('tv', 'pause_music', fallback=True):
                 pause_music()

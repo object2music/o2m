@@ -45,8 +45,9 @@ FORCED_LOW_SCORE = 0.0
 # Content whose lifecycle isn't "replayable music": podcasts/infos are consumed
 # once, radios are continuous streams — completion-based popularity is meaningless
 # for them, so they are left unscored (popularity = NULL) and ignored by selection.
+# Videos watched on the TV (`tv`) are not even heard here.
 # Mirrors the exclusion guard used for mood enrichment in o2mtomopidy.
-NON_MUSIC_OPTION_TYPES = frozenset({'podcast', 'info'})
+NON_MUSIC_OPTION_TYPES = frozenset({'podcast', 'info', 'tv'})
 _NON_MUSIC_URI_HINTS = ('podcast', 'rss', 'http://', 'https://')
 
 

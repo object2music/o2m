@@ -666,6 +666,21 @@ is skipped by the dispatcher.
   half-heard, so a cartoon half-watched would come back as AUDIO in a music box
   — on o2m_0's older code too. No `stats_raw` row either: `now:library` draws
   from it. Under 20 s is a zap and not recorded.
+- **The position is saved while it plays, and an unfinished video comes back
+  first** (2026-11-01). A pause wrote nothing: the play was reported only when
+  the app closed, and the Pi reboots daily — "Rackham" read 0 for three hours
+  after its pause, until the box's standby closed YouTube. The watcher now
+  saves the bookmark on a pause and every minute (`on_bookmark`, an
+  `interrupted` stat: no read, no skip). **A film ends at its credits**, not
+  at update_stat_track's 90% (an hour-long one has six minutes left there):
+  finished = the last 3 min, or the last 10% under 30 min
+  (`video_finished`); finishing sets the bookmark to 0. Put down, a tag first
+  looks for the unfinished video watched last among its playlist's ids (else
+  its own video), at least 1 min in and within 14 days, and starts it 10 s
+  before the bookmark — through casttube's `_currentTime`, which
+  pychromecast's `play_video` does not expose. `read_end` on these rows is an
+  AVERAGE over viewings, not this one's share: Rackham's 0.905 was a full
+  viewing the day before and 72% that day. `tv` is unscored like `podcast`.
 - **The box's `option_max_results` is a number of VIDEOS**: when the one past it
   starts (the playlist going on, or the app's autoplay), the watcher closes
   YouTube. It counts nothing before the video just cast shows up — the receiver
