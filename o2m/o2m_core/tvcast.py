@@ -247,7 +247,7 @@ def _connect_awake(target):
     if host and _reachable(host):
         cast = _connect(target)
         if sent and _standby(cast):
-            _until(lambda: not _standby(cast), 10)
+            _until(lambda: not _standby(cast), 3)   # stuck true with the TV on, seen
         return cast
     if not (sent or send_key(_wake['key'])):
         return _connect(target)             # the usual "unreachable" error
@@ -268,6 +268,7 @@ def _connect_awake(target):
     return cast
 
 
+SCREEN_ID_WAIT = 40            # s, from the launch to the app's screen id
 _PLAYLIST_TTL = 6 * 3600       # a playlist changes over days
 _PLAYLIST_FAIL_TTL = 3600       # an unreadable one is asked again within the hour
 _playlists = {}                 # playlist id -> (expires, [video ids] or None)
@@ -334,12 +335,18 @@ def play(target, video_id, playlist_id=None):
         # The lounge session needs the app's screen id, which only a RUNNING app
         # reports: asked straight away, the pairing call fails with
         # "screen_ids parameter error" (measured on the Mi Box).
+        # The app asks for it once, at launch; a cold start (the first after
+        # the box woke) takes longer than that question waits, and the
+        # answer never comes: ask again while the app comes up
+        # (2026-11-01: YouTube up ~20 s after the launch).
         yt.launch()
-        for _ in range(20):
-            if yt._screen_id:
-                break
-            time.sleep(0.5)
-        else:
+        deadline = time.time() + SCREEN_ID_WAIT
+        while not yt._screen_id and time.time() < deadline:
+            if cast.app_id == YOUTUBE_APP_ID:
+                yt.update_screen_id()       # blocks up to 10 s for the answer
+            else:
+                time.sleep(0.5)
+        if not yt._screen_id:
             # Without it the pairing POSTs no body and YouTube answers a
             # baffling "411 Length Required" (2026-11-01, a box in standby
             # that no wake key reached).
