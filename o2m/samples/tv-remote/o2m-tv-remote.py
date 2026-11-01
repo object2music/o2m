@@ -15,16 +15,31 @@ o2m (tvcast) writes a key name to the FIFO; this daemon sends it:
 `power` is a TOGGLE (it sleeps a box that is awake); `wakeup` (System Wake Up,
 Android KEYCODE_WAKEUP) only ever wakes.
 
+A key normally goes out as a GATT notification through bluetoothd — which
+sends it only to a client that subscribed (wrote the CCC) during THIS
+bluetoothd's life: BlueZ keeps no subscription across a restart, and the box,
+bonded, never subscribes again (it trusts the server to remember, as the
+spec says it should; measured: reconnection, even a Service Changed
+rediscovery, and not one CCC write). The Pi reboots daily, so the first
+wake after it said "no box connected" (2026-11-01). Then the key is written
+straight onto the link instead, as a raw ATT notification on an HCI socket:
+the box's HID host listens to its report handles whatever the CCC says, and
+woke from deep standby in a second.
+
 Runs as root, beside bluetoothd, with python3-dbus and python3-gi (both in
 Raspberry Pi OS). It needs the controller set up by o2m-tv-remote-address.service
 first — LE only, its own public address — see that unit for why. Pair it once
 from the box: Settings → Remotes & accessories → Add accessory → "o2m remote".
 """
+import fcntl
 import os
+import socket
+import struct
 import threading
 import time
 
 import dbus
+import dbus.exceptions
 import dbus.mainloop.glib
 import dbus.service
 from gi.repository import GLib
@@ -66,6 +81,45 @@ def log(*a):
     print(time.strftime('%T'), *a, flush=True)
 
 
+HCIGETCONNLIST = 0x800448D4    # _IOR('H', 212, int)
+LE_LINK = 0x80
+
+
+def le_connections(dev=0, room=8):
+    """The handles of this controller's LE connections."""
+    s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
+    try:
+        buf = bytearray(struct.pack('<HH', dev, room) + bytes(16 * room))
+        fcntl.ioctl(s.fileno(), HCIGETCONNLIST, buf)
+        n = struct.unpack_from('<H', buf, 2)[0]
+        out = []
+        for i in range(n):
+            handle, _addr, link = struct.unpack_from('<H6sB', buf, 4 + 16 * i)
+            if link == LE_LINK:
+                out.append(handle)
+        return out
+    finally:
+        s.close()
+
+
+def raw_notify(value_handle, data, dev=0):
+    """Write an ATT Handle Value Notification straight onto every LE link,
+    bypassing bluetoothd's subscription check. Returns how many links."""
+    conns = le_connections(dev)
+    if not conns:
+        return 0
+    att = b'\x1b' + struct.pack('<H', value_handle) + bytes(data)
+    l2cap = struct.pack('<HH', len(att), 4) + att           # CID 4: ATT
+    s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_RAW, socket.BTPROTO_HCI)
+    try:
+        s.bind((dev,))
+        for h in conns:
+            s.send(b'\x02' + struct.pack('<HH', h & 0x0fff, len(l2cap)) + l2cap)
+    finally:
+        s.close()
+    return len(conns)
+
+
 def ay(data):
     return dbus.Array([dbus.Byte(b) for b in data], signature='y')
 
@@ -89,10 +143,11 @@ class Application(dbus.service.Object):
 
 
 class Service(dbus.service.Object):
-    def __init__(self, bus, index, uuid):
+    def __init__(self, bus, index, uuid, handle):
         self.path = '/o2m/remote/service%d' % index
         self.bus = bus
         self.uuid = uuid
+        self.handle = handle
         self.chars = []
         super().__init__(bus, self.path)
 
@@ -100,11 +155,19 @@ class Service(dbus.service.Object):
         return dbus.ObjectPath(self.path)
 
     def get_properties(self):
-        return {SVC: {'UUID': self.uuid, 'Primary': True,
+        return {SVC: {'UUID': self.uuid, 'Primary': True, 'Handle': dbus.UInt16(self.handle),
                       'Characteristics': dbus.Array([c.get_path() for c in self.chars], signature='o')}}
 
     def add(self, uuid, flags, value=b'', report_ref=None):
         c = Characteristic(self.bus, len(self.chars), uuid, flags, self, value)
+        # The handles the box was paired with, asked for explicitly: the box
+        # caches them with the bond and never asks again, while bluetoothd
+        # would allocate past the old ones each time this daemon restarts
+        # (report 3 went from 0x0027 to 0x0045). Declaration, value, then the
+        # CCC bluetoothd adds for a notify flag, then our descriptors.
+        prev = self.chars[-1] if self.chars else None
+        c.handle = (prev.handle + ('notify' in prev.flags) + len(prev.descs) if prev
+                    else self.handle) + 2
         self.chars.append(c)
         if report_ref:
             c.descs.append(Descriptor(self.bus, 0, '2908', ['encrypt-read'], c, report_ref))
@@ -120,6 +183,7 @@ class Characteristic(dbus.service.Object):
         self.value = bytes(value)
         self.descs = []
         self.notifying = False
+        self.handle = 0             # asked by Service.add, confirmed by bluetoothd
         super().__init__(bus, self.path)
 
     def get_path(self):
@@ -127,7 +191,13 @@ class Characteristic(dbus.service.Object):
 
     def get_properties(self):
         return {CHR: {'Service': self.service.get_path(), 'UUID': self.uuid, 'Flags': self.flags,
+                      'Handle': dbus.UInt16(self.handle),
                       'Descriptors': dbus.Array([d.get_path() for d in self.descs], signature='o')}}
+
+    @dbus.service.method(PROPS, in_signature='ssv')
+    def Set(self, interface, name, value):
+        if interface == CHR and name == 'Handle':
+            self.handle = int(value)
 
     @dbus.service.method(CHR, in_signature='a{sv}', out_signature='ay')
     def ReadValue(self, options):
@@ -150,10 +220,19 @@ class Characteristic(dbus.service.Object):
         pass
 
     def send(self, data):
+        """'gatt' when bluetoothd notified a subscriber, 'raw' when written
+        on the link directly, '' when no box is connected."""
         self.value = bytes(data)
         if self.notifying:
             self.PropertiesChanged(CHR, {'Value': ay(self.value)}, [])
-        return self.notifying
+            return 'gatt'
+        if self.handle:
+            try:
+                if raw_notify(self.handle, self.value):
+                    return 'raw'
+            except OSError as e:
+                log('raw notification failed:', e)
+        return ''
 
 
 class Descriptor(dbus.service.Object):
@@ -242,7 +321,14 @@ def main():
     aprops = dbus.Interface(adapter, PROPS)
     for k, v in (('Powered', True), ('Alias', NAME), ('Pairable', True),
                  ('Discoverable', True), ('DiscoverableTimeout', dbus.UInt32(0))):
-        aprops.Set('org.bluez.Adapter1', k, v)
+        for attempt in range(10):          # Busy while bluetoothd is starting
+            try:
+                aprops.Set('org.bluez.Adapter1', k, v)
+                break
+            except dbus.exceptions.DBusException as e:
+                if attempt == 9 or 'Busy' not in e.get_dbus_name():
+                    raise
+                time.sleep(1)
 
     Agent(bus, '/o2m/remote/agent')
     am = dbus.Interface(bus.get_object(BUS, '/org/bluez'), 'org.bluez.AgentManager1')
@@ -250,7 +336,9 @@ def main():
     am.RequestDefaultAgent('/o2m/remote/agent')
 
     app = Application(bus)
-    hid = Service(bus, 0, '1812')
+    # Where a fresh bluetoothd puts them, after its own GAP, GATT and Device
+    # Information: the layout the box was paired against.
+    hid = Service(bus, 0, '1812', 0x0015)
     app.services.append(hid)
     hid.add('2a4a', ['encrypt-read'], bytes([0x11, 0x01, 0x00, 0x03]))  # HID 1.11, RemoteWake|NormallyConnectable
     hid.add('2a4b', ['encrypt-read'], REPORT_MAP)
@@ -261,16 +349,18 @@ def main():
         2: hid.add('2a4d', ['encrypt-read', 'notify'], bytes(8), bytes([2, 1])),
         3: hid.add('2a4d', ['encrypt-read', 'notify'], bytes(1), bytes([3, 1])),
     }
-    bat = Service(bus, 1, '180f')
+    bat = Service(bus, 1, '180f', 0x002a)
     app.services.append(bat)
     bat.add('2a19', ['read', 'notify'], bytes([100]))
-    info = Service(bus, 2, '180a')
+    info = Service(bus, 2, '180a', 0x002e)
     app.services.append(info)
     info.add('2a29', ['read'], b'o2m')
     info.add('2a50', ['read'], bytes([0x02, 0x6b, 0x1d, 0x46, 0x02, 0x00, 0x01]))  # PnP ID
 
     dbus.Interface(adapter, 'org.bluez.GattManager1').RegisterApplication(
-        app.path, {}, reply_handler=lambda: log('GATT application registered'),
+        app.path, {}, reply_handler=lambda: log(
+            'GATT application registered, report handles',
+            ' '.join('%d=0x%04x' % (k, r.handle) for k, r in reports.items())),
         error_handler=lambda e: log('GATT error', e))
     adv = Advertisement(bus)
     dbus.Interface(adapter, 'org.bluez.LEAdvertisingManager1').RegisterAdvertisement(
@@ -295,9 +385,9 @@ def main():
         else:
             log('unknown key', word)
             return False
-        ok = rep.send(down)
+        how = rep.send(down)
         GLib.timeout_add(120, lambda: rep.send(up) and False)
-        log('key', word, 'sent' if ok else 'NOT sent: no box connected')
+        log('key', word, f'sent ({how})' if how else 'NOT sent: no box connected')
         return False
 
     def reader():
