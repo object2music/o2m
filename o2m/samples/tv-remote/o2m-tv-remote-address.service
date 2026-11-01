@@ -3,7 +3,9 @@ Description=o2m TV remote: Bluetooth LE only, on its own address
 # bthelper writes the Pi's factory address; this runs after it and before
 # bluetoothd, whose ATT server listens on the address it finds at start.
 After=bthelper@hci0.service sys-subsystem-bluetooth-devices-hci0.device
-Requires=sys-subsystem-bluetooth-devices-hci0.device
+# Wants, not Requires: a chip that failed may have no hci0 at all, and the
+# ExecStartPre is what brings it back.
+Wants=sys-subsystem-bluetooth-devices-hci0.device
 Before=bluetooth.service
 
 [Service]

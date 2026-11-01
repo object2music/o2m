@@ -8,7 +8,9 @@
 DEV=serial0-0
 DRV=/sys/bus/serial/drivers/hci_uart_bcm
 
-ready() { btmgmt info 2>/dev/null | grep -q '^hci0:'; }
+# btmgmt quits on the end of its input before the answer arrives, and under
+# systemd its input is /dev/null: it prints nothing. Keep stdin open a moment.
+ready() { sleep 3 | btmgmt info 2>/dev/null | grep -q '^hci0:'; }
 
 for try in 1 2 3; do
     ready && exit 0
