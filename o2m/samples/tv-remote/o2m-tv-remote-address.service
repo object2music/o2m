@@ -9,8 +9,11 @@ Before=bluetooth.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+TimeoutStartSec=60
 # The address the box was paired with. Change it and the box must pair again.
 Environment=O2M_REMOTE_ADDR=B8:27:EB:A1:02:03
+# A controller whose firmware failed to load at boot is brought back first.
+ExecStartPre=/bin/sh /home/pi/o2m/o2m/samples/tv-remote/o2m-tv-remote-chip.sh
 ExecStart=/usr/bin/btmgmt power off
 ExecStart=/usr/bin/btmgmt bredr off
 ExecStart=/usr/bin/btmgmt public-addr ${O2M_REMOTE_ADDR}

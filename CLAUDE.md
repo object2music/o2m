@@ -715,6 +715,16 @@ is skipped by the dispatcher.
   - **Pairing is done once on the box**: Settings → Remotes & accessories →
     Add accessory → "o2m remote". The report map is cached with the bond:
     adding a key to it needs a new pairing.
+  - **The chip can fail to come up at boot.** The Pi 3's Bluetooth sits on a
+    UART and its firmware load sometimes times out (`BCM: Reset failed
+    (-110)`): hci0 exists, btmgmt lists no controller, and every tag that
+    night does nothing (2026-11-01, the morning after a reboot; the daemon
+    restarted 700 times against an adapter that was not there).
+    `o2m-tv-remote-chip.sh`, run by the address unit, rebinds the UART
+    driver until the controller answers — the first rebind was enough. A
+    box in standby that no key reached then also failed with a meaningless
+    `411 Length Required` (no screen id, so the lounge pairing POSTs no
+    body); `play` now says the YouTube app did not start.
 - The NFC reader sends `add` on insert and `remove` on removal; a `toogle` from
   the page works too. The active state is in memory (`tvcast._active`), so
   neither gesture trusts it: an `add` always

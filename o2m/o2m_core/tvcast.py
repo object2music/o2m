@@ -339,6 +339,12 @@ def play(target, video_id, playlist_id=None):
             if yt._screen_id:
                 break
             time.sleep(0.5)
+        else:
+            # Without it the pairing POSTs no body and YouTube answers a
+            # baffling "411 Length Required" (2026-11-01, a box in standby
+            # that no wake key reached).
+            raise RuntimeError('the YouTube app did not start on the receiver'
+                               + (' (in standby)' if _standby(cast) else ''))
         yt.play_video(video_id, playlist_id=playlist_id)
     except Exception:
         cast.disconnect()
