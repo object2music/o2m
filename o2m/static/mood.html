@@ -3825,7 +3825,9 @@ async function openObjActions(btn) {
                  action: togglePodcastOrder });
   // Library toggle for the whole object (album saved / artist followed), live state.
   const kind = (document.getElementById('obj-kind')?.textContent || '').toLowerCase();
-  if (objCurrentUri && (kind === 'album' || kind === 'artist')) {
+  // Spotify's library only: a local album has nothing to save it to (the server
+  // answers "spotify album uri required"), as menuItemsWithLibrary already knew.
+  if (objCurrentUri && objCurrentUri.startsWith('spotify:') && (kind === 'album' || kind === 'artist')) {
     const inLib = await fetchLibState(objCurrentUri, kind);
     if (inLib !== null) items.push(libraryToggleItem(objCurrentUri, kind, inLib));
   }
@@ -5645,12 +5647,16 @@ const objCache = new Map();
 function objShowCached(key) {
   const c = objCache.get(key);
   if (c && (Date.now() - c.ts) < OBJ_TTL) {
+    // The ⋯ menu acts on objCurrentUri: restored with the view, or "Add to
+    // library" sent the PREVIOUS view's uri ("spotify album uri required").
+    objSetActionUris(c.playUris, c.ownUri);
     objSetHead(c.kind, c.title, c.sub); objBody().innerHTML = c.html; return true;
   }
   return false;
 }
 function objStore(key, kind, title, sub) {
-  objCache.set(key, { kind, title, sub, html: objBody().innerHTML, ts: Date.now() });
+  objCache.set(key, { kind, title, sub, html: objBody().innerHTML, ts: Date.now(),
+                      playUris: objCurrentPlayUris.slice(), ownUri: objCurrentUri });
 }
 
 // Small tag showing where the content came from (O2M DB cache vs live Spotify).
@@ -5694,6 +5700,7 @@ async function openArtist(uri, seedName) {
   objNavTo();
   const title = seedName || 'Artist';
   objSetHead('Artist', title, '');
+  objSetActionUris([], uri);   // not the previous view's while this one loads
   openObjPanel();
   if (objShowCached('artist:' + uri)) return;
   objLoading();
@@ -5753,6 +5760,7 @@ async function openAlbum(uri, seed) {
   if (/^(podcast\+|rf:show:)/.test(uri) && !uri.includes('#')) return openPodcast(uri, { name: seed?.name });
   objNavTo();
   objSetHead('Album', seed?.name || 'Album', seed?.artist || '');
+  objSetActionUris([], uri);   // not the previous view's while this one loads
   openObjPanel();
   if (objShowCached('album:' + uri)) return;
   objLoading();
