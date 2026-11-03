@@ -171,8 +171,14 @@ top of the module):
 3. **Base** = `QUALITY_W·quality + VOLUME_W·volume` (0.65 / 0.35).
 4. **Skip penalty** — `base ·= 1 − SKIP_W·skip_rate` (`SKIP_W=0.5`, `skip_rate =
    skipped_count/read_count`).
-5. **Recency** — soft multiplier in `[REC_FLOOR=0.6, 1]`, half-life 120 days (old
-   favourites keep ≥60%).
+5. **Recency** — soft multiplier in `[REC_FLOOR, 1]`, half-life 120 days —
+   **neutralised since 2026-11-03 (`REC_FLOOR = 1.0`, was 0.6)**, the formula kept
+   so it can come back. It only ever pushed AGAINST the long-unplayed (the
+   cooldown already handles "played recently"), and the samplers' `popularity**k`
+   squared it at low DL: "Thin Thing", 11 complete plays, last heard 14 months
+   before, scored 0.49 where the same stats played that day scored 0.78 — half the
+   draw weight of a track heard last month, and being drawn less it only grew
+   older.
 6. **Explicit / novelty / endorsement** — `+LIKE_BONUS(0.10)` if liked; a fading
    first-play **novelty** boost (`NOVELTY_W=0.15`, 30-day half-life, ÷(1+completions));
    a **playlist** endorsement boost (`+PLAYLIST_W=0.10 · min(playlist_count/4, 1)`).
@@ -328,7 +334,18 @@ Variant = `expand_pick_mode`: **`hybrid` (P0, default)** | `temp` (P1) | `band` 
   purpose: the tags are Last.fm's human tagging and cover 97% of artists, the mood is
   inferred from them. The same function also draws a tag SOURCE —
   `get_same_tag_tracks`, library tracks on the seed's three rarest tags, DB only —
-  beside same album, same artist and the similar-artist reco.
+  beside same album, same artist and the similar-artist reco. **Each source brings
+  one share (6)**; the tag source took 6 PER TAG until 2026-11-03, 18 against 6 + 6,
+  and same album + same artist made 35–41% of what followed a track (simulated
+  over 25 library seeds, 30 draws each). Shared, 54–60%.
+  **A cached album is completed when it is only partly known**
+  (`SpotifyHandler._complete_album_later`): `AlbumTrack` holds the tracks o2m
+  happened to meet, so 152 of the 253 albums of the last 300 plays were partial, and
+  a third of those tracks had no other track of their album cached — the same-album
+  source was empty for them. A hit with fewer tracks than `Album.total_tracks` (or
+  ≤ 3 with no total) asks MOPIDY for the album in the background (its application,
+  not our Web API quota; 9 s on a lossy line, so never on the recommendation's
+  path), once per album per process.
 - P1 `temp`: one sample ∝ `affinity^k`, `k=(5−DL)/2.5`. P2 `band`: Gaussian around a DL-set
   popularity target (p90 at DL0 → p10 at DL10).
 

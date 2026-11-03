@@ -4747,16 +4747,26 @@ class O2mToMopidy:
         The rarest `n_tags` of the seed's tags (highest idf — 'shoegaze' before
         'rock'), and a random slice of each tag's tracks. DB only: no Last.fm, no
         Spotify, so it answers even when both are down or rate-limited. The
-        weighting among them is left to _expand_pick's tag bonus."""
+        weighting among them is left to _expand_pick's tag bonus.
+
+        `limit` is the SOURCE's share, split between its tags — like the album,
+        artist and Spotify sources beside it. It used to be per tag, so this one
+        source brought 18 candidates against 6 + 6 for the same album and artist
+        and decided two thirds of what followed a track (2026-11-03)."""
         try:
             idf, seed = self._seed_tags(track_uri)
             if not seed:
                 return []
-            out = []
-            for tag in sorted(seed, key=lambda t: -idf[t])[:n_tags]:
-                pool = self.dbHandler.get_tag_track_uris(tag, cap=max(limit * 4, 40))
-                out += random.sample(pool, min(limit, len(pool)))
-            return out
+            tags = sorted(seed, key=lambda t: -idf[t])[:n_tags]
+            per = max(1, -(-limit // len(tags)))   # ceil
+            out, seen = [], {track_uri}
+            for tag in tags:
+                pool = [u for u in self.dbHandler.get_tag_track_uris(tag, cap=max(limit * 4, 40))
+                        if u not in seen]
+                pick = random.sample(pool, min(per, len(pool)))
+                seen.update(pick)
+                out += pick
+            return out[:limit]
         except Exception as e:
             print(f"get_same_tag_tracks({track_uri}): {e}")
             return []

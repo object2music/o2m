@@ -1,4 +1,4 @@
-import configparser, os, json, sys, random, re, time
+import configparser, os, json, sys, random, re, time, threading
 from pathlib import Path
 import spotipy as spotipy
 import o2m_core.util as util
@@ -2570,6 +2570,61 @@ class SpotifyHandler:
 
 ################### ALBUMS  #############################
 
+    # An album "in the cache" is often only the tracks o2m happened to meet: on
+    # 2026-11-03, 152 of the 253 albums of the last 300 tracks played were partial,
+    # and for a third of those tracks no OTHER track of their album was known — so
+    # the end-of-track recommendation's same-album source was empty. A cache hit
+    # was trusted as the whole album and the rest was never asked for.
+    _ALBUM_SUSPECT_MAX = 3   # with no total_tracks known, this few is suspect
+
+    def _album_is_partial(self, album_id, n_cached):
+        try:
+            from o2m_core.o2mmodels import Album
+            a = Album.get_or_none(Album.id == album_id)
+            total = getattr(a, 'total_tracks', None) if a else None
+        except Exception:
+            return False
+        if total:
+            return n_cached < total
+        return n_cached <= self._ALBUM_SUSPECT_MAX
+
+    def _complete_album_later(self, album_id, n_cached):
+        """Fetch the whole album through MOPIDY, in the background, when the cache
+        holds only part of it. Mopidy rather than the Web API: its application is
+        not ours, so the Development-Mode quota is not spent. In the background
+        because a lookup took 9 s on a lossy line, and this sits on the path of a
+        recommendation. Tried once per album per process, success or not."""
+        if not self._mopidy or not self._db:
+            return
+        tried = self.__dict__.setdefault('_album_completion_tried', set())
+        if album_id in tried or not self._album_is_partial(album_id, n_cached):
+            return
+        tried.add(album_id)
+
+        def run():
+            uri = f"spotify:album:{album_id}"
+            try:
+                res = self._mopidy.library.lookup(uris=[uri]) or {}
+                tracks = list(res.get(uri) or [])
+            except Exception as e:
+                print(f"album completion {album_id}: {e}")
+                return
+            tracks = [t for t in tracks if (getattr(t, 'uri', '') or '').startswith('spotify:track:')]
+            if not tracks:
+                return
+            tracks.sort(key=lambda t: ((getattr(t, 'disc_no', None) or 1), (getattr(t, 'track_no', None) or 0)))
+            for pos, t in enumerate(tracks):
+                self._db.save_album_track(album_id, t.uri, pos)
+            try:
+                from o2m_core.o2mmodels import Album
+                Album.update(total_tracks=len(tracks)).where(
+                    (Album.id == album_id) & (Album.total_tracks.is_null())).execute()
+            except Exception:
+                pass
+            print(f"album completion {album_id}: {n_cached} -> {len(tracks)} tracks")
+
+        threading.Thread(target=run, daemon=True, name=f"album-{album_id[:8]}").start()
+
     def get_album_all_tracks(self, album_uri, limit=10):
         if not album_uri:
             return []
@@ -2582,6 +2637,7 @@ class SpotifyHandler:
             cached = self._db.get_album_tracks(album_id)
             if cached:
                 print(f"[TIMING] get_album_all_tracks: cache hit ({len(cached)} tracks) for {album_id}")
+                self._complete_album_later(album_id, len(cached))
                 random.shuffle(cached)
                 return cached[:limit]
         if self._is_rate_limited():
