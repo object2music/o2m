@@ -2554,6 +2554,16 @@ other interface live. Measured: a remote ALL takes ~35 s, past the box lock's ol
   ACQUIRED` when reached. `capture_fill` keeps 30 s (`_capture_lock_timeout`): its
   caller is a screen waiting, it refuses instead. Measured: three tags put down 1, 2
   and 3 s into an ALL finished at 39.7, 45.3 and 50.8 s, in that order, all active.
+- **A box fill starts playback BEFORE its recommendation replacements**
+  (`_deferred_replacements`, 2026-11-03). At DL 1–9 `add_tracks` swaps every
+  `11 − DL`th track for a recommendation, and each swap asks Spotify and Last.fm —
+  on a lossy line (10% packet loss, DNS timing out at 4–5 s) that was 10 s of
+  silence before the first note of "P Work classical". The swaps are now queued and
+  run once the music has started, never on the track playing, one before it or the
+  one still LOADING (Mopidy reports no current track while a Spotify track starts;
+  `_play_pending_tlid` is what remembers it). The fill keeps its lock and its busy
+  flag until they are done. `play_or_resume` also no longer re-issues `play()` on
+  a tlid it asked for less than 20 s ago: the second call restarted the load.
 - **The watchdog stands down during a fill** (`check_active_boxes_health`): "active
   box + empty tracklist" is what the first seconds of any fill look like, and its
   reload would have queued behind the fill and added the same boxes again.

@@ -104,6 +104,11 @@ class O2mToMopidy:
         # so this is what lets every interface hold its dials during the others —
         # and what lets POST /api/mood refuse instead of racing them.
         self._fills = 0
+        # Recommendation replacements deferred until playback has started (see
+        # _deferred_replacements). None outside a box fill; only the thread that
+        # opened the fill defers, other threads' add_tracks replace inline.
+        self._replace_jobs = None
+        self._replace_owner = None
         self._fills_mutex = threading.Lock()
         # Trigger key → monotonic time it was last seen in flight or finished.
         # Swallows the repeats of a remote key held down and NFC double reads.
@@ -871,6 +876,98 @@ class O2mToMopidy:
                 #self.one_box_changed(box)
 
     @contextlib.contextmanager
+    def _deferred_replacements(self):
+        """Within a box fill, let add_tracks QUEUE its recommendation replacements
+        instead of doing them. When the fill body ends, playback starts, then the
+        replacements run — the room hears music ~10 s sooner, and the replacements
+        never touch the track playing or one already played. Reentrant: a cascade's
+        child fill joins the outermost one's list. Playback is started here, so the
+        caller must hold the dials (filling()) until this block ends."""
+        outer = self._replace_jobs is None
+        if outer:
+            self._replace_jobs = []
+            self._replace_owner = threading.get_ident()
+        try:
+            yield
+            if outer:
+                try:
+                    if self.mopidyHandler.tracklist.get_length() > 0:
+                        self.play_or_resume()
+                except Exception as e:
+                    print(f"deferred replacements: could not start playback: {e}")
+                self._run_replace_jobs(self._replace_jobs)
+        finally:
+            if outer:
+                self._replace_jobs = None
+                self._replace_owner = None
+
+    def _defer_replacements_here(self):
+        return self._replace_jobs is not None and self._replace_owner == threading.get_ident()
+
+    def _run_replace_jobs(self, jobs):
+        """Do the queued recommendation replacements. A target is skipped when it
+        is gone, or when it is the track playing or one before it (checked again
+        after the recommendation is computed, which takes a second or more)."""
+        enrich = []
+        tl = self.mopidyHandler.tracklist
+        for job in jobs:
+            tracks, step = job['tracks'], job['window']
+            for i in range(1, len(tracks), step):
+                tlid, uri = tracks[i]
+                if "spotify:track" not in uri:
+                    continue
+                try:
+                    def _replaceable():
+                        idx = tl.index(tlid=tlid)
+                        cur = tl.index()
+                        if idx is None or (cur is not None and idx <= cur):
+                            return None
+                        # Still loading: Mopidy has no current track yet, so the
+                        # check above cannot see the track about to play.
+                        if cur is None and tlid == self._play_pending_tlid():
+                            return None
+                        return idx
+                    if _replaceable() is None:
+                        continue
+                    uris = self.get_track_recommandation(uri, job['dl'], 1, job['library_link'])
+                    if not uris:
+                        continue
+                    index = _replaceable()  # playback may have moved meanwhile
+                    if index is None:
+                        print(f"Replacement of {uri} skipped: playback reached it")
+                        continue
+                    added = self._add_resolved(uris, at_position=index)
+                    if not added:
+                        continue
+                    if not tl.remove({'tlid': [tlid]}):
+                        print(f"Error when Replacing at index {index} uri {uri} by uri {uris[0]}")
+                        continue
+                    print(f"Replacing at index {index} uri {uri} by uri {uris[0]}")
+                    new = added[0]
+                    self._track_info.pop(tlid, None)
+                    self._track_info[new.tlid] = {
+                        'uri': new.track.uri, 'option_type': 'new',
+                        'library_link': job['library_link'], 'library_display': 'Reco',
+                        'box_id': job['box_uid'],
+                    }
+                    self._note_membership(self._track_info[new.tlid])
+                    if self.dbHandler.stat_exists(new.track.uri):
+                        stat = self.dbHandler.get_stat_by_uri(new.track.uri)
+                    else:
+                        stat = self.dbHandler.create_stat(new.track.uri)
+                    if stat is not None:
+                        if not getattr(stat, 'option_type', None):
+                            stat.option_type = 'new'
+                        stat.in_library = 'Reco'
+                        stat.save()
+                        if (getattr(stat, 'mood_edited_at', None) is None
+                                and (stat.mood is None or stat.mood == '_' or stat.energy is None)):
+                            enrich.append((new.track, new.track.uri))
+                except Exception as e:
+                    print(f"Erreur (deferred replacement of {uri}): {e}")
+        self._enrich_tracks_preemptive(enrich)
+
+    @contextlib.contextmanager
     def _box_ops_lock(self):
         """Reentrant, exception-safe mutex around box add/remove/reload. Bounded acquire so a
         wedged op can't block everything for ever — the old self.queue polling waited up to
@@ -1138,7 +1235,7 @@ class O2mToMopidy:
 
         #print(f"\nNew box added: {box}")
         if (box.uid != self.last_box_uid):  # If different from last box added - for NFC mode only
-            with self._box_ops_lock():
+            with self._box_ops_lock(), self._deferred_replacements():
                 uri = "box:"+box.uid
                 self.update_stat_raw(uri)
 
@@ -1402,7 +1499,15 @@ class O2mToMopidy:
                     #Exclude if DL is on extreme values which has special behaviours and other cases
                     # 'new' excluded: the new context must play unheard tracks, not recommendations.
                     # podcast/info excluded: they are spoken content — never inject music recos there.
-                    if discover_level > 0 and discover_level < 10 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash','new','podcast','info']:
+                    _replace_wanted = (discover_level > 0 and discover_level < 10 and self.option_add_reco_after_track and window_replace < len(slice2) and option_type not in ['hidden','trash','new','podcast','info'])
+                    if _replace_wanted and self._defer_replacements_here():
+                        # Done after playback starts — see _deferred_replacements.
+                        self._replace_jobs.append({
+                            'tracks': [(t.tlid, t.track.uri) for t in slice2],
+                            'window': window_replace, 'dl': discover_level,
+                            'library_link': library_link, 'box_uid': active_box.uid,
+                        })
+                    elif _replace_wanted:
                         try:
                             #TODO check library_link
                             for i in range(1, len(slice2), window_replace):
@@ -3850,6 +3955,16 @@ class O2mToMopidy:
         except Exception as e:
             print(f"interleave_tracklist error: {e}")
  
+    _PLAY_PENDING_S = 20
+
+    def _play_pending_tlid(self):
+        """The tlid play_or_resume asked Mopidy to start less than _PLAY_PENDING_S
+        ago, while Mopidy still reports no current track — i.e. still loading."""
+        req = getattr(self, '_play_requested', None)
+        if not req or time.monotonic() - req[1] > self._PLAY_PENDING_S:
+            return None
+        return req[0]
+
     def play_or_resume(self):
         state = self.mopidyHandler.playback.get_state()
         print(f"play_or_resume: state={state}")
@@ -3866,8 +3981,18 @@ class O2mToMopidy:
             current_tracks = self.mopidyHandler.tracklist.get_tl_tracks()
             print(f"play_or_resume: no current track, tracklist size={len(current_tracks)}")
             if len(current_tracks) > 0:
-                self.mopidyHandler.playback.play(tlid=current_tracks[0].tlid)
-                print(f"play_or_resume: playing tlid={current_tracks[0].tlid}")
+                tlid = current_tracks[0].tlid
+                # A Spotify track takes seconds to start (15 s measured on a lossy
+                # line), and until it does Mopidy reports no current track. A second
+                # call meanwhile — a box fill ends with one, the deferred
+                # replacements with another — used to play() the same tlid again,
+                # which restarts the load it was waiting for.
+                if self._play_pending_tlid() == tlid:
+                    print(f"play_or_resume: tlid={tlid} already starting, no action")
+                    return
+                self._play_requested = (tlid, time.monotonic())
+                self.mopidyHandler.playback.play(tlid=tlid)
+                print(f"play_or_resume: playing tlid={tlid}")
         elif state == "paused":
             self.mopidyHandler.playback.resume()
             print(f"play_or_resume: resuming from pause")
