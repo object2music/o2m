@@ -4136,6 +4136,10 @@ if __name__ == "__main__":
                 km = sh.stream_token()
                 if km:
                     return (km, 200)
+                # Paired but the refresh failed (network): answer "try again later" rather
+                # than falling back to the legacy token, which login5 rejects anyway.
+                if sh.stream_identity():
+                    return ("", 503)
                 # Legacy fallback, kept for instances not paired yet: streaming pinned to the
                 # fixed INSTANCE baseline (never the per-user overlay), so playback keeps
                 # running on the house Premium account even when a free-tier user is signed in

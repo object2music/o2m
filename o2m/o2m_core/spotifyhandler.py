@@ -683,14 +683,22 @@ class SpotifyHandler:
             return None
         if int(tok.get("expires_at", 0)) - 60 > time.time():
             return tok.get("access_token")
-        try:
-            resp = requests.post(self._TOKEN_URL, timeout=20, data={
-                "grant_type": "refresh_token",
-                "refresh_token": tok["refresh_token"],
-                "client_id": self.KEYMASTER_CLIENT_ID,
-            })
-        except Exception as e:
-            print(f"stream token refresh error: {e}")
+        # A network error (DNS hiccup, dropped packet) is not a verdict on the token:
+        # retry a few times before giving up. A refusal from Spotify is not retried.
+        resp = None
+        for attempt in range(3):
+            try:
+                resp = requests.post(self._TOKEN_URL, timeout=8, data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": tok["refresh_token"],
+                    "client_id": self.KEYMASTER_CLIENT_ID,
+                })
+                break
+            except Exception as e:
+                print(f"stream token refresh error (try {attempt + 1}/3): {e}")
+                if attempt < 2:
+                    time.sleep(1.5)
+        if resp is None:
             return None
         if resp.status_code != 200:
             print(f"stream token refresh failed ({resp.status_code}): {resp.text[:200]}")
