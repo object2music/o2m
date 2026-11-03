@@ -73,8 +73,9 @@ class TestPopularity(unittest.TestCase):
         many_good = compute_popularity(0.85, 40, 40, 0, prior_completion=prior)
         self.assertGreater(many_good, one_perfect)
 
-    def test_recency_decay(self):
-        """Recent play scores higher than the same stats played long ago."""
+    def test_recency_neutral(self):
+        """No recency: the same stats score the same whenever they were played —
+        "recently" is the cooldown's business, not the score's."""
         now = datetime.datetime(2026, 6, 17)
         recent = compute_popularity(0.8, 10, 8, 0,
                                     last_read_date=now - datetime.timedelta(days=1),
@@ -82,8 +83,8 @@ class TestPopularity(unittest.TestCase):
         old = compute_popularity(0.8, 10, 8, 0,
                                  last_read_date=now - datetime.timedelta(days=720),
                                  now=now)
-        self.assertGreater(recent, old)
-        self.assertGreater(old, 0.0)  # never zeroed out
+        self.assertAlmostEqual(recent, old, places=9)
+        self.assertGreater(old, 0.0)
 
     def test_recency_floor(self):
         """Recency multiplier never drops below REC_FLOOR even for ancient plays."""

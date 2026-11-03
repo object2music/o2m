@@ -10,8 +10,12 @@ Design notes (discussion 2026-06-17):
   so low-sample tracks aren't trusted blindly and never-finished tracks sit at a
   neutral, explorable prior instead of the arbitrary 0.5 default of read_end.
 - Volume is a saturating log so heavy-rotation tracks don't dominate linearly.
-- Recency is a soft multiplier in [REC_FLOOR, 1]: it boosts recent plays without
-  ever zeroing out an old favourite.
+- Recency is a soft multiplier in [REC_FLOOR, 1] — NEUTRALISED since 2026-11-03
+  (REC_FLOOR = 1.0). The selection's cooldown already handles "played recently",
+  so recency here only pushed the other way, against the long-unplayed: squared
+  by the samplers' popularity**k at low DL, a favourite left alone for a year
+  weighed half the same track played last month, and being drawn less it only
+  grew older (a loop). The term is kept so the curve can be brought back.
 - option_type stays OUT of the intrinsic score (favourites already correlate
   with high quality/volume — double counting), except 'trash' which is forced low.
 - An explicit dislike (Track.disliked) is forced low too: it is a statement about
@@ -30,7 +34,7 @@ PRIOR_M = 3.0             # shrinkage strength: nb of "virtual" plays at the pri
 VOLUME_REF = 20           # read_count_end giving ~full volume score (log saturation)
 SKIP_W = 0.5              # max fraction of base removed by a 100%-skip history
 REC_HALFLIFE_DAYS = 120.0 # recency half-life (days)
-REC_FLOOR = 0.6           # recency multiplier floor (old tracks keep 60% of score)
+REC_FLOOR = 1.0           # recency multiplier floor; 1.0 = no recency (was 0.6 until 2026-11-03)
 LIKE_BONUS = 0.10         # additive bonus for liked tracks
 NOVELTY_W = 0.15          # max boost for a just-discovered track (first play)
 NOVELTY_HALFLIFE_DAYS = 30.0  # how fast the novelty boost fades with time
