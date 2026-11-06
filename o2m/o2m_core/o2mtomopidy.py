@@ -1785,13 +1785,24 @@ class O2mToMopidy:
             # a caller think nothing landed and over-fetch.
             return min(len(items), max_results or len(items))
 
+        # A `box:` line runs a real box_action on the child: it joins activeboxs,
+        # records its cascade, and logs a play. Resolving is asking, so none of it
+        # may outlive the capture, or listing a cascade would switch its children on.
+        real_stat_raw = self.update_stat_raw
+        state = (list(self.activeboxs), set(self._cascade_owned),
+                 dict(self._box_parent), dict(self._box_share))
+        served = dict(getattr(self, '_served_at', None) or {})   # a draw, not a serving
         self.add_tracks = _recorder
+        self.update_stat_raw = lambda *a, **k: None
         self.mopidyHandler = InertPlayer()
         try:
             yield captured
         finally:
             self.add_tracks = real_add_tracks
+            self.update_stat_raw = real_stat_raw
             self.mopidyHandler = real_player
+            self.activeboxs, self._cascade_owned, self._box_parent, self._box_share = state
+            self._served_at = served
             self._box_lock.release()
 
     def resolve_box_plan(self, box, max_results=None):

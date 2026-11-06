@@ -1304,6 +1304,14 @@
   /* The TV strip above the tracklist (paintTvNow): a row's look, not a row. */
   #tv-now { border-bottom: 1px solid var(--border); margin-bottom: calc(6px * var(--ui)); }
   #tv-now[hidden] { display: none; }
+  /* Offline: the subscribed boxes, read from this device alone. */
+  #off-subs-bar { display: flex; flex-wrap: wrap; gap: calc(6px * var(--ui)); padding-bottom: calc(6px * var(--ui)); }
+  #off-subs-bar[hidden] { display: none; }
+  #off-subs-bar button { cursor: pointer; }
+  #off-subs-bar button.on { color: var(--accent); border-color: var(--accent); }
+  .off-sub-box { display: flex; justify-content: flex-end; padding-bottom: calc(8px * var(--ui)); }
+  .off-sub-box button { cursor: pointer; }
+  .off-sub-box button.on { color: var(--accent); border-color: var(--accent); }
   #tv-now .tv-item { cursor: default; align-items: center; }
   #tv-now .tv-badge { color: var(--accent); opacity: 1; }
   #tv-now .tv-badge svg { width: calc(20px * var(--ui)); height: calc(20px * var(--ui)); }

@@ -889,6 +889,28 @@ class DatabaseHandler():
                  'duration_ms': t.duration_ms, 'liked_at': t.liked_at,
                  'read_count': t.read_count, 'episode_key': t.episode_key} for t in rows]
 
+    def get_offline_item_meta(self, uris):
+        """{uri: name, artist, album, length} for what a device is about to fetch
+        with no tracklist row to read it from. A spoken item's artist is its channel."""
+        uris = [u for u in uris if u]
+        if not uris:
+            return {}
+        rows = list(Track.select(Track.uri, Track.name, Track.duration_ms,
+                                 Track.album_id, Track.channel_id).where(Track.uri << uris))
+        albums = {a.id: a.name for a in Album.select(Album.id, Album.name)
+                  .where(Album.id << [t.album_id for t in rows if t.album_id])} \
+            if any(t.album_id for t in rows) else {}
+        channels = {c.id: c.title for c in PodcastChannel.select(PodcastChannel.id, PodcastChannel.title)
+                    .where(PodcastChannel.id << [t.channel_id for t in rows if t.channel_id])} \
+            if any(t.channel_id for t in rows) else {}
+        artists = {r.track_uri: r.artist.name for r in TrackArtist
+                   .select(TrackArtist.track_uri, Artist.name)
+                   .join(Artist, on=(TrackArtist.artist_id == Artist.id), attr='artist')
+                   .where((TrackArtist.track_uri << uris) & (TrackArtist.position == 0))}
+        return {t.uri: {'name': t.name or '', 'length': t.duration_ms or 0,
+                        'artist': artists.get(t.uri) or channels.get(t.channel_id) or '',
+                        'album': albums.get(t.album_id) or ''} for t in rows}
+
     def get_recent_episode_rows(self, limit=50, offset=0):
         """The episodes actually LISTENED to, most recent first, in the browser's
         row shape.

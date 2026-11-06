@@ -1107,3 +1107,31 @@ def setup_database():
 
     if current >= SCHEMA_VERSION:
         print(f"[DB] schema up to date (v{SCHEMA_VERSION})")
+    _track_name_utf8mb4()
+
+
+def _track_name_utf8mb4():
+    """Give `track.name` the charset of every other name. The shared database's table
+    is the 2023 one, latin1: a "ō" was refused, which emptied the box being filled.
+
+    Asked of the column at each start rather than numbered: it says by itself whether
+    it is done, and a fresh database has nothing to do. An older image reads the same
+    strings. The table is copied (seconds), so a busy one is left for the next start
+    rather than queueing every query behind the wait."""
+    if not isinstance(db, MySQLDatabase):
+        return
+    row = db.execute_sql(
+        "SELECT character_set_name FROM information_schema.columns WHERE table_schema = "
+        "DATABASE() AND table_name = 'track' AND column_name = 'name'").fetchone()
+    if not row or row[0] == 'utf8mb4':
+        return
+    wait = db.execute_sql("SELECT @@SESSION.lock_wait_timeout").fetchone()[0]
+    db.execute_sql("SET SESSION lock_wait_timeout = 10")
+    try:
+        db.execute_sql("ALTER TABLE track MODIFY name TEXT "
+                       "CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL")
+        print("[DB] track.name is now utf8mb4")
+    except Exception as e:
+        print(f"[DB] track.name left as it is, next start: {e}")
+    finally:
+        db.execute_sql(f"SET SESSION lock_wait_timeout = {int(wait)}")

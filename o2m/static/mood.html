@@ -26,6 +26,7 @@
 <!-- Object mosaic (albums / artists in the Boxes column). Head-loaded like the
      marks library: init() below runs synchronously and calls OBJGRID.init(). -->
 <script src="/static/objgrid.js"></script>
+<script src="/static/offsubs.js"></script>
 <script>
   /* Applique le thème avant le rendu pour éviter le flash.
      mood2 utilise une clé de stockage séparée (o2m2-theme) et part en dark
@@ -333,6 +334,7 @@
       </div>
       <!-- What a tv: box casts to the TV (paintTvNow) — not a tracklist entry. -->
       <div id="tv-now" hidden></div>
+      <div id="off-subs-bar" hidden></div>
       <div id="tracklist-wrap"></div>
     </div>
   </div>
@@ -1420,6 +1422,21 @@ function renderSettings() {
         <button class="wc-btn" id="off-dl-now">Download the tracklist</button>
         <button class="wc-btn" id="off-clear">Clear downloads</button>
       </div>
+      <div class="set-sub-h">Box subscriptions</div>
+      <div class="set-note">Keep chosen boxes on this device, ready before you go offline.
+        They share 75% of the allowance above; the tracklist keeps the rest. Filled
+        over Wi-Fi while this page is open: after leaving offline, otherwise about once a
+        week. What you heard offline makes way for something new.</div>
+      <div class="set-row">
+        <select id="off-subs-on" class="set-select">
+          <option value="0"${offSubsOn() ? '' : ' selected'}>Off</option>
+          <option value="1"${offSubsOn() ? ' selected' : ''}>On: subscribe from a box's page</option>
+        </select>
+      </div>
+      <div class="set-store" id="off-subs-list"></div>
+      <div class="set-row set-actions" id="off-subs-actions"${offSubsActive() ? '' : ' hidden'}>
+        <button class="wc-btn" id="off-subs-now">Refresh now</button>
+      </div>
       <div class="set-sub-h">Where it is stored</div>
       <div class="set-store" id="off-store">
         <div class="set-store-row">
@@ -1492,8 +1509,15 @@ function renderSettings() {
   });
   body.querySelector('#off-quota')?.addEventListener('change', (e) => {
     try { localStorage.setItem(OFF_QUOTA_KEY, String(parseInt(e.target.value, 10) || OFF_DEFAULT_QUOTA_MB)); } catch (_) {}
+    offSubsAsk();
     offPaintToggle(); renderSettings();
   });
+  body.querySelector('#off-subs-on')?.addEventListener('change', (e) => {
+    offSubsEnable(e.target.value === '1');
+    renderSettings();
+  });
+  body.querySelector('#off-subs-now')?.addEventListener('click', () => offSubsAsk());
+  offSubsPaintList();
   body.querySelector('#off-dl-now')?.addEventListener('click', () => {
     offSync((matrixTlItems || []).slice(), { retry: true }).then(renderSettings);
   });
@@ -3624,7 +3648,8 @@ async function podcastEpisodes(uri, offset, limit) {
     try {
       const d = await fetch(API + '/yt_videos', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: uri, videos: vids.map(t => ({ uri: t.uri, name: t.name, length: t.length })) }),
+        body: JSON.stringify({ channel: uri, all: found.map(t => t.uri),
+                               videos: vids.map(t => ({ uri: t.uri, name: t.name, length: t.length })) }),
       }).then(x => x.json());
       dates = (d && d.dates) || {};
     } catch (e) {}
@@ -6256,15 +6281,16 @@ async function openBox(uid) {
     _boxEditUid = uid;
     _boxEditInfo = info;
     objSetHead('Box', info.description || uid, info.option_type || '');
+    const subRow = offSubsBoxRow(info);
     if (editUnlocked) {
       _bxItems = parseBoxData(info.data);
       _bxHost = 'editor';
       _bxRawMode = false;
       _bxTab = null; _bxBrowseNode = null; _bxSearchQ = '';
-      objBody().innerHTML = renderBoxEditor(info);
+      objBody().innerHTML = subRow + renderBoxEditor(info);
       wireBoxEditor(info);
     }
-    else { objBody().innerHTML = renderBoxReadonly(info); }
+    else { objBody().innerHTML = subRow + renderBoxReadonly(info); }
   } catch(e) { objBody().innerHTML = '<div class="obj-empty">Could not load box.</div>'; }
 }
 
@@ -8567,7 +8593,7 @@ function offDropFinished() {
                                 : gone.length + ' already heard — skipped');
   return gone.length;
 }
-async function offMakeRoom(bytes) {
+async function offMakeRoom(bytes, requester = 'tl') {
   const inv = offInv();
   let free = offQuota() - offUsed();
   if (free >= bytes) return true;
@@ -8577,7 +8603,11 @@ async function offMakeRoom(bytes) {
   // nobody is waiting to hear it again.
   const cur = OFF.queue[OFF.i]?.uri;
   const queued = new Set(OFF.queue.map(t => t.uri));
-  const victims = Object.keys(inv)
+  const victims = offSubsActive()
+    ? OFFSUBS.victims(inv, { requester, uids: Object.keys(offSubs()), quota: offQuota(),
+                             exhausted: offSubsState().exhausted || {}, now: Date.now(),
+                             cur, pass: OFF.pass, queued })
+    : Object.keys(inv)
     .filter(u => u !== cur && !OFF.pass.has(u) && (offIsDone(inv[u]) || !queued.has(u)))
     .sort((a, b) => (offIsDone(inv[b]) - offIsDone(inv[a]))
                     || ((inv[a].at || 0) - (inv[b].at || 0)));
@@ -8683,9 +8713,9 @@ async function offStore(meta) {
   let blob;
   try { blob = await offFetchBlob(API + '/audio?uri=' + encodeURIComponent(uri)); }
   catch (e) { return 'fail'; }
-  if (!blob || !blob.size) return 'fail';
+  if (!blob || !blob.size) return 'refused';      // the server answered: this file, not the link
   if (blob.size > offQuota()) return 'quota';
-  if (!(await offMakeRoom(blob.size))) return 'quota';
+  if (!(await offMakeRoom(blob.size, meta.sub || 'tl'))) return 'quota';
   try { await offBlobPut(uri, blob); } catch (e) { return 'quota'; }   // QuotaExceededError
   offInv()[uri] = {
     name: meta.name || '', artist: meta.artist || '', album: meta.album || '',
@@ -8694,6 +8724,7 @@ async function offStore(meta) {
     canon: meta.canon && meta.canon !== uri ? meta.canon : '', liked: !!meta.liked,
     folder: meta.folder || '', stem: meta.stem || '',
     bytes: blob.size, at: Date.now(),
+    tl: !meta.sub, subs: meta.sub ? [meta.sub] : [],
   };
   offInvSave();
   if (await offDirWrite(meta, blob)) OFF.copied = (OFF.copied || 0) + 1;
@@ -8717,9 +8748,17 @@ async function offStore(meta) {
    on. Only a deliberate gesture sets it — arming offline, or the Settings
    button. The 60s pending re-check must NOT, or "give up" never happens and
    the same unfetchable tracks are re-downloaded for ever. */
+function offPlanMeta(t, p) {
+  return { ...t, kind: p.kind, position: p.position || 0,
+           srvLength: p.length || 0, adSkip: p.ad_skip || 0,
+           volBoost: p.volume_boost || 0, cat: p.cat || '',
+           canon: p.canon || '', liked: !!p.liked,
+           folder: p.folder || '', stem: p.file || '' };
+}
 async function offSync(items, { quiet = false, retry = false } = {}) {
   if (OFF.downloading) return;
   offRefreshMeta();
+  offSubsClaimForTracklist(items);
   const list = (items || []).filter(t => t && t.uri && !offHas(t.uri));
   if (!list.length) {
     if (!quiet) setFeedback('Everything in the tracklist is already on this device');
@@ -8756,11 +8795,7 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       // An episode already heard to the end is not taken: it would only spend
       // the quota on something nobody is waiting for.
       if (p.kind === 'spoken' && p.finished) { heard++; continue; }
-      const res = await offStore({ ...t, kind: p.kind, position: p.position || 0,
-                                  srvLength: p.length || 0, adSkip: p.ad_skip || 0,
-                                  volBoost: p.volume_boost || 0, cat: p.cat || '',
-                                  canon: p.canon || '', liked: !!p.liked,
-                                  folder: p.folder || '', stem: p.file || '' });
+      const res = await offStore(offPlanMeta(t, p));
       if (res === 'quota') { full = true; break; }
       if (res !== 'ok') continue;
       got++;
@@ -8870,22 +8905,27 @@ function offCheckpoint(force) {
 
 function offLogPlay(finished) {
   const t = OFF.queue[OFF.i], el = OFF.el;
-  if (!t || !el || !t.length) return;
+  if (!t || !el) return;
+  // An episode nobody played yet has no length on the server: most of what a
+  // subscription brings. The file knows, and a play left unlogged frees nothing.
+  const length = t.length || (Number.isFinite(el.duration) ? Math.round(el.duration * 1000) : 0);
+  if (!length) return;
   // 'ended' logs the play, then skips — and the skip would log the very same
   // track a second time, at the same position. One index, one record.
   if (OFF.loggedAt === OFF.i) return;
   OFF.loggedAt = OFF.i;
-  const position = Math.round(finished ? t.length : el.currentTime * 1000);
-  if (position / t.length < 0.05) return;        // an artefact, same rule as the server's
+  const position = Math.round(finished ? length : el.currentTime * 1000);
+  if (position / length < 0.05) return;          // an artefact, same rule as the server's
   const plays = offPlays();
-  plays.push({ uri: t.uri, name: t.name, length: t.length, position,
+  plays.push({ uri: t.uri, name: t.name, length, position,
                at: new Date().toISOString() });
   offPlaysSave(plays);
   // Finished: the bookmark has done its job and must go, or the episode would
   // resume ten seconds before its own end for ever.
-  if (finished) offPosClear(t.uri); else offPosSet(t.uri, position, t.length);
+  if (finished) offPosClear(t.uri); else offPosSet(t.uri, position, length);
   const m = offInv()[t.uri];
-  if (m) { m.used = Date.now(); if (finished) m.done = true; offInvSave(); }
+  if (m) { m.used = Date.now(); m.length = m.length || length; if (finished) m.done = true; offInvSave(); }
+  offSubsNoteHeard(t.uri, m, finished || position / length > 0.9);
 }
 async function offFlushPlays() {
   const plays = offPlays();
@@ -9213,6 +9253,7 @@ function offRenderQueue() {
   // takes renderTracklist's cheap path and only moves the current row.
   renderTracklist(tracks, OFF.i);
   offBasicPaint();
+  offSubsPaintBar();
 }
 
 /* ── The Basic actuators, offline ─────────────────────────────────────────────
@@ -9481,6 +9522,7 @@ function offStop() {
   OFF.on = false;
   offCancelDownload();      // off is off: a pass still running stops with it
   document.documentElement.classList.remove('offline-mode');
+  offSubsPaintBar();
   paintBusy();
   if (OFF.el) {
     offLogPlay(false);
@@ -9517,6 +9559,7 @@ function offStop() {
   lastNpUri = null; _npEmptyPainted = false; _mediaMetaSig = null;
   refreshVolume();
   refreshNowPlaying();
+  offSubsMaybe();           // just listened here: the moment to make room for more
 }
 
 function offToggle() { return OFF.on ? offStop() : offStart(); }
@@ -9524,6 +9567,291 @@ function offToggle() { return OFF.on ? offStop() : offStart(); }
 /* Connected download: while on, the tracklist is fetched now and again every
    minute as it changes, and the server keeps playing. Per device, kept across a
    reload. */
+/* ── Box subscriptions ───────────────────────────────────────────────────────
+   This device keeps some boxes ready. The decisions are in offsubs.js; this is
+   their storage, their network and their screen. Nothing here runs on a timer: a
+   pass happens at a moment the page is already awake, when OFFSUBS.due says one is
+   owed, so a device that never listens offline asks the server about once a week. */
+const OFF_SUBS_ON_KEY = 'o2m-offline-subs-on';
+const OFF_SUBS_KEY = 'o2m-offline-subs';
+const OFF_SUBS_STATE_KEY = 'o2m-offline-subs-state';
+const OFF_SUBS_BATCH = 10;       // files per pass, then the tracklist gets its turn
+const OFF_SUBS_MISSING = 10;     // tracks asked of spotdl per pass, which YouTube rations
+const OFF_SUBS_NEXT_MS = 90000;
+const OFF_SUBS_RESUME_MS = 5000;     // back on screen after a pass broke off
+const OFF_SUBS_HELD_MS = 300000;     // a fill under way, held by a speaker or a busy server
+const OFF_SUBS_HELD_TEXT = { busy: 'o2m is busy', speaker: 'playing as a speaker on this device' };
+const OFF_SUBS_MS_BYTES = 16;    // ~128 kb/s: a size to expect, when the server has none
+function offSubsOn() { return _lsGet(OFF_SUBS_ON_KEY) === '1'; }
+function offSubs() { return _lsJson(OFF_SUBS_KEY, {}); }
+function offSubsSave(v) { try { localStorage.setItem(OFF_SUBS_KEY, JSON.stringify(v)); } catch (e) {} }
+function offSubsState() { return _lsJson(OFF_SUBS_STATE_KEY, {}); }
+function offSubsPatch(p) {
+  try { localStorage.setItem(OFF_SUBS_STATE_KEY, JSON.stringify({ ...offSubsState(), ...p })); } catch (e) {}
+}
+function offSubsActive() { return offSubsOn() && Object.keys(offSubs()).length > 0; }
+
+function offSubsEnable(on) {
+  try { localStorage.setItem(OFF_SUBS_ON_KEY, on ? '1' : '0'); } catch (e) {}
+  if (on) navigator.storage?.persist?.().catch(() => {});
+  offSubsPaintBar();
+}
+function offSubsAsk() { offSubsPatch({ force: true, failed: 0 }); offSubsMaybe(); }
+
+function offSubsToggle(uid, name) {
+  const subs = offSubs();
+  if (subs[uid]) {
+    // Not deleted: it only stops being protected, and leaves when room is needed.
+    delete subs[uid];
+    for (const m of Object.values(offInv())) if (m.subs) m.subs = m.subs.filter(u => u !== uid);
+    offInvSave();
+  } else subs[uid] = { name: name || uid, at: Date.now() };
+  offSubsSave(subs);
+  const ex = offSubsState().exhausted || {};
+  delete ex[uid];
+  offSubsPatch({ exhausted: ex });
+  offSubsAsk();
+  offSubsPaintBar();
+  return !!subs[uid];
+}
+function offSubsBoxRow(info) {
+  if (!offSubsOn() || !OFFSUBS.eligible(info.data, info.option_type)) return '';
+  const on = !!offSubs()[info.uid];
+  return `<div class="off-sub-box"><button type="button" class="wc-seg${on ? ' on' : ''}"
+    data-off-sub="${objEsc(info.uid)}" data-off-sub-name="${objEsc(info.description || info.uid)}"
+    >${on ? 'Kept on this device' : 'Keep on this device'}</button></div>`;
+}
+
+/* The tracklist asked for it too, so it no longer depends on a box alone. */
+function offSubsClaimForTracklist(items) {
+  const inv = offInv();
+  let moved = false;
+  for (const t of items || []) {
+    const m = t && inv[offHeldKey(t.uri)];
+    if (m && m.tl === false) { m.tl = true; moved = true; }
+  }
+  if (moved) offInvSave();
+}
+
+/* Only a play HERE counts. Music heard on the server stays, as the rule asks. */
+function offSubsNoteHeard(uri, m, heard) {
+  if (!heard || !m) return;
+  const music = m.kind !== 'spoken';
+  if (music && !m.heardOff) { m.heardOff = Date.now(); offInvSave(); }
+  if (!offSubsActive()) return;
+  const st = offSubsState(), list = st.heard || {}, now = Date.now();
+  if (music) list[m.canon || uri] = now;
+  for (const u in list) if (now - list[u] > OFFSUBS.HEARD_TTL) delete list[u];
+  offSubsPatch({ dirty: true, heard: list });
+}
+
+async function offSubsBlocked() {
+  if (OFF.on || OFF.downloading || serverBusy || mixBusy) return 'busy';
+  // A speaker holds ~1s of buffer: a download would be heard, but only while it plays.
+  if (snapPlayer && document.getElementById('btn-play')?.dataset.state === 'playing') return 'speaker';
+  const battery = await navigator.getBattery?.().catch(() => null);
+  return OFFSUBS.blocked({ connection: navigator.connection, battery,
+                           net: document.documentElement.dataset.net });
+}
+
+let _offSubsNext = null;
+let _offSubsHid = false;     // the page left the screen during this pass
+async function offSubsMaybe() {
+  if (!offSubsActive() || !OFFSUBS.due(offSubsState(), Date.now())) return;
+  if (OFF.downloading) return;           // its own end says what comes next
+  const why = await offSubsBlocked();
+  if (why) {
+    // Still owed: the next moment asks again. A fill already under way has no such
+    // moment coming if the page simply stays open, so only that one comes back by itself.
+    clearTimeout(_offSubsNext);
+    if (offSubsState().force) _offSubsNext = setTimeout(offSubsMaybe, OFF_SUBS_HELD_MS);
+    offSubsPatch({ held: OFF_SUBS_HELD_TEXT[why] || why });
+    offSubsPaintList();
+    return;
+  }
+  offSubsPass();
+}
+
+async function offSubsPlan(uris, fetchMissing) {
+  const r = await fetch(API + '/offline/plan', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uris, fetch_missing: fetchMissing }),
+    // Cold, the server reads every feed the box names, and nobody is waiting here.
+    signal: AbortSignal.timeout ? AbortSignal.timeout(120000) : undefined,
+  });
+  const by = {};
+  ((await r.json()).items || []).forEach(i => { by[i.uri] = i; });
+  return by;
+}
+
+/* What this box may still take, finished items not counting: they make way. */
+function offSubsRoom(uid) {
+  const uids = Object.keys(offSubs());
+  const { box } = OFFSUBS.usage(offInv(), uids, Date.now());
+  const allow = OFFSUBS.allowances(offQuota(), uids, box, offSubsState().exhausted || {});
+  return (allow[uid] || 0) - (box[uid] || 0);
+}
+
+/* One box. Answers false when the server is filling: try again later, all of it. */
+async function offSubsFill(uid, left) {
+  const r = await fetch(API + '/offline/box_items?uid=' + encodeURIComponent(uid),
+    { signal: AbortSignal.timeout ? AbortSignal.timeout(60000) : undefined });
+  if (r.status === 409) return false;
+  if (!r.ok) return true;
+  const got = await r.json();
+  const subs = offSubs();
+  if (subs[uid] && got.name) { subs[uid].name = got.name; offSubsSave(subs); }
+  const inv = offInv(), st = offSubsState();
+  for (const t of got.items || []) {
+    const m = inv[offHeldKey(t.uri)];
+    if (m && !(m.subs || []).includes(uid)) m.subs = [...(m.subs || []), uid];
+  }
+  offInvSave();
+  const list = OFFSUBS.todo(got.items || [], u => !!offHeldKey(u), st.heard || {}, Date.now());
+  const plan = list.length ? await offSubsPlan(list.map(t => t.uri), false) : {};
+  const missing = [];
+  let room = offSubsRoom(uid), full = false, broke = false;
+  for (const t of list) {
+    if (OFF.cancel) return true;
+    const p = plan[t.uri];
+    if (!p || (p.kind === 'spoken' && p.finished)) continue;
+    if (p.state === 'pending') { missing.push(t.uri); continue; }
+    if (p.state !== 'ready') { left.never++; continue; }
+    const expect = p.bytes || (t.length || p.length || 0) * OFF_SUBS_MS_BYTES;
+    if (room <= 0) { full = true; break; }
+    if (expect > room) { full = true; continue; }    // something smaller may still fit
+    if (left.files <= 0) { left.more = true; return true; }
+    left.files--;
+    OFF.progress.done++; offPaintToggle();
+    const res = await offStore({ ...offPlanMeta(t, p), sub: uid });
+    if (res === 'quota') { full = true; break; }
+    if (res === 'ok') {
+      left.got++; left.streak = 0;
+      room = offSubsRoom(uid); offRenderBadges(); offSubsPaintList();
+      continue;
+    }
+    if (OFF.cancel) return true;
+    left.failed++; broke = true;
+    if (res === 'refused') continue;       // a video YouTube withholds: on to the next
+    // Two cut off in a row, or the page sent away, is the link and not the file: the
+    // rest of the list would only fail the same way, and be counted as tried.
+    left.streak++;
+    if (_offSubsHid || left.streak >= 2) { left.broke = true; return true; }
+  }
+  if (full) left.full = true;
+  // The file a track needs is the server's to fetch, and it takes minutes: asked
+  // here, read at a later pass. Asking for all of them is what YouTube refuses.
+  if (!full && missing.length) {
+    const ask = missing.slice(0, left.missing);
+    left.missing -= ask.length;
+    if (ask.length) await offSubsPlan(ask, true);
+    left.incomplete = true;
+    left.waiting += missing.length;
+  }
+  const ex = offSubsState().exhausted || {};
+  ex[uid] = !full && !missing.length && !broke;
+  offSubsPatch({ exhausted: ex });
+  return true;
+}
+
+async function offSubsPass() {
+  clearTimeout(_offSubsNext);
+  OFF.downloading = true; OFF.cancel = false; OFF.pass = new Set(); OFF.copied = 0;
+  OFF.progress = { done: 0, total: OFF_SUBS_BATCH };
+  offPaintToggle();
+  _offSubsHid = document.hidden;
+  offSubsPatch({ held: '' });
+  const left = { files: OFF_SUBS_BATCH, missing: OFF_SUBS_MISSING, more: false, incomplete: false,
+                 got: 0, failed: 0, streak: 0, waiting: 0, never: 0, full: false, broke: false };
+  offSubsPaintList();
+  let finished = true;
+  try {
+    await offFlushPlays();      // what was heard reaches the cooldown before the draw
+    await offRefreshMeta();     // and what was finished on the server is known
+    const uids = Object.keys(offSubs()).sort((a, b) => offSubsRoom(b) - offSubsRoom(a));
+    for (const uid of uids) {
+      if (OFF.cancel || left.more || left.broke) break;
+      if (!(await offSubsFill(uid, left))) { finished = false; break; }
+    }
+  } catch (e) { finished = false; }   // no server: still owed
+  const stopped = OFF.cancel;
+  OFF.downloading = false; OFF.progress = null; OFF.cancel = false;
+  offPaintToggle(); offRenderBadges();
+  if (OFF.copied) offDirWriteViews();
+  const away = left.broke && _offSubsHid;   // a phone put down: not the files' fault
+  offSubsPatch({ report: { at: Date.now(), got: left.got, failed: left.failed, waiting: left.waiting,
+    never: left.never,
+    full: left.full, end: stopped ? 'stopped' : !finished ? 'server unreachable or busy'
+                         : away ? 'interrupted, the page left the screen' : '' } });
+  if (stopped || !finished) { offSubsPaintList(); return; }
+  if (left.more || away) {
+    offSubsPatch({ force: true });
+    if (!away) _offSubsNext = setTimeout(offSubsMaybe, OFF_SUBS_NEXT_MS);
+    else if (!document.hidden) _offSubsNext = setTimeout(offSubsMaybe, OFF_SUBS_RESUME_MS);
+  } else {
+    offSubsPatch({ last: Date.now(), dirty: false, force: false, incomplete: left.incomplete || left.broke,
+                   failed: left.failed ? (offSubsState().failed || 0) + 1 : 0 });
+  }
+  offSubsPaintList();
+}
+
+/* Offline, the boxes column is the server's: these are read from this device alone,
+   so they work on a page that cannot reach anything. */
+function offSubsHeld(uid) {
+  const inv = offInv();
+  return Object.keys(inv).filter(u => (inv[u].subs || []).includes(uid) && !offIsDone(inv[u]));
+}
+function offSubsPaintBar() {
+  const bar = document.getElementById('off-subs-bar');
+  if (!bar) return;
+  const subs = OFF.on && offSubsOn() ? Object.entries(offSubs()) : [];
+  const queued = new Set(OFF.queue.map(t => t.uri));
+  bar.hidden = !subs.length;
+  bar.innerHTML = subs.map(([uid, s]) => {
+    const held = offSubsHeld(uid);
+    return `<button type="button" class="wc-seg${held.some(u => queued.has(u)) ? ' on' : ''}"
+      data-off-sub-play="${objEsc(uid)}"${held.length ? '' : ' disabled'}>${objEsc(s.name)} · ${held.length}</button>`;
+  }).join('');
+}
+function offSubsPlay(uid) {
+  const held = offSubsHeld(uid);
+  const queued = held.filter(u => OFF.queue.some(t => t.uri === u));
+  if (queued.length) offQueueDrop(queued);
+  else { offQueueAppend(offShuffle(held)); offInterleaveTail(); }
+}
+
+function offSubsPaintList() {
+  const el = document.getElementById('off-subs-list');
+  if (!el) return;
+  const subs = offSubs(), uids = Object.keys(subs);
+  if (!offSubsOn() || !uids.length) { el.innerHTML = ''; return; }
+  const st = offSubsState();
+  const { box } = OFFSUBS.usage(offInv(), uids, Date.now());
+  const allow = OFFSUBS.allowances(offQuota(), uids, box, st.exhausted || {});
+  el.innerHTML = uids.map(u => `<div class="set-store-row"><span class="set-store-k">${objEsc(subs[u].name)}</span>
+    <span class="set-store-v">${offSizeText(box[u])} of ${offSizeText(allow[u])} · ${offSubsHeld(u).length} items</span></div>`).join('')
+    + `<div class="set-store-row"><span class="set-store-k">Last filled</span>
+       <span class="set-store-v">${st.last ? new Date(st.last).toLocaleString() : 'Not yet'}</span></div>`
+    + (offSubsStatus(st) ? `<div class="set-store-row"><span class="set-store-k">Last pass</span>
+       <span class="set-store-v">${objEsc(offSubsStatus(st))}</span></div>` : '');
+}
+
+/* What the last pass did and why it ended: the only trace of it, a pass having no screen. */
+function offSubsStatus(st) {
+  if (OFF.downloading && OFF.progress) return 'Downloading…';
+  const r = st.report || {}, out = [];
+  if (r.at) {
+    out.push(r.got + ' downloaded');
+    if (r.failed) out.push(r.failed + ' failed');
+    if (r.waiting) out.push(r.waiting + ' waiting for the server');
+    if (r.never) out.push(r.never + ' cannot be kept on a device');
+    if (r.full) out.push('quota reached');
+    if (r.end) out.push(r.end);
+  }
+  if (st.held) out.push('on hold: ' + st.held);
+  return out.join(' · ');
+}
+
 function offFollow(on) {
   OFF.follow = !!on;
   try { localStorage.setItem(OFF_FOLLOW_KEY, on ? '1' : '0'); } catch (e) {}
@@ -9542,13 +9870,19 @@ function offInit() {
   if (follow) offFollow(true);
   paintPlaybackTarget();
   offFlushPlays();                                   // a previous session's plays
-  window.addEventListener('online', () => { offFlushPlays(); offSchedulePendingCheck(); });
+  window.addEventListener('online', () => { offFlushPlays(); offSchedulePendingCheck(); offSubsMaybe(); });
+  setTimeout(offSubsMaybe, 20000);    // after the page has done its own loading
+  document.getElementById('off-subs-bar')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-off-sub-play]');
+    if (b) offSubsPlay(b.dataset.offSubPlay);
+  });
   // pagehide fires where unload does not (bfcache, iOS); visibilitychange
   // catches a phone going into a pocket, which is when a position is most
   // likely to be lost and most annoying to lose.
   window.addEventListener('pagehide', () => offCheckpoint(true));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') offCheckpoint(true);
+    if (document.visibilityState === 'hidden') { _offSubsHid = true; offCheckpoint(true); }
+    else offSubsMaybe();
   });
 }
 
@@ -10562,6 +10896,14 @@ async function init() {
     // "Load more" at the bottom of a search: append the next page in place.
     if (e.target.closest('[data-search-more]')) { e.preventDefault(); return searchLoadMore(); }
     if (e.target.closest('[data-browse-more]')) { e.preventDefault(); return browseLoadMore(); }
+    const offSub = e.target.closest('[data-off-sub]');
+    if (offSub) {
+      e.preventDefault();
+      const on = offSubsToggle(offSub.dataset.offSub, offSub.dataset.offSubName);
+      offSub.classList.toggle('on', on);
+      offSub.textContent = on ? 'Kept on this device' : 'Keep on this device';
+      return;
+    }
     if (e.target.closest('[data-fav-share]')) { e.preventDefault(); return favShare(false); }
     if (e.target.closest('[data-fav-share-new]')) { e.preventDefault(); return favShare(true); }
     const bn = e.target.closest('[data-browse-node]');

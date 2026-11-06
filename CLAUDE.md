@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) `test_mopidywatch.py` (a Mopidy that came up without Spotify) and `test_tvcast.py` (`tv:` boxes: parsing, the add/remove truth table) `test_favexport.py` (the favourite episodes' CSV and public list). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) `test_mopidywatch.py` (a Mopidy that came up without Spotify) and `test_tvcast.py` (`tv:` boxes: parsing, the add/remove truth table) `test_favexport.py` (the favourite episodes' CSV and public list) `test_offsubs.py` (a subscribed box's items, a resolution leaving no trace). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -106,7 +106,10 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
 
   **The same trap exists in columns no migration created.** The shared database is not
   the schema `create_tables` would build: `track` is the 2023 `stats` table renamed by
-  `samples/mysql/migrate_cache.sql`, and it kept `username varchar(255) NOT NULL` with
+  `samples/mysql/migrate_cache.sql`, and its `name` stayed latin1 until 2026-11-06: a
+  title with a "ō" raised 1366, which emptied the whole box being resolved, and the
+  column is now converted at startup (`_track_name_utf8mb4`, unnumbered: asked of the
+  column itself). It also kept `username varchar(255) NOT NULL` with
   no default, while the model says `null=True` (a fresh database — o2m_4, o2m_5 — has
   `text NULL`). Every `Track.insert(...).on_conflict(...)` omits `username`, and MySQL
   checks the INSERT half even when the row exists, so every metadata upsert failed:
@@ -2270,6 +2273,51 @@ order the desktop chose; a screen that merely locks has hidden the page by the t
 fires; a real press with the page in front of you is forwarded 350 ms later, imperceptible
 for a pause. A staleness check (2 s) drops a timer that fires on resume, and the `play`
 action cancels one still waiting.
+
+### Box subscriptions: a device keeps chosen boxes ready
+Settings → Offline → *Box subscriptions* (per device, off by default) shows *Keep on
+this device* on a box's page. It all lives on the device: the decisions in
+`static/offsubs.js` (pure, `node --test o2m/static/test_offsubs.js`), their storage and
+network in `mood.html` (`offSubs*`), and the server only answers what a box holds
+(`GET /api/offline/box_items`, memoised 6 h, `409` during a fill; `o2m_core/offsubs.py`
+turns a whole album or playlist into its tracks).
+
+- **Quota**: 75% to the subscriptions, an equal part each, what a box with nothing more
+  to offer leaves going to the others; the tracklist has the rest. Either may borrow
+  free room, and the borrower leaves first. An inventory row says where it came from
+  (`subs`, `tl: false`), which is what lets the two caches share one store. An item two
+  boxes hold costs each half. With no subscription, `offMakeRoom` is what it always was.
+- **Who leaves** (`OFFSUBS.victims`): finished voice, then what no one claims any more
+  and news unheard after 48 h, then the tracklist over its part, then music heard
+  OFFLINE (`heardOff`: a play on the server does not count). Unheard subscribed content
+  is only pushed out by being over its part. Room is freed once the replacement is in
+  hand (`offStore`), so a device with no network loses nothing.
+- **When** (`OFFSUBS.due`): **no timer.** The check runs at moments the page is already
+  awake (load, back to the foreground, `online`, leaving offline) and costs nothing
+  local. Owed: a gesture, offline listening (at most every 30 min), a fill left
+  incomplete (24 h), else once in 7 days. A device that never listens offline asks the
+  server about once a week. Not on mobile data, data saver, a red link, a low battery,
+  or as a Snapcast speaker while it plays; only Chrome Android can tell Wi-Fi apart,
+  iOS and desktops say nothing. A pass needs the page open: closed, nothing runs.
+- **A pass is short**: 10 files, then 90 s for the tracklist's turn. It reads
+  `/api/offline/plan` with `fetch_missing: false`, because plan queues all it is given:
+  at most 10 tracks per pass go to spotdl, and subscribed episodes are not added to the
+  server's own cache.
+- **Offline**, the boxes column is the server's, so `#off-subs-bar` draws the subscribed
+  boxes from this device alone: a tap queues what it holds, another takes it out.
+- **`capture_fill` must leave nothing behind.** A `box:` line runs a real `box_action`:
+  resolving a cascade switched its children on, logged a play for each and marked its
+  picks as served, in `/api/box_tracks` too. It now restores all of it.
+- **A file that fails is owed, not forgotten.** Refused by the server, the pass goes on;
+  cut off twice in a row it stops; retried after 15 min, doubling up to a day
+  (`state.failed`). Cut off because the page left the screen, the rest of the fill
+  resumes on its return. Settings shows what the last pass did and what holds the next
+  (`offSubsStatus`): a pass has no other trace, a GET leaving none in the server's log.
+- **A YouTube playlist is read from YouTube** (`tvcast.playlist_entries`), the only
+  container not in the cache; containers share the 100 items. `web:` items stay out
+  (Known limits of `web:`) and are counted as `cannot be kept on a device`.
+- **Most episodes have no length until played** (34 of 37 on one box): `offLogPlay` reads
+  it from the file. It used to give up, so such a play was never recorded or finished.
 
 **Who stops the music when a device goes away depends on where the audio comes out**
 (`o2m_core/snapwatch.py`, 2026-10-26). On a **Snapcast** instance (`AUDIO_OUTPUT` feeds

@@ -286,6 +286,9 @@ def playable_entry(entry):
     return bool(title) and title not in ('[Deleted video]', '[Private video]')
 
 
+video_info = {}     # what a flat read says of a video, for what has no Track row yet
+
+
 def playlist_entries(playlist_id):
     """The video ids of a playlist, or None when it cannot be read — a PRIVATE
     playlist answers "The playlist does not exist" to anyone but its owner, even
@@ -301,7 +304,11 @@ def playlist_entries(playlist_id):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/playlist?list={playlist_id}',
                                     download=False)
-        ids = [e['id'] for e in (info.get('entries') or []) if playable_entry(e)] or None
+        entries = [e for e in (info.get('entries') or []) if playable_entry(e)]
+        ids = [e['id'] for e in entries] or None
+        video_info.update({e['id']: {'name': e.get('title') or '',
+                                     'length': int((e.get('duration') or 0) * 1000)}
+                           for e in entries})
     except Exception as e:
         print(f"TV: playlist {playlist_id} unreadable: {str(e)[:120]}")
     _playlists[playlist_id] = (time.time() + (_PLAYLIST_TTL if ids else _PLAYLIST_FAIL_TTL), ids)

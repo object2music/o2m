@@ -3513,6 +3513,49 @@ if __name__ == "__main__":
                 pass
         return jsonify({'items': out})
 
+    _BOX_ITEMS_TTL = 6 * 3600
+    _BOX_ITEMS_MAX = 100
+    _box_items_memo = {}
+
+    @api.route('/api/offline/box_items')
+    def api_offline_box_items():
+        """What a subscribed box holds, as items a device can fetch.
+
+        Read-only like /api/box_tracks, and the same resolution, which is why it
+        is memoised: an auto box costs a real fill, and several devices ask.
+        409 while a fill runs, the box lock being theirs: the device asks later."""
+        import time
+        from flask import jsonify
+        from o2m_core import offsubs, tvcast
+        uid = request.args.get('uid') or ''
+        hit = _box_items_memo.get(uid)
+        if hit and time.time() - hit[0] < _BOX_ITEMS_TTL:
+            return jsonify(hit[1])
+        if o2mHandler.is_filling():
+            return jsonify({'status': 'busy'}), 409
+        db = o2mHandler.dbHandler
+        box = db.find_box_by_uid(uid)
+        if box is None:
+            return jsonify({'error': 'box not found'}), 404
+        lookup = {'album': db.get_album_tracks, 'artist': db.get_artist_track_uris,
+                  'playlist': db.get_playlist_track_uris,
+                  'yt_playlist': lambda key: [f'yt:video:{v}' for v
+                                              in tvcast.playlist_entries(key) or []]}
+        uris = offsubs.expand(o2mHandler.resolve_box_uris(box, max_results=_BOX_ITEMS_MAX),
+                              lambda kind, key: lookup[kind](key), _BOX_ITEMS_MAX)
+        # The fill's own filter runs in add_tracks, which a resolution never reaches.
+        rejected = db.disliked_uris(uris)
+        uris = [u for u in uris if u not in rejected]
+        meta = db.get_offline_item_meta(uris)
+        def item(u):
+            known = {k: v for k, v in meta.get(u, {}).items() if v}
+            return {'uri': u, **tvcast.video_info.get(u.rsplit(':', 1)[-1], {}), **known}
+        answer = {'uid': uid, 'name': box.description or uid,
+                  'items': [item(u) for u in uris]}
+        if uris:       # an empty answer may be a lock refused, not an empty box
+            _box_items_memo[uid] = (time.time(), answer)
+        return jsonify(answer)
+
     @api.route('/api/offline/plan', methods=['POST'])
     def api_offline_plan():
         """Per-uri availability for the device's download pass.
