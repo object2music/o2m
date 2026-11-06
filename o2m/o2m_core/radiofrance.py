@@ -29,6 +29,8 @@ never reads the config. Network/API failures degrade to None/[]: Radio France
 being down must never break search or a box fill.
 """
 
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import datetime
 import re
@@ -370,6 +372,47 @@ def episodes_of_show(api_key, show_url, first=20):
         return rows
 
     return _cached(f'rfep:{target}:{first}', fetch, _TTL_EPISODES) or []
+
+
+def show_pages(feed_xml):
+    """The show pages a feed's items link to, the most frequent first. A show that
+    changed name keeps its feed, so one feed can answer for several."""
+    links = re.findall(r'<link>\s*(https://www\.radiofrance\.fr/[^<\s]+)', feed_xml)
+    shows = Counter(u.rsplit('/', 1)[0] for u in links if u.count('/') >= 6)
+    return [u for u, _ in shows.most_common()]
+
+
+_episode_pages = {}          # episode key -> page url: a page does not move
+
+
+def episode_pages(api_key, keys_by_feed):
+    """`{key: page url}` for episodes their rolling feed no longer lists.
+
+    A Radio France feed keeps about a month; the API keeps the page for as long as
+    the show's last MAX_PAGE diffusions reach. It answers such a request in 20 s or
+    more, hence the longer timeout and the feeds side by side."""
+    def one(feed, keys):
+        try:
+            xml = requests.get(feed, headers={'User-Agent': USER_AGENT}, timeout=15).text
+        except Exception as e:
+            log.error(f'episode_pages({feed}): {e}')
+            return
+        for show in show_pages(xml)[:2]:
+            if keys <= _episode_pages.keys():
+                return
+            data = _gql(api_key, _Q_EPISODES, {'url': show, 'first': MAX_PAGE}, timeout=40)
+            for e in _edges(data, 'diffusionsOfShowByUrl'):
+                url = ((e or {}).get('node') or {}).get('url') or ''
+                if episode_key(url) in keys:
+                    _episode_pages[episode_key(url)] = url
+
+    wanted = {f: set(k) - _episode_pages.keys() for f, k in keys_by_feed.items()}
+    wanted = {f: k for f, k in wanted.items() if k}
+    if api_key and wanted:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(lambda fk: one(*fk), wanted.items()))
+    every = set().union(*keys_by_feed.values()) if keys_by_feed else set()
+    return {k: _episode_pages[k] for k in every if k in _episode_pages}
 
 
 def list_taxonomies(api_key, kinds=('THEME',), first=MAX_PAGE, after=None):

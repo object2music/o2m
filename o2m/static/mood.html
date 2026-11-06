@@ -1846,6 +1846,7 @@ const ICON_SHUFFLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICON_IMAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
 const ICON_SORT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const ICON_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 const ICON_ADD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 const ICON_DETAILS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 /* ── A track's artists, one link each ──────────────────────────────────────────
@@ -7702,9 +7703,33 @@ function _browseRender(got) {
   const st = _browseState || { rows: [] };
   let html = st.rows.length ? _searchObjRows(st.rows, got.kind)
                             : `<div class="obj-empty">${objEsc(got.empty || 'Nothing here.')}</div>`;
+  if (st.node === 'podfavorites' && st.rows.length)
+    html = `<div class="browse-export"><button type="button" class="wc-seg" data-fav-share title="Anyone with this link can see the list, without logging in">${ICON_COPY}Copy public link</button><a class="wc-seg" href="${API}/export/favorite_episodes" download>${ICON_DOWNLOAD}Download CSV</a></div>${favShareRow()}` + html;
   if (st.hasMore)
     html += '<div class="search-more"><button type="button" class="wc-seg" data-browse-more>Load more</button></div>';
   objBody().innerHTML = html;
+}
+
+/* The public address stays on screen once asked for: over plain HTTP a page has no
+   clipboard, and it has to be possible to copy it by hand. */
+let _favShareUrl = '';
+function favShareRow() {
+  if (!_favShareUrl) return '';
+  return `<div class="browse-share"><input type="text" readonly value="${objEsc(_favShareUrl)}" aria-label="Public link">`
+       + `<button type="button" class="wc-seg" data-fav-share-new title="The current link stops working">New link</button></div>`;
+}
+async function favShare(rotate) {
+  if (rotate && !confirm('Make a new link? The current one will stop working.')) return;
+  try {
+    const r = await fetch(`${API}/share/favorite_episodes`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rotate: !!rotate }) });
+    if (r.status === 401) { setFeedback('Editing not authorized'); return; }
+    if (!r.ok) throw new Error(r.status);
+    _favShareUrl = location.origin + (await r.json()).path;
+  } catch (e) { setFeedback('Link failed'); return; }
+  _browseRender({});
+  try { await navigator.clipboard.writeText(_favShareUrl); setFeedback('Link copied'); }
+  catch (e) { setFeedback('Copy the link below'); }
 }
 
 async function browseLoadMore() {
@@ -10537,6 +10562,8 @@ async function init() {
     // "Load more" at the bottom of a search: append the next page in place.
     if (e.target.closest('[data-search-more]')) { e.preventDefault(); return searchLoadMore(); }
     if (e.target.closest('[data-browse-more]')) { e.preventDefault(); return browseLoadMore(); }
+    if (e.target.closest('[data-fav-share]')) { e.preventDefault(); return favShare(false); }
+    if (e.target.closest('[data-fav-share-new]')) { e.preventDefault(); return favShare(true); }
     const bn = e.target.closest('[data-browse-node]');
     if (bn) { e.preventDefault(); return openBrowseNode(bn.dataset.browseNode); }
     const ib = e.target.closest('.tl-info');

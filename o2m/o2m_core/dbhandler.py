@@ -871,6 +871,24 @@ class DatabaseHandler():
             print(f"get_favorite_rows: {e}")
             return [], False
 
+    def get_favorite_episodes(self):
+        """Every favourite episode for the export, last liked first: the same set
+        as the Favourite episodes list (get_favorite_rows), with what a file needs.
+        Raises on a database error: an empty export would read as "no favourites"."""
+        cond = (((Track.liked == 1) | (Track.option_type == 'favorites'))
+                & _uri_starts_with_any(SPOKEN_URI_PREFIXES))
+        rows = list(Track.select().where(cond)
+                    .order_by(Track.liked_at.desc(), Track.uri))
+        ids = {t.channel_id for t in rows if t.channel_id}
+        titles = ({c.id: c.title for c in PodcastChannel
+                   .select(PodcastChannel.id, PodcastChannel.title)
+                   .where(PodcastChannel.id << list(ids))} if ids else {})
+        return [{'uri': t.uri, 'name': t.name or t.uri,
+                 'channel': titles.get(t.channel_id) or _spoken_source_label(t.uri),
+                 'type': t.option_type, 'published_at': t.published_at,
+                 'duration_ms': t.duration_ms, 'liked_at': t.liked_at,
+                 'read_count': t.read_count, 'episode_key': t.episode_key} for t in rows]
+
     def get_recent_episode_rows(self, limit=50, offset=0):
         """The episodes actually LISTENED to, most recent first, in the browser's
         row shape.

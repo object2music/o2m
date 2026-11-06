@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) `test_mopidywatch.py` (a Mopidy that came up without Spotify) and `test_tvcast.py` (`tv:` boxes: parsing, the add/remove truth table). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) `test_mopidywatch.py` (a Mopidy that came up without Spotify) and `test_tvcast.py` (`tv:` boxes: parsing, the add/remove truth table) `test_favexport.py` (the favourite episodes' CSV and public list). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -571,6 +571,27 @@ at the same **episode page**, whose trailing numeric id is an exact join — the
 `meta_radios`, `rf:show:` and `rf:sujet:` — all defined once in **Box Data: the complete
 line reference** below, with every other line type. Kept in one place on purpose: two
 lists of the same patterns drift.
+
+### Exporting the favourite episodes
+`GET /api/export/favorite_episodes` is a CSV download, offered by the `Download CSV`
+button of Browse → Favourite episodes (`o2m_core/favexport.py`): the same set as that
+list, last liked first, with `;` and a BOM for a French Excel. `Link` is the audio url
+while the feed lists the episode. Radio France feeds keep about a month, so past that
+it is the episode's page, asked of the API by `episode_key`
+(`radiofrance.episode_pages`, 20 s or more on a first export, memoised per process).
+Blank means the page is out of the show's last 100 diffusions too.
+
+The same list has a public address, `GET /share/favorites/<token>`: JSON (`count`,
+`episodes`: title, channel, type, published, duration, link), no play count, no
+like date, no uri. `Copy public link` in the same view asks for it
+(`POST /api/share/favorite_episodes`, edit-locked; `{rotate: true}` is `New link`,
+which kills the old one). The token is an HMAC of the instance's edit secret and a
+generation in CacheMeta (`favorites_share_generation`, none = nothing shared), so
+it needs no migration, and an instance answers only its own links. Built at most
+every 10 min (32 s cold here). **Caddy must exempt this path from the gate in its
+own `handle`, before `@nogate`**: that catch-all plants the gate cookie on any
+cookie-less request that got past `basic_auth`, so a plain exemption would hand
+every visitor a login to the whole app.
 
 ### Behaviours to know
 - **Classification** (`_spoken_type_for_uri`): box heritage first (`info` beats `podcast`),

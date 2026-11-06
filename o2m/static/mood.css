@@ -2664,6 +2664,13 @@
     letter-spacing: .12em; font-size: calc(10px * var(--ui)); color: var(--muted); margin: calc(14px * var(--ui)) 0 calc(4px * var(--ui)); }
   .search-more { display: flex; justify-content: center; padding: calc(14px * var(--ui)) 0 calc(4px * var(--ui)); }
   .search-more button { cursor: pointer; }
+  .browse-export { display: flex; justify-content: flex-end; gap: calc(8px * var(--ui)); padding-bottom: calc(8px * var(--ui)); }
+  .browse-export a { text-decoration: none; }
+  .browse-export button, .browse-share button { cursor: pointer; }
+  .browse-share { display: flex; gap: calc(8px * var(--ui)); padding-bottom: calc(8px * var(--ui)); }
+  .browse-share input { flex: 1; min-width: 0; padding: calc(4px * var(--ui)) calc(8px * var(--ui));
+    background: var(--fill-1); color: var(--text); border: 1px solid var(--border-strong);
+    font: inherit; font-size: calc(12px * var(--ui)); }
   .search-section-label:first-child { margin-top: 0; }
 
   /* ════════════ Phone header: compact ════════════

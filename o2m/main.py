@@ -3274,6 +3274,90 @@ if __name__ == "__main__":
         _dup_memo['groups'] = None
         return jsonify({'ok': True, 'key': key})
 
+    def _favorite_episode_rows():
+        """The favourite episodes with an address a person can open: what the CSV
+        and the public page both show. Raises on a database error."""
+        from concurrent.futures import ThreadPoolExecutor
+        from o2m_core import favexport, offline, radiofrance
+        episodes = o2mHandler.dbHandler.get_favorite_episodes()
+        feed_of = lambda e: e['uri'][len('podcast+'):].partition('#')[0]
+        podcasts = [e for e in episodes if e['uri'].startswith('podcast+')]
+        # One fetch per feed, side by side: a slow feed costs its own timeout once.
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(offline.feed_enclosures, {feed_of(e) for e in podcasts}))
+        audio = {e['uri']: offline.episode_media_url(e['uri'])[0] for e in podcasts}
+        # An episode gone from its rolling feed still has its page at Radio France.
+        gone = {}
+        for e in podcasts:
+            if not audio[e['uri']] and e['episode_key']:
+                gone.setdefault(feed_of(e), set()).add(e['episode_key'])
+        pages = radiofrance.episode_pages(o2mHandler._rf_api_key, gone)
+        return [{'uri': e['uri'], 'name': e['name'], 'channel': e['channel'],
+                 'type': e['type'], 'published': e['published_at'],
+                 'duration': favexport.duration_label(e['duration_ms']),
+                 'liked': (bdir.to_local(e['liked_at']).strftime('%Y-%m-%d %H:%M')
+                           if e['liked_at'] else ''),
+                 'plays': e['read_count'],
+                 'link': favexport.media_link(e['uri'], audio.get(e['uri'])
+                                              or pages.get(e['episode_key']))}
+                for e in episodes]
+
+    @api.route('/api/export/favorite_episodes')
+    def api_export_favorite_episodes():
+        """The favourite episodes as a CSV download (the Favourite episodes view)."""
+        from flask import Response, jsonify
+        from o2m_core import favexport
+        try:
+            rows = _favorite_episode_rows()
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+        return Response(favexport.to_csv(rows).encode('utf-8'),
+                        mimetype='text/csv', headers={
+                            'Content-Disposition': f'attachment; filename="{favexport.FILENAME}"'})
+
+    _FAV_SHARE_KEY = 'favorites_share_generation'
+    _FAV_LIST_TTL = 600
+    _fav_list_memo = {'at': 0, 'body': None}
+    _fav_share_secret = _edit_secret()
+
+    @api.route('/api/share/favorite_episodes', methods=['POST'])
+    @require_edit_auth
+    def api_share_favorite_episodes():
+        """{rotate} — the public address of the favourite episodes, opened on the
+        first ask. Rotating gives a new one and the old one stops answering."""
+        from flask import jsonify
+        from o2m_core import favexport
+        db = o2mHandler.dbHandler
+        generation = db.get_cache_meta(_FAV_SHARE_KEY)[0] or 0
+        if not generation or (request.get_json(silent=True) or {}).get('rotate'):
+            generation += 1
+            db.set_cache_meta(_FAV_SHARE_KEY, generation)
+        return jsonify({'path': '/share/favorites/' + favexport.share_token(_fav_share_secret, generation)})
+
+    @api.route('/share/favorites/<token>')
+    def share_favorite_episodes(token):
+        """The public list, as JSON: no login, the token in the address is the only
+        key (Caddy lets this path through). Built at most every 10 min, so a reader
+        neither waits for the feeds nor can make us fetch them."""
+        import time
+        from flask import Response
+        from o2m_core import favexport
+        generation = o2mHandler.dbHandler.get_cache_meta(_FAV_SHARE_KEY)[0]
+        if not favexport.share_token_ok(token, _fav_share_secret, generation):
+            return Response(status=404)
+        if not _fav_list_memo['body'] or time.time() - _fav_list_memo['at'] > _FAV_LIST_TTL:
+            try:
+                listing = favexport.public_list(_favorite_episode_rows())
+                _fav_list_memo.update(body=json.dumps(listing, ensure_ascii=False), at=time.time())
+            except Exception as e:
+                print(f'share_favorite_episodes: {e}')
+                if not _fav_list_memo['body']:
+                    return Response(status=503)
+        return Response(_fav_list_memo['body'], mimetype='application/json', headers={
+            'Cache-Control': 'no-store',
+            'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow',
+            'X-Content-Type-Options': 'nosniff'})
+
     @api.route('/api/stats/tracks')
     def api_stats_tracks():
         from flask import jsonify
