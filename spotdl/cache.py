@@ -85,6 +85,9 @@ PRUNE = (os.environ.get('SPOTDL_PRUNE', '1').strip().lower()
          not in ('0', 'false', 'no', 'off'))
 CACHE_MAX_GB = float(os.environ.get('SPOTDL_CACHE_MAX_GB', '10'))
 CACHE_MAX_BYTES = int(CACHE_MAX_GB * 1024 ** 3) if CACHE_MAX_GB > 0 else 0
+# The part of the cap kept for episodes and videos nobody has finished. A share
+# rather than a size, so it scales with a Pi's small cap. See cap_victims.
+SPOKEN_SHARE = float(os.environ.get('SPOTDL_SPOKEN_SHARE', '0.25'))
 AUDIO_EXT = ('.mp3', '.m4a', '.opus', '.ogg', '.flac', '.wav', '.webm', '.aac', '.mp4')
 # Podcast episodes and YouTube videos a device asked for, kept so the next device
 # and Mopidy read them from disk. Fetched through o2m's own /api/audio, which
@@ -427,9 +430,41 @@ def clean_old_files():
               f"{removed - heard} stale (>{CACHE_DAYS}d old)")
 
 
+def cap_victims(entries, done, spoken, cap, share=SPOKEN_SHARE):
+    """[(path, size)] to delete, in order, for `entries` to fit `cap`: what was
+    heard first, then the oldest, sparing the newest unheard spoken items up to
+    `share` of the cap.
+
+    Without that floor age alone decided, and age does not compare the two: a
+    box pass stamps every music file it wants, so music always read as newer
+    than an episode fetched a few days before it. On 2026-10-29 one such pass
+    left every Library file dated that day, and the next cap run took 51 unheard
+    episodes and videos. The floor is not a partition: music may use the room
+    while no spoken item needs it, and a new download takes it back.
+    """
+    total = sum(e[1] for e in entries)
+    if total <= cap:
+        return []
+    room = cap * min(max(share, 0), 0.9)    # music keeps a way to make room
+    kept, spared = 0, set()
+    unheard = (e for e in entries if e[0] in spoken and e[0] not in done)
+    for f, size, _mtime in sorted(unheard, key=lambda e: e[2], reverse=True):
+        if kept + size > room:
+            break
+        kept += size
+        spared.add(f)
+    out = []
+    for f, size, _mtime in sorted(entries, key=lambda e: (e[0] not in done, e[2])):
+        if total <= cap:
+            break
+        if f not in spared:
+            out.append((f, size))
+            total -= size
+    return out
+
+
 def enforce_cache_cap():
-    """Delete files until the cache fits the cap: the episodes and videos
-    already heard first, then the least recently wanted.
+    """Delete files until the cache fits the cap (`cap_victims` says which).
 
     Called after every box and every on-demand batch, not only at the end of a
     run: a nightly pass can add gigabytes, and a ceiling checked once at the
@@ -443,12 +478,11 @@ def enforce_cache_cap():
         if total <= CACHE_MAX_BYTES:
             return 0
         done = finished_files(entries)
+        spoken = {e[0] for e in entries if spoken_tag_of(e[0])}
         freed, removed = 0, 0
-        # Heard first, then oldest. mtime is "last wanted" for a box's music
-        # (touch_files) and the download time for a spoken file.
-        for f, size, _mtime in sorted(entries, key=lambda e: (e[0] not in done, e[2])):
-            if total - freed <= CACHE_MAX_BYTES:
-                break
+        # mtime is "last wanted" for a box's music (touch_files) and the download
+        # time for a spoken file.
+        for f, size in cap_victims(entries, done, spoken, CACHE_MAX_BYTES):
             if drop_file(f):
                 freed += size
                 removed += 1

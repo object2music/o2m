@@ -1739,6 +1739,13 @@ working the cache went from 99 MB to **7.1 GB in a single nightly run**, and not
 date rule would have stopped it before the disk did. Both the main thread and the queue
 worker delete, so every deletion is under one lock.
 
+**Unheard episodes and videos keep a share of that ceiling** (`cap_victims`,
+`SPOTDL_SPOKEN_SHARE`, 25%; `python3 spotdl/test_cachecap.py`). Age cannot compare them
+with music: the box pass of 2026-10-29 stamped all 1,799 Library files, the cap then
+took 51 unheard items fetched days earlier, and the cache held no spoken file at all.
+A floor, not a partition: music uses the room until a download takes it back. Heard
+items still go first, and a `done` row with no file is queued again when a device asks.
+
 **Giving up has to be reachable.** The first version re-queued every `failed` row on each
 `plan` call — and a client polls `plan` while it waits, so the same unfetchable tracks
 were re-downloaded every 30s for ever, the tries counter climbing and the UI reporting
@@ -2788,6 +2795,8 @@ All service configuration is via `.env` file (not committed). Key variables:
   numbered instances share `/home/o2m/music`; see the offline section.
 - `SPOTDL_CACHE_MAX_GB` — ceiling on the server-side download cache (default 10, `0` = no
   cap). See the offline section: the 30-day `SPOTDL_CACHE_DAYS` expiry is not a limit.
+- `SPOTDL_SPOKEN_SHARE` — part of the cap kept for unheard episodes and videos (default
+  `0.25`, `0` = no reserve). See `cap_victims`.
 - `SPOTDL_PRUNE` — may this instance delete from the cache (default `1`). Set `0` on every
   instance but one when the cache is shared.
 - `SPOTDL_QUEUE_PAUSE` (default `10`) / `SPOTDL_THROTTLE_WAIT` (default `300`) — seconds
