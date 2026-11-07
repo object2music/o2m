@@ -3071,11 +3071,13 @@ function initMediaSession() {
   setH('play',          async () => {
     osPauseCancel();                     // a pause still waiting is not wanted
     if (OFF.on) { offTogglePlay(); return; }
+    speakerWake();
     // Through the server's play_or_resume, like the on-screen button: a bare
     // resume() does nothing when Mopidy sits at 'paused' with no current track.
     await fetch(API + '/toogle_play');   setTimeout(refreshNowPlaying, 300); });
   setH('pause',         () => {
     if (OFF.on) { offTogglePlay(); return; }
+    if (isPhoneDevice()) { headsetToggle(); return; }
     osPauseFromSession(); });            // see why this is not a plain rpc
   setH('previoustrack', async () => {
     if (OFF.on) { offSkip(-1); return; }
@@ -3243,6 +3245,37 @@ const OS_PAUSE_STALE_MS = 2000;
 let _osPauseTimer = null;
 
 function osPauseCancel() { clearTimeout(_osPauseTimer); _osPauseTimer = null; }
+
+/* A headset has ONE button, and on a phone the page cannot trust which action it
+   sends. The OS picks `play` or `pause` from what it believes, and it believes
+   the anchor: that looping <audio> keeps running while the server is paused, and
+   playbackState is only refreshed by a page the OS may be throttling. So a stopped
+   server still received `pause`, which paused nothing, and the tap did nothing,
+   while `nexttrack`, which depends on no state, worked. The server's own state
+   decides instead. Phones only: there is no lid to close, and on a computer the
+   same action can be the OS putting its players down (see above). */
+async function headsetToggle() {
+  osPauseCancel();
+  const state = (await rpc('core.playback.get_state'))?.result;
+  if (state === 'playing') {
+    await rpc('core.playback.pause');
+  } else {
+    speakerWake();
+    try { await fetch(API + '/toogle_play'); } catch (e) {}
+  }
+  setTimeout(refreshNowPlaying, 300);
+}
+
+/* A resume from a headset comes with no touch on the page, and a touch is what
+   armMediaAnchor waits for: after a lost route this device stayed mute, and with
+   no media session, while the server played on. */
+function speakerWake() {
+  if (!snapPlayer) return;
+  try {
+    if (snapPlayer.ctx && snapPlayer.ctx.state === 'suspended') snapPlayer.ctx.resume();
+  } catch (e) {}
+  startMediaAnchor();
+}
 
 function _pauseServerFromOS(why) {
   console.log('[os-pause] forwarding to the server (' + why + ')');
