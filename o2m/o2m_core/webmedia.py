@@ -526,6 +526,26 @@ def youtube_published(uri, timeout=None):
     return _published_day(info or {})
 
 
+_yt_refusals = {}           # video id -> why its audio was last refused
+
+
+def youtube_refusal(message):
+    """What an extraction error means for the listener, as a code the page words:
+    `youtube-blocked` is about this server and every video, `youtube-gone` about
+    this one video, `youtube-failed` anything else."""
+    text = (message or '').lower()
+    if 'not a bot' in text or 'sign in to confirm' in text:
+        return 'youtube-blocked'
+    if any(w in text for w in ('video unavailable', 'private video', 'been removed')):
+        return 'youtube-gone'
+    return 'youtube-failed'
+
+
+def youtube_audio_refusal(uri):
+    """Why `youtube_audio` last answered None for this uri."""
+    return _yt_refusals.get(youtube_video_id(uri), 'youtube-failed')
+
+
 def youtube_audio(uri, timeout=None):
     """The audio file behind a YouTube video uri, for a device to hold offline:
     {'url','headers','ext','filesize','expires_at'} or None.
@@ -555,10 +575,12 @@ def youtube_audio(uri, timeout=None):
                         fmt='bestaudio[ext=m4a]/bestaudio')
     except Exception as e:
         log.error(f'youtube_audio({vid}): {str(e)[:200]}')
+        _yt_refusals[vid] = youtube_refusal(str(e))
         info = None
     if not info or not info.get('url'):
         _cache[key] = (time.time(), None)
         return None
+    _yt_refusals.pop(vid, None)
     entry = {'url': info['url'],
              'headers': dict(info.get('http_headers') or {}),
              'ext': info.get('ext') or 'm4a',

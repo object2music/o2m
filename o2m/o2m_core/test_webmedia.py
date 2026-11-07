@@ -417,6 +417,20 @@ class TestYoutubeChannel(unittest.TestCase):
         self.assertIn('error', wm.youtube_channel('https://notyoutube.com/@x'))
 
 
+class YoutubeRefusal(unittest.TestCase):
+    def test_a_bot_check_is_about_the_server(self):
+        msg = "ERROR: [youtube] x: Sign in to confirm you\u2019re not a bot."
+        self.assertEqual(wm.youtube_refusal(msg), 'youtube-blocked')
+
+    def test_an_unavailable_video_is_about_that_video(self):
+        msg = 'ERROR: [youtube] BrLxlcAnJdg: Video unavailable'
+        self.assertEqual(wm.youtube_refusal(msg), 'youtube-gone')
+
+    def test_anything_else_stays_unnamed(self):
+        self.assertEqual(wm.youtube_refusal('timed out'), 'youtube-failed')
+        self.assertEqual(wm.youtube_refusal(None), 'youtube-failed')
+
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -8680,8 +8680,12 @@ async function offFetchBlob(url) {
   let timer = setTimeout(() => ctl.abort(), OFF_STALL_MS);
   const kick = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), OFF_STALL_MS); };
   try {
+    OFF.refusal = '';
     const r = await fetch(url, { signal: ctl.signal });
-    if (!r.ok) return null;
+    if (!r.ok) {
+      OFF.refusal = await r.json().then(j => j.reason || '', () => '');
+      return null;
+    }
     if (!r.body || !r.body.getReader) return await r.blob();
     const reader = r.body.getReader(), chunks = [];
     for (;;) {
@@ -8705,6 +8709,16 @@ function offCancelDownload() {
   }
   OFF.pending.clear();
   offFollow(false);
+}
+
+/* What `/api/audio` said when it refused a file, in the words of a pass report.
+   `refused` counts them by reason: {reason: n}. */
+const OFF_REFUSALS = { 'youtube-blocked': 'blocked by YouTube',
+                       'youtube-gone': 'gone from YouTube',
+                       'youtube-failed': 'refused by YouTube' };
+function offRefusedNotes(refused) {
+  return Object.entries(refused || {})
+    .map(([why, n]) => n + ' ' + (OFF_REFUSALS[why] || 'refused by the server'));
 }
 
 async function offStore(meta) {
@@ -8770,7 +8784,8 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
   offPaintToggle();
   OFF.pass = new Set();
   OFF.copied = 0;
-  let got = 0, wait = 0, lost = 0, heard = 0, full = false;
+  let got = 0, wait = 0, lost = 0, heard = 0, cut = 0, full = false;
+  const refused = {};
   // A whole batch refused for ONE structural reason deserves that reason, not a
   // count: "30 cannot be downloaded" sends you looking for thirty problems when
   // there is one (no downloader on this server, a feed that dropped its items).
@@ -8797,6 +8812,8 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       if (p.kind === 'spoken' && p.finished) { heard++; continue; }
       const res = await offStore(offPlanMeta(t, p));
       if (res === 'quota') { full = true; break; }
+      if (res === 'refused') refused[OFF.refusal] = (refused[OFF.refusal] || 0) + 1;
+      if (res === 'fail' && !OFF.cancel) cut++;
       if (res !== 'ok') continue;
       got++;
       if (OFF.on) offQueueAdd(t);          // what is playing grows as files land
@@ -8824,6 +8841,8 @@ async function offSync(items, { quiet = false, retry = false } = {}) {
       + (wait ? ' · ' + wait + ' being fetched by the server' : '')
       + (lost ? ' · ' + lost + ' cannot be downloaded'
               + (lostWhy.size === 1 ? ' (' + [...lostWhy][0] + ')' : '') : '')
+      + offRefusedNotes(refused).map(n => ' · ' + n).join('')
+      + (cut ? ' · ' + cut + ' cut off' : '')
       + (heard ? ' · ' + heard + ' already heard, left out' : '')
       + (full ? ' · quota full (' + offQuotaMB() + ' MB), raise it in Settings' : ''));
   }
@@ -9732,7 +9751,10 @@ async function offSubsFill(uid, left) {
     }
     if (OFF.cancel) return true;
     left.failed++; broke = true;
-    if (res === 'refused') continue;       // a video YouTube withholds: on to the next
+    if (res === 'refused') {               // a video YouTube withholds: on to the next
+      left.refused[OFF.refusal] = (left.refused[OFF.refusal] || 0) + 1;
+      continue;
+    }
     // Two cut off in a row, or the page sent away, is the link and not the file: the
     // rest of the list would only fail the same way, and be counted as tried.
     left.streak++;
@@ -9762,7 +9784,8 @@ async function offSubsPass() {
   _offSubsHid = document.hidden;
   offSubsPatch({ held: '' });
   const left = { files: OFF_SUBS_BATCH, missing: OFF_SUBS_MISSING, more: false, incomplete: false,
-                 got: 0, failed: 0, streak: 0, waiting: 0, never: 0, full: false, broke: false };
+                 got: 0, failed: 0, refused: {}, streak: 0, waiting: 0, never: 0,
+                 full: false, broke: false };
   offSubsPaintList();
   let finished = true;
   try {
@@ -9779,8 +9802,8 @@ async function offSubsPass() {
   offPaintToggle(); offRenderBadges();
   if (OFF.copied) offDirWriteViews();
   const away = left.broke && _offSubsHid;   // a phone put down: not the files' fault
-  offSubsPatch({ report: { at: Date.now(), got: left.got, failed: left.failed, waiting: left.waiting,
-    never: left.never,
+  offSubsPatch({ report: { at: Date.now(), got: left.got, failed: left.failed,
+    refused: left.refused, waiting: left.waiting, never: left.never,
     full: left.full, end: stopped ? 'stopped' : !finished ? 'server unreachable or busy'
                          : away ? 'interrupted, the page left the screen' : '' } });
   if (stopped || !finished) { offSubsPaintList(); return; }
@@ -9842,7 +9865,9 @@ function offSubsStatus(st) {
   const r = st.report || {}, out = [];
   if (r.at) {
     out.push(r.got + ' downloaded');
-    if (r.failed) out.push(r.failed + ' failed');
+    const refused = Object.values(r.refused || {}).reduce((a, n) => a + n, 0);
+    if (r.failed > refused) out.push((r.failed - refused) + ' failed');
+    out.push(...offRefusedNotes(r.refused));
     if (r.waiting) out.push(r.waiting + ' waiting for the server');
     if (r.never) out.push(r.never + ' cannot be kept on a device');
     if (r.full) out.push('quota reached');

@@ -2212,6 +2212,10 @@ Two consequences to keep in mind:
   removed whichever SERVER track carried that number. Play next / Play now / Remove
   work on the queue by uri; the rating panel's dislike is still the server write and,
   once it is taken, also drops the track from the queue.
+- **A refused file is named in the pass's report**: `/api/audio` answers a YouTube failure
+  with `{reason}` (`webmedia.youtube_refusal`: `youtube-blocked` for the server, `youtube-gone`
+  for one video), worded by `offRefusedNotes` in the end message and the subscriptions'
+  status. `plan` still says `ready` without resolving, so the refusal only shows there.
 - **A download pass shows its progress and cannot hang.** The Offline button pulses
   for the whole pass, which over a 99-item tracklist with hour-long episodes is many
   minutes — its tooltip now reads `Downloading n / total`. Each file is abandoned

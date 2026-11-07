@@ -3645,12 +3645,12 @@ if __name__ == "__main__":
         roughly real-time speed, so a full download is fetched as 10 MB ranges,
         the way yt_dlp itself does (`http_chunk_size`). A Range from the client
         is passed through as is."""
-        from flask import Response, stream_with_context
+        from flask import Response, jsonify, stream_with_context
         from o2m_core import webmedia
         import requests as _rq
         info = webmedia.youtube_audio(uri)
         if not info:
-            return '', 404
+            return jsonify(reason=webmedia.youtube_audio_refusal(uri)), 404
         headers = dict(info.get('headers') or {})
         mime = 'audio/webm' if info.get('ext') == 'webm' else 'audio/mp4'
         rng = request.headers.get('Range')
@@ -3675,7 +3675,8 @@ if __name__ == "__main__":
             first.raise_for_status()
         except Exception as e:
             print(f"api_audio({uri}): {e}")
-            return '', 502
+            # googlevideo refused the url yt_dlp was just handed.
+            return jsonify(reason='youtube-blocked'), 502
         # The real size is in the first answer's Content-Range ('bytes 0-x/total').
         total = (first.headers.get('Content-Range') or '').rpartition('/')[2]
         if total.isdigit():
