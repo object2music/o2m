@@ -1699,16 +1699,7 @@ class O2mToMopidy:
         if option_type == 'new':
             subject = [u for u in pool
                        if not (planned.get(u) or {}).get('bypass_remove_filter')]
-            stale = set()
-            if subject:
-                try:
-                    for t in (Track.select(Track.uri, Track.skipped_count, Track.option_type,
-                                           Track.read_count_end)
-                              .where(Track.uri << subject)):
-                        if self._not_new_anymore(t):
-                            stale.add(t.uri)
-                except Exception as e:
-                    print(f"AUTO bucket new: pre-filter skipped ({e})")
+            stale = self._stale_for_new(subject, 'AUTO bucket new')
             if stale:
                 pool = [u for u in pool if u not in stale]
                 print(f"AUTO bucket new: {len(stale)} track(s) no longer new left out before the pick")
@@ -2710,7 +2701,7 @@ class O2mToMopidy:
                     _tag = content.strip()[4:].strip()
                     _pool = self.dbHandler.get_tag_track_uris(_tag)
                     if _pool:
-                        tracklist_uris.append(_from_line(self._expand_pick(_pool, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash'))), 'tag:' + _tag))
+                        tracklist_uris.append(_from_line(self._expand_pick(_pool, max_results, energy, valence, discover_level, exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash')), only_new=self._is_new_box(box)), 'tag:' + _tag))
                     else:
                         print(f"tag:{_tag}: no track carries it — skipped")
 
@@ -2875,7 +2866,8 @@ class O2mToMopidy:
                             uris, source = self.spotifyHandler.get_my_artists_tracks(1, 0, return_source=True)
                             if uris:
                                 uris = self._expand_pick(uris, remaining, energy, valence, discover_level,
-                                                         exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash')))
+                                                         exclude_hidden=(getattr(box, 'option_type', '') not in ('hidden', 'trash')),
+                                                         only_new=self._is_new_box(box))
                         if uris:
                             _plan_or_add(uris, remaining, library_link=source or '')
 
@@ -2962,7 +2954,7 @@ class O2mToMopidy:
                         # Smart only: expand the artist's cached tracks and stochastically pick.
                         cached = self.dbHandler.get_artist_track_uris(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box)), content.strip()))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box), only_new=self._is_new_box(box)), content.strip()))
                         else:
                             # Basic / cache-miss: legacy top + all tracks (may hit the API)
                             tracks_uris = self.spotifyHandler.get_artist_top_tracks(media_parts[2])  # 10 tops tracks of artist
@@ -2971,7 +2963,7 @@ class O2mToMopidy:
                         # Smart only: expand album sub-tracks from AlbumTrack and stochastically pick.
                         cached = self.dbHandler.get_album_tracks(media_parts[2]) if smart else None
                         if cached:
-                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box)), content.strip()))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box), only_new=self._is_new_box(box)), content.strip()))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole album
                     elif media_parts[1] == "playlist":
@@ -2982,7 +2974,7 @@ class O2mToMopidy:
                         else:
                             cached = None
                         if cached:
-                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box)), content.strip()))
+                            tracklist_uris.append(_from_line(self._expand_pick(cached, max_results, energy, valence, discover_level, exclude_hidden=self._named_line_exclusion(box), only_new=self._is_new_box(box)), content.strip()))
                         else:
                             tracklist_uris.append(content)  # basic: raw URI, Mopidy resolves the whole playlist
                     else:
@@ -4712,14 +4704,44 @@ class O2mToMopidy:
                                    self._served_map(), datetime.datetime.utcnow(),
                                    time.time(), self._tunables())
 
-    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True, tag_seed=None):
+    def _stale_for_new(self, uris, label):
+        """The uris whose Track row says they no longer belong in a `new` fill
+        (_not_new_anymore). One query; a failure filters nothing, as add_tracks'
+        REMOVE filter still stands behind it."""
+        stale = set()
+        if not uris:
+            return stale
+        try:
+            for t in (Track.select(Track.uri, Track.skipped_count, Track.option_type,
+                                   Track.read_count_end)
+                      .where(Track.uri << list(uris))):
+                if self._not_new_anymore(t):
+                    stale.add(t.uri)
+        except Exception as e:
+            print(f"{label}: pre-filter skipped ({e})")
+        return stale
+
+    def _expand_pick(self, uris, n, energy, valence, discover_level, exclude_hidden=True, tag_seed=None,
+                     only_new=False):
         """STOCHASTIC filter of a tapped object's cached tracks, weighted toward a
         DL-controlled popularity target. Only invoked when the box's option_sort is
         'smart' (shuffle/asc/desc keep the basic legacy path).
 
         Adapter over o2m_core.selection.expand_pick, which holds the three
         variants (hybrid / temp / band) and is unit-tested there.
+
+        `only_new` (a `new` box): what add_tracks' REMOVE filter would drop after
+        the add is left out of the pool BEFORE the pick. Picked first and removed
+        second, those tracks took the line's share for nothing - "C1 Nouveautes"
+        queued 30 and kept 14 (2026-11-15): its genre playlists were 95% already
+        heard. A line with nothing new left now draws nothing, and its share rolls
+        forward to the lines after it.
         """
+        if only_new and uris:
+            stale = self._stale_for_new(uris, '_expand_pick')
+            if stale:
+                uris = [u for u in uris if u not in stale]
+                print(f"_expand_pick: {len(stale)} track(s) no longer new left out before the pick")
         if not uris:
             return []
         pool = self._selection_pool(uris, exclude_hidden=exclude_hidden, label='_expand_pick')
@@ -6026,6 +6048,11 @@ class O2mToMopidy:
 
     #Threshold NEW : stopping playing and autofilling new tracks (add_tracks or autofill)
     #discover_level = 5 : read_count_end>=3
+    @staticmethod
+    def _is_new_box(box):
+        """A box whose fill add_tracks runs through the `new` REMOVE filter."""
+        return getattr(box, 'option_type', '') == 'new'
+
     def _not_new_anymore(self, stat):
         """Whether a track with this Track row no longer belongs in a `new` fill:
         skipped once, already classified out of `new`, or played past the

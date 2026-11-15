@@ -447,6 +447,12 @@ has a choice, and keep `n`. Two leaks let a bucket blow past `n`; one fill measu
   bucket kept 0 of 3, then 1 of 3. The same rule (`_not_new_anymore`, one definition
   read by both places) now filters the pool BEFORE the pick; plan tracks that bypass
   the REMOVE filter are left alone, as add_tracks leaves them.
+  **A box typed `new` had the same leak on its own lines** (2026-11-15): a playlist,
+  album, artist or `tag:` line drew its share through `_expand_pick`, whose
+  popularity-led pick at low DL takes precisely the heard tracks, then lost them to
+  the REMOVE filter — "C1 Nouveautés" queued 30 and kept 14, its genre playlists
+  being 95% heard. `_expand_pick(only_new=True)` (`_is_new_box`) drops them first;
+  a line with nothing new left draws nothing and its share rolls forward.
 
 **Favorites has two sources and one budget.** The liked tracks (Spotify library) and
 the install's `favorites` box each took the whole count, so the bucket was served
