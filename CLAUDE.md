@@ -37,7 +37,7 @@ Tests live beside the code they cover, in `o2m/o2m_core/`: `test_popularity.py`
 as a box), `test_fairlock.py` (the box lock's arrival-order queue), `test_boxbudget.py` (a box's
 budget shared between its lines), `test_boximage.py` (what
 a box picture upload may be), `test_boxmood.py` (the mood of a box's content) and
-`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) `test_mopidywatch.py` (a Mopidy that came up without Spotify) and `test_tvcast.py` (`tv:` boxes: parsing, the add/remove truth table) `test_favexport.py` (the favourite episodes' CSV and public list) `test_offsubs.py` (a subscribed box's items, a resolution leaving no trace). Run from the repo root (package-prefixed, since they import
+`test_duplicates.py` (proposing and merging duplicate tracks), `test_lyrics.py` (LRC parsing, title cleaning), `test_cachelayout.py` (the offline cache's folder and file names), `test_localcache.py` (reading that cache with no database), `test_localstats.py` (the two journals kept while the database is away) `test_dbstate.py` (whether the database is reachable, and how often that is asked) `test_snapwatch.py` (the last Snapcast listener leaving) `test_mopidywatch.py` (a Mopidy that came up without Spotify) and `test_tvcast.py` (`tv:` boxes: parsing, the add/remove truth table) `test_favexport.py` (the favourite episodes' CSV) `test_channelvideo.py` (a YouTube playlist's settings reaching its videos) and `test_leadunfinished.py` (which box may put an unfinished item first) `test_offsubs.py` (a subscribed box's items, a resolution leaving no trace). Run from the repo root (package-prefixed, since they import
 `o2m_core.*`):
 ```bash
 cd o2m
@@ -100,7 +100,7 @@ The main application is in `o2m/main.py` — it starts Flask on port 6681 and wi
   - **Offline views**: `CacheMembership` (an item served by a box, from a source — see *The cache's layout*).
   - **Pictures**: `BoxImage` (a picture uploaded for a box, keyed by the sha1 of its bytes — see *A box's picture* below).
 
-  **Schema migrations**: `SCHEMA_VERSION` (currently **37**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
+  **Schema migrations**: `SCHEMA_VERSION` (currently **38**) plus an ordered `_MIGRATIONS` list, applied at startup by `ensure_schema`. **Migrations must be additive only** — o2m_0 (prod) and o2m_1 (dev) share the same database, so an older image must keep running against a newer schema. Use `_add_column_safe`; never drop or retype a column a released version reads.
 
   **A NOT NULL column added by a migration must carry `constraints=[SQL('DEFAULT …')]`.** Peewee's `default=` is a Python-side value and emits no SQL DEFAULT, so the column lands `NOT NULL` with none — and the shared database runs `STRICT_TRANS_TABLES`, where an INSERT that omits the column is rejected outright (`Field 'x' doesn't have a default value`). Every INSERT from an image whose model predates the column omits it, which is precisely the case "additive only" exists to protect. Caught on `disliked` (v24) an hour after it shipped, repaired by v25; `liked`, `read_count` and `skipped_count` all carry a SQL default, which is why nothing had ever hit it.
 
@@ -424,6 +424,23 @@ statement, guarded by a CacheMeta flag: 158ms the first time, 0.7ms after.
   (uniform 1/pool, see the novelty section) and the tiny albums bucket; per-fill P is low.
   `newrecent` is scoped to the library (`liked=1 OR album saved=1`) — browsed/lazy-filled
   albums are excluded.
+
+### Who decides what plays next: the last to arrive
+Four things order the queue, and no rule table arbitrates them: **the last fill has
+the last word.**
+- **A news item standing next keeps its place** (`add_tracks`; the two below leave it).
+- **One unfinished item first** (`lead_unfinished`, 2026-11-04): the boxes that just
+  arrived, if one is spoken and on the smart order (`boxdirectives.is_spoken_smart`:
+  typed `podcast` / `info`, or naming a feed, a show, a YouTube line, a page,
+  `auto_podcast:`; `option_sort` `smart` or unset) and has an unfinished item in the
+  queue. One, not all, the one `get_uris_podcasts_notread` would rank first
+  (`unfinished_among`, same `_unfinished_query`, bulletins included: an item already in
+  the list was chosen), and only if none leads. A cascade arrives whole.
+- **Voice and music alternate** (`interleave_tracklist`, after a Basic fill). **ALL
+  passes above the lead**: `all_on` interleaves once more at its end. An actuator's own
+  fill leads after its interleave, a podcast tile being a podcast arriving last.
+- **The smart shuffle** (popularity, every box's fill): so a music box put down after
+  a podcast box takes the lead away, by shuffling, and that is the rule too.
 
 ### A bucket drawn from another box holds its budget (`_auto_bucket_from_box`)
 `incoming`, `favorites` (its box half) and `news` read another box — the install's
@@ -1064,7 +1081,12 @@ activated as an object like an album: its "uri" is the box line that plays it
 `option_sort='asc'`, and `option_type` `podcast` or `info` — the tile passes
 `type=info` when a news box names the channel, because the stats file episodes
 under the box's option_type and the Basic view lights by it. The eye opens the
-channel view (`openPodcast`).
+channel view (`openPodcast`). A YouTube PLAYLIST is one too (`yt:playlist:PL…`, or
+its address written as a line, 2026-11-04), with the same Skip intro and Volume boost.
+Its videos are other people's, so `Track.channel_id` keeps naming their own channel
+and **`ChannelVideo`** (migration **v38**) says which playlists hold them, written when
+the view is opened; `_channels_for` reads both and the largest setting wins. A video
+added to the playlist since is reached at the next opening.
 
 **Which channels the boxes name is an index on `PodcastChannel`** (migration
 **v34**: `box_line`, `label`, `spoken_type`, `in_boxes`; YouTube channels are rows
@@ -1122,8 +1144,8 @@ so scrolling to a tile would be scrolling to where it is about to no longer be.
 phone they scroll away with it — and that is not a breakpoint tweak around one
 behaviour, the two sizes want different behaviours.** On a wide screen, picking a
 view or typing a filter is what you reach for AFTER scrolling a shelf of covers, so
-having to scroll back up is the problem sticky solves. On a phone the accordion
-gives the open section what is left of a short screen, and freezing two rows at the
+having to scroll back up is the problem sticky solves. On a phone the open
+section gets what is left of a short screen, and freezing two rows at the
 top of it spends a third of the covers you can see on controls you use once — it was
 tried and it is worse. Two things make the desktop half work, both load-bearing: the
 scroller there is `#boxes-panel` with the column header sticky INSIDE it, so the
@@ -2373,9 +2395,9 @@ only when the song has lyrics:
   (`#mood-tabs`, the Boxes column's `.pm-tab` look), the column head reading
   Lyrics while it is open; the choice is remembered per device (`o2m-lyrics-tab`)
   and a song without lyrics shows the mood controls without forgetting it;
-- **full view, phone** (every theme): one more branch of the accordion,
+- **full view, phone** (every theme): one more section of the picker,
   `#lyrics-col`, the last one, after the Tracklist — absent while there are no
-  lyrics, and an open branch that disappears hands the screen back to the
+  lyrics, and an open section that disappears hands the screen back to the
   tracklist;
 - **Basic view: Invert only** — on desktop the pane takes the tracklist column
   over (a button in each header switches, `o2m-lyrics`); on a phone, where no
@@ -2384,12 +2406,12 @@ only when the song has lyrics:
 
 Between two songs the pane holds its place while the next one's lyrics load
 (`LYR.pending`, set when the last song had some): hiding it meanwhile closed the
-phone's branch at every change of song.
+phone's section at every change of song.
 
 **In Invert they come forward by themselves in the full view too**: each song
 with lyrics opens the Lyrics tab (desktop; a tab picked by hand holds for the rest
-of that song, `LYR.tabUri`) or the accordion branch (phone — unless Boxes or Mood
-is the open branch, which is someone using it).
+of that song, `LYR.tabUri`) or the section (phone — unless Boxes or Mood is the
+open one, which is someone using it).
 
 Synced lines follow the local clock (`tickProgress`), the current one in the hero
 accent and scrolled a third of the way down the pane; a tap on a line seeks there.
@@ -2730,6 +2752,24 @@ moved row. Offline it moves the local queue and remaps the two indexes into it
 (`OFF.i`, `OFF.loggedAt`). Moving more than 8 px before the hold is up cancels it:
 that is what keeps a swipe scrolling the list on a phone. Tracklist only — the
 other lists are listings, not an order anyone owns.
+
+## Phone layout: one section, one head
+
+The full view on a phone shows **one section at a time under one head** (2026-11-04).
+It was an accordion: three or four heads stacked for good, ~45px each taken from a
+short screen, to reach something used now and then. Now the closed sections are simply
+`display: none`, and the head on screen is the open section's OWN (`#boxes-panel-label`,
+`#settings-label`, `#tracklist-label`, `#lyrics-label`), so its name, its count and its
+action (clear, reset) need no copying and nothing has to be kept in sync.
+
+Tapping the head lists the sections (`setupCollapsibles`, `phoneSectionItems`): the
+shared `openActionMenu` with the class `section-menu`, full width, the current one in
+the accent, each with its count, Lyrics only while the song has some. One tap more to
+change section, which is the price agreed for the room. A section is **always open**:
+the only way to the others lives in the open section, so nothing may close it without
+opening another (`paintLyrics` hands over to the tracklist; `.open` is exclusive). This
+is a list of named choices, not a rotating control: the cycles reverted on 2026-09-24
+failed because the glyph said where you were, not where a tap would take you.
 
 ## UI Language Convention
 

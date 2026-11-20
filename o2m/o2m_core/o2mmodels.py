@@ -496,6 +496,16 @@ class LocalFile(BaseModel):
         primary_key = CompositeKey('pool', 'uri')
 
 
+class ChannelVideo(BaseModel):
+    """A YouTube video held by a playlist that is not its own channel's uploads.
+    Track.channel_id says whose video it is, and a video sits in any number of
+    playlists besides, so a playlist's settings (Skip intro, Volume boost) reach
+    it through here. Written when the playlist's view is opened."""
+    key = CharField(primary_key=True)                  # sha1(channel + '\n' + uri)
+    channel = CharField()                              # PodcastChannel.id: the line
+    uri = CharField(index=True)
+
+
 class CacheMembership(BaseModel):
     """One item served by one box, from one source — what the offline cache's
     box views are written from (o2m_core/cachelayout.py, scenario B).
@@ -1026,7 +1036,7 @@ def _migration_v14(migrator):
     _add_column_safe(migrator, 'playlist', 'in_library', BooleanField(null=True, default=True))
 
 
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 
 def _migration_v36(migrator):
     """Per-pool offline queue and file registry — see OfflineClaim / LocalFile.
@@ -1045,6 +1055,12 @@ def _migration_v37(migrator):
     """The offline cache's box views — see CacheMembership. A new table: an
     older image cannot see it and loses nothing."""
     db.create_tables([CacheMembership], safe=True)
+
+
+def _migration_v38(migrator):
+    """YouTube playlists carrying settings — see ChannelVideo. A new table: an
+    older image never reads it."""
+    db.create_tables([ChannelVideo], safe=True)
 
 
 _MIGRATIONS = [
@@ -1085,6 +1101,7 @@ _MIGRATIONS = [
     (35, "box_type_radio", _migration_v35),
     (36, "offline_pool_tables", _migration_v36),
     (37, "cache_membership_table", _migration_v37),
+    (38, "channel_video_table", _migration_v38),
 ]
 
 

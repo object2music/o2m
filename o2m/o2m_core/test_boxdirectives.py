@@ -141,6 +141,29 @@ class TestIsDirective(unittest.TestCase):
         self.assertFalse(bd.is_directive('meta_radios'))
 
 
+class TestIsSpokenSmart(unittest.TestCase):
+    def test_typed_podcast_or_info(self):
+        self.assertTrue(bd.is_spoken_smart('spotify:playlist:x', 'podcast', 'smart'))
+        self.assertTrue(bd.is_spoken_smart('', 'info', None))
+
+    def test_by_its_lines_whatever_the_type(self):
+        for line in ('podcast+https://f.xml', 'yt:playlist:UUx', 'rf:show:https://x',
+                     'web:https://x', 'podcasts:unfinished', 'auto_podcast:library',
+                     '08:00-10:00 > infos:library'):
+            self.assertTrue(bd.is_spoken_smart(line, 'hidden', ''), line)
+
+    def test_an_explicit_order_is_kept(self):
+        for sort in ('asc', 'desc', 'shuffle'):
+            self.assertFalse(bd.is_spoken_smart('podcast+https://f.xml', 'podcast', sort))
+
+    def test_music_a_stream_a_disabled_line_are_not(self):
+        self.assertFalse(bd.is_spoken_smart('spotify:playlist:x', 'library', 'smart'))
+        self.assertFalse(bd.is_spoken_smart('auto:library', 'library', None))
+        self.assertFalse(bd.is_spoken_smart('https://radio/stream.aac', 'radio', None))
+        self.assertFalse(bd.is_spoken_smart('#podcast+https://f.xml', 'library', None))
+
+
+
 if __name__ == '__main__':
     unittest.main()
 

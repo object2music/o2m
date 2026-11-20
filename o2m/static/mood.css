@@ -550,6 +550,15 @@
   }
   .track-menu-dropdown button:hover { background: var(--fill-2); color: var(--accent); }
   .track-menu-dropdown button svg { width: calc(14px * var(--ui)); height: calc(14px * var(--ui)); flex-shrink: 0; }
+  /* The phone's section picker: as wide as the head it drops from (_placePopup pins
+     the right edge), rows sized for a thumb. */
+  .track-menu-dropdown.section-menu {
+    left: 0; max-width: none;
+    margin-top: -4px;   /* _placePopup's plain 4px: flush under the head, the list showed through */
+  }
+  .section-menu button { padding: calc(12px * var(--ui)) calc(10px * var(--ui)); font-size: var(--t-body-s); }
+  .section-menu button.current { color: var(--accent); }
+  .section-menu .menu-note { margin-left: auto; font-size: var(--t-label); color: var(--muted); }
   #track-details .td-list { display: flex; flex-direction: column; gap: calc(7px * var(--ui)); margin: 0; }
   /* Energy / Valence / Mood are already shown by the matrix right below, which is
      also where they are edited — the rows only repeated it. Hidden here for now;
@@ -1034,7 +1043,7 @@
     /* The three columns are exactly equal thirds (flex-basis 0 + equal grow).
        Order on screen: Boxes · Tracklist · Mood — the tracklist sits beside what
        fills it, the settings go to the edge. Set with `order`, not in the markup:
-       the phone accordion keeps its own order (Boxes · Mood · Tracklist). The
+       the phone picker keeps its own order (Boxes · Mood · Tracklist). The
        separator is the right border of the first two, so it follows the order. */
     #boxes-panel { order: 1; flex: 1 1 0; border-top: none; border-right: 1px solid var(--border);
                    padding: 0; min-width: 0; }
@@ -1155,12 +1164,13 @@
     #volume-row { padding-top: 0; }
     #progress-wrap { padding-top: var(--np-gap, calc(12px * var(--ui))); padding-bottom: var(--np-gap-tight, calc(10px * var(--ui))); }
 
-    /* ── Mobile accordion: Boxes / Mood / Tracklist ──
-       The 3 headers are always-visible fixed rows that never move; one section is
-       open at a time, its body fills the remaining height and scrolls internally. */
+    /* ── Phone sections: Boxes / Mood / Tracklist / Lyrics ──
+       One section on screen, under its own head, which is the only head: tapping
+       it lists the sections (setupCollapsibles). Its body fills the remaining
+       height and scrolls internally. */
     #scroll-area { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
     #main-cols { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-    /* padding:0 on every panel so the 3 headers align on the same left margin */
+    /* padding:0 on every panel so the heads align on the same left margin */
     #boxes-panel, #left-panel, #tracklist-col {
       display: flex; flex-direction: column; min-height: 0; padding: 0;
       border-top: 1px solid var(--border);
@@ -1170,31 +1180,24 @@
     #tracklist-col #tracklist-section { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0; }
     #tracklist-col #tracklist-label { margin: 0; }
 
-    /* Headers = fixed accordion rows (always visible, aligned). */
+    /* The head: the section's name, and the way to the others. */
     #boxes-panel-label, #settings-label, #tracklist-label {
       position: relative; flex-shrink: 0; cursor: pointer; margin: 0;
       padding: calc(13px * var(--ui)) calc(14px * var(--ui)); background: var(--surface);
       border-bottom: 1px solid var(--border-soft);
     }
-    /* A closed branch is a row to tap, not a section: ~6px shorter than an open head. */
-    #boxes-panel:not(.open) #boxes-panel-label, #left-panel:not(.open) #settings-label,
-    #tracklist-col:not(.open) #tracklist-label, #lyrics-col:not(.open) #lyrics-label {
-      padding-top: calc(10px * var(--ui)); padding-bottom: calc(10px * var(--ui));
-    }
     #boxes-panel-label::before, #settings-label::before,
     #tracklist-label > span:first-child::before {
-      content: '▸'; color: var(--muted); font-size: var(--t-label); margin-right: calc(9px * var(--ui));
+      content: '▾'; color: var(--muted); font-size: var(--t-label); margin-right: calc(9px * var(--ui));
     }
-    #boxes-panel.open #boxes-panel-label::before,
-    #left-panel.open #settings-label::before,
-    #tracklist-col.open #tracklist-label > span:first-child::before { content: '▾'; }
+    /* These two heads are flex rows with a gap: same 9px from the title as the others,
+       or the name would jump sideways from one section to the next. */
+    #boxes-panel-label::before, #settings-label::before { margin-right: calc(1px * var(--ui)); }
+    #boxes-panel-label[aria-expanded="true"]::before,
+    #settings-label[aria-expanded="true"]::before,
+    #tracklist-label[aria-expanded="true"] > span:first-child::before { content: '▴'; }
 
-    /* Bodies: hidden when collapsed. :not(.open) raises specificity so it beats the
-       base `#tracklist-wrap { display:flex }` rule declared later in the stylesheet. */
-    #boxes-panel:not(.open) .panel-body,
-    #left-panel:not(.open) .panel-body,
-    #tracklist-col:not(.open) #tracklist-wrap { display: none; }
-    #main-cols .collapsible:not(.open) { flex: 0 0 auto; }
+    #main-cols .collapsible:not(.open) { display: none; }
     #main-cols .collapsible.open { flex: 1 1 auto; min-height: 0; }
     #boxes-panel.open .panel-body,
     #left-panel.open .panel-body,
@@ -2209,7 +2212,7 @@
   html.basic #basic-section {
     display: flex; flex-direction: column; gap: calc(26px * var(--ui));
     width: 100%; max-width: calc(560px * var(--ui)); margin: 0 auto; padding: calc(22px * var(--ui)) calc(16px * var(--ui)) calc(30px * var(--ui));
-    /* Shrinkable with internal scroll, like the full-view accordion — otherwise on
+    /* Shrinkable with internal scroll, like the full-view sections — otherwise on
        short viewports the section's natural height pushes the footer below the
        fold of the overflow-hidden #scroll-area (footer unreachable on phones). */
     /* overflow-x:hidden is required: with only overflow-y:auto set, CSS computes
@@ -2683,7 +2686,7 @@
 
   /* ════════════ Phone header: compact ════════════
      The +10% of --ui (2026-09-24) reads better almost everywhere, but not in the
-     phone header: it is fixed above an accordion that gets only what it leaves,
+     phone header: it is fixed above a section that gets only what it leaves,
      and it grew by a tenth in every direction at once. So on a phone the header
      goes back to 100% and its rhythm is tightened on top of that — smaller
      transport, one 8px step around the cover block, one gap value per step of
@@ -2716,7 +2719,7 @@
       /* One 12px step between the blocks of the stack (cover → progress is the
          cover column's 8 + 4, tags → progress 4 + 4 + their line), and 8 for
          the timecode → transport, which belong together. Was 18 / 6 / 20 / 20:
-         the header gives its height to the accordion, where it buys the second
+         the header gives its height to the section, where it buys the second
          row of box tiles. */
       --np-gap: calc(4px * var(--ui));         /* cover/tags → progress */
       --np-gap-tight: calc(8px * var(--ui));   /* progress → transport */
@@ -2820,7 +2823,7 @@
   }
   @media (max-width: 699px) {
     #mood-tabs { display: none !important; }
-    /* Full view: one more accordion branch, its label as the head. */
+    /* Full view: one more section, its label as the head. */
     #lyrics-col {
       display: flex; flex-direction: column; min-height: 0; padding: 0;
       border-top: 1px solid var(--border);
@@ -2831,10 +2834,9 @@
       background: var(--surface); border-bottom: 1px solid var(--border-soft);
     }
     #lyrics-col #lyrics-label > span:first-child::before {
-      content: '▸'; color: var(--muted); font-size: var(--t-label); margin-right: calc(9px * var(--ui));
+      content: '▾'; color: var(--muted); font-size: var(--t-label); margin-right: calc(9px * var(--ui));
     }
-    #lyrics-col.open #lyrics-label > span:first-child::before { content: '▾'; }
-    #lyrics-col:not(.open) #lyrics-body { display: none; }
+    #lyrics-col #lyrics-label[aria-expanded="true"] > span:first-child::before { content: '▴'; }
     #lyrics-col.open #lyrics-body { padding: calc(10px * var(--ui)) calc(14px * var(--ui)) 30vh; }
     /* Basic view (Invert): no tracklist on screen to take over, so the pane comes
        first, above the actuators and the dials, a window of a few lines that

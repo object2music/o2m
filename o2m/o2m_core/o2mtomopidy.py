@@ -1287,6 +1287,8 @@ class O2mToMopidy:
                     if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
                     if current_tl_length > index + 1:
                         self.smart_shuffle_tracklist(index+1, current_tl_length)
+                if current_tl_length > prev_tl_length:
+                    self.lead_unfinished([box])
 
         # Next option
         else:
@@ -2213,14 +2215,16 @@ class O2mToMopidy:
         results.sort(key=lambda r: r['name'].lower())
         return results
 
-    _YT_UPLOADS_RE = re.compile(r'^(?:yt|youtube):playlist:(UU[\w-]{22})$')
+    _YT_PLAYLIST_RE = re.compile(r'^(?:yt|youtube):playlist:([\w-]+)$')
+    _YT_PLAYLIST_URL_RE = re.compile(r'^(?:yt|youtube|web):.*youtube\.com/playlist\?(?:.*&)?list=([\w-]+)')
 
     def _scan_box_channels(self, boxes):
         """Every channel line of the boxes → {'label', 'type', 'boxes', 'title'}.
 
         A channel is a podcast feed (`podcast+<feed>`, O2M's ?max_results= hint
         dropped), a Radio France show (`rf:show:<page>`) or a YouTube channel —
-        its uploads playlist (`yt:playlist:UU…`), or a channel ADDRESS typed as a
+        its uploads playlist (`yt:playlist:UU…`), any other playlist, spelled as a
+        line or as its address, or a channel ADDRESS typed as a
         line, converted the way the box builder converts it (webmedia.
         youtube_channel; an @handle costs one page read, memoised 6 h). Its
         label is the '#Label' line right before it; `type` is 'info' when ANY
@@ -2243,7 +2247,7 @@ class O2mToMopidy:
                 if line.startswith(('podcast+', 'rf:show:')) and '#' not in line:
                     key = re.sub(r'[?&]max_results=\d+', '', line)
                 else:
-                    m = self._YT_UPLOADS_RE.match(line)
+                    m = self._YT_PLAYLIST_RE.match(line) or self._YT_PLAYLIST_URL_RE.match(line)
                     if m:
                         key = 'yt:playlist:' + m.group(1)
                     elif 'youtube.com/' in line and line.startswith(('web:', 'yt:', 'youtube:')):
@@ -2287,6 +2291,8 @@ class O2mToMopidy:
 
     @staticmethod
     def _channel_name(ch):
+        if not (ch.label or ch.title) and (ch.box_line or '').startswith('yt'):
+            return 'YouTube playlist'
         return (ch.label or ch.title
                 or parse.urlparse(ch.url or ch.feed_url or '').netloc or ch.box_line)
 
@@ -2384,6 +2390,7 @@ class O2mToMopidy:
                 except Exception as e:
                     print(f"meta_fill({cat}) on {sub.uid}: {e}")
                 self.interleave_tracklist()
+                self.lead_unfinished([sub])
                 try:
                     return self.mopidyHandler.tracklist.get_length() - start
                 except Exception:
@@ -2428,6 +2435,7 @@ class O2mToMopidy:
                 if budget <= 0:
                     break
             self.interleave_tracklist()
+            self.lead_unfinished(subs)
             return gained_total
 
     def meta_remove(self, cat):
@@ -2475,13 +2483,15 @@ class O2mToMopidy:
 
     def all_on(self, max_results=None):
         """Turn on every category not on yet, in a random order (a fixed one
-        always opened on music). Returns the categories turned on."""
+        always opened on music). Returns the categories turned on. Its alternation
+        has the last word, over the lead a category's fill may have set."""
         with self._box_ops_lock():
             cats, on = self._all_categories()
             order = [c for c in cats if c not in on]
             random.shuffle(order)
             for c in order:
                 self.meta_fill(c, max_results)
+            self.interleave_tracklist()
             return order
 
     def toggle_all(self, mode='toggle'):
@@ -3958,6 +3968,50 @@ class O2mToMopidy:
         except Exception as e:
             print(f"interleave_tracklist error: {e}")
  
+    def lead_unfinished(self, arrived):
+        """Put one unfinished item at the head of what is queued, when the boxes that
+        just `arrived` include a spoken one on the smart order holding one
+        (bdir.is_spoken_smart, selection.lead_move).
+
+        The last box to arrive decides, and nothing more: a later fill reshuffles
+        the queue and the lead goes with it, a podcast box put down last takes the
+        head over whatever came before, and ALL has the last word on its own fills
+        (all_on). A cascade arrives whole: its parent's shuffle runs after its
+        children's fills, so the children count as arriving with it."""
+        try:
+            boxes = list(self.activeboxs or [])
+            known = {b.uid: b for b in boxes + list(arrived)}
+            uids = {b.uid for b in arrived}
+            while True:
+                kids = {u for u in known if self._box_parent.get(u) in uids} - uids
+                if not kids:
+                    break
+                uids |= kids
+            spoken = {u for u in uids if bdir.is_spoken_smart(
+                getattr(known[u], 'data', ''), getattr(known[u], 'option_type', ''),
+                getattr(known[u], 'option_sort', None))}
+            if not spoken:
+                return
+            cat_of = {b.uid: self._live_category(b) for b in boxes}
+            tl = self.mopidyHandler.tracklist
+            s = self._shuffle_start(0)
+            queued = tl.get_tl_tracks()[s:]
+            entries = []
+            for t in queued:
+                owner = (self._track_info.get(t.tlid) or {}).get('box_id')
+                # Mopidy holds a cached item under its file and a web: one under a
+                # signed url: the stats are on the canonical uri.
+                entries.append((self.get_spotify_uri(t.track.uri) if owner in spoken else None,
+                                cat_of.get(owner) or 'music'))
+            unfinished = self.dbHandler.unfinished_among(
+                [u for u, _ in entries if u], self.discover_level)
+            move = selection.lead_move(entries, unfinished)
+            if move:
+                tl.move(s + move[0], s + move[0] + 1, s + move[1])
+                print(f"Unfinished first: {entries[move[0]][0]}")
+        except Exception as e:
+            print(f"lead_unfinished error: {e}")
+
     _PLAY_PENDING_S = 20
 
     def _play_pending_tlid(self):

@@ -1420,6 +1420,10 @@ if __name__ == "__main__":
         db = o2mHandler.dbHandler
         try:
             db.register_yt_channel(line, (data.get('name') or '').strip())
+            # A channel's own uploads point at it through Track.channel_id. Any other
+            # playlist holds other people's videos: linked, whatever is on screen.
+            if line.split(':', 2)[2][:2] != 'UU':
+                db.link_channel_videos(line, (data.get('all') or [])[:1000])
             db.upsert_episodes([{'uri': v['uri'], 'name': v.get('name') or '',
                                  'length': v.get('length') or None} for v in vids],
                                channel_id=line, option_type=None)

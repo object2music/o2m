@@ -339,7 +339,7 @@
     </div>
   </div>
 
-  <!-- Phone full view: the lyrics are the last branch of the accordion, shown
+  <!-- Phone full view: the lyrics are the last section of the picker, offered
        only when the song has some (placeLyricsPane moves the pane in here). -->
   <div id="lyrics-col" class="col collapsible" hidden></div>
 
@@ -1672,7 +1672,7 @@ function switchView(toBasic, push = true) {
     // track — UNLESS the user has already chosen a panel in full view this
     // session (_fullPanelTouched), in which case that prior state is preserved
     // (the DOM keeps the open panel across in-place switches). No-op visually on
-    // desktop (.open only matters in the ≤699px accordion CSS).
+    // desktop (.open only matters in the ≤699px section CSS).
     if (!_fullPanelTouched) {
       document.querySelectorAll('#main-cols .collapsible').forEach(p =>
         p.classList.toggle('open', p.id === 'tracklist-col'));
@@ -1686,7 +1686,7 @@ function switchView(toBasic, push = true) {
   try { fitHeroTitle(); } catch (e) {}
   paintLyrics();                              // the pane lives in another place per view
 }
-let _fullPanelTouched = false;   // set once the user opens an accordion panel in full view
+let _fullPanelTouched = false;   // set once the user picks a section in full view
 
 /* ── Mopidy RPC ── */
 // ─── Mopidy WebSocket (real-time, Iris-style) ───────────────────────────────
@@ -2745,12 +2745,12 @@ function switchNowPlayingTo(uri, { name, artist, artists, album }) {
    (lyricsFollowPlain). Shown only when the song has lyrics, and where depends on the view:
    - full view, desktop: a second tab of the Mood column (remembered per device,
      o2m-lyrics-tab), every theme;
-   - full view, phone: one more branch of the accordion (#lyrics-col);
+   - full view, phone: one more section of the picker (#lyrics-col);
    - Basic view: Invert only — on desktop the pane takes the tracklist column over
      (one button back to the tracklist, remembered as o2m-lyrics); on a phone it
      comes under the dials.
    In Invert they come forward by themselves in the full view too: each song that
-   has lyrics opens the Lyrics tab (desktop) or branch (phone) — a tab chosen by
+   has lyrics opens the Lyrics tab (desktop) or section (phone) — a tab chosen by
    hand holds for the rest of that song. */
 const LYR = { uri: null, data: null, pending: false, cur: -1, want: true, tab: 'mood', tabUri: null };
 try { LYR.want = localStorage.getItem('o2m-lyrics') !== '0'; } catch (e) {}
@@ -2759,7 +2759,7 @@ const isPhone = () => window.matchMedia('(max-width: 699px)').matches;
 const isInvert = () => document.documentElement.getAttribute('data-theme') === 'invert';
 async function loadLyrics(uri, { name, artist, album } = {}) {
   // Until the answer comes, the pane holds its place if the last song had lyrics:
-  // hiding it meanwhile closed the phone's branch (and flipped the desktop tab)
+  // hiding it meanwhile closed the phone's section (and flipped the desktop tab)
   // between two songs that both have some.
   const ask = !!uri && !_isSpokenUri(uri) && !_isStreamUri(uri) && !!name;
   LYR.pending = ask && (!!LYR.data || LYR.pending);
@@ -2775,7 +2775,7 @@ async function loadLyrics(uri, { name, artist, album } = {}) {
     LYR.pending = false;
     LYR.data = d && d.found && !d.instrumental ? d : null;
     if (LYR.data && isInvert() && !isBasic() && isPhone()) {
-      // Invert: the branch opens by itself — unless Boxes or Mood is being used.
+      // Invert: the section opens by itself — unless Boxes or Mood is being used.
       const open = document.querySelector('#main-cols .collapsible.open');
       if (!open || open.id === 'tracklist-col' || open.id === 'lyrics-col') {
         document.getElementById('lyrics-col').hidden = false;
@@ -2830,8 +2830,8 @@ function paintLyrics() {
     t.classList.toggle('active', t.dataset.moodTab === view));
   const title = document.getElementById('settings-title');
   if (title) title.textContent = view === 'lyrics' ? 'Lyrics' : 'Mood';
-  // Full, phone: the accordion branch exists only while there are lyrics; an open
-  // branch that disappears hands the screen back to the tracklist.
+  // Full, phone: the section exists only while there are lyrics; an open section
+  // that disappears hands the screen back to the tracklist.
   const col = document.getElementById('lyrics-col');
   if (col) {
     const gone = !(!basic && phone && has);
@@ -3378,16 +3378,17 @@ function _plOutsideClick(e) {
    One shared dropdown builder + one shared open/close/outside-click lifecycle,
    fed by a per-context list of {label, icon, action} items — instead of three
    diverging ad-hoc menus. */
-let _actionMenuEl = null;
+let _actionMenuEl = null, _actionMenuTrigger = null;
 function _closeActionMenu() {
   _actionMenuEl?.remove(); _actionMenuEl = null;
   document.removeEventListener('click', _actionMenuOutside, true);
-  document.getElementById('btn-track-menu')?.setAttribute('aria-expanded', 'false');
+  _actionMenuTrigger?.setAttribute?.('aria-expanded', 'false'); _actionMenuTrigger = null;
 }
 function _actionMenuOutside(e) {
   if (_actionMenuEl && !_actionMenuEl.contains(e.target)
       && !e.target.closest('.tl-info') && !e.target.closest('#obj-actions')
-      && !e.target.closest('#btn-track-menu')) _closeActionMenu();
+      && !e.target.closest('#btn-track-menu')
+      && !e.target.closest('[data-section-head]')) _closeActionMenu();
 }
 /* Place a fixed popup under its trigger — or above it when there isn't enough
    room below (rows near the bottom of a list, which is where the ⊕/ⓘ buttons
@@ -3409,19 +3410,20 @@ function _placePopup(el, btn) {
     el.style.maxHeight = Math.max(120, spaceBelow) + 'px';
   }
 }
-function openActionMenu(triggerBtn, items) {
+function openActionMenu(triggerBtn, items, cls = '') {
   if (_actionMenuEl) { _closeActionMenu(); return; }
   if (!items || !items.length) return;
   const menu = document.createElement('div');
-  menu.className = 'track-menu-dropdown';
+  menu.className = ('track-menu-dropdown ' + cls).trim();
   menu.innerHTML = items.map((it, i) =>
-    `<button type="button" data-i="${i}">${it.icon}${objEsc(it.label)}</button>`).join('');
+    `<button type="button" data-i="${i}"${it.current ? ' class="current"' : ''}>${it.icon}${objEsc(it.label)}${
+      it.note ? `<span class="menu-note">${objEsc(it.note)}</span>` : ''}</button>`).join('');
   items.forEach((it, i) => menu.querySelector(`[data-i="${i}"]`)
     .addEventListener('click', () => { it.action(triggerBtn); _closeActionMenu(); }));
   // Append first: _placePopup measures the menu's height to decide up vs down.
   document.body.appendChild(menu);
   _placePopup(menu, triggerBtn);
-  _actionMenuEl = menu;
+  _actionMenuEl = menu; _actionMenuTrigger = triggerBtn;
   triggerBtn.setAttribute?.('aria-expanded', 'true');
   setTimeout(() => document.addEventListener('click', _actionMenuOutside, true), 0);
 }
@@ -3674,7 +3676,8 @@ async function podcastEpisodes(uri, offset, limit) {
   // its latest videos, newest first, in one lookup.
   if (/^(yt|youtube):playlist:/.test(uri)) {
     const r = await rpc('core.library.lookup', { uris: [uri] }).catch(() => null);
-    const vids = ((r && r.result && r.result[uri]) || []).slice(offset || 0, (offset || 0) + (limit || 50));
+    const found = (r && r.result && r.result[uri]) || [];
+    const vids = found.slice(offset || 0, (offset || 0) + (limit || 50));
     // Mopidy gives no date: the server files the videos under the channel (its
     // settings then reach them) and answers the dates it knows.
     let dates = {};
@@ -3784,12 +3787,14 @@ async function wireSourceSeconds(row, uri, { name = '', stillHere = () => true }
   const d = await _wcJson('/channel_settings?uri=' + encodeURIComponent(uri));
   if (!d || d.error || !stillHere() || !row.isConnected) return;
   if (key === 'play_limit_s' && !d.radio) return;          // older server, or not a stream
-  // A show or page with no channel row yet has nowhere to keep it (only a feed
-  // can be registered from its uri alone): no field rather than one that fails.
-  if (key === 'ad_skip_s' && (d.radio || (!d.known && !uri.startsWith('podcast+')))) return;
+  // A show or page with no channel row yet has nowhere to keep it (only a feed or a
+  // YouTube line can be registered from its uri alone): no field rather than one
+  // that fails.
+  const canKeep = d.known || /^(podcast\+|(yt|youtube):playlist:)/.test(uri);
+  if (key === 'ad_skip_s' && (d.radio || !canKeep)) return;
   // Both a radio and a channel carry a volume boost; a channel only once it has a row.
   if (key === 'volume_boost_pct'
-      && (!(key in d) || (!d.radio && !d.known && !uri.startsWith('podcast+')))) return;
+      && (!(key in d) || (!d.radio && !canKeep))) return;
   const input = row.querySelector('input');
   let saved = d[key] || 0;
   const show = v => { input.value = v ? v : c.empty; };
@@ -3817,9 +3822,10 @@ async function wireSourceSeconds(row, uri, { name = '', stillHere = () => true }
 }
 /* The channel's pre-roll skip. Per channel and 0 by default: a per-host rule
    skipped 30 s of every Radio France show, ad or not. Shown only for what the
-   server can attach a setting to — a feed, a Radio France show page or a web page. */
+   server can attach a setting to — a feed, a Radio France show page, a web page, a
+   YouTube channel or playlist. */
 function channelAdSkipField(uri, name) {
-  if (!/^(podcast\+|rf:show:|web:|xp:)/.test(uri)) return;
+  if (!/^(podcast\+|rf:show:|web:|xp:|(yt|youtube):playlist:)/.test(uri)) return;
   objBody().querySelectorAll('[data-src-setting]').forEach(row =>
     wireSourceSeconds(row, uri, { name, stillHere: () => objCurrentUri === uri }));
 }
@@ -10514,22 +10520,45 @@ function resetMood() {
   setFeedback('Mood reset');
 }
 
+/* Phone, full view: one section on screen, and ONE head — the open section's own,
+   with its name, its count and its actions. Tapping it lists the sections to pick
+   from. A section is always open: the head is the only way to the others, and it
+   lives in the open section. On desktop every column shows and .open means nothing. */
+const _secIcon = inner => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+const PHONE_SECTIONS = [
+  { id: 'boxes-panel', label: 'Boxes', count: 'boxes-count',
+    icon: _secIcon('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>') },
+  { id: 'left-panel', label: 'Mood',
+    icon: _secIcon('<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>') },
+  { id: 'tracklist-col', label: 'Tracklist', count: 'tracklist-count',
+    icon: _secIcon('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>') },
+  { id: 'lyrics-col', label: 'Lyrics',
+    icon: _secIcon('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/>') },
+];
+function showPhoneSection(id) {
+  _fullPanelTouched = true;   // remember the user's explicit choice as prior state
+  document.querySelectorAll('#main-cols .collapsible').forEach(p =>
+    p.classList.toggle('open', p.id === id));
+}
+function phoneSectionItems() {
+  return PHONE_SECTIONS.filter(s => !document.getElementById(s.id)?.hidden).map(s => ({
+    label: s.label, icon: s.icon,
+    note: s.count ? document.getElementById(s.count)?.textContent : '',
+    current: document.getElementById(s.id)?.classList.contains('open'),
+    action: () => showPhoneSection(s.id),
+  }));
+}
 function setupCollapsibles() {
-  // Single-open accordion (mobile): opening one section closes the others, so the
-  // 3 headers stay visible. On desktop the .open class has no effect (all shown).
   const heads = document.querySelectorAll(
     '#boxes-panel .panel-head, #left-panel .panel-head, #tracklist-col #tracklist-label, #lyrics-label');
-  heads.forEach(h => h.addEventListener('click', (e) => {
-    if (e.target.closest('#btn-clear-tl') || e.target.closest('#btn-clear-boxes')
-        || e.target.closest('#btn-reset-mood') || e.target.closest('#mood-tabs')
-        || e.target.closest('#btn-lyrics-off')) return;   // don't toggle on a header action
-    const panel = h.closest('.collapsible');
-    if (!panel || panel.id !== 'lyrics-col' && h.id === 'lyrics-label') return;   // the label is a head only on a phone
-    _fullPanelTouched = true;   // remember the user's explicit choice as prior state
-    const willOpen = !panel.classList.contains('open');
-    document.querySelectorAll('#main-cols .collapsible').forEach(p =>
-      p.classList.toggle('open', p === panel && willOpen));
-  }));
+  heads.forEach(h => {
+    h.dataset.sectionHead = '';
+    h.addEventListener('click', (e) => {
+      if (!isPhone() || isBasic()) return;
+      if (e.target.closest('button')) { _closeActionMenu(); return; }   // a header action
+      openActionMenu(h, phoneSectionItems(), 'section-menu');
+    });
+  });
 }
 
 /* ── First-launch onboarding (increment ①: detect + connect + sync progress) ──

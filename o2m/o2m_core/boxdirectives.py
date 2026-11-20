@@ -326,6 +326,26 @@ def depends_on_mood(data, option_sort=None, now=None):
     return False
 
 
+_SPOKEN_LINE_RE = re.compile(r'^(?:podcast\+|podcasts:|auto_podcast:|infos:|rf:|yt:|youtube:|web:|xp:)')
+
+
+def is_spoken_smart(data, option_type=None, option_sort=None):
+    """A box of spoken content, in the broad sense, left to the smart order: typed
+    podcast or info, or naming a feed, a show, a YouTube channel or playlist, a web
+    page, or the AUTO mix with podcasts. A gated line counts at any hour: a window
+    says when a line plays, not what the box is. An explicit asc/desc/shuffle is the
+    box's own statement about sequence."""
+    if (option_sort or 'smart') != 'smart':
+        return False
+    if option_type in ('podcast', 'info'):
+        return True
+    for _applies, payload in iter_lines(data or ''):
+        p = (payload or '').strip()
+        if p and not p.startswith('#') and _SPOKEN_LINE_RE.match(p):
+            return True
+    return False
+
+
 def _ends_inside_block(data):
     """True when the data's last window block is never closed. Such a block runs
     to the end of the data (the forgiving reading in _iter_windows), so a line

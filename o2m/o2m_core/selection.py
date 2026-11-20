@@ -349,3 +349,22 @@ def interleave(items, rng=None):
             keyed.append(((i + phase) / n, rng.random(), key))
     keyed.sort(key=lambda x: (x[0], x[1]))
     return [k for _, _, k in keyed]
+
+
+def lead_move(entries, unfinished):
+    """Bring one unfinished item to the head of a queue, if the queue holds one.
+
+    `entries` are (uri, category) pairs in queue order, starting at the first place
+    after the track playing; `unfinished` the uris that qualify, best first. Returns
+    (from, to) indexes, or None when nothing has to move: none is queued, or one
+    already leads. A news item standing next keeps its place, as in the interleave:
+    it was put there on purpose, so the head is then the place after it."""
+    rank = {u: i for i, u in enumerate(unfinished)}
+    queued = [i for i, (uri, _) in enumerate(entries) if uri in rank]
+    if not queued:
+        return None
+    best = min(queued, key=lambda i: rank[entries[i][0]])
+    to = 1 if entries[0][1] == 'info' and entries[best][1] != 'info' else 0
+    if queued[0] <= to:
+        return None
+    return best, to

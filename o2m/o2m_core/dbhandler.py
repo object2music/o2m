@@ -11,8 +11,9 @@ from o2m_core import virtualbox
 from o2m_core import boxdirectives
 from o2m_core import boximage
 from o2m_core.dbstate import DbState
+import hashlib
 from o2m_core.o2mmodels import (
-    Box, Track, Stats_Raw, PlaylistLog, db,
+    Box, Track, Stats_Raw, PlaylistLog, db, ChannelVideo,
     Album, Artist, Genre, TrackArtist, AlbumArtist, ArtistGenre,
     TrackGenre, AlbumGenre, TagFeature,
     Playlist, PlaylistTrack, AlbumTrack, CacheMeta,
@@ -1200,10 +1201,10 @@ class DatabaseHandler():
     # What makes a video or a web-page item "long media", i.e. a podcast.
     LONG_MEDIA_MS = 600000           # 10 minutes
 
-    def get_uris_podcasts_notread(self, limit=15, discover_level=5):
-        # Resume pool of UNFINISHED podcast/video episodes. Eligibility + ranking are
-        # driven by the absolute read_position (ms), which is the only reliable progress
-        # signal for podcasts. info-typed items go through the news/actuality window.
+    def _unfinished_query(self, discover_level, with_info=False):
+        # UNFINISHED podcast/video episodes, most worth resuming first. Eligibility +
+        # ranking are driven by the absolute read_position (ms), which is the only
+        # reliable progress signal for podcasts.
         skip_penalty = max(1, 8 - discover_level) * 86400  # seconds of recency lost per skip
         # Engagement (position ≥ 2 min) = a genuine resume → exempt from the skip penalty
         # so it ranks by recency (fixes Sismique/Védrine: the old read_end≥0.15 exemption
@@ -1212,16 +1213,16 @@ class DatabaseHandler():
         RES = self.PODCAST_RESUME_POS_MS
         penalized_skips = Case(None, [(Track.read_position >= RES, 0)], Track.skipped_count)
         effective_recency = Track.last_read_date - (penalized_skips * skip_penalty)
-        pool_size = min(max(limit, 1) * 4, 60)
-        # Two families of long spoken media. Episodes are long by nature; an
-        # info-typed one is a bulletin and goes through the news window instead.
-        episode = (((Track.uri % '%podcast+%')
-                    # Radio France OpenAPI episodes are plain https mp3 URLs with no
-                    # 'podcast+' marker, so they need their hosts listed explicitly or
-                    # 'podcasts:unfinished' would silently ignore every one of them.
-                    | (Track.uri % '%proxycast.radiofrance.fr%')
-                    | (Track.uri % '%radiofrance-podcast.net%'))
-                   & (Track.option_type != "info"))
+        # Two families of long spoken media. Episodes are long by nature.
+        episode = ((Track.uri % '%podcast+%')
+                   # Radio France OpenAPI episodes are plain https mp3 URLs with no
+                   # 'podcast+' marker, so they need their hosts listed explicitly or
+                   # 'podcasts:unfinished' would silently ignore every one of them.
+                   | (Track.uri % '%proxycast.radiofrance.fr%')
+                   | (Track.uri % '%radiofrance-podcast.net%'))
+        if not with_info:
+            # An info-typed one is a bulletin and goes through the news window instead.
+            episode = episode & (Track.option_type != "info")
         # A video (YouTube, a channel's uploads) or a page item (web:, Vimeo,
         # Dailymotion…) is only a podcast when it is LONG: the same scheme carries
         # songs and sound effects. Long = a known duration past LONG_MEDIA_MS, or,
@@ -1230,7 +1231,7 @@ class DatabaseHandler():
                   | (Track.uri % 'web:%') | (Track.uri % 'xp:%'))
                  & ((Track.duration_ms >= self.LONG_MEDIA_MS)
                     | (Track.duration_ms.is_null() & (Track.read_position >= RES))))
-        query = Track.select().where(
+        return Track.select().where(
             (episode | video)
             # read_count_end == 0 → finished at least once = DONE, never re-served.
             & (Track.read_count_end == 0)
@@ -1244,7 +1245,20 @@ class DatabaseHandler():
             # two skips to infer.
             & (Track.disliked == 0)
             & (Track.option_type != "library")
-        ).order_by(effective_recency.desc()).limit(pool_size)
+        ).order_by(effective_recency.desc())
+
+    def unfinished_among(self, uris, discover_level=5):
+        """Which of these uris are unfinished, the one most worth resuming first.
+        Bulletins count: an item already in the list was chosen, whatever its type."""
+        if not uris:
+            return []
+        query = self._unfinished_query(discover_level, with_info=True).where(Track.uri << list(uris))
+        return [o.uri for o in query]
+
+    def get_uris_podcasts_notread(self, limit=15, discover_level=5):
+        # Resume pool of unfinished episodes and long videos.
+        pool_size = min(max(limit, 1) * 4, 60)
+        query = self._unfinished_query(discover_level).limit(pool_size)
         pool = [o.uri for o in self.transform_query_to_list(query)]
         if not pool:
             return []
@@ -3420,6 +3434,10 @@ class DatabaseHandler():
                 row = Track.select(Track.channel_id).where(Track.uri == uri).first()
                 if row and row.channel_id:
                     ids.add(row.channel_id)
+                # A video also answers to the playlists holding it.
+                if uri.startswith(('yt:', 'youtube:')):
+                    ids.update(v.channel for v in ChannelVideo.select(ChannelVideo.channel)
+                               .where(ChannelVideo.uri == uri))
         except Exception as e:
             print(f"_channels_for error: {e}")
         return sorted(ids)
@@ -3450,13 +3468,18 @@ class DatabaseHandler():
         value = max(0, int(value or 0)) or None
         ids = self._channels_for(uri)
         if not ids:
-            # Only a feed can be registered from its uri alone: a show page or a
-            # web page is not a feed, and a row claiming it is would be wrong.
+            # Only a feed or a YouTube line can be registered from its uri alone: a
+            # show page or a web page is not a feed, and a row claiming it is would
+            # be wrong.
             ref = self._channel_ref(uri)
-            if not (uri or '').startswith('podcast+') or not ref.startswith('http'):
+            if (uri or '').startswith(('yt:playlist:', 'youtube:playlist:')):
+                self.register_yt_channel(uri, title)
+                ids = [uri]
+            elif not (uri or '').startswith('podcast+') or not ref.startswith('http'):
                 return []
-            self.upsert_podcast_channel(ref, 'rss', title=title or '', url=ref, feed_url=ref)
-            ids = [ref]
+            else:
+                self.upsert_podcast_channel(ref, 'rss', title=title or '', url=ref, feed_url=ref)
+                ids = [ref]
         PodcastChannel.update({field: value}).where(PodcastChannel.id.in_(ids)).execute()
         return ids
 
@@ -3530,6 +3553,13 @@ class DatabaseHandler():
                     url='https://www.youtube.com/playlist?list=' + line.split(':', 2)[2])
         except Exception as e:
             print(f"register_yt_channel: {e}")
+
+    def link_channel_videos(self, line, uris):
+        """File these videos under a YouTube playlist, so its settings reach them."""
+        rows = [{'key': hashlib.sha1(f'{line}\n{u}'.encode()).hexdigest(), 'channel': line, 'uri': u}
+                for u in uris if u]
+        if rows:
+            ChannelVideo.insert_many(rows).on_conflict_ignore().execute()
 
     def get_channel_ad_skip(self, uri):
         """Seconds of pre-roll to skip for the channel of this uri."""

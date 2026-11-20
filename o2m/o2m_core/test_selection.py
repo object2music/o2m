@@ -490,6 +490,34 @@ class TestTagProximity(unittest.TestCase):
         self.assertAlmostEqual(self._counts(10), 0.10, delta=0.03)
 
 
+class TestLeadMove(unittest.TestCase):
+    Q = [('a', 'podcast'), ('b', 'podcast'), ('c', 'podcast')]
+
+    def test_nothing_unfinished_in_the_queue_moves_nothing(self):
+        self.assertIsNone(selection.lead_move(self.Q, ['z']))
+        self.assertIsNone(selection.lead_move(self.Q, []))
+        self.assertIsNone(selection.lead_move([], ['a']))
+
+    def test_the_best_one_comes_to_the_head(self):
+        self.assertEqual(selection.lead_move(self.Q, ['c', 'b']), (2, 0))
+
+    def test_one_already_leading_stays_even_if_another_ranks_higher(self):
+        self.assertIsNone(selection.lead_move(self.Q, ['c', 'a']))
+
+    def test_an_entry_outside_the_spoken_boxes_is_not_a_candidate(self):
+        q = [(None, 'music'), ('b', 'podcast')]
+        self.assertEqual(selection.lead_move(q, ['b']), (1, 0))
+
+    def test_a_news_item_standing_next_keeps_its_place(self):
+        q = [(None, 'info'), (None, 'music'), ('b', 'podcast')]
+        self.assertEqual(selection.lead_move(q, ['b']), (2, 1))
+        self.assertIsNone(selection.lead_move([(None, 'info'), ('b', 'podcast')], ['b']))
+
+    def test_an_unfinished_bulletin_goes_ahead_of_the_news_item(self):
+        q = [(None, 'info'), ('b', 'info')]
+        self.assertEqual(selection.lead_move(q, ['b']), (1, 0))
+
+
 class TestInterleave(unittest.TestCase):
     """The Basic view's mix alternates its types (selection.interleave)."""
 
