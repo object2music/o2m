@@ -77,6 +77,7 @@ class O2mToMopidy:
         # tracklist cleared): their 'ended' event is not a listener's skip.
         self._interrupted_tlids = set()
         self._play_limit_tokens = {}       # tlid -> token of its live play-limit check
+        self._start_watch = {}             # tlid -> (token, restarts) of its stalled-start check
         self._volume_boost = None          # {tlid, base, set}: the boost the mixer carries now
         # (owner box uid, uri) → the box LINE that drew it ('tag:jazz',
         # 'spotify:artist:…'). tracklistappend_box returns one flat uri list per
@@ -5592,6 +5593,51 @@ class O2mToMopidy:
             pb.next()
         except Exception as e:
             print(f"_play_limit_check: {e}")
+
+    # A Spotify track that fails to load stays PLAYING at 0:00, in silence.
+    # gst-plugin-spotify (the Pi's spotifyaudiosrc) sometimes gets a 403 or a
+    # 404 from Spotify's CDN ("GStreamer error: Forbidden" / "Resource not
+    # found" in Mopidy's log); Mopidy reports nothing else, never moves on,
+    # and asking for the same track again plays it. That second ask is what
+    # this does: 2 attempts, then the next track.
+    START_STALL_S = 8
+    START_RETRIES = 2
+
+    def arm_start_watch(self, tlid, played_uri):
+        if tlid is None or not str(played_uri or '').startswith('spotify:'):
+            return
+        prev = self._start_watch.get(tlid)
+        restarts = prev[1] if prev else 0
+        token = object()
+        self._start_watch[tlid] = (token, restarts)
+        t = threading.Timer(self.START_STALL_S, self._start_watch_check, args=(tlid, token))
+        t.daemon = True
+        t.start()
+
+    def _start_watch_check(self, tlid, token):
+        entry = self._start_watch.get(tlid)
+        if not entry or entry[0] is not token:
+            return                                   # restarted since: a newer check owns it
+        restarts = entry[1]
+        try:
+            pb = self.mopidyHandler.playback
+            if pb.get_state() != 'playing' or pb.get_current_tlid() != tlid:
+                self._start_watch.pop(tlid, None)    # paused, stopped or moved on: not ours
+                return
+            if (pb.get_time_position() or 0) >= 1000:
+                self._start_watch.pop(tlid, None)    # it plays
+                return
+            self._mark_interrupted()                 # o2m restarting it is not a skip
+            if restarts < self.START_RETRIES:
+                self._start_watch[tlid] = (token, restarts + 1)
+                print(f"tlid {tlid} stuck at 0:00 for {self.START_STALL_S} s: playing it again")
+                pb.play(tlid=tlid)
+            else:
+                self._start_watch.pop(tlid, None)
+                print(f"tlid {tlid} still stuck at 0:00 after {restarts} restarts: next track")
+                pb.next()
+        except Exception as e:
+            print(f"_start_watch_check: {e}")
 
     def _is_spoken_uri(self, uri):
         return bool(uri and self._SPOKEN_URI_RE.search(str(uri)))

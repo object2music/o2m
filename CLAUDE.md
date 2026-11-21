@@ -662,6 +662,13 @@ every visitor a login to the whole app.
   `play_limit_s` and `radio: true` for a stream) and one field in the page
   (`SOURCE_SECONDS` / `sourceSecondsHTML` / `wireSourceSeconds`): the channel view
   shows Skip intro, a radio's details (now-playing panel and modal) Play limit.
+- **A Spotify track that fails to load is asked again** (`arm_start_watch`,
+  2026-11-21). gst-plugin-spotify sometimes gets a 403/404 from Spotify's CDN
+  (`GStreamer error: Forbidden` / `Resource not found` in Mopidy's log): Mopidy
+  then stays PLAYING at 0:00 in silence, never moves on, and the same track asked
+  again plays. Seen twice on the Pi in one morning, each time relaunched by hand.
+  8 s after a `spotify:` start still under 1 s, o2m plays the tlid again (twice,
+  then `next()`), marked `_mark_interrupted` — not a skip.
 - **Volume boost — the same kind of setting on the other knob**: a channel
   (`PodcastChannel.volume_boost_pct`) or a radio (`Track.volume_boost_pct`,
   migration **v33**) plays N% louder. `apply_volume_boost` raises the mixer on

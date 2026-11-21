@@ -4425,6 +4425,8 @@ with the house Premium account.</li>
                 #elif "radiofrance-podcast.net" in track.uri:  o2mHandler.mopidyHandler.playback.seek(15000)
             # A radio with a play limit is moved on from after that long.
             o2mHandler.arm_play_limit(event.tl_track.tlid, uri)
+            # A Spotify track left silent at 0:00 by a failed load is asked again.
+            o2mHandler.arm_start_watch(event.tl_track.tlid, track.uri)
             # A channel or a radio set to play louder: raised now, lowered on its end.
             o2mHandler.apply_volume_boost(event.tl_track.tlid, uri)
 
