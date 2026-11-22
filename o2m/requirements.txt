@@ -11,6 +11,12 @@ yt_dlp
 # answered "attempting impersonation, but none of these impersonate targets are
 # available: firefox" here. A missing curl_cffi is a feature that works until the
 # day it doesn't. Wheels exist for musl, so alpine needs no toolchain.
+# On a native Pi (armv7l wheels exist) the two must be upgraded TOGETHER: each
+# yt_dlp accepts only a range of curl_cffi and silently ignores one outside it
+# (2025.12 takes <= 0.13.x, 2026.10 <= 0.17.x) — check with
+# `python3 -m yt_dlp --list-impersonate-targets`. pi2 (2026-11-22): no curl_cffi
+# and a yt_dlp eleven months old — Vimeo answered 401, Dailymotion 403, and nine
+# items of a box were retried and dropped on every fill.
 curl_cffi
 mock
 six

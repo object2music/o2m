@@ -922,6 +922,11 @@ class O2mToMopidy:
         outermost one orders, this one only records what it owes."""
         return self._order_depth > 1 and self._order_owner == threading.get_ident()
 
+    def _take_order_pending(self):
+        """Whether a reorder is owed, and clear the debt: the caller pays it."""
+        owed, self._order_pending = self._order_pending, False
+        return owed
+
     def _flush_order(self, force=False):
         """The one whole-queue reorder a batch owes, after the track playing. A
         news item standing next keeps its place, as add_tracks put it there."""
@@ -2467,8 +2472,7 @@ class O2mToMopidy:
                 except Exception as e:
                     print(f"meta_fill({cat}) on {sub.uid}: {e}")
                 if not self._order_nested():   # inside ALL, all_on orders once
-                    self._flush_order()
-                    self.interleave_tracklist()
+                    self.interleave_tracklist(shuffle_first=self._take_order_pending())
                     self.lead_unfinished([sub])
                 try:
                     return self.mopidyHandler.tracklist.get_length() - start
@@ -2514,8 +2518,7 @@ class O2mToMopidy:
                 if budget <= 0:
                     break
             if not self._order_nested():   # inside ALL, all_on orders once
-                self._flush_order()
-                self.interleave_tracklist()
+                self.interleave_tracklist(shuffle_first=self._take_order_pending())
                 self.lead_unfinished(subs)
             return gained_total
 
@@ -2572,8 +2575,7 @@ class O2mToMopidy:
             random.shuffle(order)
             for c in order:
                 self.meta_fill(c, max_results)
-            self._flush_order()
-            self.interleave_tracklist()
+            self.interleave_tracklist(shuffle_first=self._take_order_pending())
             return order
 
     def toggle_all(self, mode='toggle'):
@@ -3982,29 +3984,35 @@ class O2mToMopidy:
             slice_tl = tl[s:stop_index]
             if len(slice_tl) <= 1:
                 return
-            uris = [t.track.uri for t in slice_tl]
-            pop = {}
-            try:
-                for r in (Track.select(Track.uri, Track.popularity)
-                              .where(Track.uri << uris).namedtuples()):
-                    if r.popularity is not None:
-                        pop[r.uri] = r.popularity
-            except Exception as e:
-                print(f"smart_shuffle lookup error: {e}")
-            # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1, DL=10 → 0 (uniform)
-            k = max(0.0, (10 - self.discover_level) / 5.0)
-            # Efraimidis-Spirakis weighted order over tl_tracks (NULL → neutral 0.5)
-            keyed = []
-            for t in slice_tl:
-                w = pop.get(t.track.uri, 0.5) ** k
-                if w <= 0:
-                    w = 1e-9
-                keyed.append((random.random() ** (1.0 / w), t.tlid))
-            keyed.sort(reverse=True)
-            self._apply_tl_order(s, slice_tl, [tlid for _, tlid in keyed], 'smart_shuffle')
+            self._apply_tl_order(s, slice_tl, self._smart_order(slice_tl), 'smart_shuffle')
         except Exception as e:
             print(f"smart_shuffle error: {e}; falling back to plain shuffle")
             self.shuffle_tracklist(start_index, stop_index)
+
+    def _smart_order(self, slice_tl):
+        """The popularity-weighted order of `slice_tl` (tlids), computed in
+        memory: smart_shuffle_tracklist applies it, interleave_tracklist folds it
+        into its own pass so a fill's end costs one reorder, not two."""
+        uris = [t.track.uri for t in slice_tl]
+        pop = {}
+        try:
+            for r in (Track.select(Track.uri, Track.popularity)
+                          .where(Track.uri << uris).namedtuples()):
+                if r.popularity is not None:
+                    pop[r.uri] = r.popularity
+        except Exception as e:
+            print(f"smart_shuffle lookup error: {e}")
+        # Temperature: DL=0 → k=2 (favor popular), DL=5 → 1, DL=10 → 0 (uniform)
+        k = max(0.0, (10 - self.discover_level) / 5.0)
+        # Efraimidis-Spirakis weighted order over tl_tracks (NULL → neutral 0.5)
+        keyed = []
+        for t in slice_tl:
+            w = pop.get(t.track.uri, 0.5) ** k
+            if w <= 0:
+                w = 1e-9
+            keyed.append((random.random() ** (1.0 / w), t.tlid))
+        keyed.sort(reverse=True)
+        return [tlid for _, tlid in keyed]
 
     def _apply_tl_order(self, s, slice_tl, ordered, who):
         """Reorder the tracklist slice starting at `s` to `ordered` (tlids), with
@@ -4022,7 +4030,7 @@ class O2mToMopidy:
                 self.mopidyHandler.tracklist.move(s + c, s + c + 1, s + p)
                 cur.insert(p, cur.pop(c))
 
-    def interleave_tracklist(self):
+    def interleave_tracklist(self, shuffle_first=False):
         """Alternate the types of what is queued after the track playing — music,
         podcast, info, radio — by the category of the box each entry belongs to
         (selection.interleave). The fills shuffle by popularity, which knows
@@ -4034,17 +4042,28 @@ class O2mToMopidy:
             tl = self.mopidyHandler.tracklist.get_tl_tracks()
             slice_tl = tl[s:]
             if len(slice_tl) <= 2:
+                if shuffle_first:
+                    self.smart_shuffle_tracklist(s, None)
                 return
             cat_of = {b.uid: self._live_category(b) for b in list(self.activeboxs or [])}
             def cat(t):
                 info = self._track_info.get(t.tlid) or {}
                 return cat_of.get(info.get('box_id')) or 'music'
             cats = [(t.tlid, cat(t)) for t in slice_tl]
-            if len({c for _, c in cats}) < 2:
-                return
             lead = []
             if cats[0][1] == 'info':
                 lead, cats = [cats[0][0]], cats[1:]
+            if shuffle_first:
+                # The fill's owed reorder (_flush_order), folded into this pass:
+                # the popularity order sets each category's own sequence, the
+                # interleave then spreads the categories — one set of moves.
+                by_tlid = dict(cats)
+                body = [t for t in slice_tl if t.tlid in by_tlid]
+                cats = [(tlid, by_tlid[tlid]) for tlid in self._smart_order(body)]
+            if len({c for _, c in cats}) < 2:
+                if shuffle_first:
+                    self._apply_tl_order(s, slice_tl, lead + [t for t, _ in cats], 'smart_shuffle')
+                return
             ordered = lead + selection.interleave(cats)
             self._apply_tl_order(s, slice_tl, ordered, 'interleave')
         except Exception as e:
