@@ -441,6 +441,12 @@ the last word.**
   fill leads after its interleave, a podcast tile being a podcast arriving last.
 - **The smart shuffle** (popularity, every box's fill): so a music box put down after
   a podcast box takes the lead away, by shuffling, and that is the rule too.
+  **Once per operation** (`_ordering_batch`, 2026-11-22): an add inside a fill only
+  shuffles its own entries and the outermost fill (`one_box_changed`, `meta_fill`,
+  `all_on`) reorders the whole queue once, before its interleave and lead. Mopidy
+  reorders by single moves (~25 ms each on a Pi 3), and the queue used to be
+  reshuffled after every add: an ALL took 156 s on pi2, Auto Family 76 s on top of a
+  full queue (21 s on an empty one).
 
 ### A bucket drawn from another box holds its budget (`_auto_bucket_from_box`)
 `incoming`, `favorites` (its box half) and `news` read another box — the install's

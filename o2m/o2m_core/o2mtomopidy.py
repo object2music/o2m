@@ -110,6 +110,12 @@ class O2mToMopidy:
         # opened the fill defers, other threads' add_tracks replace inline.
         self._replace_jobs = None
         self._replace_owner = None
+        # One ordering per operation (see _ordering_batch): depth of the batch,
+        # the thread that holds it, and whether a fill inside it skipped a
+        # whole-queue reorder that the outermost owner now owes.
+        self._order_depth = 0
+        self._order_owner = None
+        self._order_pending = False
         self._fills_mutex = threading.Lock()
         # Trigger key → monotonic time it was last seen in flight or finished.
         # Swallows the repeats of a remote key held down and NFC double reads.
@@ -877,6 +883,69 @@ class O2mToMopidy:
                 #self.one_box_changed(box)
 
     @contextlib.contextmanager
+    def _ordering_batch(self):
+        """One reordering of the queue per operation, not one per add.
+
+        add_tracks reshuffled the WHOLE queue after the track playing every time
+        it added something while another box was active, and Mopidy reorders
+        only by moving one entry at a time (~25 ms a move on a Pi 3). An ALL adds
+        some fifteen times, a cascade once per line of each included box, so the
+        same queue of ~100 entries was reordered again and again: 156 s for an
+        ALL on pi2 (2026-11-22), about 100 s of it in those reorders; Auto Family
+        took 21 s on an empty queue and 76 s on top of a full one. Each reorder
+        was undone by the next, and an ALL then interleaves the lot anyway.
+
+        Inside a batch, an add only shuffles its own new entries (cheap) and
+        records that the queue owes a reorder; the outermost owner does it once
+        (_flush_order) before its interleave / lead, whose order must come last.
+        Reentrant per thread; another thread's fills are left unbatched."""
+        me = threading.get_ident()
+        if self._order_owner not in (None, me):
+            yield
+            return
+        self._order_owner = me
+        self._order_depth += 1
+        try:
+            yield
+        finally:
+            self._order_depth -= 1
+            if self._order_depth == 0:
+                self._order_owner = None
+                self._order_pending = False
+
+    def _order_batched(self):
+        """True inside a batch held by this thread."""
+        return self._order_depth > 0 and self._order_owner == threading.get_ident()
+
+    def _order_nested(self):
+        """True inside a batch opened by an OUTER call of this thread: the
+        outermost one orders, this one only records what it owes."""
+        return self._order_depth > 1 and self._order_owner == threading.get_ident()
+
+    def _flush_order(self, force=False):
+        """The one whole-queue reorder a batch owes, after the track playing. A
+        news item standing next keeps its place, as add_tracks put it there."""
+        if not (force or self._order_pending):
+            return
+        self._order_pending = False
+        try:
+            tl = self.mopidyHandler.tracklist
+            length = tl.get_length()
+            cur = tl.index()
+            start = (cur + 1) if cur is not None else 0
+            if start < length:
+                nxt = tl.slice(start, start + 1)
+                if nxt:
+                    owner = (self._track_info.get(nxt[0].tlid) or {}).get('box_id')
+                    box = next((b for b in self.activeboxs if b.uid == owner), None)
+                    if box is not None and self._live_category(box) == 'info':
+                        start += 1
+            if length > start + 1:
+                self.smart_shuffle_tracklist(start, length)
+        except Exception as e:
+            print(f"flush_order error: {e}")
+
+    @contextlib.contextmanager
     def _deferred_replacements(self):
         """Within a box fill, let add_tracks QUEUE its recommendation replacements
         instead of doing them. When the fill body ends, playback starts, then the
@@ -1236,7 +1305,7 @@ class O2mToMopidy:
 
         #print(f"\nNew box added: {box}")
         if (box.uid != self.last_box_uid):  # If different from last box added - for NFC mode only
-            with self._box_ops_lock(), self._deferred_replacements():
+            with self._box_ops_lock(), self._deferred_replacements(), self._ordering_batch():
                 uri = "box:"+box.uid
                 self.update_stat_raw(uri)
 
@@ -1283,13 +1352,17 @@ class O2mToMopidy:
 
                 #Shuffle if new tracks were added — regardless of direct vs. indirect add in tracklistappend_box
                 current_tl_length = self.mopidyHandler.tracklist.get_length()
-                if ((self.shuffle == "true" and box.option_sort != "desc" and box.option_sort != "asc") or box.option_sort == "shuffle" or box.option_sort == "smart") and (current_tl_length > prev_tl_length):
-                    index = 0
-                    if self.mopidyHandler.tracklist.index() != None: index = int(self.mopidyHandler.tracklist.index())
-                    if current_tl_length > index + 1:
-                        self.smart_shuffle_tracklist(index+1, current_tl_length)
-                if current_tl_length > prev_tl_length:
-                    self.lead_unfinished([box])
+                wants = (((self.shuffle == "true" and box.option_sort != "desc" and box.option_sort != "asc") or box.option_sort == "shuffle" or box.option_sort == "smart")
+                         and (current_tl_length > prev_tl_length))
+                if self._order_nested():
+                    # A cascade's child or an actuator's source: the outermost
+                    # fill reorders once and sets the lead after it.
+                    if wants:
+                        self._order_pending = True
+                else:
+                    self._flush_order(force=wants)
+                    if current_tl_length > prev_tl_length:
+                        self.lead_unfinished([box])
 
         # Next option
         else:
@@ -1623,8 +1696,11 @@ class O2mToMopidy:
                             and (len(self.activeboxs) > 1 or _sort == "shuffle" or _sort == "smart")
                             and not((option_type == "info") and (new_length - prev_length==1) and (current_index <= 1))):
                         if new_length > current_index + 1:
-                            print ("shuffling")
-                            self.smart_shuffle_tracklist(current_index + 1, new_length)
+                            if self._order_batched():
+                                self._order_pending = True   # the batch owner reorders once
+                            else:
+                                print ("shuffling")
+                                self.smart_shuffle_tracklist(current_index + 1, new_length)
                    
                     #Move at next place the lastinfo content
                     if ((option_type == "info") and (new_length - prev_length==1)):
@@ -2366,7 +2442,7 @@ class O2mToMopidy:
         a remove() on one thread's stale snapshot could raise/skip while another
         thread's box_action_remove never ran, leaving that box's tracks stuck in
         the tracklist even though the box looked deactivated."""
-        with self._box_ops_lock():
+        with self._box_ops_lock(), self._ordering_batch():
             limit = max_results or self.max_results
             boxes = self.get_basic_categories().get(cat) or []
             if not boxes:
@@ -2390,8 +2466,10 @@ class O2mToMopidy:
                     self.box_action(sub)
                 except Exception as e:
                     print(f"meta_fill({cat}) on {sub.uid}: {e}")
-                self.interleave_tracklist()
-                self.lead_unfinished([sub])
+                if not self._order_nested():   # inside ALL, all_on orders once
+                    self._flush_order()
+                    self.interleave_tracklist()
+                    self.lead_unfinished([sub])
                 try:
                     return self.mopidyHandler.tracklist.get_length() - start
                 except Exception:
@@ -2435,8 +2513,10 @@ class O2mToMopidy:
                 budget -= got   # a shortfall (got < share) rolls forward; a surplus tightens the rest
                 if budget <= 0:
                     break
-            self.interleave_tracklist()
-            self.lead_unfinished(subs)
+            if not self._order_nested():   # inside ALL, all_on orders once
+                self._flush_order()
+                self.interleave_tracklist()
+                self.lead_unfinished(subs)
             return gained_total
 
     def meta_remove(self, cat):
@@ -2486,12 +2566,13 @@ class O2mToMopidy:
         """Turn on every category not on yet, in a random order (a fixed one
         always opened on music). Returns the categories turned on. Its alternation
         has the last word, over the lead a category's fill may have set."""
-        with self._box_ops_lock():
+        with self._box_ops_lock(), self._ordering_batch():
             cats, on = self._all_categories()
             order = [c for c in cats if c not in on]
             random.shuffle(order)
             for c in order:
                 self.meta_fill(c, max_results)
+            self._flush_order()
             self.interleave_tracklist()
             return order
 
