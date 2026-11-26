@@ -2663,9 +2663,12 @@ overwrite the value. Treat it as "authoritative", not "curated by a human".
   track being played**, so the change is heard from the next track. A box of fixed
   content (an album in order, a radio, a feed) comes back identical, and rebuilding it
   only cut the music. Every box draws a little from the DL at the margin
-  (replacements, recommendations); that is not what the rule answers. Cascade parents
-  are skipped (refilling one would include its children twice); each child is judged
-  on its own lines. `apply: false` only stores the values — the page sends it when no
+  (replacements, recommendations); that is not what the rule answers. A cascade parent is
+  judged and rebuilt on its OWN lines (`boxdirectives.without_includes`, as many
+  tracks as it had queued — refilling it whole would include its children twice);
+  each active child is judged on its own lines. Until 2026-11-26 parents were
+  skipped whole, so "Auto music" put down while its includes were gated off had no
+  child active and its `auto:library` never followed the dials. `apply: false` only stores the values — the page sends it when no
   box is on but a queue is (a rebuild would start the auto mix over it).
   **It answers `409 {status:'busy'}` while any fill runs**, stored nothing — see below.
 

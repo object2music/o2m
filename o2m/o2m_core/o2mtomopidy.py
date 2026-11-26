@@ -4198,14 +4198,16 @@ class O2mToMopidy:
                       f"(e={self.mood_energy} v={self.mood_valence} dl={self.discover_level})")
                 return max(0, added)
 
-            # Cascade parents are left out: refilling one would include its
-            # children a second time. Each child is in activeboxs itself and is
-            # judged on its own lines. Asked explicitly — a cascade holding the
-            # auto mix is category 'music' since the actuators were fixed.
+            # A cascade parent is judged on its OWN lines (a `box:` line never
+            # depends on the mood) and rebuilt without its includes below: each
+            # active child is in activeboxs itself and judged on its own lines.
+            # It used to be left out whole, so 'Auto music' — auto:library plus
+            # time-windowed includes — put down while its includes were gated
+            # off had no active child and its own auto mix never followed the
+            # dials (2026-11-26).
             candidates = [b for b in self.activeboxs
                           if self._box_category(getattr(b, 'data', ''), getattr(b, 'option_type', ''))
-                          in ('music', 'other')
-                          and not self._is_cascade(getattr(b, 'data', ''))]
+                          in ('music', 'other')]
             driven = [b for b in candidates
                       if bdir.depends_on_mood(getattr(b, 'data', ''), getattr(b, 'option_sort', None))]
             if not driven:
@@ -4228,6 +4230,10 @@ class O2mToMopidy:
             # box's cascade lineage, and these boxes stay active.
             stale = [t for t, info in self._track_info.items()
                      if info.get('box_id') in driven_uids and t != cur_tlid and t in before]
+            stale_count = {}
+            for t in stale:
+                u = self._track_info[t].get('box_id')
+                stale_count[u] = stale_count.get(u, 0) + 1
             if stale:
                 try:
                     self.mopidyHandler.tracklist.remove({"tlid": stale})
@@ -4238,7 +4244,15 @@ class O2mToMopidy:
             self.last_box_uid = None   # one_box_changed's NFC "same tag = next song" guard
             for b in driven:
                 try:
-                    self.box_action(b)
+                    if self._is_cascade(getattr(b, 'data', '')):
+                        # Its own lines only, and as many tracks as it had queued:
+                        # with its includes gone the budget is no longer shared, so
+                        # a full quota would grow the box at every gesture.
+                        fields = dict(b.__data__)
+                        fields['data'] = bdir.without_includes(fields.get('data') or '')
+                        self.box_action(Box(**fields), max_results=stale_count.get(b.uid) or None)
+                    else:
+                        self.box_action(b)
                 except Exception as e:
                     print(f"apply_mood_settings: refill {b.uid}: {e}")
 

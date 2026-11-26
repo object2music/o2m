@@ -281,6 +281,18 @@ class TestBlocks(unittest.TestCase):
 class TestDependsOnMood(unittest.TestCase):
     def test_auto_mixes_and_tags(self):
         self.assertTrue(bd.depends_on_mood('auto:library'))
+        # A cascade parent's own lines: its includes never depend on the mood,
+        # and are what a mood rebuild of the parent leaves out.
+        data = ('18:00-09:00 > {\nmood:calm\n#box:A\n}\n09:00-18:00 > {\nbox:B\n}\n'
+                '12:00-13:00 > box:C\nauto:library')
+        self.assertTrue(bd.depends_on_mood(data))
+        own = bd.without_includes(data)
+        self.assertNotIn('box:B', own)
+        self.assertNotIn('box:C', own)
+        self.assertIn('#box:A', own)          # a disabled line is kept verbatim
+        self.assertEqual([p for _a, p in bd.iter_lines(own) if p.startswith('mood')], ['mood:calm'])
+        self.assertTrue(bd.depends_on_mood(own))
+        self.assertFalse(bd.depends_on_mood('box:B\n#auto:library'))
         self.assertTrue(bd.depends_on_mood('auto_podcast:library'))
         self.assertTrue(bd.depends_on_mood('tag:jazz'))
 

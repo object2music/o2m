@@ -326,6 +326,22 @@ def depends_on_mood(data, option_sort=None, now=None):
     return False
 
 
+def without_includes(data):
+    """The box's data with its `box:` lines taken out, everything else kept as
+    typed (windows, blocks, labels, directives).
+
+    What a mood change rebuilds of a cascade parent: its OWN lines. Refilling it
+    whole would include its children a second time, and the children that are
+    active are judged, and rebuilt, on their own."""
+    out = []
+    for raw in (data or '').splitlines():
+        window, payload = split_condition(raw.strip())
+        if payload.startswith('box:'):
+            continue
+        out.append(raw)
+    return '\n'.join(out)
+
+
 _SPOKEN_LINE_RE = re.compile(r'^(?:podcast\+|podcasts:|auto_podcast:|infos:|rf:|yt:|youtube:|web:|xp:)')
 
 
